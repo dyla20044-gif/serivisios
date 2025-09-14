@@ -1,26 +1,25 @@
 const express = require('express');
 const bodyParser = require('body-parser');
 const paypal = require('paypal-rest-sdk');
+const TelegramBot = require('node-telegram-bot-api');
 const app = express();
 
 const PORT = process.env.PORT || 3000;
 
+// Configuración del bot de Telegram para el backend
+const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN);
+const ADMIN_CHAT_ID = 6115976248;
+
 // Configuración de PayPal con variables de entorno
 paypal.configure({
-    'mode': 'sandbox', // ¡Asegúrate de que esta línea diga 'live'!
+    'mode': 'live', // Asegúrate de que esto coincida con tus claves
     'client_id': process.env.PAYPAL_CLIENT_ID,
     'client_secret': process.env.PAYPAL_CLIENT_SECRET
 });
-// Configuración de Binance Pay con variables de entorno
-// NOTA: La integración de Binance es más compleja y requiere una configuración de servidor más detallada.
-// Esto es un placeholder para mostrar dónde iría la lógica.
-const BINANCE_PAY_API_KEY = process.env.BINANCE_PAY_API_KEY;
-const BINANCE_PAY_SECRET_KEY = process.env.BINANCE_PAY_SECRET_KEY;
 
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// Habilitar CORS para permitir que tu frontend se comunique con este servidor
 app.use((req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST');
@@ -53,7 +52,6 @@ app.post('/create-paypal-payment', (req, res) => {
 
     paypal.payment.create(create_payment_json, function (error, payment) {
         if (error) {
-            // Este console.error imprimirá la respuesta detallada de PayPal en tus logs de Render
             console.error("Error de PayPal:", error.response);
             res.status(500).json({ error: "Error al crear el pago con PayPal. Revisa los logs de tu servidor para más detalles." });
         } else {
@@ -68,9 +66,34 @@ app.post('/create-paypal-payment', (req, res) => {
     });
 });
 
+// NUEVA RUTA: Recibe solicitudes de películas de la mini-aplicación
+app.post('/request-movie', async (req, res) => {
+    const movieTitle = req.body.title;
+    const posterPath = req.body.poster_path;
+    const posterUrl = posterPath ? `https://image.tmdb.org/t/p/w500${posterPath}` : 'https://placehold.co/500x750?text=No+Poster';
+
+    const message = `🔔 *Solicitud de película:* ${movieTitle}\n\nUn usuario ha solicitado esta película.`;
+    
+    try {
+        await bot.sendPhoto(ADMIN_CHAT_ID, posterUrl, {
+            caption: message,
+            parse_mode: 'Markdown',
+            reply_markup: {
+                inline_keyboard: [[{
+                    text: '✅ Agregar ahora',
+                    callback_data: `solicitud_${movieTitle}`
+                }]]
+            }
+        });
+        res.status(200).json({ message: 'Solicitud enviada al administrador.' });
+    } catch (error) {
+        console.error("Error al enviar notificación a Telegram:", error);
+        res.status(500).json({ error: 'Error al enviar la notificación al bot.' });
+    }
+});
+
 // Rutas de callback de PayPal
 app.get('/paypal/success', (req, res) => {
-    // Aquí puedes verificar la transacción y actualizar el estado de la cuenta del usuario
     res.send('<html><body><h1>Pago con PayPal exitoso. Vuelve a tu aplicación para ver los cambios.</h1></body></html>');
 });
 
@@ -80,12 +103,9 @@ app.get('/paypal/cancel', (req, res) => {
 
 // Ruta de ejemplo para pagos con Binance (simulada)
 app.post('/create-binance-payment', (req, res) => {
-    // En un entorno real, aquí iría la lógica para interactuar con la API de Binance Pay.
-    // Simplemente enviamos una respuesta de éxito.
     res.json({ message: 'Pago con Binance simulado. Lógica de backend real necesaria.' });
 });
 
-// Inicia el servidor
 app.listen(PORT, () => {
     console.log(`Servidor de backend de Sala Cine iniciado en el puerto ${PORT}`);
 });
