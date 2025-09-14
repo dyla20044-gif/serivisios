@@ -1,9 +1,10 @@
 {
-  "name": "miservi",
+  "name": "sala-cine-backend",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Servidor para procesar pagos de Sala Cine",
+  "main": "server.js",
   "scripts": {
+    "start": "node server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -11,8 +12,8 @@
   "license": "ISC",
   "dependencies": {
     "@binance/pay": "^3.0.8",
-    "body-parser": "^2.2.0",
-    "express": "^5.1.0",
+    "body-parser": "^1.20.2",
+    "express": "^4.19.2",
     "paypal-rest-sdk": "^1.8.1"
   }
 }
