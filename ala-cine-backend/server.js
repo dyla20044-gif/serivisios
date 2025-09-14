@@ -7,11 +7,10 @@ const PORT = process.env.PORT || 3000;
 
 // Configuración de PayPal con variables de entorno
 paypal.configure({
-    'mode': 'live', // ¡Asegúrate de que esta línea diga 'live'!
+    'mode': 'sandbox', // ¡Asegúrate de que esta línea diga 'live'!
     'client_id': process.env.PAYPAL_CLIENT_ID,
     'client_secret': process.env.PAYPAL_CLIENT_SECRET
 });
-
 // Configuración de Binance Pay con variables de entorno
 // NOTA: La integración de Binance es más compleja y requiere una configuración de servidor más detallada.
 // Esto es un placeholder para mostrar dónde iría la lógica.
