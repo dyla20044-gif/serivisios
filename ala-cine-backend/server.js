@@ -2,9 +2,17 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const paypal = require('paypal-rest-sdk');
 const TelegramBot = require('node-telegram-bot-api');
+const admin = require('firebase-admin');
 const app = express();
 
 const PORT = process.env.PORT || 3000;
+
+// Inicializa Firebase Admin SDK con la variable de entorno
+const serviceAccount = JSON.parse(process.env.FIREBASE_ADMIN_SDK);
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount)
+});
+const db = admin.firestore();
 
 // Configuración del bot de Telegram para el backend
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN);
@@ -12,7 +20,7 @@ const ADMIN_CHAT_ID = 6115976248;
 
 // Configuración de PayPal con variables de entorno
 paypal.configure({
-    'mode': 'live', // Asegúrate de que esto coincida con tus claves
+    'mode': 'live',
     'client_id': process.env.PAYPAL_CLIENT_ID,
     'client_secret': process.env.PAYPAL_CLIENT_SECRET
 });
@@ -91,6 +99,29 @@ app.post('/request-movie', async (req, res) => {
         res.status(500).json({ error: 'Error al enviar la notificación al bot.' });
     }
 });
+
+// NUEVA RUTA: Para que el bot pueda agregar la película a Firestore
+app.post('/add-movie', async (req, res) => {
+    try {
+        const { tmdbId, title, poster_path, videoLink, isPremium } = req.body;
+
+        // Asegúrate de que no haya duplicados
+        const movieRef = db.collection('movies').doc(tmdbId.toString());
+        await movieRef.set({
+            tmdbId: tmdbId,
+            title: title,
+            poster_path: poster_path,
+            videoLink: videoLink,
+            isPremium: isPremium
+        });
+
+        res.status(200).json({ message: 'Película agregada a la base de datos.' });
+    } catch (error) {
+        console.error("Error al agregar película a Firestore:", error);
+        res.status(500).json({ error: 'Error al agregar la película a la base de datos.' });
+    }
+});
+
 
 // Rutas de callback de PayPal
 app.get('/paypal/success', (req, res) => {
