@@ -54,9 +54,9 @@ app.post('/create-paypal-payment', (req, res) => {
 
     paypal.payment.create(create_payment_json, function (error, payment) {
         if (error) {
-            console.error(error.response);
-            // Enviar un error en formato JSON para que el frontend lo pueda procesar
-            res.status(500).json({ error: "Error al crear el pago con PayPal." });
+            // Este console.error imprimirá la respuesta detallada de PayPal en tus logs de Render
+            console.error("Error de PayPal:", error.response);
+            res.status(500).json({ error: "Error al crear el pago con PayPal. Revisa los logs de tu servidor para más detalles." });
         } else {
             for (let i = 0; i < payment.links.length; i++) {
                 if (payment.links[i].rel === 'approval_url') {
