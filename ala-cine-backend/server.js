@@ -40,8 +40,8 @@ app.post('/create-paypal-payment', (req, res) => {
             "payment_method": "paypal"
         },
         "redirect_urls": {
-            "return_url": "https://tusitio.onrender.com/paypal/success", // Sustituye con la URL de tu backend en Render
-            "cancel_url": "https://tusitio.onrender.com/paypal/cancel" // Sustituye con la URL de tu backend en Render
+            "return_url": "https://serivisios.onrender.com/paypal/success",
+            "cancel_url": "https://serivisios.onrender.com/paypal/cancel"
         },
         "transactions": [{
             "amount": {
