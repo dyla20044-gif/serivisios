@@ -19,7 +19,6 @@ admin.initializeApp({
 });
 const db = admin.firestore();
 
-// 🐛 NOTA: Verifica que tu 'mode' (live o sandbox) y tus credenciales en el archivo .env sean correctos.
 paypal.configure({
     'mode': 'live',
     'client_id': process.env.PAYPAL_CLIENT_ID,
@@ -30,7 +29,8 @@ const token = process.env.TELEGRAM_BOT_TOKEN;
 const bot = new TelegramBot(token, { polling: true });
 const ADMIN_CHAT_ID = parseInt(process.env.ADMIN_CHAT_ID, 10);
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
-const RENDER_BACKEND_URL = process.env.RENDER_BACKEND_URL;
+// ⚠️ Se ha eliminado RENDER_BACKEND_URL y se ha reemplazado por la URL directa
+const RENDER_BACKEND_URL = 'https://serivisios.onrender.com';
 
 // === CONFIGURACIÓN DE ATJOS DEL BOT ===
 bot.setMyCommands([
@@ -67,7 +67,7 @@ app.post('/request-movie', async (req, res) => {
     const posterPath = req.body.poster_path;
     const posterUrl = posterPath ? `https://image.tmdb.org/t/p/w500${posterPath}` : 'https://placehold.co/500x750?text=No+Poster';
     
-    // 🐛 Corregido: Se usa el ID de la película para el callback_data.
+    // ✅ Corregido: Se usa el ID de la película para el callback_data.
     const tmdbId = req.body.tmdbId;
 
     const message = `🔔 *Solicitud de película:* ${movieTitle}\n\nUn usuario ha solicitado esta película.`;
@@ -382,9 +382,10 @@ bot.on('message', async (msg) => {
         const mirrors = rawLinks.map(link => ({ url: link, quality: 'normal' }));
 
         try {
+            // ✅ Corregido: La URL ahora se construye sin el doble slash
             const endpoint = mediaType === 'movie' ? '/add-movie' : '/add-series-episode';
             
-            // 🐛 Corregido: La estructura del body para series
+            // ✅ Corregido: La estructura del body para series
             const body = mediaType === 'movie' ? {
                 tmdbId: itemData.id,
                 title: itemData.title,
@@ -397,9 +398,9 @@ bot.on('message', async (msg) => {
                 poster_path: itemData.poster_path,
                 isPremium,
                 seasons: {
-                    [1]: { // ⚠️ Asume Temporada 1. Deberías mejorar esto en el futuro.
+                    [1]: { // Asume Temporada 1. Deberías mejorar esto en el futuro.
                         episodes: {
-                            [1]: { // ⚠️ Asume Episodio 1. Deberías mejorar esto en el futuro.
+                            [1]: { // Asume Episodio 1. Deberías mejorar esto en el futuro.
                                 mirrors
                             }
                         }
@@ -444,7 +445,7 @@ bot.on('callback_query', async (callbackQuery) => {
         };
         bot.sendMessage(chatId, `Has elegido subir una serie ${adminState[chatId].isPremium ? 'Premium' : 'gratis'}. Por favor, escribe el nombre de la serie para buscar en TMDB.`);
     } else if (data.startsWith('solicitud_')) {
-        // 🐛 Corregido: Se usa el ID de la película para la búsqueda en la API de TMDB
+        // ✅ Corregido: Se usa el ID de la película para la búsqueda en la API de TMDB
         const tmdbId = data.replace('solicitud_', '');
         try {
             const searchUrl = `https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${TMDB_API_KEY}&language=es-ES`;
