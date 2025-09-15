@@ -31,7 +31,7 @@ const ADMIN_CHAT_ID = parseInt(process.env.ADMIN_CHAT_ID, 10);
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
 const RENDER_BACKEND_URL = process.env.RENDER_BACKEND_URL;
 
-// === CONFIGURACIÓN DE ATJOS DEL BOT (NUEVO) ===
+// === CONFIGURACIÓN DE ATJOS DEL BOT ===
 bot.setMyCommands([
     { command: 'start', description: 'Reiniciar el bot y ver el menú principal' },
     { command: 'subir', description: 'Subir una película o serie a la base de datos' },
@@ -188,20 +188,6 @@ app.post('/add-series-episode', async (req, res) => {
     }
 });
 
-// Rutas de callback de PayPal
-app.get('/paypal/success', (req, res) => {
-    res.send('<html><body><h1>Pago con PayPal exitoso. Vuelve a tu aplicación para ver los cambios.</h1></body></html>');
-});
-
-app.get('/paypal/cancel', (req, res) => {
-    res.send('<html><body><h1>Pago con PayPal cancelado.</h1></body></html>');
-});
-
-// Ruta de ejemplo para pagos con Binance (simulada)
-app.post('/create-binance-payment', (req, res) => {
-    res.json({ message: 'Pago con Binance simulado. Lógica de backend real necesaria.' });
-});
-
 app.post('/create-paypal-payment', (req, res) => {
     const plan = req.body.plan;
     const amount = (plan === 'annual') ? '19.99' : '1.99';
@@ -240,12 +226,23 @@ app.post('/create-paypal-payment', (req, res) => {
     });
 });
 
+app.get('/paypal/success', (req, res) => {
+    res.send('<html><body><h1>Pago con PayPal exitoso. Vuelve a tu aplicación para ver los cambios.</h1></body></html>');
+});
+
+app.get('/paypal/cancel', (req, res) => {
+    res.send('<html><body><h1>Pago con PayPal cancelado.</h1></body></html>');
+});
+
+app.post('/create-binance-payment', (req, res) => {
+    res.json({ message: 'Pago con Binance simulado. Lógica de backend real necesaria.' });
+});
 
 // === LÓGICA DEL BOT DE TELEGRAM ===
 bot.onText(/\/start/, (msg) => {
     const chatId = msg.chat.id;
-    if (msg.chat.id !== ADMIN_CHAT_ID) {
-        bot.sendMessage(msg.chat.id, 'Lo siento, no tienes permiso para usar este bot.');
+    if (chatId !== ADMIN_CHAT_ID) {
+        bot.sendMessage(chatId, 'Lo siento, no tienes permiso para usar este bot.');
         return;
     }
     adminState[chatId] = { step: 'menu' };
@@ -264,21 +261,31 @@ bot.onText(/\/start/, (msg) => {
 
 bot.onText(/\/subir/, (msg) => {
     const chatId = msg.chat.id;
-    if (msg.chat.id !== ADMIN_CHAT_ID) return;
+    if (chatId !== ADMIN_CHAT_ID) return;
     adminState[chatId] = { step: 'menu' };
-    bot.emit('callback_query', { message: msg, data: 'start' });
+    const options = {
+        reply_markup: {
+            inline_keyboard: [
+                [{ text: 'Subir película gratis', callback_data: 'subir_movie_gratis' }],
+                [{ text: 'Subir película Premium', callback_data: 'subir_movie_premium' }],
+                [{ text: 'Subir serie gratis', callback_data: 'subir_series_gratis' }],
+                [{ text: 'Subir serie Premium', callback_data: 'subir_series_premium' }]
+            ]
+        }
+    };
+    bot.sendMessage(chatId, '¡Hola! ¿Qué quieres hacer hoy?', options);
 });
 
 bot.onText(/\/editar/, (msg) => {
     const chatId = msg.chat.id;
-    if (msg.chat.id !== ADMIN_CHAT_ID) return;
-    adminState[chatId] = { step: 'search_edit' };
+    if (chatId !== ADMIN_CHAT_ID) return;
+    adminState[chatId] = { step: 'search_edit', mediaType: 'movie' };
     bot.sendMessage(chatId, 'Por favor, escribe el nombre de la película o serie que quieres editar.');
 });
 
 bot.onText(/\/pedidos/, async (msg) => {
     const chatId = msg.chat.id;
-    if (msg.chat.id !== ADMIN_CHAT_ID) return;
+    if (chatId !== ADMIN_CHAT_ID) return;
     try {
         const requestsRef = db.collection('requests');
         const snapshot = await requestsRef.get();
