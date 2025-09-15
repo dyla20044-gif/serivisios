@@ -19,6 +19,7 @@ admin.initializeApp({
 });
 const db = admin.firestore();
 
+// 🐛 NOTA: Verifica que tu 'mode' (live o sandbox) y tus credenciales en el archivo .env sean correctos.
 paypal.configure({
     'mode': 'live',
     'client_id': process.env.PAYPAL_CLIENT_ID,
@@ -65,6 +66,9 @@ app.post('/request-movie', async (req, res) => {
     const movieTitle = req.body.title;
     const posterPath = req.body.poster_path;
     const posterUrl = posterPath ? `https://image.tmdb.org/t/p/w500${posterPath}` : 'https://placehold.co/500x750?text=No+Poster';
+    
+    // 🐛 Corregido: Se usa el ID de la película para el callback_data.
+    const tmdbId = req.body.tmdbId;
 
     const message = `🔔 *Solicitud de película:* ${movieTitle}\n\nUn usuario ha solicitado esta película.`;
     
@@ -75,7 +79,7 @@ app.post('/request-movie', async (req, res) => {
             reply_markup: {
                 inline_keyboard: [[{
                     text: '✅ Agregar ahora',
-                    callback_data: `solicitud_${movieTitle}`
+                    callback_data: `solicitud_${tmdbId}`
                 }]]
             }
         });
@@ -178,7 +182,13 @@ app.post('/add-series-episode', async (req, res) => {
             title,
             poster_path,
             isPremium,
-            [`seasons.${seasonNumber}.episodes.${episodeNumber}`]: { mirrors }
+            seasons: {
+                [seasonNumber]: {
+                    episodes: {
+                        [episodeNumber]: { mirrors }
+                    }
+                }
+            }
         }, { merge: true });
 
         res.status(200).json({ message: `Episodio ${episodeNumber} de la temporada ${seasonNumber} agregado a la base de datos.` });
@@ -373,6 +383,8 @@ bot.on('message', async (msg) => {
 
         try {
             const endpoint = mediaType === 'movie' ? '/add-movie' : '/add-series-episode';
+            
+            // 🐛 Corregido: La estructura del body para series
             const body = mediaType === 'movie' ? {
                 tmdbId: itemData.id,
                 title: itemData.title,
@@ -383,12 +395,18 @@ bot.on('message', async (msg) => {
                 tmdbId: itemData.id,
                 title: itemData.name,
                 poster_path: itemData.poster_path,
-                mirrors,
                 isPremium,
-                seasonNumber: 1,
-                episodeNumber: 1
+                seasons: {
+                    [1]: { // ⚠️ Asume Temporada 1. Deberías mejorar esto en el futuro.
+                        episodes: {
+                            [1]: { // ⚠️ Asume Episodio 1. Deberías mejorar esto en el futuro.
+                                mirrors
+                            }
+                        }
+                    }
+                }
             };
-
+            
             const response = await axios.post(`${RENDER_BACKEND_URL}${endpoint}`, body);
 
             if (response.status === 200) {
@@ -426,14 +444,15 @@ bot.on('callback_query', async (callbackQuery) => {
         };
         bot.sendMessage(chatId, `Has elegido subir una serie ${adminState[chatId].isPremium ? 'Premium' : 'gratis'}. Por favor, escribe el nombre de la serie para buscar en TMDB.`);
     } else if (data.startsWith('solicitud_')) {
-        const movieTitle = data.replace('solicitud_', '');
+        // 🐛 Corregido: Se usa el ID de la película para la búsqueda en la API de TMDB
+        const tmdbId = data.replace('solicitud_', '');
         try {
-            const searchUrl = `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(movieTitle)}&language=es-ES`;
+            const searchUrl = `https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${TMDB_API_KEY}&language=es-ES`;
             const response = await axios.get(searchUrl);
             const movieData = response.data;
             
-            if (movieData.results && movieData.results.length > 0) {
-                const selectedMovie = movieData.results[0];
+            if (movieData) {
+                const selectedMovie = movieData;
                 adminState[chatId] = {
                     step: 'awaiting_video_link',
                     selectedId: selectedMovie.id,
