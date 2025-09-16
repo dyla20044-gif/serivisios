@@ -8,7 +8,7 @@ const cheerio = require('cheerio');
 const dotenv = require('dotenv');
 
 // NUEVAS LIBRERÍAS AGREGADAS
-const puppeteer = require('puppeteer');
+const puppeteer = require('puppeteer-core');
 const { exec } = require('child_process');
 
 const app = express();
@@ -31,11 +31,15 @@ paypal.configure({
 });
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
-const bot = new TelegramBot(token, { polling: true });
+
+// === SOLUCIÓN 1: CAMBIO DE POLLING A WEBHOOK PARA TELEGRAM ===
+const RENDER_BACKEND_URL = 'https://serivisios.onrender.com';
+const bot = new TelegramBot(token); // Eliminamos el polling aquí
+const webhookUrl = `${RENDER_BACKEND_URL}/bot${token}`;
+bot.setWebHook(webhookUrl);
+
 const ADMIN_CHAT_ID = parseInt(process.env.ADMIN_CHAT_ID, 10);
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
-// ⚠️ Se ha eliminado RENDER_BACKEND_URL y se ha reemplazado por la URL directa
-const RENDER_BACKEND_URL = 'https://serivisios.onrender.com';
 
 // === CONFIGURACIÓN DE ATJOS DEL BOT ===
 bot.setMyCommands([
@@ -65,6 +69,12 @@ app.use((req, res, next) => {
 // === RUTAS DEL SERVIDOR WEB ===
 app.get('/', (req, res) => {
   res.send('¡El bot y el servidor de Sala Cine están activos!');
+});
+
+// === NUEVO ENDPOINT PARA RECIBIR ACTUALIZACIONES DEL WEBHOOK DE TELEGRAM ===
+app.post(`/bot${token}`, (req, res) => {
+  bot.processUpdate(req.body);
+  res.sendStatus(200);
 });
 
 app.post('/request-movie', async (req, res) => {
@@ -145,8 +155,8 @@ app.post('/api/extract-video', async (req, res) => {
     // Ejemplo (comentado):
     // const cachedLink = await db.getLink(url);
     // if (cachedLink && new Date(cachedLink.expiry) > new Date()) {
-    //     console.log('Enlace obtenido de la caché.');
-    //     return res.json({ videoUrl: cachedLink.videoUrl });
+    //     console.log('Enlace obtenido de la caché.');
+    //     return res.json({ videoUrl: cachedLink.videoUrl });
     // }
    
     let videoUrl = null;
@@ -181,7 +191,11 @@ app.post('/api/extract-video', async (req, res) => {
     // 3. Si aún no funciona, usar Puppeteer (último recurso)
     if (!videoUrl) {
         console.log('Fallaron ambos métodos. Intentando con Puppeteer...');
-        const browser = await puppeteer.launch();
+        // SOLUCIÓN 2: AGREGAR EL CAMINO AL EJECUTABLE DE PUPPETEER
+        const browser = await puppeteer.launch({
+          executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || null,
+          args: ['--no-sandbox']
+        });
         const page = await browser.newPage();
         try {
             await page.goto(url, { waitUntil: 'networkidle2' });
