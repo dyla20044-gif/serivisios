@@ -106,31 +106,45 @@ app.post('/request-movie', async (req, res) => {
 
 // ✅ Nuevo Endpoint para obtener el código embed
 app.get('/api/get-embed-code', async (req, res) => {
-  const { id } = req.query;
+  const { id, season, episode, isPro } = req.query;
   
   if (!id) {
-    return res.status(400).json({ error: "ID de la película no proporcionado" });
+    return res.status(400).json({ error: "ID de la película o serie no proporcionado" });
   }
 
   try {
-    const docRef = db.collection('movies').doc(id);
+    const mediaType = season && episode ? 'series' : 'movies';
+    const docRef = db.collection(mediaType).doc(id);
     const doc = await docRef.get();
     
     if (!doc.exists) {
-      return res.status(404).json({ error: "Película no encontrada" });
+      return res.status(404).json({ error: `${mediaType} no encontrada` });
     }
 
     const data = doc.data();
-    if (data.embedCode) {
-      res.json({ embedCode: data.embedCode });
-    } else {
-      res.status(404).json({ error: "No se encontró código de reproductor para esta película" });
+
+    if (mediaType === 'movies') {
+        const embedCode = isPro === 'true' ? data.proEmbedCode : data.freeEmbedCode;
+        if (embedCode) {
+            res.json({ embedCode });
+        } else {
+            res.status(404).json({ error: `No se encontró código de reproductor para esta película.` });
+        }
+    } else { // series
+        const episodeData = data.seasons?.[season]?.episodes?.[episode];
+        const embedCode = isPro === 'true' ? episodeData?.proEmbedCode : episodeData?.freeEmbedCode;
+        if (embedCode) {
+            res.json({ embedCode });
+        } else {
+            res.status(404).json({ error: `No se encontró código de reproductor para el episodio ${episode}.` });
+        }
     }
   } catch (error) {
     console.error("Error al obtener el código embed:", error);
     res.status(500).json({ error: "Error interno del servidor" });
   }
 });
+
 
 // -----------------------------------------------------------
 // === FIN DEL CÓDIGO MEJORADO PARA EL ENDPOINT DE VIDEO ===
@@ -139,17 +153,19 @@ app.get('/api/get-embed-code', async (req, res) => {
 
 app.post('/add-movie', async (req, res) => {
     try {
-        // ✅ Ahora la aplicación envía el código embed en lugar de mirrors
-        const { tmdbId, title, poster_path, embedCode, isPremium } = req.body;
-        if (!embedCode) {
-            return res.status(400).json({ error: 'Debes proporcionar el código de reproductor incrustado (embedCode).' });
+        const { tmdbId, title, poster_path, freeEmbedCode, proEmbedCode, isPremium } = req.body;
+        
+        if (!freeEmbedCode || !proEmbedCode) {
+            return res.status(400).json({ error: 'Debes proporcionar ambos códigos de reproductor (gratis y PRO).' });
         }
+        
         const movieRef = db.collection('movies').doc(tmdbId.toString());
         await movieRef.set({
             tmdbId,
             title,
             poster_path,
-            embedCode, // ✅ Almacenamos el nuevo campo
+            freeEmbedCode, 
+            proEmbedCode,
             isPremium
         }, { merge: true });
         res.status(200).json({ message: 'Película agregada a la base de datos.' });
@@ -161,11 +177,10 @@ app.post('/add-movie', async (req, res) => {
 
 app.post('/add-series-episode', async (req, res) => {
     try {
-        // ✅ Ahora la aplicación envía el código embed
-        const { tmdbId, title, poster_path, seasonNumber, episodeNumber, embedCode, isPremium } = req.body;
+        const { tmdbId, title, poster_path, seasonNumber, episodeNumber, freeEmbedCode, proEmbedCode, isPremium } = req.body;
 
-        if (!embedCode) {
-            return res.status(400).json({ error: 'Debes proporcionar el código de reproductor incrustado (embedCode).' });
+        if (!freeEmbedCode || !proEmbedCode) {
+            return res.status(400).json({ error: 'Debes proporcionar ambos códigos de reproductor (gratis y PRO).' });
         }
 
         const seriesRef = db.collection('series').doc(tmdbId.toString());
@@ -177,7 +192,7 @@ app.post('/add-series-episode', async (req, res) => {
             seasons: {
                 [seasonNumber]: {
                     episodes: {
-                        [episodeNumber]: { embedCode } // ✅ Almacenamos el nuevo campo
+                        [episodeNumber]: { freeEmbedCode, proEmbedCode }
                     }
                 }
             }
@@ -348,11 +363,35 @@ bot.on('message', async (msg) => {
             console.error("Error al buscar en TMDB:", error);
             bot.sendMessage(chatId, 'Hubo un error al buscar el contenido. Intenta de nuevo.');
         }
-    } else if (adminState[chatId] && adminState[chatId].step === 'awaiting_video_link') {
-        const embedCode = userText;
-        const selectedId = adminState[chatId].selectedId;
-        const mediaType = adminState[chatId].mediaType;
-        const isPremium = adminState[chatId].isPremium;
+    } else if (adminState[chatId] && adminState[chatId].step === 'awaiting_free_video_link') {
+        const freeEmbedCode = userText;
+        const { selectedId, mediaType, isPremium } = adminState[chatId];
+        adminState[chatId].step = 'awaiting_pro_video_link';
+        adminState[chatId].freeEmbedCode = freeEmbedCode;
+        
+        let itemData = null;
+        try {
+            const response = await axios.get(`https://api.themoviedb.org/3/${mediaType}/${selectedId}?api_key=${TMDB_API_KEY}&language=es-ES`);
+            itemData = response.data;
+        } catch (error) {
+            console.error("Error al buscar en TMDB para agregar:", error);
+            bot.sendMessage(chatId, "No se pudo encontrar la información del contenido. Intenta de nuevo.");
+            adminState[chatId] = { step: 'menu' };
+            return;
+        }
+        
+        if (!itemData) {
+            bot.sendMessage(chatId, "No se encontró la información del contenido seleccionado. Intenta de nuevo.");
+            adminState[chatId] = { step: 'menu' };
+            return;
+        }
+        
+        const message = `Seleccionaste "${itemData.title || itemData.name}".\n\nAhora, por favor, envía el código HTML incrustado del reproductor PRO.`;
+        bot.sendMessage(chatId, message);
+
+    } else if (adminState[chatId] && adminState[chatId].step === 'awaiting_pro_video_link') {
+        const proEmbedCode = userText;
+        const { selectedId, mediaType, isPremium, freeEmbedCode } = adminState[chatId];
         
         let itemData = null;
         try {
@@ -378,7 +417,8 @@ bot.on('message', async (msg) => {
                 tmdbId: itemData.id,
                 title: itemData.title,
                 poster_path: itemData.poster_path,
-                embedCode,
+                freeEmbedCode,
+                proEmbedCode,
                 isPremium
             } : {
                 tmdbId: itemData.id,
@@ -388,7 +428,7 @@ bot.on('message', async (msg) => {
                 seasons: {
                     [1]: { 
                         episodes: {
-                            [1]: { embedCode }
+                            [1]: { freeEmbedCode, proEmbedCode }
                         }
                     }
                 }
@@ -397,7 +437,7 @@ bot.on('message', async (msg) => {
             const response = await axios.post(`${RENDER_BACKEND_URL}${endpoint}`, body);
 
             if (response.status === 200) {
-                bot.sendMessage(chatId, `¡El contenido "${itemData.title || itemData.name}" fue agregado exitosamente con el código embed!`);
+                bot.sendMessage(chatId, `¡El contenido "${itemData.title || itemData.name}" fue agregado exitosamente con ambos códigos embed!`);
             } else {
                 bot.sendMessage(chatId, `Hubo un error al agregar el contenido: ${response.data.error}`);
             }
@@ -440,13 +480,13 @@ bot.on('callback_query', async (callbackQuery) => {
             if (movieData) {
                 const selectedMovie = movieData;
                 adminState[chatId] = {
-                    step: 'awaiting_video_link',
+                    step: 'awaiting_free_video_link', // ✅ Ahora pedimos el código gratis primero
                     selectedId: selectedMovie.id,
                     mediaType: 'movie',
                     isPremium: false
                 };
                 const posterUrl = selectedMovie.poster_path ? `https://image.tmdb.org/t/p/w500${selectedMovie.poster_path}` : 'https://placehold.co/500x750?text=No+Poster';
-                const message = `Seleccionaste "${selectedMovie.title}".\n\nPor favor, envía el código HTML incrustado del reproductor.`;
+                const message = `Seleccionaste "${selectedMovie.title}".\n\nPor favor, envía el código HTML incrustado del reproductor GRATIS.`;
                 bot.sendPhoto(chatId, posterUrl, { caption: message });
             } else {
                 bot.sendMessage(chatId, 'Error: No se encontró la película solicitada en TMDB. Intenta buscarla manualmente.');
@@ -459,13 +499,13 @@ bot.on('callback_query', async (callbackQuery) => {
         const [_, mediaId, mediaType] = data.split('_');
         adminState[chatId] = {
             ...adminState[chatId],
-            step: 'awaiting_video_link',
+            step: 'awaiting_free_video_link', // ✅ Ahora pedimos el código gratis primero
             selectedId: parseInt(mediaId, 10),
             mediaType: mediaType
         };
         const itemData = adminState[chatId].results.find(m => m.id === adminState[chatId].selectedId);
         const posterUrl = itemData.poster_path ? `https://image.tmdb.org/t/p/w500${itemData.poster_path}` : 'https://placehold.co/500x750?text=No+Poster';
-        bot.sendPhoto(chatId, posterUrl, { caption: `Seleccionaste "${itemData.title || itemData.name}".\n\nPor favor, envía el código HTML incrustado del reproductor.` });
+        bot.sendPhoto(chatId, posterUrl, { caption: `Seleccionaste "${itemData.title || itemData.name}".\n\nPor favor, envía el código HTML incrustado del reproductor GRATIS.` });
     }
 });
 
