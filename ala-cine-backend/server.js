@@ -184,6 +184,10 @@ app.post('/add-movie', async (req, res) => {
                 isPremium
             };
         }
+        
+        // AGREGA ESTA LÍNEA AQUÍ
+        console.log("Datos que se enviarán a Firestore:", movieDataToSave);
+
         await movieRef.set(movieDataToSave);
         res.status(200).json({ message: 'Película agregada/actualizada en la base de datos.' });
 
