@@ -144,25 +144,38 @@ app.post('/add-movie', async (req, res) => {
     try {
         const { tmdbId, title, poster_path, freeEmbedCode, proEmbedCode, isPremium } = req.body;
         
-        if (!isPremium && !freeEmbedCode) {
-            return res.status(400).json({ error: 'Debes proporcionar el código de reproductor gratis para una película no premium.' });
-        } else if (isPremium && !proEmbedCode) {
-            return res.status(400).json({ error: 'Debes proporcionar el código de reproductor PRO para una película premium.' });
-        }
-        
+        // Verificar si la película ya existe
         const movieRef = db.collection('movies').doc(tmdbId.toString());
-        await movieRef.set({
-            tmdbId,
-            title,
-            poster_path,
-            freeEmbedCode: freeEmbedCode || null,
-            proEmbedCode: proEmbedCode || null,
-            isPremium
-        }, { merge: true });
-        res.status(200).json({ message: 'Película agregada a la base de datos.' });
+        const movieDoc = await movieRef.get();
+
+        if (movieDoc.exists) {
+            // Si la película ya existe, la actualizamos
+            const currentData = movieDoc.data();
+            const newData = {
+                ...currentData,
+                title,
+                poster_path,
+                freeEmbedCode: freeEmbedCode || currentData.freeEmbedCode,
+                proEmbedCode: proEmbedCode || currentData.proEmbedCode,
+                isPremium: isPremium || currentData.isPremium
+            };
+            await movieRef.set(newData);
+            res.status(200).json({ message: 'Película actualizada en la base de datos.' });
+        } else {
+            // Si la película no existe, la creamos
+            await movieRef.set({
+                tmdbId,
+                title,
+                poster_path,
+                freeEmbedCode, 
+                proEmbedCode,
+                isPremium
+            });
+            res.status(200).json({ message: 'Película agregada a la base de datos.' });
+        }
     } catch (error) {
-        console.error("Error al agregar película a Firestore:", error);
-        res.status(500).json({ error: 'Error al agregar la película a la base de datos.' });
+        console.error("Error al agregar/actualizar película en Firestore:", error);
+        res.status(500).json({ error: 'Error al agregar/actualizar la película en la base de datos.' });
     }
 });
 
@@ -170,31 +183,49 @@ app.post('/add-series-episode', async (req, res) => {
     try {
         const { tmdbId, title, poster_path, seasonNumber, episodeNumber, freeEmbedCode, proEmbedCode, isPremium } = req.body;
 
-        if (!isPremium && !freeEmbedCode) {
-            return res.status(400).json({ error: 'Debes proporcionar el código de reproductor gratis para una serie no premium.' });
-        } else if (isPremium && !proEmbedCode) {
-            return res.status(400).json({ error: 'Debes proporcionar el código de reproductor PRO para una serie premium.' });
-        }
-
         const seriesRef = db.collection('series').doc(tmdbId.toString());
-        await seriesRef.set({
-            tmdbId,
-            title,
-            poster_path,
-            isPremium,
-            seasons: {
-                [seasonNumber]: {
-                    episodes: {
-                        [episodeNumber]: { freeEmbedCode: freeEmbedCode || null, proEmbedCode: proEmbedCode || null }
+        const seriesDoc = await seriesRef.get();
+
+        if (seriesDoc.exists) {
+            const currentData = seriesDoc.data();
+            const newEpisodeData = {
+                freeEmbedCode: freeEmbedCode || (currentData.seasons?.[seasonNumber]?.episodes?.[episodeNumber]?.freeEmbedCode),
+                proEmbedCode: proEmbedCode || (currentData.seasons?.[seasonNumber]?.episodes?.[episodeNumber]?.proEmbedCode)
+            };
+            const updatedData = {
+                ...currentData,
+                isPremium: isPremium || currentData.isPremium,
+                seasons: {
+                    ...currentData.seasons,
+                    [seasonNumber]: {
+                        episodes: {
+                            ...(currentData.seasons?.[seasonNumber]?.episodes),
+                            [episodeNumber]: newEpisodeData
+                        }
                     }
                 }
-            }
-        }, { merge: true });
-
-        res.status(200).json({ message: `Episodio ${episodeNumber} de la temporada ${seasonNumber} agregado a la base de datos.` });
+            };
+            await seriesRef.set(updatedData);
+            res.status(200).json({ message: `Episodio ${episodeNumber} de la temporada ${seasonNumber} actualizado en la base de datos.` });
+        } else {
+            await seriesRef.set({
+                tmdbId,
+                title,
+                poster_path,
+                isPremium,
+                seasons: {
+                    [seasonNumber]: {
+                        episodes: {
+                            [episodeNumber]: { freeEmbedCode, proEmbedCode }
+                        }
+                    }
+                }
+            });
+            res.status(200).json({ message: `Episodio ${episodeNumber} de la temporada ${seasonNumber} agregado a la base de datos.` });
+        }
     } catch (error) {
-        console.error("Error al agregar episodio de serie a Firestore:", error);
-        res.status(500).json({ error: 'Error al agregar el episodio de la serie a la base de datos.' });
+        console.error("Error al agregar/actualizar episodio de serie en Firestore:", error);
+        res.status(500).json({ error: 'Error al agregar/actualizar el episodio de la serie en la base de datos.' });
     }
 });
 
