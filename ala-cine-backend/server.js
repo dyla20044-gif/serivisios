@@ -144,8 +144,8 @@ app.post('/add-movie', async (req, res) => {
     try {
         const { tmdbId, title, poster_path, freeEmbedCode, proEmbedCode, isPremium } = req.body;
         
-        if (!freeEmbedCode || !proEmbedCode) {
-            return res.status(400).json({ error: 'Debes proporcionar ambos códigos de reproductor (gratis y PRO).' });
+        if (!freeEmbedCode && !proEmbedCode) {
+            return res.status(400).json({ error: 'Debes proporcionar al menos un código de reproductor.' });
         }
         
         const movieRef = db.collection('movies').doc(tmdbId.toString());
@@ -168,8 +168,8 @@ app.post('/add-series-episode', async (req, res) => {
     try {
         const { tmdbId, title, poster_path, seasonNumber, episodeNumber, freeEmbedCode, proEmbedCode, isPremium } = req.body;
 
-        if (!freeEmbedCode || !proEmbedCode) {
-            return res.status(400).json({ error: 'Debes proporcionar ambos códigos de reproductor (gratis y PRO).' });
+        if (!freeEmbedCode && !proEmbedCode) {
+            return res.status(400).json({ error: 'Debes proporcionar al menos un código de reproductor.' });
         }
 
         const seriesRef = db.collection('series').doc(tmdbId.toString());
@@ -355,6 +355,7 @@ bot.on('message', async (msg) => {
     } else if (adminState[chatId] && adminState[chatId].step === 'awaiting_free_video_link') {
         const freeEmbedCode = userText;
         const { selectedId, mediaType, isPremium } = adminState[chatId];
+        
         adminState[chatId].step = 'awaiting_pro_video_link';
         adminState[chatId].freeEmbedCode = freeEmbedCode;
         
@@ -375,9 +376,46 @@ bot.on('message', async (msg) => {
             return;
         }
         
-        const message = `Seleccionaste "${itemData.title || itemData.name}".\n\nAhora, por favor, envía el código HTML incrustado del reproductor PRO.`;
-        bot.sendMessage(chatId, message);
-
+        // Si es una película PRO, pide el código PRO
+        if (isPremium) {
+            const message = `Seleccionaste "${itemData.title || itemData.name}".\n\nAhora, por favor, envía el código HTML incrustado del reproductor PRO.`;
+            bot.sendMessage(chatId, message);
+        } else { // Si es una película gratis, guarda el código gratis y finaliza el proceso.
+            try {
+                const endpoint = mediaType === 'movie' ? '/add-movie' : '/add-series-episode';
+                const body = mediaType === 'movie' ? {
+                    tmdbId: itemData.id,
+                    title: itemData.title,
+                    poster_path: itemData.poster_path,
+                    freeEmbedCode,
+                    isPremium
+                } : {
+                    tmdbId: itemData.id,
+                    title: itemData.name,
+                    poster_path: itemData.poster_path,
+                    isPremium,
+                    seasons: {
+                        [1]: { 
+                            episodes: {
+                                [1]: { freeEmbedCode }
+                            }
+                        }
+                    }
+                };
+                const response = await axios.post(`${RENDER_BACKEND_URL}${endpoint}`, body);
+    
+                if (response.status === 200) {
+                    bot.sendMessage(chatId, `¡El contenido "${itemData.title || itemData.name}" fue agregado exitosamente!`);
+                } else {
+                    bot.sendMessage(chatId, `Hubo un error al agregar el contenido: ${response.data.error}`);
+                }
+            } catch (error) {
+                console.error("Error al comunicarse con el backend:", error);
+                bot.sendMessage(chatId, "No se pudo conectar con el servidor para agregar el contenido.");
+            } finally {
+                adminState[chatId] = { step: 'menu' };
+            }
+        }
     } else if (adminState[chatId] && adminState[chatId].step === 'awaiting_pro_video_link') {
         const proEmbedCode = userText;
         const { selectedId, mediaType, isPremium, freeEmbedCode } = adminState[chatId];
