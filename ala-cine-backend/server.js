@@ -155,8 +155,8 @@ app.post('/add-movie', async (req, res) => {
             tmdbId,
             title,
             poster_path,
-            freeEmbedCode, 
-            proEmbedCode,
+            freeEmbedCode: freeEmbedCode || null,
+            proEmbedCode: proEmbedCode || null,
             isPremium
         }, { merge: true });
         res.status(200).json({ message: 'Película agregada a la base de datos.' });
@@ -185,7 +185,7 @@ app.post('/add-series-episode', async (req, res) => {
             seasons: {
                 [seasonNumber]: {
                     episodes: {
-                        [episodeNumber]: { freeEmbedCode, proEmbedCode }
+                        [episodeNumber]: { freeEmbedCode: freeEmbedCode || null, proEmbedCode: proEmbedCode || null }
                     }
                 }
             }
@@ -358,59 +358,14 @@ bot.on('message', async (msg) => {
         }
     } else if (adminState[chatId] && adminState[chatId].step === 'awaiting_free_video_link') {
         const freeEmbedCode = userText;
-        const { selectedId, mediaType, isPremium } = adminState[chatId];
-        
+        const { selectedId, mediaType, itemData } = adminState[chatId];
         adminState[chatId].freeEmbedCode = freeEmbedCode;
-        
-        // Ahora, el flujo es diferente si la película es gratis o no.
-        if (isPremium) {
-            adminState[chatId].step = 'awaiting_pro_video_link'; // Si es PRO, pide el código PRO
-            const itemData = adminState[chatId].itemData;
-            const message = `Seleccionaste "${itemData.title || itemData.name}".\n\nAhora, por favor, envía el código HTML incrustado del reproductor PRO.`;
-            bot.sendMessage(chatId, message);
-        } else {
-            // Si no es premium, guarda el código gratis y termina el proceso.
-            try {
-                const itemData = adminState[chatId].itemData;
-                const endpoint = mediaType === 'movie' ? '/add-movie' : '/add-series-episode';
-                const body = mediaType === 'movie' ? {
-                    tmdbId: itemData.id,
-                    title: itemData.title,
-                    poster_path: itemData.poster_path,
-                    freeEmbedCode,
-                    isPremium: false
-                } : {
-                    tmdbId: itemData.id,
-                    title: itemData.name,
-                    poster_path: itemData.poster_path,
-                    isPremium: false,
-                    seasons: {
-                        [1]: {
-                            episodes: {
-                                [1]: { freeEmbedCode }
-                            }
-                        }
-                    }
-                };
-                const response = await axios.post(`${RENDER_BACKEND_URL}${endpoint}`, body);
-                if (response.status === 200) {
-                    bot.sendMessage(chatId, `¡El contenido "${itemData.title || itemData.name}" fue agregado exitosamente!`);
-                } else {
-                    bot.sendMessage(chatId, `Hubo un error al agregar el contenido: ${response.data.error}`);
-                }
-            } catch (error) {
-                console.error("Error al comunicarse con el backend:", error);
-                bot.sendMessage(chatId, "No se pudo conectar con el servidor para agregar el contenido.");
-            } finally {
-                adminState[chatId] = { step: 'menu' };
-            }
-        }
-
+        adminState[chatId].step = 'awaiting_pro_video_link_optional';
+        bot.sendMessage(chatId, `¡Código gratis recibido! Ahora, si quieres, envía el código PRO, o escribe 'omitir'.`);
     } else if (adminState[chatId] && adminState[chatId].step === 'awaiting_pro_video_link') {
         const proEmbedCode = userText;
-        const { selectedId, mediaType, freeEmbedCode, isPremium } = adminState[chatId];
+        const { selectedId, mediaType, itemData } = adminState[chatId];
         
-        let itemData = adminState[chatId].itemData;
         if (!itemData) {
             bot.sendMessage(chatId, "No se encontró la información del contenido seleccionado. Intenta de nuevo.");
             adminState[chatId] = { step: 'menu' };
@@ -424,14 +379,55 @@ bot.on('message', async (msg) => {
                 tmdbId: itemData.id,
                 title: itemData.title,
                 poster_path: itemData.poster_path,
-                freeEmbedCode,
+                freeEmbedCode: null,
                 proEmbedCode,
-                isPremium
+                isPremium: true
             } : {
                 tmdbId: itemData.id,
                 title: itemData.name,
                 poster_path: itemData.poster_path,
-                isPremium,
+                isPremium: true,
+                seasons: {
+                    [1]: {
+                        episodes: {
+                            [1]: { freeEmbedCode: null, proEmbedCode }
+                        }
+                    }
+                }
+            };
+            
+            const response = await axios.post(`${RENDER_BACKEND_URL}${endpoint}`, body);
+
+            if (response.status === 200) {
+                bot.sendMessage(chatId, `¡El contenido "${itemData.title || itemData.name}" (PRO) fue agregado exitosamente!`);
+            } else {
+                bot.sendMessage(chatId, `Hubo un error al agregar el contenido: ${response.data.error}`);
+            }
+        } catch (error) {
+            console.error("Error al comunicarse con el backend:", error);
+            bot.sendMessage(chatId, "No se pudo conectar con el servidor para agregar el contenido.");
+        } finally {
+            adminState[chatId] = { step: 'menu' };
+        }
+    } else if (adminState[chatId] && adminState[chatId].step === 'awaiting_pro_video_link_optional') {
+        const proEmbedCode = userText === 'omitir' ? null : userText;
+        const { selectedId, mediaType, freeEmbedCode, itemData } = adminState[chatId];
+
+        try {
+            const endpoint = mediaType === 'movie' ? '/add-movie' : '/add-series-episode';
+            
+            const body = mediaType === 'movie' ? {
+                tmdbId: itemData.id,
+                title: itemData.title,
+                poster_path: itemData.poster_path,
+                freeEmbedCode,
+                proEmbedCode,
+                isPremium: proEmbedCode !== null
+            } : {
+                tmdbId: itemData.id,
+                title: itemData.name,
+                poster_path: itemData.poster_path,
+                isPremium: proEmbedCode !== null,
                 seasons: {
                     [1]: {
                         episodes: {
@@ -444,7 +440,7 @@ bot.on('message', async (msg) => {
             const response = await axios.post(`${RENDER_BACKEND_URL}${endpoint}`, body);
 
             if (response.status === 200) {
-                bot.sendMessage(chatId, `¡El contenido "${itemData.title || itemData.name}" fue agregado exitosamente con ambos códigos embed!`);
+                bot.sendMessage(chatId, `¡El contenido "${itemData.title || itemData.name}" fue agregado exitosamente!`);
             } else {
                 bot.sendMessage(chatId, `Hubo un error al agregar el contenido: ${response.data.error}`);
             }
@@ -463,14 +459,14 @@ bot.on('callback_query', async (callbackQuery) => {
     const chatId = msg.chat.id;
     if (chatId !== ADMIN_CHAT_ID) return;
 
-    if (data === 'subir_movie_pro' || data === 'subir_movie_gratis') {
+    if (data === 'subir_movie_gratis' || data === 'subir_movie_pro') {
         adminState[chatId] = {
             step: 'search',
             isPremium: data === 'subir_movie_pro',
             mediaType: 'movie'
         };
         bot.sendMessage(chatId, `Has elegido subir una película ${adminState[chatId].isPremium ? 'PRO' : 'gratis'}. Por favor, escribe el nombre de la película para buscar en TMDB.`);
-    } else if (data === 'subir_series_pro' || data === 'subir_series_gratis') {
+    } else if (data === 'subir_series_gratis' || data === 'subir_series_pro') {
         adminState[chatId] = {
             step: 'search',
             isPremium: data === 'subir_series_pro',
@@ -507,7 +503,6 @@ bot.on('callback_query', async (callbackQuery) => {
         const [_, mediaId, mediaType] = data.split('_');
         const itemData = adminState[chatId].results.find(m => m.id === parseInt(mediaId, 10));
         
-        // Ahora, el flujo cambia según si es PRO o gratis
         if (adminState[chatId].isPremium) {
             adminState[chatId] = {
                 ...adminState[chatId],
