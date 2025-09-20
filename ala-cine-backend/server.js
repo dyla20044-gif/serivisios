@@ -312,32 +312,16 @@ bot.onText(/\/start/, (msg) => {
             inline_keyboard: [
                 [{ text: 'Agregar películas', callback_data: 'add_movie' }],
                 [{ text: 'Agregar series', callback_data: 'add_series' }],
-                [{ text: 'Carrusel', callback_data: 'carousel' }],
                 [{ text: 'Gestionar películas', callback_data: 'manage_movies' }],
-                [{ text: 'Eliminar película', callback_data: 'delete_movie' }]
+                [{ text: 'Eliminar película', callback_data: 'delete_movie' }],
+                [{ text: 'Ver solicitudes', callback_data: 'pedidos' }]
             ]
         }
     };
     bot.sendMessage(chatId, '¡Hola! ¿Qué quieres hacer hoy?', options);
 });
-
-bot.onText(/\/subir/, (msg) => {
-    const chatId = msg.chat.id;
-    if (chatId !== ADMIN_CHAT_ID) return;
-    adminState[chatId] = { step: 'menu' };
-    const options = {
-        reply_markup: {
-            inline_keyboard: [
-                [{ text: 'Agregar películas', callback_data: 'add_movie' }],
-                [{ text: 'Agregar series', callback_data: 'add_series' }],
-                [{ text: 'Carrusel', callback_data: 'carousel' }],
-                [{ text: 'Gestionar películas', callback_data: 'manage_movies' }],
-                [{ text: 'Eliminar película', callback_data: 'delete_movie' }]
-            ]
-        }
-    };
-    bot.sendMessage(chatId, '¡Hola! ¿Qué quieres hacer hoy?', options);
-});
+// Se elimina el comando /subir, ya que es duplicado
+// bot.onText(/\/subir/, ...);
 
 bot.onText(/\/editar/, (msg) => {
     const chatId = msg.chat.id;
@@ -491,6 +475,38 @@ bot.on('message', async (msg) => {
             console.error("Error al buscar en TMDB:", error);
             bot.sendMessage(chatId, 'Hubo un error al buscar el contenido. Intenta de nuevo.');
         }
+    } else if (adminState[chatId] && adminState[chatId].step === 'search_manage') {
+        try {
+            const searchUrl = `https://api.themoviedb.org/3/search/multi?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(userText)}&language=es-ES`;
+            const response = await axios.get(searchUrl);
+            const data = response.data;
+            if (data.results && data.results.length > 0) {
+                const results = data.results.slice(0, 5).filter(m => m.media_type === 'movie' || m.media_type === 'tv');
+                adminState[chatId].results = results;
+                for (const item of results) {
+                    const posterUrl = item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : 'https://placehold.co/500x750?text=No+Poster';
+                    const title = item.title || item.name;
+                    const date = item.release_date || item.first_air_date;
+                    const message = `🎬 *${title}* (${date ? date.substring(0, 4) : 'N/A'})\n\n${item.overview || 'Sin sinopsis disponible.'}`;
+                    const options = {
+                        caption: message,
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            inline_keyboard: [
+                                [{ text: '✅ Desbloquear en PRO', callback_data: `manage_pro_${item.id}_${item.media_type}` }],
+                                [{ text: '🔒 Mantener en Gratis', callback_data: `manage_free_${item.id}_${item.media_type}` }]
+                            ]
+                        }
+                    };
+                    bot.sendPhoto(chatId, posterUrl, options);
+                }
+            } else {
+                bot.sendMessage(chatId, `No se encontraron resultados para tu búsqueda. Intenta de nuevo.`);
+            }
+        } catch (error) {
+            console.error("Error al buscar en TMDB:", error);
+            bot.sendMessage(chatId, 'Hubo un error al buscar el contenido. Intenta de nuevo.');
+        }
     }
 });
 
@@ -563,11 +579,37 @@ bot.on('callback_query', async (callbackQuery) => {
         bot.sendMessage(chatId, 'Por favor, escribe el nombre de la película o serie que quieres gestionar.');
     } else if (data.startsWith('delete_select_')) {
         const [_, tmdbId, mediaType] = data.split('_');
-        // Aquí iría la lógica para eliminar.
-        bot.sendMessage(chatId, `La lógica para eliminar el contenido ${tmdbId} (${mediaType}) está lista para ser implementada.`);
+        try {
+            const collectionName = (mediaType === 'movie') ? 'movies' : 'series';
+            await db.collection(collectionName).doc(tmdbId).delete();
+            bot.sendMessage(chatId, `El contenido con ID ${tmdbId} ha sido eliminado con éxito.`);
+        } catch (error) {
+            console.error("Error al eliminar el contenido:", error);
+            bot.sendMessage(chatId, "Hubo un error al intentar eliminar el contenido.");
+        }
     } else if (data === 'delete_movie') {
         adminState[chatId] = { step: 'search_delete' };
         bot.sendMessage(chatId, 'Por favor, escribe el nombre de la película o serie que quieres eliminar.');
+    } else if (data.startsWith('manage_pro_') || data.startsWith('manage_free_')) {
+        const [action, tmdbId, mediaType] = data.split('_');
+        const isPremium = action === 'manage_pro';
+        const collectionName = (mediaType === 'movie') ? 'movies' : 'series';
+        
+        try {
+            const docRef = db.collection(collectionName).doc(tmdbId);
+            const doc = await docRef.get();
+            if (doc.exists) {
+                await docRef.update({
+                    isPremium: isPremium
+                });
+                bot.sendMessage(chatId, `¡El estado del contenido con ID ${tmdbId} ha sido actualizado con éxito!`);
+            } else {
+                bot.sendMessage(chatId, `Error: Contenido con ID ${tmdbId} no encontrado en la base de datos.`);
+            }
+        } catch (error) {
+            console.error("Error al gestionar el contenido:", error);
+            bot.sendMessage(chatId, "Hubo un error al intentar gestionar el contenido.");
+        }
     }
 });
 
