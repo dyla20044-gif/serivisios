@@ -77,6 +77,7 @@ app.post('/request-movie', async (req, res) => {
     const posterPath = req.body.poster_path;
     const posterUrl = posterPath ? `https://image.tmdb.org/t/p/w500${posterPath}` : 'https://placehold.co/500x750?text=No+Poster';
     
+    // ✅ Corregido: Se usa el ID de la película para el callback_data.
     const tmdbId = req.body.tmdbId;
 
     const message = `🔔 *Solicitud de película:* ${movieTitle}\n\nUn usuario ha solicitado esta película.`;
@@ -99,6 +100,11 @@ app.post('/request-movie', async (req, res) => {
     }
 });
 
+// -----------------------------------------------------------
+// === INICIO DEL CÓDIGO MEJORADO PARA EL ENDPOINT DE VIDEO ===
+// -----------------------------------------------------------
+
+// ✅ Nuevo Endpoint para obtener el código embed
 app.get('/api/get-embed-code', async (req, res) => {
   const { id, season, episode, isPro } = req.query;
   
@@ -140,6 +146,11 @@ app.get('/api/get-embed-code', async (req, res) => {
 });
 
 
+// -----------------------------------------------------------
+// === FIN DEL CÓDIGO MEJORADO PARA EL ENDPOINT DE VIDEO ===
+// -----------------------------------------------------------
+
+
 app.post('/add-movie', async (req, res) => {
     try {
         const { tmdbId, title, poster_path, freeEmbedCode, proEmbedCode, isPremium } = req.body;
@@ -157,8 +168,8 @@ app.post('/add-movie', async (req, res) => {
                 ...existingData,
                 title: title,
                 poster_path: poster_path,
-                freeEmbedCode: freeEmbedCode !== null ? freeEmbedCode : existingData.freeEmbedCode,
-                proEmbedCode: proEmbedCode !== null ? proEmbedCode : existingData.proEmbedCode,
+                freeEmbedCode: freeEmbedCode !== undefined ? freeEmbedCode : existingData.freeEmbedCode,
+                proEmbedCode: proEmbedCode !== undefined ? proEmbedCode : existingData.proEmbedCode,
                 // Si se envía como GRATIS, se sobreescribe isPremium a false. Si se envía como PRO, se sobreescribe a true.
                 isPremium: isPremium
             };
@@ -196,8 +207,8 @@ app.post('/add-series-episode', async (req, res) => {
             const existingEpisode = existingData.seasons?.[seasonNumber]?.episodes?.[episodeNumber] || {};
             
             const newEpisodeData = {
-                freeEmbedCode: freeEmbedCode !== null ? freeEmbedCode : existingEpisode.freeEmbedCode,
-                proEmbedCode: proEmbedCode !== null ? proEmbedCode : existingEpisode.proEmbedCode
+                freeEmbedCode: freeEmbedCode !== undefined ? freeEmbedCode : existingEpisode.freeEmbedCode,
+                proEmbedCode: proEmbedCode !== undefined ? proEmbedCode : existingEpisode.proEmbedCode
             };
             
             seriesDataToSave = {
@@ -520,7 +531,7 @@ bot.on('callback_query', async (callbackQuery) => {
             finalFreeEmbedCode = freeEmbedCode;
             finalProEmbedCode = null;
         } else {
-            isPremium = false;
+            isPremium = false; // Si se publica en ambas, se considera gratis para el usuario
             finalFreeEmbedCode = freeEmbedCode;
             finalProEmbedCode = proEmbedCode;
         }
