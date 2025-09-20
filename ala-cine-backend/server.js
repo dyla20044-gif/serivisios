@@ -29,7 +29,7 @@ const token = process.env.TELEGRAM_BOT_TOKEN;
 
 // === SOLUCIÓN 1: CAMBIO DE POLLING A WEBHOOK PARA TELEGRAM ===
 const RENDER_BACKEND_URL = 'https://serivisios.onrender.com';
-const bot = new TelegramBot(token); // Eliminamos el polling aquí
+const bot = new TelegramBot(token);
 const webhookUrl = `${RENDER_BACKEND_URL}/bot${token}`;
 bot.setWebHook(webhookUrl);
 
@@ -77,7 +77,6 @@ app.post('/request-movie', async (req, res) => {
     const posterPath = req.body.poster_path;
     const posterUrl = posterPath ? `https://image.tmdb.org/t/p/w500${posterPath}` : 'https://placehold.co/500x750?text=No+Poster';
     
-    // ✅ Corregido: Se usa el ID de la película para el callback_data.
     const tmdbId = req.body.tmdbId;
 
     const message = `🔔 *Solicitud de película:* ${movieTitle}\n\nUn usuario ha solicitado esta película.`;
@@ -100,11 +99,6 @@ app.post('/request-movie', async (req, res) => {
     }
 });
 
-// -----------------------------------------------------------
-// === INICIO DEL CÓDIGO MEJORADO PARA EL ENDPOINT DE VIDEO ===
-// -----------------------------------------------------------
-
-// ✅ Nuevo Endpoint para obtener el código embed
 app.get('/api/get-embed-code', async (req, res) => {
   const { id, season, episode, isPro } = req.query;
   
@@ -144,11 +138,6 @@ app.get('/api/get-embed-code', async (req, res) => {
     res.status(500).json({ error: "Error interno del servidor" });
   }
 });
-
-
-// -----------------------------------------------------------
-// === FIN DEL CÓDIGO MEJORADO PARA EL ENDPOINT DE VIDEO ===
-// -----------------------------------------------------------
 
 
 app.post('/add-movie', async (req, res) => {
@@ -267,9 +256,9 @@ bot.onText(/\/start/, (msg) => {
         reply_markup: {
             inline_keyboard: [
                 [{ text: 'Subir película gratis', callback_data: 'subir_movie_gratis' }],
-                [{ text: 'Subir película Premium', callback_data: 'subir_movie_premium' }],
+                [{ text: 'Subir película PRO', callback_data: 'subir_movie_pro' }],
                 [{ text: 'Subir serie gratis', callback_data: 'subir_series_gratis' }],
-                [{ text: 'Subir serie Premium', callback_data: 'subir_series_premium' }]
+                [{ text: 'Subir serie PRO', callback_data: 'subir_series_pro' }]
             ]
         }
     };
@@ -284,9 +273,9 @@ bot.onText(/\/subir/, (msg) => {
         reply_markup: {
             inline_keyboard: [
                 [{ text: 'Subir película gratis', callback_data: 'subir_movie_gratis' }],
-                [{ text: 'Subir película Premium', callback_data: 'subir_movie_premium' }],
+                [{ text: 'Subir película PRO', callback_data: 'subir_movie_pro' }],
                 [{ text: 'Subir serie gratis', callback_data: 'subir_series_gratis' }],
-                [{ text: 'Subir serie Premium', callback_data: 'subir_series_premium' }]
+                [{ text: 'Subir serie PRO', callback_data: 'subir_series_pro' }]
             ]
         }
     };
@@ -456,20 +445,20 @@ bot.on('callback_query', async (callbackQuery) => {
     const chatId = msg.chat.id;
     if (chatId !== ADMIN_CHAT_ID) return;
 
-    if (data === 'subir_movie_gratis' || data === 'subir_movie_premium') {
+    if (data === 'subir_movie_pro' || data === 'subir_movie_gratis') {
         adminState[chatId] = {
             step: 'search',
-            isPremium: data === 'subir_movie_premium',
+            isPremium: data === 'subir_movie_pro',
             mediaType: 'movie'
         };
-        bot.sendMessage(chatId, `Has elegido subir una película ${adminState[chatId].isPremium ? 'Premium' : 'gratis'}. Por favor, escribe el nombre de la película para buscar en TMDB.`);
-    } else if (data === 'subir_series_gratis' || data === 'subir_series_premium') {
+        bot.sendMessage(chatId, `Has elegido subir una película ${adminState[chatId].isPremium ? 'PRO' : 'gratis'}. Por favor, escribe el nombre de la película para buscar en TMDB.`);
+    } else if (data === 'subir_series_pro' || data === 'subir_series_gratis') {
         adminState[chatId] = {
             step: 'search',
-            isPremium: data === 'subir_series_premium',
+            isPremium: data === 'subir_series_pro',
             mediaType: 'tv'
         };
-        bot.sendMessage(chatId, `Has elegido subir una serie ${adminState[chatId].isPremium ? 'Premium' : 'gratis'}. Por favor, escribe el nombre de la serie para buscar en TMDB.`);
+        bot.sendMessage(chatId, `Has elegido subir una serie ${adminState[chatId].isPremium ? 'PRO' : 'gratis'}. Por favor, escribe el nombre de la serie para buscar en TMDB.`);
     } else if (data.startsWith('solicitud_')) {
         const tmdbId = data.replace('solicitud_', '');
         try {
@@ -480,7 +469,7 @@ bot.on('callback_query', async (callbackQuery) => {
             if (movieData) {
                 const selectedMovie = movieData;
                 adminState[chatId] = {
-                    step: 'awaiting_free_video_link', // ✅ Ahora pedimos el código gratis primero
+                    step: 'awaiting_free_video_link',
                     selectedId: selectedMovie.id,
                     mediaType: 'movie',
                     isPremium: false
@@ -499,7 +488,7 @@ bot.on('callback_query', async (callbackQuery) => {
         const [_, mediaId, mediaType] = data.split('_');
         adminState[chatId] = {
             ...adminState[chatId],
-            step: 'awaiting_free_video_link', // ✅ Ahora pedimos el código gratis primero
+            step: 'awaiting_free_video_link',
             selectedId: parseInt(mediaId, 10),
             mediaType: mediaType
         };
