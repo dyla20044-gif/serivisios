@@ -519,34 +519,30 @@ bot.on('callback_query', async (callbackQuery) => {
     } else if (data === 'publish_free_only' || data === 'publish_pro_only' || data === 'publish_both') {
         const { selectedMovie, freeEmbedCode, proEmbedCode } = adminState[chatId];
         let isPremium;
-        let finalFreeEmbedCode;
-        let finalProEmbedCode;
+        const body = {
+            tmdbId: selectedMovie.id,
+            title: selectedMovie.title,
+            poster_path: selectedMovie.poster_path,
+        };
 
         if (data === 'publish_pro_only') {
             isPremium = true;
-            finalFreeEmbedCode = null;
-            finalProEmbedCode = proEmbedCode;
+            body.proEmbedCode = proEmbedCode;
         } else if (data === 'publish_free_only') {
             isPremium = false;
-            finalFreeEmbedCode = freeEmbedCode;
-            finalProEmbedCode = null;
-        } else {
-            isPremium = false; // Si se publica en ambas, se considera gratis para el usuario
-            finalFreeEmbedCode = freeEmbedCode;
-            finalProEmbedCode = proEmbedCode;
+            body.freeEmbedCode = freeEmbedCode;
+        } else { // publish_both
+            isPremium = false;
+            body.freeEmbedCode = freeEmbedCode;
+            body.proEmbedCode = proEmbedCode;
         }
+        
+        // Asigna isPremium al final, después de toda la lógica
+        body.isPremium = isPremium;
 
         try {
-            const body = {
-                tmdbId: selectedMovie.id,
-                title: selectedMovie.title,
-                poster_path: selectedMovie.poster_path,
-                freeEmbedCode: finalFreeEmbedCode,
-                proEmbedCode: finalProEmbedCode,
-                isPremium: isPremium
-            };
             const response = await axios.post(`${RENDER_BACKEND_URL}/add-movie`, body);
-
+            
             if (response.status === 200) {
                 bot.sendMessage(chatId, `¡La película "${selectedMovie.title}" ha sido publicada con éxito!`);
             } else {
