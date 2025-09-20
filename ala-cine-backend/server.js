@@ -477,35 +477,34 @@ bot.on('message', async (msg) => {
         }
     } else if (adminState[chatId] && adminState[chatId].step === 'search_manage') {
         try {
-            const searchUrl = `https://api.themoviedb.org/3/search/multi?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(userText)}&language=es-ES`;
-            const response = await axios.get(searchUrl);
-            const data = response.data;
-            if (data.results && data.results.length > 0) {
-                const results = data.results.slice(0, 5).filter(m => m.media_type === 'movie' || m.media_type === 'tv');
-                adminState[chatId].results = results;
-                for (const item of results) {
-                    const posterUrl = item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : 'https://placehold.co/500x750?text=No+Poster';
-                    const title = item.title || item.name;
-                    const date = item.release_date || item.first_air_date;
-                    const message = `🎬 *${title}* (${date ? date.substring(0, 4) : 'N/A'})\n\n${item.overview || 'Sin sinopsis disponible.'}`;
-                    const options = {
-                        caption: message,
-                        parse_mode: 'Markdown',
-                        reply_markup: {
-                            inline_keyboard: [
-                                [{ text: '✅ Desbloquear en PRO', callback_data: `manage_pro_${item.id}_${item.media_type}` }],
-                                [{ text: '🔒 Mantener en Gratis', callback_data: `manage_free_${item.id}_${item.media_type}` }]
-                            ]
-                        }
-                    };
-                    bot.sendPhoto(chatId, posterUrl, options);
-                }
-            } else {
-                bot.sendMessage(chatId, `No se encontraron resultados para tu búsqueda. Intenta de nuevo.`);
+            const moviesRef = db.collection('movies');
+            const q = moviesRef.where('title', '>=', userText).where('title', '<=', userText + '\uf8ff');
+            const snapshot = await q.get();
+
+            if (snapshot.empty) {
+                return bot.sendMessage(chatId, `No se encontraron películas en tu base de datos con el título "${userText}".`);
+            }
+
+            const results = snapshot.docs.map(doc => doc.data());
+            for (const item of results) {
+                const posterUrl = item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : 'https://placehold.co/500x750?text=No+Poster';
+                const message = `🎬 *${item.title}*\n\nEstado actual: *${item.isPremium ? 'PRO' : 'GRATIS'}*`;
+                
+                const options = {
+                    caption: message,
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: '✅ Desbloquear en PRO', callback_data: `manage_pro_${item.tmdbId}_movie` }],
+                            [{ text: '🔒 Mantener en Gratis', callback_data: `manage_free_${item.tmdbId}_movie` }]
+                        ]
+                    }
+                };
+                bot.sendPhoto(chatId, posterUrl, options);
             }
         } catch (error) {
-            console.error("Error al buscar en TMDB:", error);
-            bot.sendMessage(chatId, 'Hubo un error al buscar el contenido. Intenta de nuevo.');
+            console.error("Error al buscar en Firestore:", error);
+            bot.sendMessage(chatId, 'Hubo un error al buscar el contenido en la base de datos.');
         }
     }
 });
@@ -609,6 +608,17 @@ bot.on('callback_query', async (callbackQuery) => {
         } catch (error) {
             console.error("Error al gestionar el contenido:", error);
             bot.sendMessage(chatId, "Hubo un error al intentar gestionar el contenido.");
+        }
+    } else if (data.startsWith('solicitud_')) {
+        const tmdbId = data.replace('solicitud_', '');
+        try {
+            const response = await axios.get(`https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${TMDB_API_KEY}&language=es-ES`);
+            const movieData = response.data;
+            adminState[chatId] = { step: 'awaiting_free_video_link', selectedMovie: movieData };
+            bot.sendMessage(chatId, `Seleccionaste "${movieData.title}". Por favor, envía el código HTML del reproductor GRATIS.`);
+        } catch (error) {
+            console.error("Error al obtener detalles de la película desde TMDb:", error);
+            bot.sendMessage(chatId, 'Hubo un error al obtener la información de la película. Por favor, intenta de nuevo.');
         }
     }
 });
