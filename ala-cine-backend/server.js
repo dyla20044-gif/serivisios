@@ -489,8 +489,8 @@ bot.on('message', async (msg) => {
         
         try {
             const body = {
-                tmdbId: selectedSeries.id.toString(),
-                title: selectedSeries.name,
+                tmdbId: selectedSeries.tmdbId.toString(),
+                title: selectedSeries.title || selectedSeries.name,
                 poster_path: selectedSeries.poster_path,
                 seasonNumber: season,
                 episodeNumber: episode,
@@ -499,13 +499,13 @@ bot.on('message', async (msg) => {
                 isPremium: !!proEmbedCode && !freeEmbedCode
             };
             await axios.post(`${RENDER_BACKEND_URL}/add-series-episode`, body);
-            bot.sendMessage(chatId, `✅ Episodio ${episode} de la temporada ${season} de "${selectedSeries.name}" agregado con éxito.`);
+            bot.sendMessage(chatId, `✅ Episodio ${episode} de la temporada ${season} de "${selectedSeries.title || selectedSeries.name}" agregado con éxito.`);
             
             adminState[chatId].step = 'add_episode_next_option';
             const options = {
                 reply_markup: {
                     inline_keyboard: [
-                        [{ text: 'Añadir siguiente episodio', callback_data: `add_next_episode_${selectedSeries.id}` }],
+                        [{ text: 'Añadir siguiente episodio', callback_data: `add_next_episode_${selectedSeries.tmdbId}` }],
                         [{ text: 'Volver al menú principal', callback_data: 'start' }]
                     ]
                 }
