@@ -519,21 +519,18 @@ bot.on('callback_query', async (callbackQuery) => {
     } else if (data === 'publish_free_only' || data === 'publish_pro_only' || data === 'publish_both') {
         const { selectedMovie, freeEmbedCode, proEmbedCode } = adminState[chatId];
         let isPremium;
-        let finalFreeEmbedCode;
-        let finalProEmbedCode;
+        let finalFreeEmbedCode = freeEmbedCode;
+        let finalProEmbedCode = proEmbedCode;
 
         if (data === 'publish_pro_only') {
             isPremium = true;
             finalFreeEmbedCode = null;
-            finalProEmbedCode = proEmbedCode;
         } else if (data === 'publish_free_only') {
             isPremium = false;
-            finalFreeEmbedCode = freeEmbedCode;
             finalProEmbedCode = null;
         } else {
-            isPremium = false; // Si se publica en ambas, se considera gratis para el usuario
-            finalFreeEmbedCode = freeEmbedCode;
-            finalProEmbedCode = proEmbedCode;
+            // Elimina la propiedad isPremium si tiene ambos reproductores
+            isPremium = null;
         }
 
         try {
@@ -543,8 +540,12 @@ bot.on('callback_query', async (callbackQuery) => {
                 poster_path: selectedMovie.poster_path,
                 freeEmbedCode: finalFreeEmbedCode,
                 proEmbedCode: finalProEmbedCode,
-                isPremium: isPremium
             };
+            
+            if (isPremium !== null) {
+                body.isPremium = isPremium;
+            }
+            
             const response = await axios.post(`${RENDER_BACKEND_URL}/add-movie`, body);
 
             if (response.status === 200) {
