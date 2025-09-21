@@ -605,7 +605,16 @@ bot.on('callback_query', async (callbackQuery) => {
         bot.sendMessage(chatId, `Habilitando la versión PRO para "${mediaData.title}". Por favor, envía el reproductor PRO.`);
     } else if (data.startsWith('manage_series_')) {
         const tmdbId = data.replace('manage_series_', '');
-        const seriesData = adminState[chatId].results.find(m => m.id === parseInt(tmdbId, 10));
+        // Obtener la información de la serie desde la base de datos
+        const seriesRef = db.collection('series').doc(tmdbId);
+        const seriesDoc = await seriesRef.get();
+        const seriesData = seriesDoc.exists ? seriesDoc.data() : null;
+
+        if (!seriesData) {
+            bot.sendMessage(chatId, 'Error: Serie no encontrada en la base de datos.');
+            return;
+        }
+
         adminState[chatId] = { selectedSeries: seriesData, step: 'manage_series_options' };
         
         const options = {
@@ -617,22 +626,27 @@ bot.on('callback_query', async (callbackQuery) => {
                 ]
             }
         };
-        bot.sendMessage(chatId, `¿Qué quieres hacer con "${seriesData.name}"?`, options);
+        bot.sendMessage(chatId, `¿Qué quieres hacer con "${seriesData.title}"?`, options);
     } else if (data.startsWith('add_episode_series_')) {
         const tmdbId = data.replace('add_episode_series_', '');
-        // Aquí obtienes la información de la serie directamente de la base de datos para no depender del estado anterior
         const seriesRef = db.collection('series').doc(tmdbId);
         const seriesDoc = await seriesRef.get();
         const seriesData = seriesDoc.data();
         
-        // Ahora guardas la información en el estado del usuario para los siguientes pasos
+        let lastEpisode = 0;
+        if (seriesData.seasons && seriesData.seasons[1] && seriesData.seasons[1].episodes) {
+            const episodes = seriesData.seasons[1].episodes;
+            lastEpisode = Object.keys(episodes).length;
+        }
+        const nextEpisode = lastEpisode + 1;
+        
         adminState[chatId] = { 
             step: 'add_pro_link_series', 
             selectedSeries: seriesData, 
             season: 1, 
-            episode: 1 
+            episode: nextEpisode
         };
-        bot.sendMessage(chatId, `Seleccionaste "${seriesData.title}". Envía el reproductor PRO para el episodio 1 de la temporada 1. Si no hay, escribe "no".`);
+        bot.sendMessage(chatId, `Seleccionaste "${seriesData.title}". Envía el reproductor PRO para el episodio ${nextEpisode} de la temporada 1. Si no hay, escribe "no".`);
     } else if (data === 'add_next_episode') {
         const { selectedSeries, season, episode } = adminState[chatId];
         const nextEpisode = episode + 1;
