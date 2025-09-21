@@ -184,10 +184,6 @@ app.post('/add-movie', async (req, res) => {
                 isPremium
             };
         }
-        
-        // AGREGA ESTA LÍNEA AQUÍ
-        console.log("Datos que se enviarán a Firestore:", movieDataToSave);
-
         await movieRef.set(movieDataToSave);
         res.status(200).json({ message: 'Película agregada/actualizada en la base de datos.' });
 
@@ -495,62 +491,6 @@ bot.on('message', async (msg) => {
             console.error("Error al buscar en TMDB:", error);
             bot.sendMessage(chatId, 'Hubo un error al buscar el contenido. Intenta de nuevo.');
         }
-    } else if (adminState[chatId] && adminState[chatId].step === 'search_manage') {
-        try {
-            const searchUrl = `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(userText)}&language=es-ES`;
-            const response = await axios.get(searchUrl);
-            const data = response.data;
-            if (data.results && data.results.length > 0) {
-                const results = data.results.slice(0, 5);
-                adminState[chatId].results = results;
-                
-                for (const item of results) {
-                    const posterUrl = item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : 'https://placehold.co/500x750?text=No+Poster';
-                    const title = item.title || item.name;
-                    const date = item.release_date || item.first_air_date;
-                    const message = `🎬 *${title}* (${date ? date.substring(0, 4) : 'N/A'})\n\n${item.overview || 'Sin sinopsis disponible.'}`;
-                    const options = {
-                        caption: message,
-                        parse_mode: 'Markdown',
-                        reply_markup: {
-                            inline_keyboard: [[{
-                                text: '📝 Gestionar',
-                                callback_data: `manage_movie_select_${item.id}`
-                            }]]
-                        }
-                    };
-                    bot.sendPhoto(chatId, posterUrl, options);
-                }
-            } else {
-                bot.sendMessage(chatId, `No se encontraron resultados para tu búsqueda. Intenta de nuevo.`);
-            }
-        } catch (error) {
-            console.error("Error al buscar en TMDB:", error);
-            bot.sendMessage(chatId, 'Hubo un error al buscar el contenido. Intenta de nuevo.');
-        }
-    } else if (adminState[chatId] && adminState[chatId].step === 'awaiting_free_video_link_edit') {
-        const { selectedMovie } = adminState[chatId];
-        const freeEmbedCode = userText;
-
-        try {
-            const body = {
-                tmdbId: selectedMovie.id,
-                freeEmbedCode: freeEmbedCode,
-                isPremium: false // La película ahora tiene ambas versiones, por lo que no es solo PRO
-            };
-            const response = await axios.post(`${RENDER_BACKEND_URL}/add-movie`, body);
-
-            if (response.status === 200) {
-                bot.sendMessage(chatId, `¡La película "${selectedMovie.title}" ha sido actualizada con éxito! Ahora también está disponible en versión gratis.`);
-            } else {
-                bot.sendMessage(chatId, `Hubo un error al actualizar la película: ${response.data.error}`);
-            }
-        } catch (error) {
-            console.error("Error al actualizar la película:", error);
-            bot.sendMessage(chatId, 'Hubo un error al actualizar la película.');
-        } finally {
-            adminState[chatId] = { step: 'menu' };
-        }
     }
 });
 
@@ -579,30 +519,34 @@ bot.on('callback_query', async (callbackQuery) => {
     } else if (data === 'publish_free_only' || data === 'publish_pro_only' || data === 'publish_both') {
         const { selectedMovie, freeEmbedCode, proEmbedCode } = adminState[chatId];
         let isPremium;
-        const body = {
-            tmdbId: selectedMovie.id,
-            title: selectedMovie.title,
-            poster_path: selectedMovie.poster_path,
-        };
+        let finalFreeEmbedCode;
+        let finalProEmbedCode;
 
         if (data === 'publish_pro_only') {
             isPremium = true;
-            body.proEmbedCode = proEmbedCode;
+            finalFreeEmbedCode = null;
+            finalProEmbedCode = proEmbedCode;
         } else if (data === 'publish_free_only') {
             isPremium = false;
-            body.freeEmbedCode = freeEmbedCode;
-        } else { // publish_both
-            isPremium = false;
-            body.freeEmbedCode = freeEmbedCode;
-            body.proEmbedCode = proEmbedCode;
+            finalFreeEmbedCode = freeEmbedCode;
+            finalProEmbedCode = null;
+        } else {
+            isPremium = false; // Si se publica en ambas, se considera gratis para el usuario
+            finalFreeEmbedCode = freeEmbedCode;
+            finalProEmbedCode = proEmbedCode;
         }
-        
-        // Asigna isPremium al final, después de toda la lógica
-        body.isPremium = isPremium;
 
         try {
+            const body = {
+                tmdbId: selectedMovie.id,
+                title: selectedMovie.title,
+                poster_path: selectedMovie.poster_path,
+                freeEmbedCode: finalFreeEmbedCode,
+                proEmbedCode: finalProEmbedCode,
+                isPremium: isPremium
+            };
             const response = await axios.post(`${RENDER_BACKEND_URL}/add-movie`, body);
-            
+
             if (response.status === 200) {
                 bot.sendMessage(chatId, `¡La película "${selectedMovie.title}" ha sido publicada con éxito!`);
             } else {
@@ -617,40 +561,6 @@ bot.on('callback_query', async (callbackQuery) => {
     } else if (data === 'manage_movies') {
         adminState[chatId] = { step: 'search_manage' };
         bot.sendMessage(chatId, 'Por favor, escribe el nombre de la película o serie que quieres gestionar.');
-    } else if (data.startsWith('manage_movie_select_')) {
-        const tmdbId = data.replace('manage_movie_select_', '');
-        const movieData = adminState[chatId].results.find(m => m.id === parseInt(tmdbId, 10));
-        
-        // Aquí verificamos si la película ya existe en la base de datos
-        const movieRef = db.collection('movies').doc(tmdbId);
-        const movieDoc = await movieRef.get();
-
-        if (movieDoc.exists) {
-            const existingData = movieDoc.data();
-            const hasPro = existingData.proEmbedCode;
-            const hasFree = existingData.freeEmbedCode;
-
-            if (hasPro && !hasFree) {
-                adminState[chatId] = { step: 'awaiting_free_video_link_edit', selectedMovie: movieData };
-                const options = {
-                    reply_markup: {
-                        inline_keyboard: [[{ text: 'Añadir versión gratis', callback_data: `add_free_version_${tmdbId}` }]]
-                    }
-                };
-                bot.sendMessage(chatId, `La película "${movieData.title}" ya tiene una versión PRO. ¿Quieres añadir la versión gratis?`, options);
-            } else {
-                bot.sendMessage(chatId, `La película "${movieData.title}" ya está completa (o solo está en versión gratis). No es necesario editarla.`);
-                adminState[chatId] = { step: 'menu' };
-            }
-        } else {
-            bot.sendMessage(chatId, `La película "${movieData.title}" no se encuentra en la base de datos. Por favor, agrégala usando la opción "Agregar películas".`);
-            adminState[chatId] = { step: 'menu' };
-        }
-    } else if (data.startsWith('add_free_version_')) {
-        const tmdbId = data.replace('add_free_version_', '');
-        const movieData = adminState[chatId].results.find(m => m.id === parseInt(tmdbId, 10));
-        adminState[chatId] = { step: 'awaiting_free_video_link_edit', selectedMovie: movieData };
-        bot.sendMessage(chatId, `Por favor, envía el código HTML del reproductor GRATIS para "${movieData.title}".`);
     } else if (data.startsWith('delete_select_')) {
         const [_, tmdbId, mediaType] = data.split('_');
         // Aquí iría la lógica para eliminar.
