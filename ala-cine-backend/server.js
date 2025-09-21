@@ -505,7 +505,7 @@ bot.on('message', async (msg) => {
             const options = {
                 reply_markup: {
                     inline_keyboard: [
-                        [{ text: 'Añadir siguiente episodio', callback_data: `add_next_episode_${selectedSeries.id}_${season}` }],
+                        [{ text: 'Añadir siguiente episodio', callback_data: `add_next_episode_${selectedSeries.id}` }],
                         [{ text: 'Volver al menú principal', callback_data: 'start' }]
                     ]
                 }
@@ -693,12 +693,31 @@ bot.on('callback_query', async (callbackQuery) => {
             episode: nextEpisode
         };
         bot.sendMessage(chatId, `Seleccionaste "${seriesData.title || seriesData.name}". Envía el reproductor PRO para el episodio ${nextEpisode} de la temporada 1. Si no hay, escribe "no".`);
-    } else if (data === 'add_next_episode') {
-        const { selectedSeries, season, episode } = adminState[chatId];
-        const nextEpisode = episode + 1;
-        adminState[chatId].step = 'awaiting_pro_link_series';
-        adminState[chatId].episode = nextEpisode;
-        bot.sendMessage(chatId, `Genial. Ahora, envía el reproductor PRO para el episodio ${nextEpisode} de la temporada ${season}. Si no hay, escribe "no".`);
+    } else if (data.startsWith('add_next_episode_')) {
+        const tmdbId = data.replace('add_next_episode_', '');
+        const seriesRef = db.collection('series').doc(tmdbId);
+        const seriesDoc = await seriesRef.get();
+        const seriesData = seriesDoc.exists ? seriesDoc.data() : null;
+
+        if (!seriesData) {
+            bot.sendMessage(chatId, 'Error: Serie no encontrada en la base de datos.');
+            return;
+        }
+
+        let lastEpisode = 0;
+        if (seriesData.seasons && seriesData.seasons[1] && seriesData.seasons[1].episodes) {
+            const episodes = seriesData.seasons[1].episodes;
+            lastEpisode = Object.keys(episodes).length;
+        }
+        const nextEpisode = lastEpisode + 1;
+
+        adminState[chatId] = {
+            step: 'awaiting_pro_link_series',
+            selectedSeries: seriesData,
+            season: 1,
+            episode: nextEpisode
+        };
+        bot.sendMessage(chatId, `Genial. Ahora, envía el reproductor PRO para el episodio ${nextEpisode} de la temporada 1. Si no hay, escribe "no".`);
     } else if (data === 'manage_movies') {
         adminState[chatId] = { step: 'search_manage' };
         bot.sendMessage(chatId, 'Por favor, escribe el nombre de la película o serie que quieres gestionar.');
