@@ -620,9 +620,19 @@ bot.on('callback_query', async (callbackQuery) => {
         bot.sendMessage(chatId, `¿Qué quieres hacer con "${seriesData.name}"?`, options);
     } else if (data.startsWith('add_episode_series_')) {
         const tmdbId = data.replace('add_episode_series_', '');
-        const seriesData = adminState[chatId].results.find(m => m.id === parseInt(tmdbId, 10));
-        adminState[chatId] = { step: 'add_pro_link_series', selectedSeries: seriesData, season: 1, episode: 1 };
-        bot.sendMessage(chatId, `Seleccionaste "${seriesData.name}". Envía el reproductor PRO para el episodio 1 de la temporada 1. Si no hay, escribe "no".`);
+        // Aquí obtienes la información de la serie directamente de la base de datos para no depender del estado anterior
+        const seriesRef = db.collection('series').doc(tmdbId);
+        const seriesDoc = await seriesRef.get();
+        const seriesData = seriesDoc.data();
+        
+        // Ahora guardas la información en el estado del usuario para los siguientes pasos
+        adminState[chatId] = { 
+            step: 'add_pro_link_series', 
+            selectedSeries: seriesData, 
+            season: 1, 
+            episode: 1 
+        };
+        bot.sendMessage(chatId, `Seleccionaste "${seriesData.title}". Envía el reproductor PRO para el episodio 1 de la temporada 1. Si no hay, escribe "no".`);
     } else if (data === 'add_next_episode') {
         const { selectedSeries, season, episode } = adminState[chatId];
         const nextEpisode = episode + 1;
