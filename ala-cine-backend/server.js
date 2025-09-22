@@ -749,15 +749,15 @@ bot.on('callback_query', async (callbackQuery) => {
     } else if (data.startsWith('select_season_')) {
         const [_, __, tmdbId, seasonNumber] = data.split('_'); 
         try {
-            const tmdbUrl = `https://api.themoviedb.org/3/tv/${tmdbId}/season/${seasonNumber}?api_key=${TMDB_API_KEY}&language=es-ES`;
-            const response = await axios.get(tmdbUrl);
-            const seasonData = response.data;
+            // ✅ CORRECCIÓN CLAVE: Mantenemos el objeto selectedSeries
+            const seriesData = adminState[chatId].selectedSeries;
+            if (!seriesData) {
+                 throw new Error("Serie no encontrada en el estado del bot.");
+            }
             
-            const selectedSeries = adminState[chatId].selectedSeries;
-
             adminState[chatId] = { 
                 step: 'awaiting_pro_link_series', 
-                selectedSeries: selectedSeries, 
+                selectedSeries: seriesData, // Mantenemos el objeto completo de la serie
                 season: parseInt(seasonNumber), 
                 episode: 1
             };
@@ -768,13 +768,12 @@ bot.on('callback_query', async (callbackQuery) => {
         }
     } else if (data.startsWith('manage_season_')) {
         const [_, __, tmdbId, seasonNumber] = data.split('_');
-        const seriesRef = db.collection('series').doc(tmdbId);
-        const seriesDoc = await seriesRef.get();
-        const seriesData = seriesDoc.exists ? seriesDoc.data() : null;
-
+        
+        // ✅ CORRECCIÓN CLAVE: Mantenemos el objeto selectedSeries
+        const seriesData = adminState[chatId].selectedSeries;
         if (!seriesData) {
-            bot.sendMessage(chatId, 'Error: Serie no encontrada en la base de datos.');
-            return;
+             bot.sendMessage(chatId, 'Error: Serie no encontrada en la base de datos.');
+             return;
         }
 
         let lastEpisode = 0;
