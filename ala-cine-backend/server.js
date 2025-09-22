@@ -150,12 +150,6 @@ app.get('/api/get-embed-code', async (req, res) => {
 // === FIN DEL CÓDIGO MEJORADO PARA EL ENDPOINT DE VIDEO ===
 // -----------------------------------------------------------
 
-// Función de utilidad para eliminar campos undefined de un objeto
-const removeUndefined = (obj) => {
-  return Object.fromEntries(
-    Object.entries(obj).filter(([_, value]) => value !== undefined)
-  );
-};
 
 app.post('/add-movie', async (req, res) => {
     try {
@@ -247,9 +241,7 @@ app.post('/add-series-episode', async (req, res) => {
                 }
             };
         }
-        // ✅ Se utiliza la función de ayuda para limpiar el objeto antes de guardarlo
-        const sanitizedData = removeUndefined(seriesDataToSave);
-        await seriesRef.set(sanitizedData, { merge: true });
+        await seriesRef.set(seriesDataToSave);
         res.status(200).json({ message: `Episodio ${episodeNumber} de la temporada ${seasonNumber} agregado/actualizado en la base de datos.` });
     } catch (error) {
         console.error("Error al agregar/actualizar episodio de serie en Firestore:", error);
@@ -749,15 +741,15 @@ bot.on('callback_query', async (callbackQuery) => {
     } else if (data.startsWith('select_season_')) {
         const [_, __, tmdbId, seasonNumber] = data.split('_'); 
         try {
-            // ✅ CORRECCIÓN CLAVE: Mantenemos el objeto selectedSeries
-            const seriesData = adminState[chatId].selectedSeries;
-            if (!seriesData) {
+            // ✅ CORRECCIÓN CLAVE: Mantenemos el objeto selectedSeries en el estado
+            const selectedSeries = adminState[chatId].selectedSeries;
+            if (!selectedSeries) {
                  throw new Error("Serie no encontrada en el estado del bot.");
             }
             
             adminState[chatId] = { 
                 step: 'awaiting_pro_link_series', 
-                selectedSeries: seriesData, // Mantenemos el objeto completo de la serie
+                selectedSeries: selectedSeries, // Aseguramos que el objeto completo se mantiene
                 season: parseInt(seasonNumber), 
                 episode: 1
             };
@@ -769,22 +761,22 @@ bot.on('callback_query', async (callbackQuery) => {
     } else if (data.startsWith('manage_season_')) {
         const [_, __, tmdbId, seasonNumber] = data.split('_');
         
-        // ✅ CORRECCIÓN CLAVE: Mantenemos el objeto selectedSeries
-        const seriesData = adminState[chatId].selectedSeries;
-        if (!seriesData) {
+        // ✅ CORRECCIÓN CLAVE: Mantenemos el objeto selectedSeries en el estado
+        const selectedSeries = adminState[chatId].selectedSeries;
+        if (!selectedSeries) {
              bot.sendMessage(chatId, 'Error: Serie no encontrada en la base de datos.');
              return;
         }
 
         let lastEpisode = 0;
-        if (seriesData.seasons && seriesData.seasons[seasonNumber] && seriesData.seasons[seasonNumber].episodes) {
-            lastEpisode = Object.keys(seriesData.seasons[seasonNumber].episodes).length;
+        if (selectedSeries.seasons && selectedSeries.seasons[seasonNumber] && selectedSeries.seasons[seasonNumber].episodes) {
+            lastEpisode = Object.keys(selectedSeries.seasons[seasonNumber].episodes).length;
         }
         const nextEpisode = lastEpisode + 1;
 
         adminState[chatId] = {
             step: 'awaiting_pro_link_series',
-            selectedSeries: seriesData,
+            selectedSeries: selectedSeries, // Aseguramos que el objeto completo se mantiene
             season: parseInt(seasonNumber),
             episode: nextEpisode
         };
