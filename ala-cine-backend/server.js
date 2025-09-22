@@ -150,6 +150,12 @@ app.get('/api/get-embed-code', async (req, res) => {
 // === FIN DEL CÓDIGO MEJORADO PARA EL ENDPOINT DE VIDEO ===
 // -----------------------------------------------------------
 
+// Función de utilidad para eliminar campos undefined de un objeto
+const removeUndefined = (obj) => {
+  return Object.fromEntries(
+    Object.entries(obj).filter(([_, value]) => value !== undefined)
+  );
+};
 
 app.post('/add-movie', async (req, res) => {
     try {
@@ -241,7 +247,9 @@ app.post('/add-series-episode', async (req, res) => {
                 }
             };
         }
-        await seriesRef.set(seriesDataToSave);
+        // ✅ Se utiliza la función de ayuda para limpiar el objeto antes de guardarlo
+        const sanitizedData = removeUndefined(seriesDataToSave);
+        await seriesRef.set(sanitizedData, { merge: true });
         res.status(200).json({ message: `Episodio ${episodeNumber} de la temporada ${seasonNumber} agregado/actualizado en la base de datos.` });
     } catch (error) {
         console.error("Error al agregar/actualizar episodio de serie en Firestore:", error);
@@ -702,7 +710,7 @@ bot.on('callback_query', async (callbackQuery) => {
         bot.sendMessage(chatId, `Seleccionaste "${seriesData.title || seriesData.name}". Envía el reproductor PRO para el episodio ${nextEpisode} de la temporada 1. Si no hay, escribe "no".`);
 
     } else if (data.startsWith('add_next_episode_')) {
-        const [_, tmdbId, seasonNumber] = data.split('_');
+        const [_, __, tmdbId, seasonNumber] = data.split('_');
         const seriesRef = db.collection('series').doc(tmdbId);
         const seriesDoc = await seriesRef.get();
         const seriesData = seriesDoc.exists ? seriesDoc.data() : null;
@@ -739,15 +747,12 @@ bot.on('callback_query', async (callbackQuery) => {
     } else if (data === 'no_action') {
         bot.sendMessage(chatId, 'No se requiere ninguna acción para este contenido.');
     } else if (data.startsWith('select_season_')) {
-        // ✅ CORRECCIÓN CLAVE: Se ajusta la deconstrucción para obtener los valores correctos
         const [_, __, tmdbId, seasonNumber] = data.split('_'); 
         try {
-            // ✅ CÓDIGO CORREGIDO: URL de la API de TMDB para obtener los detalles de la temporada
             const tmdbUrl = `https://api.themoviedb.org/3/tv/${tmdbId}/season/${seasonNumber}?api_key=${TMDB_API_KEY}&language=es-ES`;
             const response = await axios.get(tmdbUrl);
             const seasonData = response.data;
             
-            // ✅ CÓDIGO CORREGIDO: Se recupera el objeto completo de la serie del estado
             const selectedSeries = adminState[chatId].selectedSeries;
 
             adminState[chatId] = { 
@@ -762,7 +767,7 @@ bot.on('callback_query', async (callbackQuery) => {
             bot.sendMessage(chatId, 'Hubo un error al obtener la información de la temporada. Por favor, intenta de nuevo.');
         }
     } else if (data.startsWith('manage_season_')) {
-        const [_, tmdbId, seasonNumber] = data.split('_');
+        const [_, __, tmdbId, seasonNumber] = data.split('_');
         const seriesRef = db.collection('series').doc(tmdbId);
         const seriesDoc = await seriesRef.get();
         const seriesData = seriesDoc.exists ? seriesDoc.data() : null;
