@@ -746,9 +746,12 @@ bot.on('callback_query', async (callbackQuery) => {
             const response = await axios.get(tmdbUrl);
             const seasonData = response.data;
             
+            // ✅ CÓDIGO CORREGIDO: Se recupera el objeto completo de la serie del estado
+            const selectedSeries = adminState[chatId].selectedSeries;
+
             adminState[chatId] = { 
                 step: 'awaiting_pro_link_series', 
-                selectedSeries: { id: parseInt(tmdbId), name: seasonData.name, seasons: seasonData.seasons }, 
+                selectedSeries: selectedSeries, 
                 season: parseInt(seasonNumber), 
                 episode: 1
             };
