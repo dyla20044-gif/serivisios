@@ -739,7 +739,8 @@ bot.on('callback_query', async (callbackQuery) => {
     } else if (data === 'no_action') {
         bot.sendMessage(chatId, 'No se requiere ninguna acción para este contenido.');
     } else if (data.startsWith('select_season_')) {
-        const [_, tmdbId, seasonNumber] = data.split('_');
+        // ✅ CORRECCIÓN CLAVE: Se ajusta la deconstrucción para obtener los valores correctos
+        const [_, __, tmdbId, seasonNumber] = data.split('_'); 
         try {
             // ✅ CÓDIGO CORREGIDO: URL de la API de TMDB para obtener los detalles de la temporada
             const tmdbUrl = `https://api.themoviedb.org/3/tv/${tmdbId}/season/${seasonNumber}?api_key=${TMDB_API_KEY}&language=es-ES`;
