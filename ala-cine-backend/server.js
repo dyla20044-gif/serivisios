@@ -77,7 +77,6 @@ app.post('/request-movie', async (req, res) => {
     const posterPath = req.body.poster_path;
     const posterUrl = posterPath ? `https://image.tmdb.org/t/p/w500${posterPath}` : 'https://placehold.co/500x750?text=No+Poster';
     
-    // ✅ Corregido: Se usa el ID de la película para el callback_data.
     const tmdbId = req.body.tmdbId;
 
     const message = `🔔 *Solicitud de película:* ${movieTitle}\n\nUn usuario ha solicitado esta película.`;
@@ -104,7 +103,6 @@ app.post('/request-movie', async (req, res) => {
 // === INICIO DEL CÓDIGO MEJORADO PARA EL ENDPOINT DE VIDEO ===
 // -----------------------------------------------------------
 
-// ✅ Nuevo Endpoint para obtener el código embed
 app.get('/api/get-embed-code', async (req, res) => {
   const { id, season, episode, isPro } = req.query;
   
@@ -463,7 +461,7 @@ bot.on('message', async (msg) => {
         
         try {
             const body = {
-                tmdbId: selectedMedia.id.toString(), // ✅ CORRECCIÓN: Se usa .id
+                tmdbId: selectedMedia.id.toString(), 
                 title: selectedMedia.title,
                 poster_path: selectedMedia.poster_path,
                 proEmbedCode: proEmbedCode,
@@ -488,8 +486,11 @@ bot.on('message', async (msg) => {
         const freeEmbedCode = userText !== 'no' ? userText : null;
         
         try {
+            // ✅ CORRECCIÓN CLAVE: Se usa la propiedad correcta (tmdbId) para el identificador
+            // Esto corrige el error de "undefined" en la gestión de series existentes.
+            const tmdbIdToUse = selectedSeries.tmdbId || selectedSeries.id;
             const body = {
-                tmdbId: selectedSeries.id.toString(), // ✅ CORRECCIÓN: Se usa .id
+                tmdbId: tmdbIdToUse.toString(), 
                 title: selectedSeries.title || selectedSeries.name,
                 poster_path: selectedSeries.poster_path,
                 seasonNumber: season,
@@ -505,7 +506,7 @@ bot.on('message', async (msg) => {
             const options = {
                 reply_markup: {
                     inline_keyboard: [
-                        [{ text: 'Añadir siguiente episodio', callback_data: `add_next_episode_${selectedSeries.id}_${season}` }], // ✅ CORRECCIÓN: Se usa .id
+                        [{ text: 'Añadir siguiente episodio', callback_data: `add_next_episode_${tmdbIdToUse}_${season}` }], 
                         [{ text: 'Volver al menú principal', callback_data: 'start' }]
                     ]
                 }
@@ -741,10 +742,12 @@ bot.on('callback_query', async (callbackQuery) => {
     } else if (data.startsWith('select_season_')) {
         const [_, __, tmdbId, seasonNumber] = data.split('_'); 
         try {
-            // ✅ CORRECCIÓN CLAVE: Se obtiene la información completa de la serie de la API de TMDB
             const tmdbUrl = `https://api.themoviedb.org/3/tv/${tmdbId}?api_key=${TMDB_API_KEY}&language=es-ES`;
             const response = await axios.get(tmdbUrl);
             const mediaData = response.data;
+            
+            // ✅ CORRECCIÓN CLAVE: Se añade la propiedad tmdbId a los datos del estado
+            mediaData.tmdbId = mediaData.id.toString();
             
             adminState[chatId] = { 
                 step: 'awaiting_pro_link_series', 
@@ -760,7 +763,6 @@ bot.on('callback_query', async (callbackQuery) => {
     } else if (data.startsWith('manage_season_')) {
         const [_, __, tmdbId, seasonNumber] = data.split('_');
         
-        // ✅ CORRECCIÓN CLAVE: Se obtiene la información completa de la serie de la base de datos
         const seriesRef = db.collection('series').doc(tmdbId);
         const seriesDoc = await seriesRef.get();
         const selectedSeries = seriesDoc.exists ? seriesDoc.data() : null;
