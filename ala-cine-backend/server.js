@@ -477,11 +477,25 @@ bot.on('message', async (msg) => {
             adminState[chatId] = { step: 'menu' };
         }
     } else if (adminState[chatId] && adminState[chatId].step === 'awaiting_pro_link_series') {
+        // ✅ CORRECCIÓN CLAVE: Se añade una validación para asegurar que selectedSeries existe.
+        if (!adminState[chatId].selectedSeries) {
+            bot.sendMessage(chatId, 'Error: El estado de la serie se ha perdido. Por favor, reinicia el proceso.');
+            adminState[chatId] = { step: 'menu' };
+            return;
+        }
+
         const { selectedSeries, season, episode } = adminState[chatId];
         adminState[chatId].proEmbedCode = userText;
         adminState[chatId].step = 'awaiting_free_link_series';
         bot.sendMessage(chatId, `¡Reproductor PRO recibido! Ahora, envía el reproductor GRATIS para el episodio ${episode} de la temporada ${season}. Si no hay, escribe "no".`);
     } else if (adminState[chatId] && adminState[chatId].step === 'awaiting_free_link_series') {
+        // ✅ CORRECCIÓN CLAVE: Se añade una validación para asegurar que selectedSeries existe.
+        if (!adminState[chatId].selectedSeries) {
+            bot.sendMessage(chatId, 'Error: El estado de la serie se ha perdido. Por favor, reinicia el proceso.');
+            adminState[chatId] = { step: 'menu' };
+            return;
+        }
+
         const { selectedSeries, season, episode, proEmbedCode } = adminState[chatId];
         const freeEmbedCode = userText !== 'no' ? userText : null;
         
@@ -719,6 +733,9 @@ bot.on('callback_query', async (callbackQuery) => {
             lastEpisode = Object.keys(episodes).length;
         }
         const nextEpisode = lastEpisode + 1;
+
+        // ✅ CORRECCIÓN CLAVE: Se añade el tmdbId a la data de la serie para ser consistente.
+        seriesData.tmdbId = tmdbId;
 
         adminState[chatId] = {
             step: 'awaiting_pro_link_series',
