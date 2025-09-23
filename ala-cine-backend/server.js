@@ -717,7 +717,11 @@ bot.on('callback_query', async (callbackQuery) => {
         bot.sendMessage(chatId, `Seleccionaste "${seriesData.title || seriesData.name}". Envía el reproductor PRO para el episodio ${nextEpisode} de la temporada 1. Si no hay, escribe "no".`);
 
     } else if (data.startsWith('add_next_episode_')) {
-        const [_, __, tmdbId, seasonNumber] = data.split('_'); 
+        // CORRECCIÓN: Arreglo del problema de "Serie no encontrada en la base de datos"
+        const parts = data.split('_');
+        const tmdbId = parts[3];
+        const seasonNumber = parts[4];
+
         const seriesRef = db.collection('series').doc(tmdbId);
         const seriesDoc = await seriesRef.get();
         const seriesData = seriesDoc.exists ? seriesDoc.data() : null;
@@ -734,7 +738,7 @@ bot.on('callback_query', async (callbackQuery) => {
         }
         const nextEpisode = lastEpisode + 1;
 
-        // ✅ CORRECCIÓN CLAVE: Se añade el tmdbId a la data de la serie para ser consistente.
+        // Se añade el tmdbId a la data de la serie para ser consistente.
         seriesData.tmdbId = tmdbId;
 
         adminState[chatId] = {
@@ -745,11 +749,41 @@ bot.on('callback_query', async (callbackQuery) => {
         };
         bot.sendMessage(chatId, `Genial. Ahora, envía el reproductor PRO para el episodio ${nextEpisode} de la temporada ${seasonNumber}. Si no hay, escribe "no".`);
 
+    } else if (data.startsWith('add_new_season_')) {
+        // CORRECCIÓN: Lógica para el botón "Añadir nueva temporada"
+        const tmdbId = data.replace('add_new_season_', '');
+        try {
+            const tmdbUrl = `https://api.themoviedb.org/3/tv/${tmdbId}?api_key=${TMDB_API_KEY}&language=es-ES`;
+            const response = await axios.get(tmdbUrl);
+            const tmdbSeries = response.data;
+
+            const seriesRef = db.collection('series').doc(tmdbId);
+            const seriesDoc = await seriesRef.get();
+            const existingSeasons = seriesDoc.exists && seriesDoc.data().seasons ? Object.keys(seriesDoc.data().seasons) : [];
+
+            const availableSeasons = tmdbSeries.seasons.filter(s => !existingSeasons.includes(s.season_number.toString()));
+
+            if (availableSeasons.length > 0) {
+                const buttons = availableSeasons.map(s => [{
+                    text: `Temporada ${s.season_number}`,
+                    callback_data: `select_season_${tmdbId}_${s.season_number}`
+                }]);
+                bot.sendMessage(chatId, `Seleccionaste "${tmdbSeries.name}". ¿Qué temporada quieres agregar?`, {
+                    reply_markup: { inline_keyboard: buttons }
+                });
+            } else {
+                bot.sendMessage(chatId, 'Todas las temporadas de esta serie ya han sido agregadas.');
+            }
+        } catch (error) {
+            console.error("Error al obtener datos de TMDB para nueva temporada:", error);
+            bot.sendMessage(chatId, 'Hubo un error al obtener la información de las temporadas.');
+        }
+
     } else if (data === 'manage_movies') {
         adminState[chatId] = { step: 'search_manage' };
         bot.sendMessage(chatId, 'Por favor, escribe el nombre de la película o serie que quieres gestionar.');
     } else if (data.startsWith('delete_select_')) {
-        const [_, tmdbId, mediaType] = data.split('_');
+        const [_, __, tmdbId, mediaType] = data.split('_');
         bot.sendMessage(chatId, `La lógica para eliminar el contenido ${tmdbId} (${mediaType}) está lista para ser implementada.`);
     } else if (data === 'delete_movie') {
         adminState[chatId] = { step: 'search_delete' };
