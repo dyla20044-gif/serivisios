@@ -463,7 +463,7 @@ bot.on('message', async (msg) => {
         
         try {
             const body = {
-                tmdbId: selectedMedia.id.toString(),
+                tmdbId: selectedMedia.id.toString(), // ✅ CORRECCIÓN: Se usa .id
                 title: selectedMedia.title,
                 poster_path: selectedMedia.poster_path,
                 proEmbedCode: proEmbedCode,
@@ -489,7 +489,7 @@ bot.on('message', async (msg) => {
         
         try {
             const body = {
-                tmdbId: selectedSeries.tmdbId.toString(),
+                tmdbId: selectedSeries.id.toString(), // ✅ CORRECCIÓN: Se usa .id
                 title: selectedSeries.title || selectedSeries.name,
                 poster_path: selectedSeries.poster_path,
                 seasonNumber: season,
@@ -505,7 +505,7 @@ bot.on('message', async (msg) => {
             const options = {
                 reply_markup: {
                     inline_keyboard: [
-                        [{ text: 'Añadir siguiente episodio', callback_data: `add_next_episode_${selectedSeries.tmdbId}_${season}` }],
+                        [{ text: 'Añadir siguiente episodio', callback_data: `add_next_episode_${selectedSeries.id}_${season}` }], // ✅ CORRECCIÓN: Se usa .id
                         [{ text: 'Volver al menú principal', callback_data: 'start' }]
                     ]
                 }
@@ -702,7 +702,7 @@ bot.on('callback_query', async (callbackQuery) => {
         bot.sendMessage(chatId, `Seleccionaste "${seriesData.title || seriesData.name}". Envía el reproductor PRO para el episodio ${nextEpisode} de la temporada 1. Si no hay, escribe "no".`);
 
     } else if (data.startsWith('add_next_episode_')) {
-        const [_, __, tmdbId, seasonNumber] = data.split('_');
+        const [_, __, tmdbId, seasonNumber] = data.split('_'); 
         const seriesRef = db.collection('series').doc(tmdbId);
         const seriesDoc = await seriesRef.get();
         const seriesData = seriesDoc.exists ? seriesDoc.data() : null;
@@ -741,15 +741,14 @@ bot.on('callback_query', async (callbackQuery) => {
     } else if (data.startsWith('select_season_')) {
         const [_, __, tmdbId, seasonNumber] = data.split('_'); 
         try {
-            // ✅ CORRECCIÓN CLAVE: Mantenemos el objeto selectedSeries en el estado
-            const selectedSeries = adminState[chatId].selectedSeries;
-            if (!selectedSeries) {
-                 throw new Error("Serie no encontrada en el estado del bot.");
-            }
+            // ✅ CORRECCIÓN CLAVE: Se obtiene la información completa de la serie de la API de TMDB
+            const tmdbUrl = `https://api.themoviedb.org/3/tv/${tmdbId}?api_key=${TMDB_API_KEY}&language=es-ES`;
+            const response = await axios.get(tmdbUrl);
+            const mediaData = response.data;
             
             adminState[chatId] = { 
                 step: 'awaiting_pro_link_series', 
-                selectedSeries: selectedSeries, // Aseguramos que el objeto completo se mantiene
+                selectedSeries: mediaData, 
                 season: parseInt(seasonNumber), 
                 episode: 1
             };
@@ -761,8 +760,11 @@ bot.on('callback_query', async (callbackQuery) => {
     } else if (data.startsWith('manage_season_')) {
         const [_, __, tmdbId, seasonNumber] = data.split('_');
         
-        // ✅ CORRECCIÓN CLAVE: Mantenemos el objeto selectedSeries en el estado
-        const selectedSeries = adminState[chatId].selectedSeries;
+        // ✅ CORRECCIÓN CLAVE: Se obtiene la información completa de la serie de la base de datos
+        const seriesRef = db.collection('series').doc(tmdbId);
+        const seriesDoc = await seriesRef.get();
+        const selectedSeries = seriesDoc.exists ? seriesDoc.data() : null;
+        
         if (!selectedSeries) {
              bot.sendMessage(chatId, 'Error: Serie no encontrada en la base de datos.');
              return;
@@ -776,7 +778,7 @@ bot.on('callback_query', async (callbackQuery) => {
 
         adminState[chatId] = {
             step: 'awaiting_pro_link_series',
-            selectedSeries: selectedSeries, // Aseguramos que el objeto completo se mantiene
+            selectedSeries: selectedSeries, 
             season: parseInt(seasonNumber),
             episode: nextEpisode
         };
