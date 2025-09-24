@@ -779,6 +779,27 @@ bot.on('callback_query', async (callbackQuery) => {
             bot.sendMessage(chatId, 'Hubo un error al obtener la información de las temporadas.');
         }
 
+    } else if (data.startsWith('solicitud_')) {
+        // CORRECCIÓN: Lógica para manejar el botón de solicitud de película
+        const tmdbId = data.replace('solicitud_', '');
+        try {
+            const tmdbUrl = `https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${TMDB_API_KEY}&language=es-ES`;
+            const response = await axios.get(tmdbUrl);
+            const mediaData = response.data;
+            adminState[chatId] = { selectedMedia: mediaData, mediaType: 'movie', step: 'awaiting_pro_link_movie' };
+            bot.sendMessage(chatId, `Seleccionaste "${mediaData.title}". Envía el reproductor PRO. Si no hay, escribe "no".`);
+
+            // Eliminar la solicitud de la base de datos de pedidos
+            const requestsRef = db.collection('requests');
+            const snapshot = await requestsRef.where('tmdbId', '==', tmdbId).get();
+            snapshot.forEach(doc => {
+                doc.ref.delete();
+            });
+        } catch (error) {
+            console.error("Error al obtener datos de TMDB para solicitud:", error);
+            bot.sendMessage(chatId, 'Hubo un error al obtener la información de la película. Intenta de nuevo.');
+        }
+
     } else if (data === 'manage_movies') {
         adminState[chatId] = { step: 'search_manage' };
         bot.sendMessage(chatId, 'Por favor, escribe el nombre de la película o serie que quieres gestionar.');
