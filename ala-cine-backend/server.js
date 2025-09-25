@@ -459,23 +459,27 @@ bot.on('message', async (msg) => {
         const { selectedMedia, proEmbedCode } = adminState[chatId];
         const freeEmbedCode = userText !== 'no' ? userText : null;
         
-        try {
-            const body = {
-                tmdbId: selectedMedia.id.toString(), 
-                title: selectedMedia.title,
-                poster_path: selectedMedia.poster_path,
-                proEmbedCode: proEmbedCode,
-                freeEmbedCode: freeEmbedCode,
-                isPremium: !!proEmbedCode && !freeEmbedCode
-            };
-            await axios.post(`${RENDER_BACKEND_URL}/add-movie`, body);
-            bot.sendMessage(chatId, `¡La película "${selectedMedia.title}" ha sido publicada con éxito!`);
-        } catch (error) {
-            console.error("Error al publicar la película:", error);
-            bot.sendMessage(chatId, 'Hubo un error al publicar la película.');
-        } finally {
-            adminState[chatId] = { step: 'menu' };
-        }
+        // Guardar los datos de la película en el estado para usarlos después
+        adminState[chatId].movieDataToSave = {
+            tmdbId: selectedMedia.id.toString(), 
+            title: selectedMedia.title,
+            overview: selectedMedia.overview,
+            poster_path: selectedMedia.poster_path,
+            proEmbedCode: proEmbedCode,
+            freeEmbedCode: freeEmbedCode,
+            isPremium: !!proEmbedCode && !freeEmbedCode
+        };
+
+        adminState[chatId].step = 'awaiting_publish_choice';
+        const options = {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: '💾 Guardar solo en la app', callback_data: `save_only_${selectedMedia.id}` }],
+                    [{ text: '🚀 Guardar y publicar en el canal', callback_data: `save_and_publish_${selectedMedia.id}` }]
+                ]
+            }
+        };
+        bot.sendMessage(chatId, `¡Reproductor GRATIS recibido! ¿Qué quieres hacer ahora?`, options);
     } else if (adminState[chatId] && adminState[chatId].step === 'awaiting_pro_link_series') {
         // ✅ CORRECCIÓN CLAVE: Se añade una validación para asegurar que selectedSeries existe.
         if (!adminState[chatId].selectedSeries) {
@@ -489,7 +493,6 @@ bot.on('message', async (msg) => {
         adminState[chatId].step = 'awaiting_free_link_series';
         bot.sendMessage(chatId, `¡Reproductor PRO recibido! Ahora, envía el reproductor GRATIS para el episodio ${episode} de la temporada ${season}. Si no hay, escribe "no".`);
     } else if (adminState[chatId] && adminState[chatId].step === 'awaiting_free_link_series') {
-        // ✅ CORRECCIÓN CLAVE: Se añade una validación para asegurar que selectedSeries existe.
         if (!adminState[chatId].selectedSeries) {
             bot.sendMessage(chatId, 'Error: El estado de la serie se ha perdido. Por favor, reinicia el proceso.');
             adminState[chatId] = { step: 'menu' };
@@ -498,38 +501,31 @@ bot.on('message', async (msg) => {
 
         const { selectedSeries, season, episode, proEmbedCode } = adminState[chatId];
         const freeEmbedCode = userText !== 'no' ? userText : null;
+
+        // Guardar los datos de la serie en el estado para usarlos después
+        const tmdbIdToUse = selectedSeries.tmdbId || selectedSeries.id;
+        adminState[chatId].seriesDataToSave = {
+            tmdbId: tmdbIdToUse.toString(), 
+            title: selectedSeries.title || selectedSeries.name,
+            overview: selectedSeries.overview,
+            poster_path: selectedSeries.poster_path,
+            seasonNumber: season,
+            episodeNumber: episode,
+            proEmbedCode: proEmbedCode,
+            freeEmbedCode: freeEmbedCode,
+            isPremium: !!proEmbedCode && !freeEmbedCode
+        };
         
-        try {
-            // ✅ CORRECCIÓN CLAVE: Se usa la propiedad correcta (tmdbId) para el identificador
-            // Esto corrige el error de "undefined" en la gestión de series existentes.
-            const tmdbIdToUse = selectedSeries.tmdbId || selectedSeries.id;
-            const body = {
-                tmdbId: tmdbIdToUse.toString(), 
-                title: selectedSeries.title || selectedSeries.name,
-                poster_path: selectedSeries.poster_path,
-                seasonNumber: season,
-                episodeNumber: episode,
-                proEmbedCode: proEmbedCode,
-                freeEmbedCode: freeEmbedCode,
-                isPremium: !!proEmbedCode && !freeEmbedCode
-            };
-            await axios.post(`${RENDER_BACKEND_URL}/add-series-episode`, body);
-            bot.sendMessage(chatId, `✅ Episodio ${episode} de la temporada ${season} de "${selectedSeries.title || selectedSeries.name}" agregado con éxito.`);
-            
-            adminState[chatId].step = 'add_episode_next_option';
-            const options = {
-                reply_markup: {
-                    inline_keyboard: [
-                        [{ text: 'Añadir siguiente episodio', callback_data: `add_next_episode_${tmdbIdToUse}_${season}` }], 
-                        [{ text: 'Volver al menú principal', callback_data: 'start' }]
-                    ]
-                }
-            };
-            bot.sendMessage(chatId, `¿Qué te gustaría hacer ahora?`, options);
-        } catch (error) {
-            console.error("Error al agregar el episodio:", error);
-            bot.sendMessage(chatId, 'Hubo un error al procesar el episodio. Intenta de nuevo.');
-        }
+        adminState[chatId].step = 'awaiting_publish_choice_series';
+        const options = {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: '💾 Guardar solo en la app', callback_data: `save_only_series_${tmdbIdToUse}` }],
+                    [{ text: '🚀 Guardar y publicar en el canal', callback_data: `save_and_publish_series_${tmdbIdToUse}` }]
+                ]
+            }
+        };
+        bot.sendMessage(chatId, `¡Reproductor GRATIS recibido para el episodio ${episode} de la temporada ${season}! ¿Qué quieres hacer ahora?`, options);
     } else if (adminState[chatId] && adminState[chatId].step === 'search_delete') {
          try {
             const searchUrl = `https://api.themoviedb.org/3/search/multi?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(userText)}&language=es-ES`;
@@ -857,9 +853,124 @@ bot.on('callback_query', async (callbackQuery) => {
             episode: nextEpisode
         };
         bot.sendMessage(chatId, `Gestionando Temporada ${seasonNumber}. Envía el reproductor PRO para el episodio ${nextEpisode}. Si no hay, escribe "no".`);
+    } else if (data.startsWith('save_only_')) {
+        const { movieDataToSave } = adminState[chatId];
+        try {
+            await axios.post(`${RENDER_BACKEND_URL}/add-movie`, movieDataToSave);
+            bot.sendMessage(chatId, `✅ Película "${movieDataToSave.title}" guardada con éxito en la app.`);
+        } catch (error) {
+            console.error("Error al guardar la película:", error);
+            bot.sendMessage(chatId, 'Hubo un error al guardar la película.');
+        } finally {
+            adminState[chatId] = { step: 'menu' };
+        }
+    } else if (data.startsWith('save_and_publish_')) {
+        const { movieDataToSave } = adminState[chatId];
+        try {
+            await axios.post(`${RENDER_BACKEND_URL}/add-movie`, movieDataToSave);
+            bot.sendMessage(chatId, `✅ Película "${movieDataToSave.title}" guardada con éxito en la app. Ahora publicando en el canal...`);
+            await publishMovieToChannel(movieDataToSave);
+            bot.sendMessage(chatId, `🎉 ¡Película publicada en el canal con éxito!`);
+        } catch (error) {
+            console.error("Error al publicar la película en el canal:", error);
+            bot.sendMessage(chatId, 'Hubo un error al publicar la película en el canal.');
+        } finally {
+            adminState[chatId] = { step: 'menu' };
+        }
+    } else if (data.startsWith('save_only_series_')) {
+        const { seriesDataToSave } = adminState[chatId];
+        try {
+            await axios.post(`${RENDER_BACKEND_URL}/add-series-episode`, seriesDataToSave);
+            bot.sendMessage(chatId, `✅ Episodio ${seriesDataToSave.episodeNumber} de la temporada ${seriesDataToSave.seasonNumber} guardado con éxito.`);
+        } catch (error) {
+            console.error("Error al guardar el episodio:", error);
+            bot.sendMessage(chatId, 'Hubo un error al guardar el episodio.');
+        } finally {
+            adminState[chatId] = { step: 'menu' };
+        }
+    } else if (data.startsWith('save_and_publish_series_')) {
+        const { seriesDataToSave } = adminState[chatId];
+        try {
+            await axios.post(`${RENDER_BACKEND_URL}/add-series-episode`, seriesDataToSave);
+            bot.sendMessage(chatId, `✅ Episodio ${seriesDataToSave.episodeNumber} de la temporada ${seriesDataToSave.seasonNumber} guardado. Ahora publicando en el canal...`);
+            await publishSeriesEpisodeToChannel(seriesDataToSave);
+            bot.sendMessage(chatId, `🎉 ¡Episodio publicado en el canal con éxito!`);
+        } catch (error) {
+            console.error("Error al publicar el episodio en el canal:", error);
+            bot.sendMessage(chatId, 'Hubo un error al publicar el episodio en el canal.');
+        } finally {
+            adminState[chatId] = { step: 'menu' };
+        }
     }
 });
 
+// Función para publicar película en el canal
+async function publishMovieToChannel(movieData) {
+    const channelId = process.env.TELEGRAM_CHANNEL_ID;
+    const miniAppUrl = process.env.TELEGRAM_MINIAPP_URL;
+
+    const message = `🎬 *${movieData.title}*
+    
+    ${movieData.overview || 'Sinopsis no disponible.'}`;
+
+    const options = {
+        caption: message,
+        parse_mode: 'Markdown',
+        reply_markup: {
+            inline_keyboard: [
+                [{
+                    text: '▶️ Ver aquí',
+                    url: `${miniAppUrl}?startapp=${movieData.tmdbId}`
+                }]
+            ]
+        }
+    };
+    
+    const posterUrl = movieData.poster_path ? `https://image.tmdb.org/t/p/w500${movieData.poster_path}` : 'https://placehold.co/500x750?text=No+Poster';
+
+    try {
+        const sentMessage = await bot.sendPhoto(channelId, posterUrl, options);
+        // Aquí debes guardar el message_id para la futura eliminación.
+        // Por ejemplo, guardándolo en la base de datos junto con el timestamp.
+        console.log(`Mensaje publicado en el canal con ID: ${sentMessage.message_id}`);
+    } catch (error) {
+        console.error("Error al enviar el mensaje al canal:", error);
+    }
+}
+
+// Función para publicar episodio de serie en el canal
+async function publishSeriesEpisodeToChannel(seriesData) {
+    const channelId = process.env.TELEGRAM_CHANNEL_ID;
+    const miniAppUrl = process.env.TELEGRAM_MINIAPP_URL;
+
+    const message = `🎬 *${seriesData.title}*
+    
+    _Temporada ${seriesData.seasonNumber} - Episodio ${seriesData.episodeNumber}_
+    
+    ${seriesData.overview || 'Sinopsis no disponible.'}`;
+
+    const options = {
+        caption: message,
+        parse_mode: 'Markdown',
+        reply_markup: {
+            inline_keyboard: [
+                [{
+                    text: '▶️ Ver aquí',
+                    url: `${miniAppUrl}?startapp=${seriesData.tmdbId}`
+                }]
+            ]
+        }
+    };
+    
+    const posterUrl = seriesData.poster_path ? `https://image.tmdb.org/t/p/w500${seriesData.poster_path}` : 'https://placehold.co/500x750?text=No+Poster';
+
+    try {
+        const sentMessage = await bot.sendPhoto(channelId, posterUrl, options);
+        console.log(`Mensaje publicado en el canal con ID: ${sentMessage.message_id}`);
+    } catch (error) {
+        console.error("Error al enviar el mensaje al canal:", error);
+    }
+}
 
 app.listen(PORT, () => {
     console.log(`Servidor de backend de Sala Cine iniciado en el puerto ${PORT}`);
