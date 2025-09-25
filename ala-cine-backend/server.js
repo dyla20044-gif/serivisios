@@ -5,16 +5,14 @@ const dotenv = require('dotenv');
 const TelegramBot = require('node-telegram-bot-api');
 const axios = require('axios');
 const paypal = require('paypal-rest-sdk');
-const cheerio = require('cheerio');
-const nodemailer = require('nodemailer'); // NUEVO
-const moment = require('moment'); // NUEVO
+const nodemailer = require('nodemailer'); 
+const moment = require('moment'); 
 
 const app = express();
 
 dotenv.config();
 
 // Configuración de Firebase Admin
-// Asume que el archivo serviceAccountKey.json está configurado correctamente
 try {
     const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
     admin.initializeApp({
@@ -22,7 +20,7 @@ try {
     });
 } catch (error) {
     console.error("Error al inicializar Firebase Admin:", error);
-    process.exit(1);
+    // process.exit(1); // Descomentar para asegurar que el servidor no inicie sin credenciales
 }
 
 const db = admin.firestore();
@@ -30,10 +28,10 @@ const db = admin.firestore();
 // Configuración de Telegram Bot
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const ADMIN_CHAT_ID = process.env.ADMIN_CHAT_ID;
-const RENDER_BACKEND_URL = process.env.RENDER_BACKEND_URL;
+const RENDER_BACKEND_URL = process.env.RENDER_BACKEND_URL || 'http://localhost:3000';
 const bot = new TelegramBot(BOT_TOKEN, { polling: false });
 
-// Configuración de Nodemailer (para Brevo/SMTP)
+// Configuración de Nodemailer (para Brevo/SMTP - Remitente "Cine Activación")
 const transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST,
     port: process.env.SMTP_PORT,
@@ -72,8 +70,9 @@ app.post(`/bot${BOT_TOKEN}`, (req, res) => {
     res.sendStatus(200);
 });
 
-// Ruta de pago de PayPal
-app.post('/pay', (req, res) => {
+
+// RUTA DE CREACIÓN DE PAGO (mantenida)
+app.post('/create-paypal-payment', (req, res) => {
     const { amount, plan, userId } = req.body;
     const create_payment_json = {
         "intent": "sale",
@@ -117,7 +116,7 @@ app.post('/pay', (req, res) => {
     });
 });
 
-// Ruta de éxito de pago de PayPal
+// Ruta de éxito de pago de PayPal (mantenida)
 app.get('/success', async (req, res) => {
     const { paymentId, PayerID, userId, plan } = req.query;
     const execute_payment_json = {
@@ -125,7 +124,7 @@ app.get('/success', async (req, res) => {
         "transactions": [{
             "amount": {
                 "currency": "USD",
-                "total": plan === 'Basic' ? '5.00' : '10.00' // Ajustar según los planes
+                "total": plan === 'monthly' ? '1.99' : '19.99' // Usar montos correctos
             }
         }]
     };
@@ -144,7 +143,7 @@ app.get('/success', async (req, res) => {
         // Actualizar estado en Firestore
         await db.collection('users').doc(userId).update({
             isPro: true,
-            hasFreeTrial: true, // Asumimos que si paga, ya no necesita la prueba
+            isTrial: false, 
             trialEndDate: null,
             plan: plan,
             lastPayment: admin.firestore.FieldValue.serverTimestamp()
@@ -171,7 +170,7 @@ app.get('/success', async (req, res) => {
     }
 });
 
-// Ruta de cancelación de PayPal
+// Ruta de cancelación de PayPal (mantenida)
 app.get('/cancel', (req, res) => {
     const cancelMessage = `
         <html lang="es">
@@ -190,36 +189,23 @@ app.get('/cancel', (req, res) => {
     res.send(cancelMessage);
 });
 
-// Ruta de solicitud de película (Modificada para incluir el estado Premium)
+// RUTA MODIFICADA (Priorización de Pedidos)
 app.post('/request-movie', async (req, res) => {
-    const { title, poster_path, tmdbId, userId } = req.body;
+    // ✅ RECIBE username y userStatus directamente desde el frontend
+    const { title, poster_path, tmdbId, userId, username, userStatus } = req.body;
     const posterUrl = poster_path ? `https://image.tmdb.org/t/p/w500${poster_path}` : 'https://placehold.co/500x750?text=No+Poster';
     
-    // OBTENER INFORMACIÓN ADICIONAL DEL USUARIO
-    let userName = 'Usuario Anónimo';
-    let status = 'GRATIS 🆓';
-    
-    if (userId) {
-        const userDocSnap = await db.collection('users').doc(userId).get();
-        if (userDocSnap.exists()) {
-            const userData = userDocSnap.data();
-            userName = userData.username || userData.email;
-            
-            // Lógica para determinar el estado Premium/Prueba
-            const isTrialActive = userData.hasFreeTrial && userData.trialEndDate && moment(userData.trialEndDate.toDate()).isAfter(moment());
-            
-            if (userData.isPro || isTrialActive) {
-                status = `PREMIUM 👑 (${isTrialActive ? 'Prueba Activa' : 'Pagado'})`;
-            } else if (userData.hasFreeTrial) {
-                status = 'GRATIS (Prueba Expirada)';
-            }
-        }
-    }
+    // Simplificación de estatus para Telegram
+    const statusIcon = userStatus.includes('PREMIUM') ? '👑' : userStatus.includes('PRUEBA') ? '⏱️' : '🆓';
+    const statusText = `*Prioridad:* ${userStatus} ${statusIcon}`;
 
-    const message = `🔔 *Solicitud de película:* ${title}\n
-    *Usuario:* ${userName}\n
-    *Estado:* ${status}\n\nUn usuario ha solicitado esta película.`;
-    
+    const message = `🔔 *SOLICITUD DE PELÍCULA*\n
+------------------------------
+*Título:* ${title}
+*ID TMDB:* ${tmdbId}
+*Solicitante:* ${username}
+${statusText} 🚨`; // ✅ Mensaje con prioridad y username
+
     try {
         await bot.sendPhoto(ADMIN_CHAT_ID, posterUrl, {
             caption: message,
@@ -241,65 +227,67 @@ app.post('/request-movie', async (req, res) => {
 
 // === NUEVAS RUTAS DE AUTENTICACIÓN Y PERFIL ===
 
-// RUTA 1: REGISTRO CON VERIFICACIÓN DE EMAIL
-app.post('/register', async (req, res) => {
+// RUTA 1: REGISTRO CON VERIFICACIÓN DE EMAIL (Paso 1)
+app.post('/api/signup-and-verify', async (req, res) => {
     const { email, password } = req.body;
     try {
+        // 1. Crear usuario no verificado en Firebase
         const userRecord = await admin.auth().createUser({ email, password });
         
-        // Generar enlace de verificación
+        // 2. Generar enlace de verificación (usa RENDER_BACKEND_URL como dominio de acción)
         const emailVerificationLink = await admin.auth().generateEmailVerificationLink(email, { url: `${RENDER_BACKEND_URL}/api/confirm-email` });
 
-        // Enviar el correo con Nodemailer/Brevo
+        // 3. Enviar el correo con Nodemailer/Brevo (configurado como "Cine Activación")
         const mailOptions = {
-            from: `"Cine Activación" <${process.env.EMAIL_SENDER}>`, // Nombre profesional: Cine Activación
+            from: `"Cine Activación" <${process.env.SMTP_USER}>`, 
             to: email,
-            subject: '¡Bienvenido! Confirma tu cuenta de Ala Cine',
+            subject: '¡Activa tu Cuenta Cine!',
             html: `
                 <!DOCTYPE html><html><head><style>
                     body { font-family: Arial, sans-serif; background-color: #f4f4f4; margin: 0; padding: 0; }
                     .container { max-width: 600px; margin: 20px auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 0 10px rgba(0, 0, 0, 0.1); }
-                    .header { background-color: #A31F37; padding: 20px; text-align: center; color: white; }
+                    .header { background-color: #e50914; padding: 20px; text-align: center; color: white; }
                     .header h1 { margin: 0; font-size: 24px; }
                     .content { padding: 30px; text-align: center; }
                     .button-container { margin-top: 30px; margin-bottom: 20px; }
                     .button {
-                        background-color: #A31F37; color: white; padding: 12px 25px; text-decoration: none;
+                        background-color: #e50914; color: white; padding: 12px 25px; text-decoration: none;
                         border-radius: 5px; font-weight: bold; display: inline-block;
                     }
                     .footer { background-color: #eeeeee; padding: 15px; text-align: center; font-size: 12px; color: #777777; }
                 </style></head><body>
-                    <div class="container"><div class="header"><h1>Ala Cine</h1></div>
+                    <div class="container"><div class="header"><h1>Cine</h1></div>
                     <div class="content"><h2>¡Un paso más para disfrutar del cine!</h2>
                     <p>Gracias por registrarte. Para activar tu cuenta, haz clic en el botón:</p>
                     <div class="button-container">
                         <a href="${emailVerificationLink}" class="button">VERIFICAR MI CORREO</a>
                     </div>
-                    <p style="margin-top: 40px;">El equipo de Ala Cine.</p></div>
+                    <p style="margin-top: 40px;">El equipo de Cine.</p></div>
                     <div class="footer">Este es un correo automático.</div></div>
                 </body></html>
             `
         };
         await transporter.sendMail(mailOptions);
         
-        // Guardar estado inicial en Firestore
+        // 4. Guardar estado inicial en Firestore (para username/pro)
         await db.collection('users').doc(userRecord.uid).set({
             email: email,
             isVerified: false,
-            hasFreeTrial: false,
+            isTrial: false,
             isPro: false,
             trialEndDate: null,
-            username: null // Campo para el nombre de usuario
+            hasUsername: false,
+            username: null 
         });
 
-        res.status(200).json({ message: 'Usuario registrado. Revisa tu correo para verificar tu cuenta.' });
+        res.status(200).json({ success: true, message: 'Usuario registrado. Revisa tu correo para verificar tu cuenta.' });
     } catch (error) {
         console.error("Error al registrar el usuario:", error);
-        res.status(500).json({ error: 'Error al crear la cuenta. Intenta con otro correo o revisa la contraseña.' });
+        res.status(500).json({ success: false, error: 'Error al crear la cuenta. Intenta con otro correo o revisa la contraseña.' });
     }
 });
 
-// RUTA 2: VERIFICACIÓN DE EMAIL (Llamada desde el correo)
+// RUTA 2: VERIFICACIÓN DE EMAIL (Paso 3)
 app.get('/api/confirm-email', async (req, res) => {
     const { oobCode } = req.query;
     if (!oobCode) {
@@ -317,88 +305,99 @@ app.get('/api/confirm-email', async (req, res) => {
             isVerified: true
         });
         
-        res.send('<html><body><h1>✅ ¡Verificación exitosa! Tu cuenta está activada. Vuelve a la aplicación para iniciar sesión.</h1></body></html>');
+        // Redirige al login de la app después de la verificación
+        const successMessage = `
+            <html lang="es">
+            <head>
+                <meta charset="UTF-8">
+                <title>Verificación Exitosa</title>
+                <style>body{font-family: Arial, sans-serif; text-align: center; padding: 50px;} h1{color: #4CAF50;} button{padding: 10px 20px; background-color: #A31F37; color: white; border: none; border-radius: 5px; cursor: pointer;}</style>
+            </head>
+            <body>
+                <h1>✅ ¡Verificación Exitosa!</h1>
+                <p>Tu cuenta está activada. Vuelve a la aplicación para iniciar sesión.</p>
+                <button onclick="window.close()">Volver a la App</button>
+            </body>
+            </html>
+        `;
+        res.send(successMessage);
+
     } catch (error) {
         console.error("Error al verificar el correo:", error);
         res.status(400).send('Error al verificar el correo. El enlace pudo haber expirado.');
     }
 });
 
-// RUTA 3: ACTIVAR PRUEBA GRATUITA
+// RUTA 3: ACTIVAR PRUEBA GRATUITA (Requisito)
 app.post('/activate-trial', async (req, res) => {
     const { userId } = req.body;
     try {
         const userRef = db.collection('users').doc(userId);
         const doc = await userRef.get();
         if (!doc.exists) {
-            return res.status(404).json({ error: 'Usuario no encontrado.' });
+            return res.status(404).json({ success: false, error: 'Usuario no encontrado.' });
         }
         const userData = doc.data();
 
+        if (userData.isTrial) {
+            return res.status(403).json({ success: false, error: 'Ya has utilizado tu prueba gratuita. Por favor, compra un plan.' });
+        }
         if (!userData.isVerified) {
-            return res.status(403).json({ error: 'Debes verificar tu correo para activar la prueba gratuita.' });
+            return res.status(403).json({ success: false, error: 'Debes verificar tu correo para activar la prueba gratuita.' });
         }
-        if (userData.hasFreeTrial) {
-            return res.status(403).json({ error: 'Ya has utilizado tu prueba gratuita. Por favor, compra un plan.' });
-        }
+
 
         const trialEndDate = moment().add(2, 'days').toDate(); // 2 días de prueba
         await userRef.update({
-            hasFreeTrial: true,
-            isPro: true,
-            trialEndDate: trialEndDate
+            isTrial: true,
+            isPro: false, // El frontend gestiona el acceso con isTrial
+            trialEndDate: admin.firestore.Timestamp.fromDate(trialEndDate)
         });
 
-        res.status(200).json({ message: 'Prueba gratuita de 2 días activada con éxito.' });
+        res.status(200).json({ success: true, message: 'Prueba gratuita de 2 días activada con éxito.' });
     } catch (error) {
         console.error("Error al activar la prueba gratuita:", error);
-        res.status(500).json({ error: 'Error al activar la prueba.' });
+        res.status(500).json({ success: false, error: 'Error al activar la prueba.' });
     }
 });
 
-// RUTA 4: GUARDAR NOMBRE DE USUARIO
+// RUTA 4: GUARDAR NOMBRE DE USUARIO (Paso 4)
 app.post('/update-username', async (req, res) => {
     const { userId, username } = req.body;
     
     if (!username || username.length < 3) {
-        return res.status(400).json({ error: 'El nombre de usuario debe tener al menos 3 caracteres.' });
+        return res.status(400).json({ success: false, error: 'El nombre de usuario debe tener al menos 3 caracteres.' });
     }
 
     try {
-        // 1. Verificar duplicados
+        // 1. Verificar duplicados (excluyendo el usuario actual)
         const usersRef = db.collection('users');
         const q = usersRef.where('username', '==', username).limit(1);
         const snapshot = await q.get();
 
         if (!snapshot.empty) {
-            return res.status(409).json({ error: 'Este nombre de usuario ya está en uso. Intenta con otro.' });
+             const existingUserId = snapshot.docs[0].id;
+             if (existingUserId !== userId) {
+                 return res.status(409).json({ success: false, error: 'Este nombre de usuario ya está en uso. Intenta con otro.' });
+             }
         }
 
         const userDocRef = usersRef.doc(userId);
-        const userDoc = await userDocRef.get();
         
-        if (!userDoc.exists) {
-            return res.status(404).json({ error: 'Usuario no encontrado.' });
-        }
-        
-        const userData = userDoc.data();
-        
-        // 2. Actualizar el documento de Firestore
+        // 2. Actualizar el documento de Firestore (username y hasUsername)
         await userDocRef.update({
-            username: username
-        });
-
-        const isTrialActive = userData.hasFreeTrial && userData.trialEndDate && moment(userData.trialEndDate.toDate()).isAfter(moment());
-        const isProStatus = userData.isPro || isTrialActive;
-
-        res.status(200).json({ 
-            message: 'Nombre de usuario guardado.', 
             username: username,
-            isPro: isProStatus
+            hasUsername: true
         });
+
+        // 3. Actualizar Firebase Auth display name
+        await admin.auth().updateUser(userId, { displayName: username });
+
+
+        res.status(200).json({ success: true, message: 'Nombre de usuario guardado.' });
     } catch (error) {
         console.error("Error al actualizar el nombre de usuario:", error);
-        res.status(500).json({ error: 'Error interno al guardar el nombre de usuario.' });
+        res.status(500).json({ success: false, error: 'Error interno al guardar el nombre de usuario.' });
     }
 });
 
@@ -411,39 +410,13 @@ bot.on('callback_query', async (callbackQuery) => {
     if (action.startsWith('solicitud_')) {
         const tmdbId = action.split('_')[1];
         try {
-            const movieDetails = await fetchMovieDetails(tmdbId);
-            const movieRef = db.collection('movies').doc(tmdbId);
-            await movieRef.set(movieDetails);
-            
-            bot.sendMessage(chatId, `¡Película agregada! ${movieDetails.title} ya está en la colección.`);
+            bot.sendMessage(chatId, `Procesando solicitud para TMDB ID: ${tmdbId}`);
         } catch (error) {
             console.error("Error al agregar película:", error);
             bot.sendMessage(chatId, 'Hubo un error al agregar la película.');
         }
     }
 });
-
-// Función para obtener detalles de TMDB
-async function fetchMovieDetails(tmdbId) {
-    const TMDB_API_KEY = process.env.TMDB_API_KEY;
-    const url = `https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${TMDB_API_KEY}&language=es`;
-    const response = await axios.get(url);
-    const movie = response.data;
-    
-    // Simplificar el objeto
-    return {
-        id: movie.id.toString(),
-        title: movie.title,
-        overview: movie.overview,
-        release_date: movie.release_date,
-        poster_path: movie.poster_path,
-        backdrop_path: movie.backdrop_path,
-        vote_average: movie.vote_average,
-        genres: movie.genres.map(g => g.name),
-        runtime: movie.runtime,
-        status: 'pending' // Estado inicial
-    };
-}
 
 
 const PORT = process.env.PORT || 3000;
