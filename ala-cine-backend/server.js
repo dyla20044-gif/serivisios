@@ -142,72 +142,27 @@ ${statusText} 🚨`;
     }
 });
 
-// RUTA NUEVA: /api/signup-and-verify (REGISTRO Y ENVÍO DE CORREO - PASO 1)
+// RUTA MODIFICADA: /api/signup-and-verify (REGISTRO SIMPLE - ACCESO INMEDIATO)
 app.post('/api/signup-and-verify', async (req, res) => {
     const { email, password } = req.body;
     
-    // El frontend envía una contraseña dummy si solo quiere reenviar el correo (re-send)
-    const isResend = password === "NO_UPDATE_PASS_ON_RESEND";
-    
-    let userRecord;
     try {
-        if (!isResend) {
-            // 1. Crear usuario no verificado en Firebase
-            userRecord = await admin.auth().createUser({ email, password });
-        } else {
-            // Si es reenvío, obtenemos el usuario existente
-            userRecord = await admin.auth().getUserByEmail(email);
-        }
+        // 1. Crear usuario en Firebase sin verificación forzada
+        const userRecord = await admin.auth().createUser({ email, password });
         
-        // 2. Generar enlace de verificación (usa RENDER_BACKEND_URL)
-        const emailVerificationLink = await admin.auth().generateEmailVerificationLink(email, { url: `${RENDER_BACKEND_URL}/api/confirm-email` });
+        // 2. Guardar estado inicial en Firestore
+        await db.collection('users').doc(userRecord.uid).set({
+            email: email,
+            isVerified: false, // Ahora es solo un marcador.
+            isVerifiedByCode: false, // Nueva bandera para el Trial
+            isTrial: false,
+            isPro: false,
+            trialEndDate: null,
+            hasUsername: false,
+            username: null 
+        });
 
-        // 3. Enviar el correo con Nodemailer/Brevo
-        const mailOptions = {
-            from: `"Cine Activación" <${process.env.SMTP_USER}>`, 
-            to: email,
-            subject: '¡Activa tu Cuenta Cine!',
-            html: `
-                <!DOCTYPE html><html><head><style>
-                    body { font-family: Arial, sans-serif; background-color: #f4f4f4; margin: 0; padding: 0; }
-                    .container { max-width: 600px; margin: 20px auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 0 10px rgba(0, 0, 0, 0.1); }
-                    .header { background-color: #e50914; padding: 20px; text-align: center; color: white; }
-                    .header h1 { margin: 0; font-size: 24px; }
-                    .content { padding: 30px; text-align: center; }
-                    .button-container { margin-top: 30px; margin-bottom: 20px; }
-                    .button {
-                        background-color: #e50914; color: white; padding: 12px 25px; text-decoration: none;
-                        border-radius: 5px; font-weight: bold; display: inline-block;
-                    }
-                    .footer { background-color: #eeeeee; padding: 15px; text-align: center; font-size: 12px; color: #777777; }
-                </style></head><body>
-                    <div class="container"><div class="header"><h1>Cine</h1></div>
-                    <div class="content"><h2>¡Un paso más para disfrutar del cine!</h2>
-                    <p>Gracias por registrarte. Para activar tu cuenta, haz clic en el botón:</p>
-                    <div class="button-container">
-                        <a href="${emailVerificationLink}" class="button">VERIFICAR MI CORREO</a>
-                    </div>
-                    <p style="margin-top: 40px;">El equipo de Cine.</p></div>
-                    <div class="footer">Este es un correo automático.</div></div>
-                </body></html>
-            `
-        };
-        await transporter.sendMail(mailOptions);
-        
-        // Guardar estado inicial en Firestore (solo si es nuevo registro)
-        if (!isResend) {
-            await db.collection('users').doc(userRecord.uid).set({
-                email: email,
-                isVerified: false,
-                isTrial: false,
-                isPro: false,
-                trialEndDate: null,
-                hasUsername: false,
-                username: null 
-            });
-        }
-
-        res.status(200).json({ success: true, message: 'Usuario registrado. Revisa tu correo para verificar tu cuenta.' });
+        res.status(200).json({ success: true, message: 'Cuenta creada con éxito. Requiere verificación para funciones premium.' });
     } catch (error) {
         console.error("Error en /api/signup-and-verify:", error.message);
         let errorMessage = 'Error al crear la cuenta. Intenta con otro correo o revisa la contraseña.';
@@ -218,47 +173,92 @@ app.post('/api/signup-and-verify', async (req, res) => {
     }
 });
 
-// RUTA NUEVA: /api/confirm-email (VERIFICACIÓN DE EMAIL - PASO 3)
-app.get('/api/confirm-email', async (req, res) => {
-    const { oobCode } = req.query;
-    if (!oobCode) {
-        return res.status(400).send('Falta el token de verificación.');
-    }
-
+// RUTA NUEVA: /api/send-otp-email (ENVÍO DE CÓDIGO OTP)
+app.post('/api/send-otp-email', async (req, res) => {
+    const { email } = req.body;
+    
     try {
-        const actionCodeInfo = await admin.auth().checkActionCode(oobCode);
-        const email = actionCodeInfo.data.email;
-        
-        await admin.auth().applyActionCode(oobCode);
-        
         const user = await admin.auth().getUserByEmail(email);
-        await db.collection('users').doc(user.uid).update({
-            isVerified: true
-        });
         
-        // Muestra mensaje de éxito y botón para cerrar la ventana
-        const successMessage = `
-            <html lang="es">
-            <head>
-                <meta charset="UTF-8">
-                <title>Verificación Exitosa</title>
-                <style>body{font-family: Arial, sans-serif; text-align: center; padding: 50px;} h1{color: #4CAF50;} button{padding: 10px 20px; background-color: #A31F37; color: white; border: none; border-radius: 5px; cursor: pointer;}</style>
-            </head>
-            <body>
-                <h1>✅ ¡Verificación Exitosa!</h1>
-                <p>Tu cuenta está activada. Vuelve a la aplicación para iniciar sesión.</p>
-                <button onclick="window.close()">Volver a la App</button>
-            </body>
-            </html>
-        `;
-        res.send(successMessage);
+        // 1. Generar Código OTP de 6 dígitos
+        const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+        const expirationTime = moment().add(10, 'minutes').toDate(); // Código válido por 10 minutos
+        
+        // 2. Almacenar el código y expiración en Firestore (colección temporal)
+        await db.collection('verification_codes').doc(user.uid).set({
+            code: otpCode,
+            email: email,
+            expiration: admin.firestore.Timestamp.fromDate(expirationTime),
+            createdAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+
+        // 3. Enviar el correo con Nodemailer/Brevo
+        const mailOptions = {
+            from: `"Cine Activación" <${process.env.SMTP_USER}>`, 
+            to: email,
+            subject: 'Tu Código de Verificación para el Trial',
+            html: `
+                <p>Hola,</p>
+                <p>Tu código de verificación para activar la prueba gratuita es:</p>
+                <h1 style="color: #e50914; font-size: 30px;">${otpCode}</h1>
+                <p>Este código expira en 10 minutos.</p>
+            `
+        };
+        await transporter.sendMail(mailOptions);
+
+        res.status(200).json({ success: true, message: 'Código de verificación enviado.' });
     } catch (error) {
-        console.error("Error al verificar el correo:", error);
-        res.status(400).send('Error al verificar el correo. El enlace pudo haber expirado.');
+        console.error("Error en /api/send-otp-email:", error.message);
+        let errorMessage = "Error al enviar el código. Intenta de nuevo más tarde.";
+        if (error.message.includes('TOO_MANY_ATTEMPTS')) {
+            errorMessage = "Has excedido el límite de seguridad de verificación. Intenta de nuevo en 30 minutos.";
+        }
+        res.status(500).json({ success: false, error: errorMessage });
     }
 });
 
-// RUTA NUEVA: /activate-trial (ACTIVAR PRUEBA GRATUITA - Requisito)
+// RUTA NUEVA: /api/verify-otp (VERIFICACIÓN DEL CÓDIGO OTP)
+app.post('/api/verify-otp', async (req, res) => {
+    const { userId, code } = req.body;
+
+    try {
+        const docRef = db.collection('verification_codes').doc(userId);
+        const docSnap = await docRef.get();
+
+        if (!docSnap.exists) {
+            return res.status(400).json({ success: false, error: "No se encontró ningún código. Solicita uno nuevo." });
+        }
+
+        const data = docSnap.data();
+        const currentTime = moment();
+
+        if (data.code !== code) {
+            return res.status(400).json({ success: false, error: "Código incorrecto." });
+        }
+        
+        if (moment(data.expiration.toDate()).isBefore(currentTime)) {
+            // Eliminar código expirado y pedir uno nuevo
+            await docRef.delete(); 
+            return res.status(400).json({ success: false, error: "El código ha expirado. Solicita un nuevo código." });
+        }
+
+        // Éxito: Eliminar el código y marcar al usuario como verificado por código
+        await docRef.delete(); 
+        await db.collection('users').doc(userId).update({
+            isVerifiedByCode: true // Nueva bandera para el Trial
+        });
+
+        res.status(200).json({ success: true, message: "Verificación exitosa. Puedes activar tu Trial." });
+
+    } catch (error) {
+        console.error("Error en /api/verify-otp:", error.message);
+        res.status(500).json({ success: false, error: "Error interno durante la verificación." });
+    }
+});
+
+// RUTA OBSOLETA ELIMINADA: /api/confirm-email (Eliminada)
+
+// RUTA MODIFICADA: /activate-trial (CHEQUEA LA NUEVA BANDERA isVerifiedByCode)
 app.post('/activate-trial', async (req, res) => {
     const { userId } = req.body;
     try {
@@ -272,8 +272,10 @@ app.post('/activate-trial', async (req, res) => {
         if (userData.isTrial) {
             return res.status(403).json({ success: false, error: 'Ya has utilizado tu prueba gratuita. Por favor, compra un plan.' });
         }
-        if (!userData.isVerified) {
-            return res.status(403).json({ success: false, error: 'Debes verificar tu correo para activar la prueba gratuita.' });
+        
+        // ✅ Bloqueo de Trial por la nueva bandera de código
+        if (!userData.isVerifiedByCode) {
+            return res.status(403).json({ success: false, error: 'Debes verificar el código de tu correo para activar la prueba gratuita.' });
         }
 
 
