@@ -57,13 +57,13 @@ const TMDB_API_KEY = process.env.TMDB_API_KEY;
 
 // === CONFIGURACIÓN DE NODEMAILER (PARA BREVO/SMTP) ===
 const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port: process.env.SMTP_PORT,
-    secure: false, // O true si usas 465, depende de tu SMTP_PORT
-    auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS
-    }
+    host: process.env.SMTP_HOST,
+    port: process.env.SMTP_PORT,
+    secure: false, // O true si usas 465, depende de tu SMTP_PORT
+    auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS
+    }
 });
 
 // === CONFIGURACIÓN DE ATJOS DEL BOT ===
@@ -105,7 +105,7 @@ app.post(`/bot${token}`, (req, res) => {
 // RUTA MODIFICADA: /request-movie (PRIORIZACIÓN)
 app.post('/request-movie', async (req, res) => {
     // Captura username y userStatus del frontend
-    const { title, poster_path, tmdbId, username, userStatus } = req.body;
+    const { title, poster_path, tmdbId, username, userStatus } = req.body;
     
     if (!title || !username || !userStatus) {
         return res.status(400).json({ success: false, error: 'Faltan datos requeridos (title, username, userStatus).' });
@@ -147,190 +147,209 @@ app.post('/api/signup-and-verify', async (req, res) => {
     const { email, password } = req.body;
     
     try {
-        // 1. Crear usuario en Firebase sin verificación forzada
+        // Validación de datos de entrada
+        if (!email || !password) {
+            return res.status(400).json({ success: false, error: 'Correo electrónico y contraseña son requeridos.' });
+        }
+        if (password.length < 6) {
+            return res.status(400).json({ success: false, error: 'La contraseña debe tener al menos 6 caracteres.' });
+        }
+        
+        // 1. Crear usuario en Firebase Auth
         const userRecord = await admin.auth().createUser({ email, password });
         
-        // 2. Guardar estado inicial en Firestore
+        // 2. Guardar estado inicial en Firestore (Usando set con merge para mayor robustez)
         await db.collection('users').doc(userRecord.uid).set({
             email: email,
-            isVerified: false, // Ahora es solo un marcador.
-            isVerifiedByCode: false, // Nueva bandera para el Trial
+            isVerified: false, 
+            isVerifiedByCode: false, // Bandera para la verificación OTP
             isTrial: false,
             isPro: false,
             trialEndDate: null,
             hasUsername: false,
             username: null 
-        });
+        }, { merge: true });
 
         res.status(200).json({ success: true, message: 'Cuenta creada con éxito. Requiere verificación para funciones premium.' });
     } catch (error) {
         console.error("Error en /api/signup-and-verify:", error.message);
         let errorMessage = 'Error al crear la cuenta. Intenta con otro correo o revisa la contraseña.';
-        if (error.code === 'auth/email-already-in-use') {
+        
+        if (error.message.includes('auth/email-already-in-use')) {
              errorMessage = 'Esta dirección de correo ya está registrada.';
+             return res.status(409).json({ success: false, error: errorMessage });
+        } else if (error.message.includes('auth/invalid-email')) {
+             errorMessage = 'La dirección de correo electrónico tiene un formato incorrecto.';
+             return res.status(400).json({ success: false, error: errorMessage });
+        } else if (error.message.includes('auth/weak-password')) {
+             errorMessage = 'La contraseña debe tener al menos 6 caracteres.';
+             return res.status(400).json({ success: false, error: errorMessage });
         }
+        
         res.status(500).json({ success: false, error: errorMessage });
     }
 });
 
 // RUTA NUEVA: /api/send-otp-email (ENVÍO DE CÓDIGO OTP)
 app.post('/api/send-otp-email', async (req, res) => {
-    const { email } = req.body;
-    
-    try {
-        const user = await admin.auth().getUserByEmail(email);
-        
-        // 1. Generar Código OTP de 6 dígitos
-        const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
-        const expirationTime = moment().add(10, 'minutes').toDate(); // Código válido por 10 minutos
-        
-        // 2. Almacenar el código y expiración en Firestore (colección temporal)
-        await db.collection('verification_codes').doc(user.uid).set({
-            code: otpCode,
-            email: email,
-            expiration: admin.firestore.Timestamp.fromDate(expirationTime),
-            createdAt: admin.firestore.FieldValue.serverTimestamp()
-        });
+    const { email } = req.body;
+    
+    try {
+        const user = await admin.auth().getUserByEmail(email);
+        
+        // 1. Generar Código OTP de 6 dígitos
+        const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+        const expirationTime = moment().add(10, 'minutes').toDate(); // Código válido por 10 minutos
+        
+        // 2. Almacenar el código y expiración en Firestore (colección temporal)
+        await db.collection('verification_codes').doc(user.uid).set({
+            code: otpCode,
+            email: email,
+            expiration: admin.firestore.Timestamp.fromDate(expirationTime),
+            createdAt: admin.firestore.FieldValue.serverTimestamp()
+        });
 
-        // 3. Enviar el correo con Nodemailer/Brevo
-        const mailOptions = {
-            from: `"Cine Activación" <${process.env.SMTP_USER}>`, 
-            to: email,
-            subject: 'Tu Código de Verificación para el Trial',
-            html: `
-                <p>Hola,</p>
-                <p>Tu código de verificación para activar la prueba gratuita es:</p>
-                <h1 style="color: #e50914; font-size: 30px;">${otpCode}</h1>
-                <p>Este código expira en 10 minutos.</p>
-            `
-        };
-        await transporter.sendMail(mailOptions);
+        // 3. Enviar el correo con Nodemailer/Brevo
+        const mailOptions = {
+            from: `"Cine Activación" <${process.env.SMTP_USER}>`, 
+            to: email,
+            subject: 'Tu Código de Verificación para el Trial',
+            html: `
+                <p>Hola,</p>
+                <p>Tu código de verificación para activar la prueba gratuita es:</p>
+                <h1 style="color: #e50914; font-size: 30px;">${otpCode}</h1>
+                <p>Este código expira en 10 minutos.</p>
+            `
+        };
+        await transporter.sendMail(mailOptions);
 
-        res.status(200).json({ success: true, message: 'Código de verificación enviado.' });
-    } catch (error) {
-        console.error("Error en /api/send-otp-email:", error.message);
-        let errorMessage = "Error al enviar el código. Intenta de nuevo más tarde.";
-        if (error.message.includes('TOO_MANY_ATTEMPTS')) {
-            errorMessage = "Has excedido el límite de seguridad de verificación. Intenta de nuevo en 30 minutos.";
+        res.status(200).json({ success: true, message: 'Código de verificación enviado.' });
+    } catch (error) {
+        console.error("Error en /api/send-otp-email:", error.message);
+        let errorMessage = "Error al enviar el código. Intenta de nuevo más tarde.";
+        if (error.message.includes('TOO_MANY_ATTEMPTS')) {
+            errorMessage = "Has excedido el límite de seguridad de verificación. Intenta de nuevo en 30 minutos.";
+        } else if (error.code === 'EAUTH') {
+             errorMessage = "Error de autenticación SMTP. Revisa la Clave Maestra en la configuración del servidor.";
         }
-        res.status(500).json({ success: false, error: errorMessage });
-    }
+        res.status(500).json({ success: false, error: errorMessage });
+    }
 });
 
 // RUTA NUEVA: /api/verify-otp (VERIFICACIÓN DEL CÓDIGO OTP)
 app.post('/api/verify-otp', async (req, res) => {
-    const { userId, code } = req.body;
+    const { userId, code } = req.body;
 
-    try {
-        const docRef = db.collection('verification_codes').doc(userId);
-        const docSnap = await docRef.get();
+    try {
+        const docRef = db.collection('verification_codes').doc(userId);
+        const docSnap = await docRef.get();
 
-        if (!docSnap.exists) {
-            return res.status(400).json({ success: false, error: "No se encontró ningún código. Solicita uno nuevo." });
-        }
+        if (!docSnap.exists) {
+            return res.status(400).json({ success: false, error: "No se encontró ningún código. Solicita uno nuevo." });
+        }
 
-        const data = docSnap.data();
-        const currentTime = moment();
+        const data = docSnap.data();
+        const currentTime = moment();
 
-        if (data.code !== code) {
-            return res.status(400).json({ success: false, error: "Código incorrecto." });
-        }
-        
-        if (moment(data.expiration.toDate()).isBefore(currentTime)) {
-            // Eliminar código expirado y pedir uno nuevo
-            await docRef.delete(); 
-            return res.status(400).json({ success: false, error: "El código ha expirado. Solicita un nuevo código." });
-        }
+        if (data.code !== code) {
+            return res.status(400).json({ success: false, error: "Código incorrecto." });
+        }
+        
+        if (moment(data.expiration.toDate()).isBefore(currentTime)) {
+            // Eliminar código expirado y pedir uno nuevo
+            await docRef.delete(); 
+            return res.status(400).json({ success: false, error: "El código ha expirado. Solicita un nuevo código." });
+        }
 
-        // Éxito: Eliminar el código y marcar al usuario como verificado por código
-        await docRef.delete(); 
-        await db.collection('users').doc(userId).update({
-            isVerifiedByCode: true // Nueva bandera para el Trial
-        });
+        // Éxito: Eliminar el código y marcar al usuario como verificado por código
+        await docRef.delete(); 
+        await db.collection('users').doc(userId).update({
+            isVerifiedByCode: true // Nueva bandera para el Trial
+        });
 
-        res.status(200).json({ success: true, message: "Verificación exitosa. Puedes activar tu Trial." });
+        res.status(200).json({ success: true, message: "Verificación exitosa. Puedes activar tu Trial." });
 
-    } catch (error) {
-        console.error("Error en /api/verify-otp:", error.message);
-        res.status(500).json({ success: false, error: "Error interno durante la verificación." });
-    }
+    } catch (error) {
+        console.error("Error en /api/verify-otp:", error.message);
+        res.status(500).json({ success: false, error: "Error interno durante la verificación." });
+    }
 });
 
 // RUTA OBSOLETA ELIMINADA: /api/confirm-email (Eliminada)
 
 // RUTA MODIFICADA: /activate-trial (CHEQUEA LA NUEVA BANDERA isVerifiedByCode)
 app.post('/activate-trial', async (req, res) => {
-    const { userId } = req.body;
-    try {
-        const userRef = db.collection('users').doc(userId);
-        const doc = await userRef.get();
-        if (!doc.exists) {
-            return res.status(404).json({ success: false, error: 'Usuario no encontrado.' });
-        }
-        const userData = doc.data();
+    const { userId } = req.body;
+    try {
+        const userRef = db.collection('users').doc(userId);
+        const doc = await userRef.get();
+        if (!doc.exists) {
+            return res.status(404).json({ success: false, error: 'Usuario no encontrado.' });
+        }
+        const userData = doc.data();
 
-        if (userData.isTrial) {
-            return res.status(403).json({ success: false, error: 'Ya has utilizado tu prueba gratuita. Por favor, compra un plan.' });
-        }
-        
-        // ✅ Bloqueo de Trial por la nueva bandera de código
-        if (!userData.isVerifiedByCode) {
-            return res.status(403).json({ success: false, error: 'Debes verificar el código de tu correo para activar la prueba gratuita.' });
-        }
+        if (userData.isTrial) {
+            return res.status(403).json({ success: false, error: 'Ya has utilizado tu prueba gratuita. Por favor, compra un plan.' });
+        }
+        
+        // ✅ Bloqueo de Trial por la nueva bandera de código
+        if (!userData.isVerifiedByCode) {
+            return res.status(403).json({ success: false, error: 'Debes verificar el código de tu correo para activar la prueba gratuita.' });
+        }
 
 
-        const trialEndDate = moment().add(2, 'days').toDate(); // 2 días de prueba
-        await userRef.update({
-            isTrial: true,
-            isPro: false, // El frontend gestiona el acceso con isTrial
-            trialEndDate: admin.firestore.Timestamp.fromDate(trialEndDate)
-        });
+        const trialEndDate = moment().add(2, 'days').toDate(); // 2 días de prueba
+        await userRef.update({
+            isTrial: true,
+            isPro: false, // El frontend gestiona el acceso con isTrial
+            trialEndDate: admin.firestore.Timestamp.fromDate(trialEndDate)
+        });
 
-        res.status(200).json({ success: true, message: 'Prueba gratuita de 2 días activada con éxito.' });
-    } catch (error) {
-        console.error("Error al activar la prueba gratuita:", error);
-        res.status(500).json({ success: false, error: 'Error al activar la prueba.' });
-    }
+        res.status(200).json({ success: true, message: 'Prueba gratuita de 2 días activada con éxito.' });
+    } catch (error) {
+        console.error("Error al activar la prueba gratuita:", error);
+        res.status(500).json({ success: false, error: 'Error al activar la prueba.' });
+    }
 });
 
 // RUTA NUEVA: /update-username (GUARDAR NOMBRE DE USUARIO - PASO 4)
 app.post('/update-username', async (req, res) => {
-    const { userId, username } = req.body;
-    
-    if (!username || username.length < 3) {
-        return res.status(400).json({ success: false, error: 'El nombre de usuario debe tener al menos 3 caracteres.' });
-    }
+    const { userId, username } = req.body;
+    
+    if (!username || username.length < 3) {
+        return res.status(400).json({ success: false, error: 'El nombre de usuario debe tener al menos 3 caracteres.' });
+    }
 
-    try {
-        // 1. Verificar duplicados (excluyendo el usuario actual)
-        const usersRef = db.collection('users');
-        const q = usersRef.where('username', '==', username).limit(1);
-        const snapshot = await q.get();
+    try {
+        // 1. Verificar duplicados (excluyendo el usuario actual)
+        const usersRef = db.collection('users');
+        const q = usersRef.where('username', '==', username).limit(1);
+        const snapshot = await q.get();
 
-        if (!snapshot.empty) {
-             const existingUserId = snapshot.docs[0].id;
-             if (existingUserId !== userId) {
-                 return res.status(409).json({ success: false, error: 'Este nombre de usuario ya está en uso. Intenta con otro.' });
-             }
-        }
+        if (!snapshot.empty) {
+             const existingUserId = snapshot.docs[0].id;
+             if (existingUserId !== userId) {
+                 return res.status(409).json({ success: false, error: 'Este nombre de usuario ya está en uso. Intenta con otro.' });
+             }
+        }
 
-        const userDocRef = usersRef.doc(userId);
-        
-        // 2. Actualizar el documento de Firestore (username y hasUsername)
-        await userDocRef.update({
-            username: username,
-            hasUsername: true
-        });
-        
-        // 3. Actualizar Firebase Auth display name
-        await admin.auth().updateUser(userId, { displayName: username });
+        const userDocRef = usersRef.doc(userId);
+        
+        // 2. Actualizar el documento de Firestore (username y hasUsername)
+        await userDocRef.update({
+            username: username,
+            hasUsername: true
+        });
+        
+        // 3. Actualizar Firebase Auth display name
+        await admin.auth().updateUser(userId, { displayName: username });
 
 
-        res.status(200).json({ success: true, message: 'Nombre de usuario guardado.' });
-    } catch (error) {
-        console.error("Error al actualizar el nombre de usuario:", error);
-        res.status(500).json({ success: false, error: 'Error interno al guardar el nombre de usuario.' });
-    }
+        res.status(200).json({ success: true, message: 'Nombre de usuario guardado.' });
+    } catch (error) {
+        console.error("Error al actualizar el nombre de usuario:", error);
+        res.status(500).json({ success: false, error: 'Error interno al guardar el nombre de usuario.' });
+    }
 });
 
 app.get('/api/get-embed-code', async (req, res) => {
