@@ -452,29 +452,37 @@ bot.on('message', async (msg) => {
         }
     } else if (adminState[chatId] && adminState[chatId].step === 'awaiting_event_image') { // NUEVO HANDLER: Evento - Recibe URL
         // Step 2: User sends the image URL
+        // Simple validación de URL (puede ser una URL de imagen o un archivo subido, asumimos URL simple)
+        if (!userText.startsWith('http')) {
+            bot.sendMessage(chatId, '❌ Por favor, envía un ENLACE (URL) de imagen válido.');
+            return;
+        }
         adminState[chatId].imageUrl = userText;
         adminState[chatId].step = 'awaiting_event_description';
         bot.sendMessage(chatId, '¡Enlace de la fotografía recibido! Ahora, envía la DESCRIPCIÓN del evento.');
 
     } else if (adminState[chatId] && adminState[chatId].step === 'awaiting_event_description') { // NUEVO HANDLER: Evento - Recibe Descripción
-        // Step 3: User sends the description and we save the event.
+        // Step 3: User sends the description and we save the event as a notification.
         const { imageUrl } = adminState[chatId];
         const description = userText;
         
         try {
-            // Guardar en la base de datos (Colección 'events')
-            await db.collection('events').add({
-                imageUrl: imageUrl,
+            // Guardar el evento en la colección userNotifications (para que aparezca en la campana)
+            await db.collection('userNotifications').add({
+                title: '🎉 Nuevo Evento Publicado',
                 description: description,
+                image: imageUrl,
                 timestamp: admin.firestore.FieldValue.serverTimestamp(),
-                status: 'published' 
+                isRead: false,
+                type: 'event', 
+                targetScreen: 'profile-screen' // Muestra el perfil donde debería estar el botón de Eventos.
             });
 
             bot.sendMessage(chatId, '✅ Evento guardado con éxito y listo para notificar a los usuarios de la aplicación.');
 
         } catch (error) {
             console.error("Error al guardar evento en Firestore:", error);
-            bot.sendMessage(chatId, '❌ Hubo un error al guardar el evento. Intenta de nuevo.');
+            bot.sendMessage(chatId, '❌ Hubo un error al guardar el evento. Revisa los logs de Firebase.');
         } finally {
             adminState[chatId] = { step: 'menu' };
         }
