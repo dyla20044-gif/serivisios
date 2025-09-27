@@ -310,7 +310,7 @@ bot.onText(/\/start/, (msg) => {
             inline_keyboard: [
                 [{ text: 'Agregar películas', callback_data: 'add_movie' }],
                 [{ text: 'Agregar series', callback_data: 'add_series' }],
-                [{ text: 'Carrusel', callback_data: 'carousel' }],
+                [{ text: 'Eventos', callback_data: 'eventos' }], // MODIFICADO: Carrusel -> Eventos
                 [{ text: 'Gestionar películas', callback_data: 'manage_movies' }],
                 [{ text: 'Eliminar película', callback_data: 'delete_movie' }]
             ]
@@ -328,7 +328,7 @@ bot.onText(/\/subir/, (msg) => {
             inline_keyboard: [
                 [{ text: 'Agregar películas', callback_data: 'add_movie' }],
                 [{ text: 'Agregar series', callback_data: 'add_series' }],
-                [{ text: 'Carrusel', callback_data: 'carousel' }],
+                [{ text: 'Eventos', callback_data: 'eventos' }], // MODIFICADO: Carrusel -> Eventos
                 [{ text: 'Gestionar películas', callback_data: 'manage_movies' }],
                 [{ text: 'Eliminar película', callback_data: 'delete_movie' }]
             ]
@@ -450,6 +450,35 @@ bot.on('message', async (msg) => {
             console.error("Error al buscar en TMDB:", error);
             bot.sendMessage(chatId, 'Hubo un error al buscar el contenido. Intenta de nuevo.');
         }
+    } else if (adminState[chatId] && adminState[chatId].step === 'awaiting_event_image') { // NUEVO HANDLER: Evento - Recibe URL
+        // Step 2: User sends the image URL
+        adminState[chatId].imageUrl = userText;
+        adminState[chatId].step = 'awaiting_event_description';
+        bot.sendMessage(chatId, '¡Enlace de la fotografía recibido! Ahora, envía la DESCRIPCIÓN del evento.');
+
+    } else if (adminState[chatId] && adminState[chatId].step === 'awaiting_event_description') { // NUEVO HANDLER: Evento - Recibe Descripción
+        // Step 3: User sends the description and we save the event.
+        const { imageUrl } = adminState[chatId];
+        const description = userText;
+        
+        try {
+            // Guardar en la base de datos (Colección 'events')
+            await db.collection('events').add({
+                imageUrl: imageUrl,
+                description: description,
+                timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                status: 'published' 
+            });
+
+            bot.sendMessage(chatId, '✅ Evento guardado con éxito y listo para notificar a los usuarios de la aplicación.');
+
+        } catch (error) {
+            console.error("Error al guardar evento en Firestore:", error);
+            bot.sendMessage(chatId, '❌ Hubo un error al guardar el evento. Intenta de nuevo.');
+        } finally {
+            adminState[chatId] = { step: 'menu' };
+        }
+
     } else if (adminState[chatId] && adminState[chatId].step === 'awaiting_pro_link_movie') {
         const { selectedMedia } = adminState[chatId];
         adminState[chatId].proEmbedCode = userText;
@@ -573,6 +602,9 @@ bot.on('callback_query', async (callbackQuery) => {
     } else if (data === 'add_series') {
         adminState[chatId] = { step: 'search_series' };
         bot.sendMessage(chatId, 'Por favor, escribe el nombre de la serie que quieres agregar.');
+    } else if (data === 'eventos') { // NUEVO HANDLER: Eventos
+        adminState[chatId] = { step: 'awaiting_event_image' };
+        bot.sendMessage(chatId, 'Perfecto, vamos a crear un evento. Primero, envía el ENLACE (URL) de la fotografía para el evento.');
     } else if (data.startsWith('add_new_movie_')) {
         const tmdbId = data.replace('add_new_movie_', '');
         try {
