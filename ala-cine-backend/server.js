@@ -100,7 +100,17 @@ app.post('/request-movie', async (req, res) => {
 });
 
 // --------------------------------------------------------------------------
-// === ENDPONT MODIFICADO: PROXY INVERSO PARA GOAT STREAMING (CON DIAGNÓSTICO) ===
+// === FUNCIÓN DE UTILIDAD: EXTRAE LA URL DE LA ETIQUETA IFRAME ===
+// --------------------------------------------------------------------------
+function extractUrlFromIframe(iframeString) {
+    // Expresión regular para buscar el valor del atributo SRC
+    const match = iframeString.match(/src=["'](.*?)["']/i);
+    // Si encuentra la coincidencia, devuelve el primer grupo de captura (la URL)
+    return match ? match[1] : null;
+}
+
+// --------------------------------------------------------------------------
+// === ENDPONT MODIFICADO: PROXY INVERSO PARA GOAT STREAMING (CON EXTRACCIÓN DE URL) ===
 // --------------------------------------------------------------------------
 
 app.get('/api/get-embed-code', async (req, res) => {
@@ -110,7 +120,8 @@ app.get('/api/get-embed-code', async (req, res) => {
     return res.status(400).send("ID no proporcionado");
   }
 
-  let embedUrl; // Declarar aquí para que sea accesible en el catch
+  let embedCodeFromDB; // El código iframe de Firebase
+  let finalUrlToProxy; // La URL limpia que usará Axios
 
   try {
     const mediaType = season && episode ? 'series' : 'movies';
@@ -123,40 +134,48 @@ app.get('/api/get-embed-code', async (req, res) => {
 
     const data = doc.data();
 
-    // 1. OBTENER LA URL DE GOAT STREAMING DESDE FIRESTORE
+    // 1. OBTENER EL CÓDIGO (IFRAME) DE GOAT STREAMING DESDE FIRESTORE
     if (mediaType === 'movies') {
-        embedUrl = isPro === 'true' ? data.proEmbedCode : data.freeEmbedCode;
+        embedCodeFromDB = isPro === 'true' ? data.proEmbedCode : data.freeEmbedCode;
     } else { // series
         const episodeData = data.seasons?.[season]?.episodes?.[episode];
-        embedUrl = isPro === 'true' ? episodeData?.proEmbedCode : episodeData?.freeEmbedCode;
+        embedCodeFromDB = isPro === 'true' ? episodeData?.proEmbedCode : episodeData?.freeEmbedCode;
     }
 
-    if (!embedUrl) {
+    if (!embedCodeFromDB) {
       return res.status(404).send("No se encontró código de reproductor.");
     }
     
-    // 2. EL SERVIDOR HACE LA PETICIÓN A GOAT STREAMING (PROXY)
-    // Usamos un User Agent MÓVIL más específico para la prueba final contra detección de bots
-    const goatStreamingResponse = await axios.get(embedUrl, {
+    // *** CORRECCIÓN CLAVE ***
+    // 2. EXTRAER LA URL LIMPIA DEL IFRAME O ASUMIR QUE ES UNA URL DIRECTA
+    finalUrlToProxy = extractUrlFromIframe(embedCodeFromDB);
+    
+    // Si la extracción falla o devuelve null, significa que lo que está guardado no es un iframe,
+    // por lo que asumimos que es una URL directa (como se haría en un caso ideal).
+    if (!finalUrlToProxy) {
+        finalUrlToProxy = embedCodeFromDB;
+    }
+
+    // 3. EL SERVIDOR HACE LA PETICIÓN A GOAT STREAMING (PROXY)
+    const goatStreamingResponse = await axios.get(finalUrlToProxy, {
         headers: {
-            'User-Agent': 'Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.87 Mobile Safari/537.36',
-            'Referer': 'https://www.youtube.com/' // Referer común
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36', // User Agent de Desktop
+            'Referer': 'https://www.google.com/' 
         }
     });
 
-    // 3. DEVOLVER EL CONTENIDO HTML COMPLETO DIRECTAMENTE A LA APP
+    // 4. DEVOLVER EL CONTENIDO HTML COMPLETO DIRECTAMENTE A LA APP
     res.send(goatStreamingResponse.data);
 
   } catch (error) {
     console.error("Error al obtener el código embed mediante proxy:", error.message);
     
-    // >>>>>> REGISTRO CRÍTICO AÑADIDO PARA DIAGNÓSTICO <<<<<<
-    if (embedUrl) {
-        console.error("URL de Goat Streaming fallida:", embedUrl);
+    // >>>>>> REGISTRO CRÍTICO PARA DIAGNÓSTICO <<<<<<
+    if (finalUrlToProxy) {
+        console.error("URL de Goat Streaming fallida (proxy final):", finalUrlToProxy);
     }
     if (error.response) {
       console.error("Respuesta HTTP de Goat Streaming:", error.response.status);
-      // Devolvemos el status code al cliente para un diagnóstico más rápido en la app.
       res.status(500).send(`Error interno del servidor al cargar el reproductor. HTTP Status: ${error.response.status}. Por favor, revisa los logs.`);
       return;
     }
