@@ -5,7 +5,8 @@ const TelegramBot = require('node-telegram-bot-api');
 const admin = require('firebase-admin');
 const axios = require('axios');
 const dotenv = require('dotenv');
-const url = require('url'); // NUEVO: Módulo 'url' para manipulación de URLs
+// === NUEVO: Módulo 'url' para manipulación de URLs ===
+const url = require('url'); 
 
 const app = express();
 
@@ -101,10 +102,10 @@ app.post('/request-movie', async (req, res) => {
 });
 
 // --------------------------------------------------------------------------
-// === FUNCIÓN DE UTILIDAD: EXTRAE LA URL DE LA ETIQUETA IFRAME ===
+// === FUNCIÓN DE UTILIDAD: EXTRAE LA URL DE LA ETIQUETA IFRAME (¡CRÍTICO!) ===
 // --------------------------------------------------------------------------
 function extractUrlFromIframe(iframeString) {
-    // Expresión regular para buscar el valor del atributo SRC
+    // Busca el valor del atributo SRC dentro de comillas simples o dobles
     const match = iframeString.match(/src=["'](.*?)["']/i);
     // Si encuentra la coincidencia, devuelve el primer grupo de captura (la URL)
     return match ? match[1] : null;
@@ -147,7 +148,7 @@ app.get('/api/get-embed-code', async (req, res) => {
       return res.status(404).send("No se encontró código de reproductor.");
     }
     
-    // 2. EXTRAER LA URL LIMPIA DEL IFRAME
+    // 2. EXTRAER LA URL LIMPIA DEL IFRAME (¡SOLUCIÓN AL ERROR 'Invalid URL'!)
     finalUrlToProxy = extractUrlFromIframe(embedCodeFromDB);
     
     // Si la extracción falla o devuelve null, asumimos que la DB tiene la URL directa
@@ -165,8 +166,7 @@ app.get('/api/get-embed-code', async (req, res) => {
 
     let proxiedHtml = goatStreamingResponse.data;
     
-    // *** CORRECCIÓN CLAVE: INYECCIÓN DEL BASE TAG ***
-    // Esto asegura que los archivos JavaScript (comandos de Play) se carguen correctamente.
+    // 4. INYECCIÓN DEL BASE TAG (¡SOLUCIÓN A LA FALTA DE COMANDOS DE PLAY!)
     const parsedUrl = url.parse(finalUrlToProxy);
     const baseUrl = `${parsedUrl.protocol}//${parsedUrl.host}`;
     const baseTag = `<base href="${baseUrl}">`;
@@ -175,11 +175,13 @@ app.get('/api/get-embed-code', async (req, res) => {
         proxiedHtml = proxiedHtml.replace('<head>', `<head>${baseTag}`);
     } else if (proxiedHtml.includes('</head>')) {
          proxiedHtml = proxiedHtml.replace('</head>', `${baseTag}</head>`);
+    } else {
+         // Fallback si no hay etiquetas head (poco probable, pero seguro)
+         proxiedHtml = baseTag + proxiedHtml;
     }
-    // *** FIN INYECCIÓN BASE TAG ***
 
 
-    // 4. DEVOLVER EL CONTENIDO HTML MANIPULADO
+    // 5. DEVOLVER EL CONTENIDO HTML MANIPULADO
     res.send(proxiedHtml);
 
   } catch (error) {
@@ -773,6 +775,7 @@ bot.on('callback_query', async (callbackQuery) => {
             }
         };
         bot.sendMessage(chatId, `Gestionando "${existingData.title}". ¿Qué versión quieres agregar?`, options);
+
     } else if (data.startsWith('manage_series_')) {
         const tmdbId = data.replace('manage_series_', '');
         const seriesRef = db.collection('series').doc(tmdbId);
