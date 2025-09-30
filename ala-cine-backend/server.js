@@ -5,7 +5,6 @@ const TelegramBot = require('node-telegram-bot-api');
 const admin = require('firebase-admin');
 const axios = require('axios');
 const dotenv = require('dotenv');
-// === NUEVO: Módulo 'url' para manipulación de URLs ===
 const url = require('url'); 
 
 const app = express();
@@ -106,6 +105,7 @@ app.post('/request-movie', async (req, res) => {
 // --------------------------------------------------------------------------
 function extractUrlFromIframe(iframeString) {
     // Busca el valor del atributo SRC dentro de comillas simples o dobles
+    if (typeof iframeString !== 'string') return iframeString;
     const match = iframeString.match(/src=["'](.*?)["']/i);
     // Si encuentra la coincidencia, devuelve el primer grupo de captura (la URL)
     return match ? match[1] : null;
@@ -148,10 +148,10 @@ app.get('/api/get-embed-code', async (req, res) => {
       return res.status(404).send("No se encontró código de reproductor.");
     }
     
-    // 2. EXTRAER LA URL LIMPIA DEL IFRAME (¡SOLUCIÓN AL ERROR 'Invalid URL'!)
+    // 2. EXTRAER LA URL LIMPIA DEL IFRAME
     finalUrlToProxy = extractUrlFromIframe(embedCodeFromDB);
     
-    // Si la extracción falla o devuelve null, asumimos que la DB tiene la URL directa
+    // Si la extracción falla o devuelve null, asumimos que la DB tiene la URL directa (la que esperamos ahora)
     if (!finalUrlToProxy) {
         finalUrlToProxy = embedCodeFromDB;
     }
@@ -166,7 +166,7 @@ app.get('/api/get-embed-code', async (req, res) => {
 
     let proxiedHtml = goatStreamingResponse.data;
     
-    // 4. INYECCIÓN DEL BASE TAG (¡SOLUCIÓN A LA FALTA DE COMANDOS DE PLAY!)
+    // 4. INYECCIÓN DEL BASE TAG
     const parsedUrl = url.parse(finalUrlToProxy);
     const baseUrl = `${parsedUrl.protocol}//${parsedUrl.host}`;
     const baseTag = `<base href="${baseUrl}">`;
@@ -176,7 +176,6 @@ app.get('/api/get-embed-code', async (req, res) => {
     } else if (proxiedHtml.includes('</head>')) {
          proxiedHtml = proxiedHtml.replace('</head>', `${baseTag}</head>`);
     } else {
-         // Fallback si no hay etiquetas head (poco probable, pero seguro)
          proxiedHtml = baseTag + proxiedHtml;
     }
 
@@ -187,7 +186,6 @@ app.get('/api/get-embed-code', async (req, res) => {
   } catch (error) {
     console.error("Error al obtener el código embed mediante proxy:", error.message);
     
-    // >>>>>> REGISTRO CRÍTICO PARA DIAGNÓSTICO <<<<<<
     if (finalUrlToProxy) {
         console.error("URL de Goat Streaming fallida (proxy final):", finalUrlToProxy);
     }
@@ -216,6 +214,11 @@ app.post('/add-movie', async (req, res) => {
 
         let movieDataToSave = {};
 
+        // >>>>>> CÓDIGO CLAVE: LIMPIEZA DE ENLACES AL GUARDAR (Futuras Películas) <<<<<<
+        const cleanedFreeLink = extractUrlFromIframe(freeEmbedCode) || freeEmbedCode;
+        const cleanedProLink = extractUrlFromIframe(proEmbedCode) || proEmbedCode;
+        // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+
         if (movieDoc.exists) {
             const existingData = movieDoc.data();
             // Lógica para no sobreescribir si el código es nulo
@@ -223,8 +226,8 @@ app.post('/add-movie', async (req, res) => {
                 ...existingData,
                 title: title,
                 poster_path: poster_path,
-                freeEmbedCode: freeEmbedCode !== undefined ? freeEmbedCode : existingData.freeEmbedCode,
-                proEmbedCode: proEmbedCode !== undefined ? proEmbedCode : existingData.proEmbedCode,
+                freeEmbedCode: freeEmbedCode !== undefined ? cleanedFreeLink : existingData.freeEmbedCode,
+                proEmbedCode: proEmbedCode !== undefined ? cleanedProLink : existingData.proEmbedCode,
                 // Si se envía como GRATIS, se sobreescribe isPremium a false. Si se envía como PRO, se sobreescribe a true.
                 isPremium: isPremium
             };
@@ -234,8 +237,8 @@ app.post('/add-movie', async (req, res) => {
                 tmdbId,
                 title,
                 poster_path,
-                freeEmbedCode, 
-                proEmbedCode,
+                freeEmbedCode: cleanedFreeLink, 
+                proEmbedCode: cleanedProLink,
                 isPremium
             };
         }
@@ -255,6 +258,11 @@ app.post('/add-series-episode', async (req, res) => {
         const seriesRef = db.collection('series').doc(tmdbId.toString());
         const seriesDoc = await seriesRef.get();
 
+        // >>>>>> CÓDIGO CLAVE: LIMPIEZA DE ENLACES AL GUARDAR (Futuras Series) <<<<<<
+        const cleanedFreeLink = extractUrlFromIframe(freeEmbedCode) || freeEmbedCode;
+        const cleanedProLink = extractUrlFromIframe(proEmbedCode) || proEmbedCode;
+        // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+
         let seriesDataToSave = {};
 
         if (seriesDoc.exists) {
@@ -262,8 +270,8 @@ app.post('/add-series-episode', async (req, res) => {
             const existingEpisode = existingData.seasons?.[seasonNumber]?.episodes?.[episodeNumber] || {};
             
             const newEpisodeData = {
-                freeEmbedCode: freeEmbedCode !== undefined ? freeEmbedCode : existingEpisode.freeEmbedCode,
-                proEmbedCode: proEmbedCode !== undefined ? proEmbedCode : existingEpisode.proEmbedCode
+                freeEmbedCode: freeEmbedCode !== undefined ? cleanedFreeLink : existingEpisode.freeEmbedCode,
+                proEmbedCode: proEmbedCode !== undefined ? cleanedProLink : existingEpisode.proEmbedCode
             };
             
             seriesDataToSave = {
@@ -290,7 +298,7 @@ app.post('/add-series-episode', async (req, res) => {
                 seasons: {
                     [seasonNumber]: {
                         episodes: {
-                            [episodeNumber]: { freeEmbedCode, proEmbedCode }
+                            [episodeNumber]: { freeEmbedCode: cleanedFreeLink, proEmbedCode: cleanedProLink }
                         }
                     }
                 }
@@ -775,7 +783,6 @@ bot.on('callback_query', async (callbackQuery) => {
             }
         };
         bot.sendMessage(chatId, `Gestionando "${existingData.title}". ¿Qué versión quieres agregar?`, options);
-
     } else if (data.startsWith('manage_series_')) {
         const tmdbId = data.replace('manage_series_', '');
         const seriesRef = db.collection('series').doc(tmdbId);
