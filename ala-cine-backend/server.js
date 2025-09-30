@@ -5,6 +5,8 @@ const TelegramBot = require('node-telegram-bot-api');
 const admin = require('firebase-admin');
 const axios = require('axios');
 const dotenv = require('dotenv');
+// === NUEVO: Módulo 'url' para manipulación de URLs ===
+const url = require('url'); 
 
 const app = express();
 
@@ -109,8 +111,9 @@ function extractUrlFromIframe(iframeString) {
     return match ? match[1] : null;
 }
 
+
 // --------------------------------------------------------------------------
-// === ENDPONT MODIFICADO: PROXY INVERSO PARA GOAT STREAMING (CON EXTRACCIÓN DE URL) ===
+// === ENDPONT MODIFICADO: PROXY INVERSO (CON INYECCIÓN DE BASE TAG) ===
 // --------------------------------------------------------------------------
 
 app.get('/api/get-embed-code', async (req, res) => {
@@ -120,8 +123,8 @@ app.get('/api/get-embed-code', async (req, res) => {
     return res.status(400).send("ID no proporcionado");
   }
 
-  let embedCodeFromDB; // El código iframe de Firebase
-  let finalUrlToProxy; // La URL limpia que usará Axios
+  let embedCodeFromDB;
+  let finalUrlToProxy;
 
   try {
     const mediaType = season && episode ? 'series' : 'movies';
@@ -146,12 +149,8 @@ app.get('/api/get-embed-code', async (req, res) => {
       return res.status(404).send("No se encontró código de reproductor.");
     }
     
-    // *** CORRECCIÓN CLAVE ***
-    // 2. EXTRAER LA URL LIMPIA DEL IFRAME O ASUMIR QUE ES UNA URL DIRECTA
+    // 2. EXTRAER LA URL LIMPIA DEL IFRAME
     finalUrlToProxy = extractUrlFromIframe(embedCodeFromDB);
-    
-    // Si la extracción falla o devuelve null, significa que lo que está guardado no es un iframe,
-    // por lo que asumimos que es una URL directa (como se haría en un caso ideal).
     if (!finalUrlToProxy) {
         finalUrlToProxy = embedCodeFromDB;
     }
@@ -159,18 +158,36 @@ app.get('/api/get-embed-code', async (req, res) => {
     // 3. EL SERVIDOR HACE LA PETICIÓN A GOAT STREAMING (PROXY)
     const goatStreamingResponse = await axios.get(finalUrlToProxy, {
         headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36', // User Agent de Desktop
+            // Usar un User Agent de Desktop es más común para proxies
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
             'Referer': 'https://www.google.com/' 
         }
     });
 
-    // 4. DEVOLVER EL CONTENIDO HTML COMPLETO DIRECTAMENTE A LA APP
-    res.send(goatStreamingResponse.data);
+    let proxiedHtml = goatStreamingResponse.data;
+    
+    // *** CORRECCIÓN CLAVE: INYECCIÓN DEL BASE TAG ***
+    // 4. Obtener el origen (protocolo + dominio) de la URL que se está proxyeando
+    const parsedUrl = url.parse(finalUrlToProxy);
+    const baseUrl = `${parsedUrl.protocol}//${parsedUrl.host}`;
+    const baseTag = `<base href="${baseUrl}">`;
+
+    // 5. Inyectar la etiqueta <base> justo después de la etiqueta <head>
+    // Esto asegura que todos los scripts y estilos relativos se carguen desde Goat Streaming
+    if (proxiedHtml.includes('<head>')) {
+        proxiedHtml = proxiedHtml.replace('<head>', `<head>${baseTag}`);
+    } else if (proxiedHtml.includes('</head>')) {
+         proxiedHtml = proxiedHtml.replace('</head>', `${baseTag}</head>`);
+    }
+    // *** FIN INYECCIÓN BASE TAG ***
+
+
+    // 6. DEVOLVER EL CONTENIDO HTML MANIPULADO
+    res.send(proxiedHtml);
 
   } catch (error) {
     console.error("Error al obtener el código embed mediante proxy:", error.message);
     
-    // >>>>>> REGISTRO CRÍTICO PARA DIAGNÓSTICO <<<<<<
     if (finalUrlToProxy) {
         console.error("URL de Goat Streaming fallida (proxy final):", finalUrlToProxy);
     }
@@ -179,7 +196,6 @@ app.get('/api/get-embed-code', async (req, res) => {
       res.status(500).send(`Error interno del servidor al cargar el reproductor. HTTP Status: ${error.response.status}. Por favor, revisa los logs.`);
       return;
     }
-    // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
     res.status(500).send("Error interno del servidor al cargar el reproductor.");
   }
