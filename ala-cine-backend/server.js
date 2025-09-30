@@ -247,9 +247,11 @@ app.post('/add-series-episode', async (req, res) => {
     }
 });
 
+// === MODIFICADO: Envía el userId a PayPal ===
 app.post('/create-paypal-payment', (req, res) => {
     const plan = req.body.plan;
     const amount = (plan === 'annual') ? '19.99' : '1.99';
+    const userId = req.body.userId; // NUEVO: Capturamos el ID de Firebase
 
     const create_payment_json = {
         "intent": "sale",
@@ -265,7 +267,8 @@ app.post('/create-paypal-payment', (req, res) => {
                 "currency": "USD",
                 "total": amount
             },
-            "description": `Suscripción al plan ${plan} de Sala Cine`
+            "description": `Suscripción al plan ${plan} de Sala Cine`,
+            "invoice_number": userId // NUEVO: Lo pasamos a PayPal para recuperarlo luego
         }]
     };
 
@@ -285,8 +288,47 @@ app.post('/create-paypal-payment', (req, res) => {
     });
 });
 
+// === CRÍTICO MODIFICADO: Ejecuta el pago y activa el Premium ===
 app.get('/paypal/success', (req, res) => {
-    res.send('<html><body><h1>Pago con PayPal exitoso. Vuelve a tu aplicación para ver los cambios.</h1></body></html>');
+    const payerId = req.query.PayerID;
+    const paymentId = req.query.paymentId;
+    
+    // 1. Ejecutar la transacción (Capturar el dinero)
+    paypal.payment.execute(paymentId, { "payer_id": payerId }, async function (error, payment) {
+        if (error) {
+            console.error("Error al ejecutar el pago:", error.response);
+            // Mensaje de error visible para el usuario
+            return res.send('<html><body><h1>❌ ERROR: El pago no pudo ser procesado.</h1><p>Por favor, contacta con soporte con tu ID de transacción.</p></body></html>');
+        }
+
+        // 2. Verificar el estado y obtener el ID de usuario
+        if (payment.state === 'approved' || payment.state === 'completed') {
+            // El invoice_number contiene el ID de usuario de Firebase
+            const userId = payment.transactions[0].invoice_number; 
+            
+            if (userId) {
+                try {
+                    // 3. Activar la cuenta Premium en Firebase
+                    const userDocRef = db.collection('users').doc(userId);
+                    // Usar set con merge: true para crear el documento si no existe, o actualizar si existe
+                    await userDocRef.set({ isPro: true }, { merge: true });
+                    
+                    // Notificar al usuario que regrese a la app
+                    res.send('<html><body><h1>✅ ¡Pago Exitoso! Cuenta Premium Activada.</h1><p>Vuelve a la aplicación para disfrutar de tu contenido PRO.</p></body></html>');
+                } catch (dbError) {
+                    console.error("Error al actualizar la base de datos de Firebase:", dbError);
+                    // El pago se ejecutó, pero la base de datos falló (necesita revisión manual)
+                    res.send('<html><body><h1>⚠️ Advertencia: Pago recibido, pero la cuenta Premium no se activó automáticamente.</h1><p>Por favor, contacta con soporte con el ID de transacción: ' + paymentId + '</p></body></html>');
+                }
+            } else {
+                // El pago se ejecutó, pero el ID de usuario no fue guardado en la transacción
+                 res.send('<html><body><h1>✅ ¡Pago Exitoso! Contacta a soporte para activar tu Premium</h1><p>Vuelve a la aplicación y contacta a soporte con tu ID de transacción: ' + paymentId + '</p></body></html>');
+            }
+        } else {
+            // Estado no aprobado (puede ser "pendiente", "fallido", etc.)
+            res.send('<html><body><h1>❌ ERROR: El pago no fue aprobado.</h1><p>Estado del pago: ' + payment.state + '</p></body></html>');
+        }
+    });
 });
 
 app.get('/paypal/cancel', (req, res) => {
