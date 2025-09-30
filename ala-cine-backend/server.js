@@ -5,7 +5,6 @@ const TelegramBot = require('node-telegram-bot-api');
 const admin = require('firebase-admin');
 const axios = require('axios');
 const dotenv = require('dotenv');
-const url = require('url'); 
 
 const app = express();
 
@@ -100,29 +99,16 @@ app.post('/request-movie', async (req, res) => {
     }
 });
 
-// --------------------------------------------------------------------------
-// === FUNCIÓN DE UTILIDAD: EXTRAE LA URL DE LA ETIQUETA IFRAME (¡CRÍTICO!) ===
-// --------------------------------------------------------------------------
-function extractUrlFromIframe(iframeString) {
-    if (typeof iframeString !== 'string') return iframeString;
-    // CRÍTICO: Buscar el valor del atributo SRC
-    const match = iframeString.match(/src=["'](.*?)["']/i);
-    return match ? match[1] : null;
-}
-
-// --------------------------------------------------------------------------
-// === ENDPONT MODIFICADO: PROXY INVERSO (CON LIMPIEZA Y BASE TAG) ===
-// --------------------------------------------------------------------------
+// -----------------------------------------------------------
+// === INICIO DEL CÓDIGO MEJORADO PARA EL ENDPOINT DE VIDEO ===
+// -----------------------------------------------------------
 
 app.get('/api/get-embed-code', async (req, res) => {
   const { id, season, episode, isPro } = req.query;
   
   if (!id) {
-    return res.status(400).send("ID no proporcionado");
+    return res.status(400).json({ error: "ID de la película o serie no proporcionado" });
   }
-
-  let embedCodeFromDB;
-  let finalUrlToProxy;
 
   try {
     const mediaType = season && episode ? 'series' : 'movies';
@@ -130,90 +116,36 @@ app.get('/api/get-embed-code', async (req, res) => {
     const doc = await docRef.get();
     
     if (!doc.exists) {
-      return res.status(404).send(`${mediaType} no encontrada`);
+      return res.status(404).json({ error: `${mediaType} no encontrada` });
     }
 
     const data = doc.data();
 
-    // 1. OBTENER EL CÓDIGO (IFRAME) DE GOAT STREAMING DESDE FIRESTORE
     if (mediaType === 'movies') {
-        embedCodeFromDB = isPro === 'true' ? data.proEmbedCode : data.freeEmbedCode;
+        const embedCode = isPro === 'true' ? data.proEmbedCode : data.freeEmbedCode;
+        if (embedCode) {
+            res.json({ embedCode });
+        } else {
+            res.status(404).json({ error: `No se encontró código de reproductor para esta película.` });
+        }
     } else { // series
         const episodeData = data.seasons?.[season]?.episodes?.[episode];
-        embedCodeFromDB = isPro === 'true' ? episodeData?.proEmbedCode : episodeData?.freeEmbedCode;
-    }
-
-    if (!embedCodeFromDB) {
-      return res.status(404).send("No se encontró código de reproductor.");
-    }
-    
-    // >>>>>> PASO CRÍTICO DE INMUNIZACIÓN: LIMPIAR EL CÓDIGO <<<<<<
-    if (typeof embedCodeFromDB === 'string') {
-        // 2. ELIMINAR ESPACIOS EN BLANCO Y CARACTERES INVISIBLES
-        embedCodeFromDB = embedCodeFromDB.trim();
-    }
-
-    // 3. INTENTAR EXTRAER LA URL LIMPIA
-    finalUrlToProxy = extractUrlFromIframe(embedCodeFromDB);
-    
-    // 4. Si la extracción falla (porque ya es la URL limpia), usar el código de Firebase.
-    if (!finalUrlToProxy) {
-        finalUrlToProxy = embedCodeFromDB;
-    }
-    // >>>>>> FIN PASO CRÍTICO DE INMUNIZACIÓN <<<<<<
-
-    // >>>>>> LÍNEAS DEBUG CRÍTICAS <<<<<<
-    console.log("DEBUG: ID:", id, "Tipo:", isPro === 'true' ? 'PRO' : 'GRATIS');
-    console.log("DEBUG: CÓDIGO LEÍDO DE FIREBASE (TRIMMED):", embedCodeFromDB);
-    console.log("DEBUG: URL LIMPIA FINAL PARA PROXY:", finalUrlToProxy);
-    // >>>>>> FIN LÍNEAS DEBUG CRÍTICAS <<<<<<
-
-    // 5. EL SERVIDOR HACE LA PETICIÓN A GOAT STREAMING (PROXY)
-    const goatStreamingResponse = await axios.get(finalUrlToProxy, {
-        headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
-            'Referer': 'https://www.google.com/' 
+        const embedCode = isPro === 'true' ? episodeData?.proEmbedCode : episodeData?.freeEmbedCode;
+        if (embedCode) {
+            res.json({ embedCode });
+        } else {
+            res.status(404).json({ error: `No se encontró código de reproductor para el episodio ${episode}.` });
         }
-    });
-
-    let proxiedHtml = goatStreamingResponse.data;
-    
-    // 6. INYECCIÓN DEL BASE TAG (Asegura la carga de los comandos de Play)
-    const parsedUrl = url.parse(finalUrlToProxy);
-    const baseUrl = `${parsedUrl.protocol}//${parsedUrl.host}`;
-    const baseTag = `<base href="${baseUrl}">`;
-
-    if (proxiedHtml.includes('<head>')) {
-        proxiedHtml = proxiedHtml.replace('<head>', `<head>${baseTag}`);
-    } else if (proxiedHtml.includes('</head>')) {
-         proxiedHtml = proxiedHtml.replace('</head>', `${baseTag}</head>`);
-    } else {
-         proxiedHtml = baseTag + proxiedHtml;
     }
-
-
-    // 7. DEVOLVER EL CONTENIDO HTML MANIPULADO
-    res.send(proxiedHtml);
-
   } catch (error) {
-    console.error("Error al obtener el código embed mediante proxy:", error.message);
-    
-    // >>>>>> REGISTRO DE FALLO EN LOGS <<<<<<
-    if (finalUrlToProxy) {
-        console.error("FALLO PROXY: URL final:", finalUrlToProxy);
-    }
-    if (error.response) {
-      console.error("FALLO PROXY: Respuesta HTTP:", error.response.status);
-      res.status(500).send(`Error interno del servidor al cargar el reproductor. HTTP Status: ${error.response.status}. Por favor, revisa los logs.`);
-      return;
-    }
-
-    res.status(500).send("Error interno del servidor al cargar el reproductor.");
+    console.error("Error al obtener el código embed:", error);
+    res.status(500).json({ error: "Error interno del servidor" });
   }
 });
 
+
 // -----------------------------------------------------------
-// === FIN DEL ENDPOINT DE PROXY INVERSO ===
+// === FIN DEL CÓDIGO MEJORADO PARA EL ENDPOINT DE VIDEO ===
 // -----------------------------------------------------------
 
 
@@ -227,11 +159,6 @@ app.post('/add-movie', async (req, res) => {
 
         let movieDataToSave = {};
 
-        // >>>>>> CÓDIGO CLAVE: LIMPIEZA DE ENLACES AL GUARDAR (Futuras Películas) <<<<<<
-        const cleanedFreeLink = extractUrlFromIframe(freeEmbedCode) || (typeof freeEmbedCode === 'string' ? freeEmbedCode.trim() : freeEmbedCode);
-        const cleanedProLink = extractUrlFromIframe(proEmbedCode) || (typeof proEmbedCode === 'string' ? proEmbedCode.trim() : proEmbedCode);
-        // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-
         if (movieDoc.exists) {
             const existingData = movieDoc.data();
             // Lógica para no sobreescribir si el código es nulo
@@ -239,8 +166,8 @@ app.post('/add-movie', async (req, res) => {
                 ...existingData,
                 title: title,
                 poster_path: poster_path,
-                freeEmbedCode: freeEmbedCode !== undefined ? cleanedFreeLink : existingData.freeEmbedCode,
-                proEmbedCode: proEmbedCode !== undefined ? cleanedProLink : existingData.proEmbedCode,
+                freeEmbedCode: freeEmbedCode !== undefined ? freeEmbedCode : existingData.freeEmbedCode,
+                proEmbedCode: proEmbedCode !== undefined ? proEmbedCode : existingData.proEmbedCode,
                 // Si se envía como GRATIS, se sobreescribe isPremium a false. Si se envía como PRO, se sobreescribe a true.
                 isPremium: isPremium
             };
@@ -250,8 +177,8 @@ app.post('/add-movie', async (req, res) => {
                 tmdbId,
                 title,
                 poster_path,
-                freeEmbedCode: cleanedFreeLink, 
-                proEmbedCode: cleanedProLink,
+                freeEmbedCode, 
+                proEmbedCode,
                 isPremium
             };
         }
@@ -271,11 +198,6 @@ app.post('/add-series-episode', async (req, res) => {
         const seriesRef = db.collection('series').doc(tmdbId.toString());
         const seriesDoc = await seriesRef.get();
 
-        // >>>>>> CÓDIGO CLAVE: LIMPIEZA DE ENLACES AL GUARDAR (Futuras Series) <<<<<<
-        const cleanedFreeLink = extractUrlFromIframe(freeEmbedCode) || (typeof freeEmbedCode === 'string' ? freeEmbedCode.trim() : freeEmbedCode);
-        const cleanedProLink = extractUrlFromIframe(proEmbedCode) || (typeof proEmbedCode === 'string' ? proEmbedCode.trim() : proEmbedCode);
-        // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-
         let seriesDataToSave = {};
 
         if (seriesDoc.exists) {
@@ -283,8 +205,8 @@ app.post('/add-series-episode', async (req, res) => {
             const existingEpisode = existingData.seasons?.[seasonNumber]?.episodes?.[episodeNumber] || {};
             
             const newEpisodeData = {
-                freeEmbedCode: freeEmbedCode !== undefined ? cleanedFreeLink : existingEpisode.freeEmbedCode,
-                proEmbedCode: proEmbedCode !== undefined ? cleanedProLink : existingEpisode.proEmbedCode
+                freeEmbedCode: freeEmbedCode !== undefined ? freeEmbedCode : existingEpisode.freeEmbedCode,
+                proEmbedCode: proEmbedCode !== undefined ? proEmbedCode : existingEpisode.proEmbedCode
             };
             
             seriesDataToSave = {
@@ -311,7 +233,7 @@ app.post('/add-series-episode', async (req, res) => {
                 seasons: {
                     [seasonNumber]: {
                         episodes: {
-                            [episodeNumber]: { freeEmbedCode: cleanedFreeLink, proEmbedCode: cleanedProLink }
+                            [episodeNumber]: { freeEmbedCode, proEmbedCode }
                         }
                     }
                 }
@@ -587,7 +509,6 @@ bot.on('message', async (msg) => {
         const description = userText;
         
         try {
-            // Guardar el evento en la colección userNotifications (para que aparezca en la campana)
             await db.collection('userNotifications').add({
                 title: '🎉 Nuevo Evento Publicado',
                 description: description,
@@ -595,7 +516,7 @@ bot.on('message', async (msg) => {
                 timestamp: admin.firestore.FieldValue.serverTimestamp(),
                 isRead: false,
                 type: 'event', 
-                targetScreen: 'profile-screen' // Muestra el perfil donde debería estar el botón de Eventos.
+                targetScreen: 'profile-screen'
             });
 
             bot.sendMessage(chatId, '✅ Evento guardado con éxito y listo para notificar a los usuarios de la aplicación.');
@@ -616,7 +537,6 @@ bot.on('message', async (msg) => {
         const { selectedMedia, proEmbedCode } = adminState[chatId];
         const freeEmbedCode = userText !== 'no' ? userText : null;
         
-        // Guardar los datos de la película en el estado para usarlos después
         adminState[chatId].movieDataToSave = {
             tmdbId: selectedMedia.id.toString(), 
             title: selectedMedia.title,
@@ -638,7 +558,6 @@ bot.on('message', async (msg) => {
         };
         bot.sendMessage(chatId, `¡Reproductor GRATIS recibido! ¿Qué quieres hacer ahora?`, options);
     } else if (adminState[chatId] && adminState[chatId].step === 'awaiting_pro_link_series') {
-        // ✅ CORRECCIÓN CLAVE: Se añade una validación para asegurar que selectedSeries existe.
         if (!adminState[chatId].selectedSeries) {
             bot.sendMessage(chatId, 'Error: El estado de la serie se ha perdido. Por favor, reinicia el proceso.');
             adminState[chatId] = { step: 'menu' };
@@ -659,12 +578,10 @@ bot.on('message', async (msg) => {
         const { selectedSeries, season, episode, proEmbedCode } = adminState[chatId];
         const freeEmbedCode = userText !== 'no' ? userText : null;
 
-        // Guardar los datos de la serie en el estado para usarlos después
-        const tmdbIdToUse = selectedSeries.tmdbId || selectedSeries.id;
         adminState[chatId].seriesDataToSave = {
-            tmdbId: tmdbIdToUse.toString(), 
+            tmdbId: selectedSeries.tmdbId || selectedSeries.id, 
             title: selectedSeries.title || selectedSeries.name,
-            overview: selectedSeries.overview,
+            overview: selectedMedia.overview,
             poster_path: selectedSeries.poster_path,
             seasonNumber: season,
             episodeNumber: episode,
@@ -677,8 +594,8 @@ bot.on('message', async (msg) => {
         const options = {
             reply_markup: {
                 inline_keyboard: [
-                    [{ text: '💾 Guardar solo en la app', callback_data: `save_only_series_${tmdbIdToUse}` }],
-                    [{ text: '🚀 Guardar y publicar en el canal', callback_data: `save_and_publish_series_${tmdbIdToUse}` }]
+                    [{ text: '💾 Guardar solo en la app', callback_data: `save_only_series_${selectedSeries.tmdbId || selectedSeries.id}` }],
+                    [{ text: '🚀 Guardar y publicar en el canal', callback_data: `save_and_publish_series_${selectedSeries.tmdbId || selectedSeries.id}` }]
                 ]
             }
         };
@@ -730,7 +647,7 @@ bot.on('callback_query', async (callbackQuery) => {
     } else if (data === 'add_series') {
         adminState[chatId] = { step: 'search_series' };
         bot.sendMessage(chatId, 'Por favor, escribe el nombre de la serie que quieres agregar.');
-    } else if (data === 'eventos') { // NUEVO HANDLER: Eventos
+    } else if (data === 'eventos') {
         adminState[chatId] = { step: 'awaiting_event_image' };
         bot.sendMessage(chatId, 'Perfecto, vamos a crear un evento. Primero, envía el ENLACE (URL) de la fotografía para el evento.');
     } else if (data.startsWith('add_new_movie_')) {
@@ -873,7 +790,6 @@ bot.on('callback_query', async (callbackQuery) => {
         bot.sendMessage(chatId, `Seleccionaste "${seriesData.title || seriesData.name}". Envía el reproductor PRO para el episodio ${nextEpisode} de la temporada 1. Si no hay, escribe "no".`);
 
     } else if (data.startsWith('add_next_episode_')) {
-        // CORRECCIÓN: Arreglo del problema de "Serie no encontrada en la base de datos"
         const parts = data.split('_');
         const tmdbId = parts[3];
         const seasonNumber = parts[4];
@@ -894,7 +810,6 @@ bot.on('callback_query', async (callbackQuery) => {
         }
         const nextEpisode = lastEpisode + 1;
 
-        // Se añade el tmdbId a la data de la serie para ser consistente.
         seriesData.tmdbId = tmdbId;
 
         adminState[chatId] = {
@@ -906,7 +821,6 @@ bot.on('callback_query', async (callbackQuery) => {
         bot.sendMessage(chatId, `Genial. Ahora, envía el reproductor PRO para el episodio ${nextEpisode} de la temporada ${seasonNumber}. Si no hay, escribe "no".`);
 
     } else if (data.startsWith('add_new_season_')) {
-        // CORRECCIÓN: Lógica para el botón "Añadir nueva temporada"
         const tmdbId = data.replace('add_new_season_', '');
         try {
             const tmdbUrl = `https://api.themoviedb.org/3/tv/${tmdbId}?api_key=${TMDB_API_KEY}&language=es-ES`;
@@ -936,7 +850,6 @@ bot.on('callback_query', async (callbackQuery) => {
         }
 
     } else if (data.startsWith('solicitud_')) {
-        // CORRECCIÓN: Lógica para manejar el botón de solicitud de película
         const tmdbId = data.replace('solicitud_', '');
         try {
             const tmdbUrl = `https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${TMDB_API_KEY}&language=es-ES`;
@@ -945,7 +858,6 @@ bot.on('callback_query', async (callbackQuery) => {
             adminState[chatId] = { selectedMedia: mediaData, mediaType: 'movie', step: 'awaiting_pro_link_movie' };
             bot.sendMessage(chatId, `Seleccionaste "${mediaData.title}". Envía el reproductor PRO. Si no hay, escribe "no".`);
 
-            // Eliminar la solicitud de la base de datos de pedidos
             const requestsRef = db.collection('requests');
             const snapshot = await requestsRef.where('tmdbId', '==', tmdbId).get();
             snapshot.forEach(doc => {
@@ -974,7 +886,6 @@ bot.on('callback_query', async (callbackQuery) => {
             const response = await axios.get(tmdbUrl);
             const mediaData = response.data;
             
-            // ✅ CORRECCIÓN CLAVE: Se añade la propiedad tmdbId a los datos del estado
             mediaData.tmdbId = mediaData.id.toString();
             
             adminState[chatId] = { 
@@ -1002,7 +913,8 @@ bot.on('callback_query', async (callbackQuery) => {
 
         let lastEpisode = 0;
         if (selectedSeries.seasons && selectedSeries.seasons[seasonNumber] && selectedSeries.seasons[seasonNumber].episodes) {
-            lastEpisode = Object.keys(selectedSeries.seasons[seasonNumber].episodes).length;
+            const episodes = selectedSeries.seasons[seasonNumber].episodes;
+            lastEpisode = Object.keys(episodes).length;
         }
         const nextEpisode = lastEpisode + 1;
 
@@ -1090,8 +1002,6 @@ async function publishMovieToChannel(movieData) {
 
     try {
         const sentMessage = await bot.sendPhoto(channelId, posterUrl, options);
-        // Aquí debes guardar el message_id para la futura eliminación.
-        // Por ejemplo, guardándolo en la base de datos junto con el timestamp.
         console.log(`Mensaje publicado en el canal con ID: ${sentMessage.message_id}`);
     } catch (error) {
         console.error("Error al enviar el mensaje al canal:", error);
