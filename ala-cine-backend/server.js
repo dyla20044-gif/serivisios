@@ -104,15 +104,14 @@ app.post('/request-movie', async (req, res) => {
 // === FUNCIÓN DE UTILIDAD: EXTRAE LA URL DE LA ETIQUETA IFRAME (¡CRÍTICO!) ===
 // --------------------------------------------------------------------------
 function extractUrlFromIframe(iframeString) {
-    // Busca el valor del atributo SRC dentro de comillas simples o dobles
     if (typeof iframeString !== 'string') return iframeString;
+    // CRÍTICO: Buscar el valor del atributo SRC
     const match = iframeString.match(/src=["'](.*?)["']/i);
-    // Si encuentra la coincidencia, devuelve el primer grupo de captura (la URL)
     return match ? match[1] : null;
 }
 
 // --------------------------------------------------------------------------
-// === ENDPONT MODIFICADO: PROXY INVERSO (CON EXTRACCIÓN Y BASE TAG) ===
+// === ENDPONT MODIFICADO: PROXY INVERSO (CON LIMPIEZA Y BASE TAG) ===
 // --------------------------------------------------------------------------
 
 app.get('/api/get-embed-code', async (req, res) => {
@@ -148,21 +147,28 @@ app.get('/api/get-embed-code', async (req, res) => {
       return res.status(404).send("No se encontró código de reproductor.");
     }
     
-    // 2. EXTRAER LA URL LIMPIA DEL IFRAME
+    // >>>>>> PASO CRÍTICO DE INMUNIZACIÓN: LIMPIAR EL CÓDIGO <<<<<<
+    if (typeof embedCodeFromDB === 'string') {
+        // 2. ELIMINAR ESPACIOS EN BLANCO Y CARACTERES INVISIBLES
+        embedCodeFromDB = embedCodeFromDB.trim();
+    }
+
+    // 3. INTENTAR EXTRAER LA URL LIMPIA
     finalUrlToProxy = extractUrlFromIframe(embedCodeFromDB);
     
-    // >>>>>> LÍNEAS DEBUG CRÍTICAS <<<<<<
-    console.log("DEBUG: ID:", id, "Tipo:", isPro === 'true' ? 'PRO' : 'GRATIS');
-    console.log("DEBUG: CÓDIGO LEÍDO DE FIREBASE:", embedCodeFromDB);
-    console.log("DEBUG: URL LIMPIA FINAL PARA PROXY:", finalUrlToProxy);
-    // >>>>>> FIN LÍNEAS DEBUG CRÍTICAS <<<<<<
-
-    // Si la extracción falla o devuelve null, asumimos que la DB tiene la URL directa
+    // 4. Si la extracción falla (porque ya es la URL limpia), usar el código de Firebase.
     if (!finalUrlToProxy) {
         finalUrlToProxy = embedCodeFromDB;
     }
+    // >>>>>> FIN PASO CRÍTICO DE INMUNIZACIÓN <<<<<<
 
-    // 3. EL SERVIDOR HACE LA PETICIÓN A GOAT STREAMING (PROXY)
+    // >>>>>> LÍNEAS DEBUG CRÍTICAS <<<<<<
+    console.log("DEBUG: ID:", id, "Tipo:", isPro === 'true' ? 'PRO' : 'GRATIS');
+    console.log("DEBUG: CÓDIGO LEÍDO DE FIREBASE (TRIMMED):", embedCodeFromDB);
+    console.log("DEBUG: URL LIMPIA FINAL PARA PROXY:", finalUrlToProxy);
+    // >>>>>> FIN LÍNEAS DEBUG CRÍTICAS <<<<<<
+
+    // 5. EL SERVIDOR HACE LA PETICIÓN A GOAT STREAMING (PROXY)
     const goatStreamingResponse = await axios.get(finalUrlToProxy, {
         headers: {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
@@ -172,7 +178,7 @@ app.get('/api/get-embed-code', async (req, res) => {
 
     let proxiedHtml = goatStreamingResponse.data;
     
-    // 4. INYECCIÓN DEL BASE TAG
+    // 6. INYECCIÓN DEL BASE TAG (Asegura la carga de los comandos de Play)
     const parsedUrl = url.parse(finalUrlToProxy);
     const baseUrl = `${parsedUrl.protocol}//${parsedUrl.host}`;
     const baseTag = `<base href="${baseUrl}">`;
@@ -186,7 +192,7 @@ app.get('/api/get-embed-code', async (req, res) => {
     }
 
 
-    // 5. DEVOLVER EL CONTENIDO HTML MANIPULADO
+    // 7. DEVOLVER EL CONTENIDO HTML MANIPULADO
     res.send(proxiedHtml);
 
   } catch (error) {
@@ -222,8 +228,8 @@ app.post('/add-movie', async (req, res) => {
         let movieDataToSave = {};
 
         // >>>>>> CÓDIGO CLAVE: LIMPIEZA DE ENLACES AL GUARDAR (Futuras Películas) <<<<<<
-        const cleanedFreeLink = extractUrlFromIframe(freeEmbedCode) || freeEmbedCode;
-        const cleanedProLink = extractUrlFromIframe(proEmbedCode) || proEmbedCode;
+        const cleanedFreeLink = extractUrlFromIframe(freeEmbedCode) || (typeof freeEmbedCode === 'string' ? freeEmbedCode.trim() : freeEmbedCode);
+        const cleanedProLink = extractUrlFromIframe(proEmbedCode) || (typeof proEmbedCode === 'string' ? proEmbedCode.trim() : proEmbedCode);
         // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
         if (movieDoc.exists) {
@@ -266,8 +272,8 @@ app.post('/add-series-episode', async (req, res) => {
         const seriesDoc = await seriesRef.get();
 
         // >>>>>> CÓDIGO CLAVE: LIMPIEZA DE ENLACES AL GUARDAR (Futuras Series) <<<<<<
-        const cleanedFreeLink = extractUrlFromIframe(freeEmbedCode) || freeEmbedCode;
-        const cleanedProLink = extractUrlFromIframe(proEmbedCode) || proEmbedCode;
+        const cleanedFreeLink = extractUrlFromIframe(freeEmbedCode) || (typeof freeEmbedCode === 'string' ? freeEmbedCode.trim() : freeEmbedCode);
+        const cleanedProLink = extractUrlFromIframe(proEmbedCode) || (typeof proEmbedCode === 'string' ? proEmbedCode.trim() : proEmbedCode);
         // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
         let seriesDataToSave = {};
