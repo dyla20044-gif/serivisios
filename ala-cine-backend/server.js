@@ -100,7 +100,7 @@ app.post('/request-movie', async (req, res) => {
 });
 
 // --------------------------------------------------------------------------
-// === ENDPONT MODIFICADO: PROXY INVERSO PARA GOAT STREAMING ===
+// === ENDPONT MODIFICADO: PROXY INVERSO PARA GOAT STREAMING (CON DIAGNÓSTICO) ===
 // --------------------------------------------------------------------------
 
 app.get('/api/get-embed-code', async (req, res) => {
@@ -109,6 +109,8 @@ app.get('/api/get-embed-code', async (req, res) => {
   if (!id) {
     return res.status(400).send("ID no proporcionado");
   }
+
+  let embedUrl; // Declarar aquí para que sea accesible en el catch
 
   try {
     const mediaType = season && episode ? 'series' : 'movies';
@@ -122,9 +124,7 @@ app.get('/api/get-embed-code', async (req, res) => {
     const data = doc.data();
 
     // 1. OBTENER LA URL DE GOAT STREAMING DESDE FIRESTORE
-    let embedUrl;
     if (mediaType === 'movies') {
-        // El código embed ahora debe ser la URL directa del reproductor (no el iframe completo)
         embedUrl = isPro === 'true' ? data.proEmbedCode : data.freeEmbedCode;
     } else { // series
         const episodeData = data.seasons?.[season]?.episodes?.[episode];
@@ -136,26 +136,32 @@ app.get('/api/get-embed-code', async (req, res) => {
     }
     
     // 2. EL SERVIDOR HACE LA PETICIÓN A GOAT STREAMING (PROXY)
-    // Esto asegura que Goat Streaming vea la petición como tráfico de servidor legítimo.
+    // Usamos un User Agent MÓVIL más específico para la prueba final contra detección de bots
     const goatStreamingResponse = await axios.get(embedUrl, {
-        // Simular un User Agent estándar de PC (menos sospechoso que un WebView)
         headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
-            // Opcional: Establecer un Referer limpio
-            'Referer': 'https://www.google.com/' 
+            'User-Agent': 'Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.87 Mobile Safari/537.36',
+            'Referer': 'https://www.youtube.com/' // Referer común
         }
     });
 
     // 3. DEVOLVER EL CONTENIDO HTML COMPLETO DIRECTAMENTE A LA APP
-    // Esto es lo que la app debe cargar en su WebView.
     res.send(goatStreamingResponse.data);
 
   } catch (error) {
     console.error("Error al obtener el código embed mediante proxy:", error.message);
-    // Verificar si el error es un problema de red (DNS, conexión rechazada)
-    if (error.response) {
-      console.error("Respuesta de Goat Streaming:", error.response.status);
+    
+    // >>>>>> REGISTRO CRÍTICO AÑADIDO PARA DIAGNÓSTICO <<<<<<
+    if (embedUrl) {
+        console.error("URL de Goat Streaming fallida:", embedUrl);
     }
+    if (error.response) {
+      console.error("Respuesta HTTP de Goat Streaming:", error.response.status);
+      // Devolvemos el status code al cliente para un diagnóstico más rápido en la app.
+      res.status(500).send(`Error interno del servidor al cargar el reproductor. HTTP Status: ${error.response.status}. Por favor, revisa los logs.`);
+      return;
+    }
+    // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+
     res.status(500).send("Error interno del servidor al cargar el reproductor.");
   }
 });
