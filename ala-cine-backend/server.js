@@ -99,15 +99,15 @@ app.post('/request-movie', async (req, res) => {
     }
 });
 
-// -----------------------------------------------------------
-// === INICIO DEL CÓDIGO MEJORADO PARA EL ENDPOINT DE VIDEO ===
-// -----------------------------------------------------------
+// --------------------------------------------------------------------------
+// === ENDPONT MODIFICADO: PROXY INVERSO PARA GOAT STREAMING ===
+// --------------------------------------------------------------------------
 
 app.get('/api/get-embed-code', async (req, res) => {
   const { id, season, episode, isPro } = req.query;
   
   if (!id) {
-    return res.status(400).json({ error: "ID de la película o serie no proporcionado" });
+    return res.status(400).send("ID no proporcionado");
   }
 
   try {
@@ -116,36 +116,52 @@ app.get('/api/get-embed-code', async (req, res) => {
     const doc = await docRef.get();
     
     if (!doc.exists) {
-      return res.status(404).json({ error: `${mediaType} no encontrada` });
+      return res.status(404).send(`${mediaType} no encontrada`);
     }
 
     const data = doc.data();
 
+    // 1. OBTENER LA URL DE GOAT STREAMING DESDE FIRESTORE
+    let embedUrl;
     if (mediaType === 'movies') {
-        const embedCode = isPro === 'true' ? data.proEmbedCode : data.freeEmbedCode;
-        if (embedCode) {
-            res.json({ embedCode });
-        } else {
-            res.status(404).json({ error: `No se encontró código de reproductor para esta película.` });
-        }
+        // El código embed ahora debe ser la URL directa del reproductor (no el iframe completo)
+        embedUrl = isPro === 'true' ? data.proEmbedCode : data.freeEmbedCode;
     } else { // series
         const episodeData = data.seasons?.[season]?.episodes?.[episode];
-        const embedCode = isPro === 'true' ? episodeData?.proEmbedCode : episodeData?.freeEmbedCode;
-        if (embedCode) {
-            res.json({ embedCode });
-        } else {
-            res.status(404).json({ error: `No se encontró código de reproductor para el episodio ${episode}.` });
-        }
+        embedUrl = isPro === 'true' ? episodeData?.proEmbedCode : episodeData?.freeEmbedCode;
     }
+
+    if (!embedUrl) {
+      return res.status(404).send("No se encontró código de reproductor.");
+    }
+    
+    // 2. EL SERVIDOR HACE LA PETICIÓN A GOAT STREAMING (PROXY)
+    // Esto asegura que Goat Streaming vea la petición como tráfico de servidor legítimo.
+    const goatStreamingResponse = await axios.get(embedUrl, {
+        // Simular un User Agent estándar de PC (menos sospechoso que un WebView)
+        headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+            // Opcional: Establecer un Referer limpio
+            'Referer': 'https://www.google.com/' 
+        }
+    });
+
+    // 3. DEVOLVER EL CONTENIDO HTML COMPLETO DIRECTAMENTE A LA APP
+    // Esto es lo que la app debe cargar en su WebView.
+    res.send(goatStreamingResponse.data);
+
   } catch (error) {
-    console.error("Error al obtener el código embed:", error);
-    res.status(500).json({ error: "Error interno del servidor" });
+    console.error("Error al obtener el código embed mediante proxy:", error.message);
+    // Verificar si el error es un problema de red (DNS, conexión rechazada)
+    if (error.response) {
+      console.error("Respuesta de Goat Streaming:", error.response.status);
+    }
+    res.status(500).send("Error interno del servidor al cargar el reproductor.");
   }
 });
 
-
 // -----------------------------------------------------------
-// === FIN DEL CÓDIGO MEJORADO PARA EL ENDPOINT DE VIDEO ===
+// === FIN DEL ENDPOINT DE PROXY INVERSO ===
 // -----------------------------------------------------------
 
 
