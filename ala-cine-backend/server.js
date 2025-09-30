@@ -151,7 +151,13 @@ app.get('/api/get-embed-code', async (req, res) => {
     // 2. EXTRAER LA URL LIMPIA DEL IFRAME
     finalUrlToProxy = extractUrlFromIframe(embedCodeFromDB);
     
-    // Si la extracción falla o devuelve null, asumimos que la DB tiene la URL directa (la que esperamos ahora)
+    // >>>>>> LÍNEAS DEBUG CRÍTICAS <<<<<<
+    console.log("DEBUG: ID:", id, "Tipo:", isPro === 'true' ? 'PRO' : 'GRATIS');
+    console.log("DEBUG: CÓDIGO LEÍDO DE FIREBASE:", embedCodeFromDB);
+    console.log("DEBUG: URL LIMPIA FINAL PARA PROXY:", finalUrlToProxy);
+    // >>>>>> FIN LÍNEAS DEBUG CRÍTICAS <<<<<<
+
+    // Si la extracción falla o devuelve null, asumimos que la DB tiene la URL directa
     if (!finalUrlToProxy) {
         finalUrlToProxy = embedCodeFromDB;
     }
@@ -186,11 +192,12 @@ app.get('/api/get-embed-code', async (req, res) => {
   } catch (error) {
     console.error("Error al obtener el código embed mediante proxy:", error.message);
     
+    // >>>>>> REGISTRO DE FALLO EN LOGS <<<<<<
     if (finalUrlToProxy) {
-        console.error("URL de Goat Streaming fallida (proxy final):", finalUrlToProxy);
+        console.error("FALLO PROXY: URL final:", finalUrlToProxy);
     }
     if (error.response) {
-      console.error("Respuesta HTTP de Goat Streaming:", error.response.status);
+      console.error("FALLO PROXY: Respuesta HTTP:", error.response.status);
       res.status(500).send(`Error interno del servidor al cargar el reproductor. HTTP Status: ${error.response.status}. Por favor, revisa los logs.`);
       return;
     }
