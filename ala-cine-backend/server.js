@@ -339,6 +339,79 @@ app.post('/create-binance-payment', (req, res) => {
     res.json({ message: 'Pago con Binance simulado. Lógica de backend real necesaria.' });
 });
 
+// -----------------------------------------------------------
+// === INICIO DE NUEVAS FUNCIONES Y ENDPOINT DE NOTIFICACIÓN PUSH ===
+// -----------------------------------------------------------
+
+// Función para buscar tokens y enviar notificación push con Firebase Cloud Messaging (FCM)
+async function sendPushNotification(tmdbId, mediaType, contentTitle) {
+    try {
+        // Asumiendo que los tokens de los dispositivos están guardados en la colección 'users'
+        const tokensSnapshot = await db.collection('users').select('fcmToken').get();
+        const registrationTokens = tokensSnapshot.docs
+            .map(doc => doc.data().fcmToken)
+            .filter(token => token); // Filtrar tokens nulos o vacíos
+
+        if (registrationTokens.length === 0) {
+            console.log("No se encontraron tokens FCM para enviar notificaciones.");
+            return { success: true, message: "No hay tokens de dispositivos registrados." };
+        }
+
+        const message = {
+            notification: {
+                title: `🎉 ¡Nuevo Contenido Agregado!`,
+                body: `¡Ya puedes ver ${contentTitle} en Sala Cine!`,
+            },
+            data: {
+                tmdbId: tmdbId.toString(),
+                mediaType: mediaType,
+                action: 'open_content' // Acción que la app móvil puede interpretar
+            }
+        };
+
+        // Envía el mensaje a todos los tokens
+        const response = await admin.messaging().sendEachForMulticast({
+            tokens: registrationTokens,
+            ...message
+        });
+
+        console.log('Notificación FCM enviada con éxito:', response);
+        return { success: true, response: response };
+
+    } catch (error) {
+        console.error("Error al enviar notificación FCM:", error);
+        return { success: false, error: error.message };
+    }
+}
+
+// NUEVO ENDPOINT: POST /api/notify
+// Endpoint dedicado para ser llamado por el bot o cualquier servicio para enviar la notificación push.
+app.post('/api/notify', async (req, res) => {
+    const { tmdbId, mediaType, title } = req.body;
+    
+    if (!tmdbId || !mediaType || !title) {
+        return res.status(400).json({ error: "Faltan parámetros: tmdbId, mediaType, o title." });
+    }
+    
+    try {
+        const result = await sendPushNotification(tmdbId, mediaType, title);
+        
+        if (result.success) {
+            res.status(200).json({ message: 'Notificaciones push programadas para envío.', details: result.response });
+        } else {
+            res.status(500).json({ error: 'Error al enviar notificaciones push.', details: result.error });
+        }
+    } catch (error) {
+        console.error("Error en el endpoint /api/notify:", error);
+        res.status(500).json({ error: "Error interno del servidor al procesar la notificación." });
+    }
+});
+
+// -----------------------------------------------------------
+// === FIN DE NUEVAS FUNCIONES Y ENDPOINT DE NOTIFICACIÓN PUSH ===
+// -----------------------------------------------------------
+
+
 // === LÓGICA DEL BOT DE TELEGRAM ===
 bot.onText(/\/start/, (msg) => {
     const chatId = msg.chat.id;
@@ -925,53 +998,134 @@ bot.on('callback_query', async (callbackQuery) => {
             episode: nextEpisode
         };
         bot.sendMessage(chatId, `Gestionando Temporada ${seasonNumber}. Envía el reproductor PRO para el episodio ${nextEpisode}. Si no hay, escribe "no".`);
-    } else if (data.startsWith('save_only_')) {
+
+    // === MODIFICACIÓN DE FLUJO PARA PELÍCULAS: DESPUÉS DE GUARDAR, PREGUNTAR POR PUSH ===
+    } else if (data.startsWith('save_only_') || data.startsWith('save_and_publish_')) {
+        const isPublish = data.startsWith('save_and_publish_');
         const { movieDataToSave } = adminState[chatId];
+        
         try {
+            // 1. Guardar o actualizar la película en la app
             await axios.post(`${RENDER_BACKEND_URL}/add-movie`, movieDataToSave);
             bot.sendMessage(chatId, `✅ Película "${movieDataToSave.title}" guardada con éxito en la app.`);
+
+            // 2. Publicar en el canal de Telegram (si se seleccionó)
+            if (isPublish) {
+                bot.sendMessage(chatId, `Ahora publicando en el canal...`);
+                await publishMovieToChannel(movieDataToSave);
+                bot.sendMessage(chatId, `🎉 ¡Película publicada en el canal con éxito!`);
+            }
+            
+            // 3. NUEVO PASO: Preguntar por Notificación Push
+            const options = {
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: '🚀 Enviar Notificación Push', callback_data: `send_push_${movieDataToSave.tmdbId}_movie` }]
+                    ]
+                }
+            };
+            // Guardar datos temporales para el siguiente paso
+            adminState[chatId] = { 
+                step: 'awaiting_push_action', 
+                tmdbId: movieDataToSave.tmdbId, 
+                mediaType: 'movie', 
+                title: movieDataToSave.title 
+            };
+            bot.sendMessage(chatId, `¿Quieres notificar a los usuarios de la aplicación sobre esta película?`, options);
+
         } catch (error) {
-            console.error("Error al guardar la película:", error);
-            bot.sendMessage(chatId, 'Hubo un error al guardar la película.');
-        } finally {
-            adminState[chatId] = { step: 'menu' };
+            console.error("Error al guardar/publicar la película:", error);
+            bot.sendMessage(chatId, 'Hubo un error al guardar o publicar la película.');
+            adminState[chatId] = { step: 'menu' }; // Resetear estado en caso de error
         }
-    } else if (data.startsWith('save_and_publish_')) {
-        const { movieDataToSave } = adminState[chatId];
-        try {
-            await axios.post(`${RENDER_BACKEND_URL}/add-movie`, movieDataToSave);
-            bot.sendMessage(chatId, `✅ Película "${movieDataToSave.title}" guardada con éxito en la app. Ahora publicando en el canal...`);
-            await publishMovieToChannel(movieDataToSave);
-            bot.sendMessage(chatId, `🎉 ¡Película publicada en el canal con éxito!`);
-        } catch (error) {
-            console.error("Error al publicar la película en el canal:", error);
-            bot.sendMessage(chatId, 'Hubo un error al publicar la película en el canal.');
-        } finally {
-            adminState[chatId] = { step: 'menu' };
-        }
-    } else if (data.startsWith('save_only_series_')) {
+    
+    // === MODIFICACIÓN DE FLUJO PARA SERIES: DESPUÉS DE GUARDAR, PREGUNTAR POR PUSH ===
+    } else if (data.startsWith('save_only_series_') || data.startsWith('save_and_publish_series_')) {
+        const isPublish = data.startsWith('save_and_publish_series_');
         const { seriesDataToSave } = adminState[chatId];
+        
         try {
+            // 1. Guardar o actualizar el episodio en la app
             await axios.post(`${RENDER_BACKEND_URL}/add-series-episode`, seriesDataToSave);
+            const contentTitle = seriesDataToSave.title + ` T${seriesDataToSave.seasonNumber} E${seriesDataToSave.episodeNumber}`;
             bot.sendMessage(chatId, `✅ Episodio ${seriesDataToSave.episodeNumber} de la temporada ${seriesDataToSave.seasonNumber} guardado con éxito.`);
+            
+            // 2. Publicar en el canal de Telegram (si se seleccionó)
+            if (isPublish) {
+                bot.sendMessage(chatId, `Ahora publicando en el canal...`);
+                await publishSeriesEpisodeToChannel(seriesDataToSave);
+                bot.sendMessage(chatId, `🎉 ¡Episodio publicado en el canal con éxito!`);
+            }
+
+            // 3. NUEVO PASO: Preguntar por Notificación Push
+            const tmdbId = seriesDataToSave.tmdbId;
+            const options = {
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: '🚀 Enviar Notificación Push', callback_data: `send_push_${tmdbId}_series` }]
+                    ]
+                }
+            };
+            // Guardar datos temporales para el siguiente paso
+             adminState[chatId] = { 
+                step: 'awaiting_push_action', 
+                tmdbId: tmdbId, 
+                mediaType: 'series', 
+                title: contentTitle 
+            };
+            bot.sendMessage(chatId, `¿Quieres notificar a los usuarios de la aplicación sobre este nuevo episodio?`, options);
+
         } catch (error) {
-            console.error("Error al guardar el episodio:", error);
-            bot.sendMessage(chatId, 'Hubo un error al guardar el episodio.');
-        } finally {
-            adminState[chatId] = { step: 'menu' };
+            console.error("Error al guardar/publicar el episodio:", error);
+            bot.sendMessage(chatId, 'Hubo un error al guardar o publicar el episodio.');
+            adminState[chatId] = { step: 'menu' }; // Resetear estado en caso de error
         }
-    } else if (data.startsWith('save_and_publish_series_')) {
-        const { seriesDataToSave } = adminState[chatId];
-        try {
-            await axios.post(`${RENDER_BACKEND_URL}/add-series-episode`, seriesDataToSave);
-            bot.sendMessage(chatId, `✅ Episodio ${seriesDataToSave.episodeNumber} de la temporada ${seriesDataToSave.seasonNumber} guardado. Ahora publicando en el canal...`);
-            await publishSeriesEpisodeToChannel(seriesDataToSave);
-            bot.sendMessage(chatId, `🎉 ¡Episodio publicado en el canal con éxito!`);
-        } catch (error) {
-            console.error("Error al publicar el episodio en el canal:", error);
-            bot.sendMessage(chatId, 'Hubo un error al publicar el episodio en el canal.');
-        } finally {
+
+    // === NUEVO HANDLER PARA ENVIAR LA NOTIFICACIÓN PUSH ===
+    } else if (data.startsWith('send_push_')) {
+        const parts = data.split('_');
+        const tmdbId = parts[2];
+        const mediaType = parts[3];
+        const state = adminState[chatId];
+        const title = state.title; // El título debe estar en el estado temporal
+
+        // Si el estado se perdió, no se puede continuar
+        if (!title) {
+             bot.editMessageReplyMarkup({ inline_keyboard: [] }, { 
+                chat_id: chatId, 
+                message_id: msg.message_id
+            });
+            bot.sendMessage(chatId, '❌ Error: El estado de la acción se perdió. Por favor, intente /start.');
             adminState[chatId] = { step: 'menu' };
+            return;
+        }
+
+        try {
+            // Llama al nuevo endpoint para enviar la notificación push
+            await axios.post(`${RENDER_BACKEND_URL}/api/notify`, {
+                tmdbId,
+                mediaType,
+                title
+            });
+            
+            // Actualizar mensaje de Telegram para confirmar la acción
+            bot.editMessageText(`✅ Notificaciones push para *${title}* programadas para envío.`, {
+                chat_id: chatId, 
+                message_id: msg.message_id,
+                parse_mode: 'Markdown',
+                reply_markup: { inline_keyboard: [] } // Quitar el botón
+            });
+
+        } catch (error) {
+            console.error("Error al llamar al endpoint /api/notify:", error);
+            bot.editMessageText(`❌ Hubo un error al solicitar el envío de notificaciones para *${title}*. Revisa los logs.`, {
+                chat_id: chatId, 
+                message_id: msg.message_id,
+                parse_mode: 'Markdown',
+                reply_markup: { inline_keyboard: [] } // Quitar el botón
+            });
+        } finally {
+            adminState[chatId] = { step: 'menu' }; // Resetear estado al menú principal
         }
     }
 });
