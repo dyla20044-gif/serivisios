@@ -72,6 +72,35 @@ app.post(`/bot${token}`, (req, res) => {
   res.sendStatus(200);
 });
 
+// -------------------------------------------------------------------------
+// === NUEVA RUTA CRÍTICA: MANEJO DE APP LINK Y REDIRECCIÓN DE FALLO ===
+// -------------------------------------------------------------------------
+
+/* Esta ruta se activa si el usuario toca el botón "Abrir en App Nativa" 
+  y la aplicación de Android NO está instalada (App Link falla). 
+  Redirige al usuario a la tienda personalizada.
+*/
+app.get('/app/details/:tmdbId', (req, res) => {
+    const tmdbId = req.params.tmdbId;
+    
+    // Si la App Nativa falla, redirigimos a la URL de tu tienda personalizada
+    if (process.env.APP_DOWNLOAD_URL) {
+        console.log(`App Nativa no instalada. Redirigiendo a la Tienda Personalizada: ${process.env.APP_DOWNLOAD_URL}`);
+        return res.redirect(302, process.env.APP_DOWNLOAD_URL);
+    }
+
+    // Último Fallback: Si no hay tienda definida, redirigimos a la TMA.
+    if (process.env.TELEGRAM_MINIAPP_URL) {
+        const tmaLink = process.env.TELEGRAM_MINIAPP_URL + '?startapp=' + tmdbId;
+        console.log('APP_DOWNLOAD_URL no definida. Redirigiendo al fallback de la TMA.');
+        return res.redirect(302, tmaLink);
+    }
+
+    // Fallo Total
+    res.status(404).send('No se encontró la aplicación de destino ni un enlace de descarga.');
+});
+
+
 app.post('/request-movie', async (req, res) => {
     const movieTitle = req.body.title;
     const posterPath = req.body.poster_path;
@@ -1130,10 +1159,15 @@ bot.on('callback_query', async (callbackQuery) => {
     }
 });
 
-// Función para publicar película en el canal
+// === MODIFICADA: Función para publicar película con doble botón y App Link ===
 async function publishMovieToChannel(movieData) {
     const channelId = process.env.TELEGRAM_CHANNEL_ID;
     const miniAppUrl = process.env.TELEGRAM_MINIAPP_URL;
+
+    // URL para la App Nativa (Usará App Link en Android, Fallback en el servidor)
+    const nativeAppLink = `${RENDER_BACKEND_URL}/app/details/${movieData.tmdbId}`; 
+    // URL para la Mini App de Telegram (Abre dentro de Telegram)
+    const tmaLink = `${miniAppUrl}?startapp=${movieData.tmdbId}`;
 
     const message = `🎬 *${movieData.title}*
     
@@ -1145,8 +1179,12 @@ async function publishMovieToChannel(movieData) {
         reply_markup: {
             inline_keyboard: [
                 [{
-                    text: '▶️ Ver aquí',
-                    url: `${miniAppUrl}?startapp=${movieData.tmdbId}`
+                    text: '⭐ Abrir en App Nativa', // NUEVO BOTÓN
+                    url: nativeAppLink
+                },
+                {
+                    text: '▶️ Ver en Telegram', // BOTÓN EXISTENTE (MODIFICADO)
+                    url: tmaLink
                 }]
             ]
         }
@@ -1162,10 +1200,15 @@ async function publishMovieToChannel(movieData) {
     }
 }
 
-// Función para publicar episodio de serie en el canal
+// === MODIFICADA: Función para publicar episodio con doble botón y App Link ===
 async function publishSeriesEpisodeToChannel(seriesData) {
     const channelId = process.env.TELEGRAM_CHANNEL_ID;
     const miniAppUrl = process.env.TELEGRAM_MINIAPP_URL;
+    
+    // URL para la App Nativa (Usará App Link en Android, Fallback en el servidor)
+    const nativeAppLink = `${RENDER_BACKEND_URL}/app/details/${seriesData.tmdbId}`; 
+    // URL para la Mini App de Telegram (Abre dentro de Telegram)
+    const tmaLink = `${miniAppUrl}?startapp=${seriesData.tmdbId}`;
 
     const message = `🎬 *${seriesData.title}*
     
@@ -1179,8 +1222,12 @@ async function publishSeriesEpisodeToChannel(seriesData) {
         reply_markup: {
             inline_keyboard: [
                 [{
-                    text: '▶️ Ver aquí',
-                    url: `${miniAppUrl}?startapp=${seriesData.tmdbId}`
+                    text: '⭐ Abrir en App Nativa', // NUEVO BOTÓN
+                    url: nativeAppLink
+                },
+                {
+                    text: '▶️ Ver en Telegram', // BOTÓN EXISTENTE (MODIFICADO)
+                    url: tmaLink
                 }]
             ]
         }
