@@ -1253,7 +1253,7 @@ app.get('/api/app-update', (req, res) => {
     "latest_version_code": 3, 
     "update_url": "https://google-play.onrender.com", // <-- TU PÁGINA DE TIENDA
     "force_update": true, // <--- TRUE: Obliga a actualizar
-    "update_message": "¡Tenemos una nueva versión (1.3) con TV en vivo y mejoras! Presiona 'Actualizar Ahora' para ir a la tienda de descarga."
+    "update_message": "¡Tenemos una nueva versión (1.4) con TV en vivo y mejoras! Presiona 'Actualizar Ahora' para ir a la tienda de descarga."
   };
   
   res.status(200).json(updateInfo);
