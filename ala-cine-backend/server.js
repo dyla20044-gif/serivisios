@@ -178,6 +178,12 @@ app.post('/add-movie', async (req, res) => {
     try {
         const { tmdbId, title, poster_path, freeEmbedCode, proEmbedCode, isPremium } = req.body;
         
+        // Verificar si el tmdbId es válido antes de intentar guardar
+        if (!tmdbId) {
+            console.error("Error: Intentando guardar película sin tmdbId.");
+            return res.status(400).json({ error: 'tmdbId es requerido para guardar la película.' });
+        }
+
         // Verificar si la película ya existe
         const movieRef = db.collection('movies').doc(tmdbId.toString());
         const movieDoc = await movieRef.get();
@@ -193,7 +199,7 @@ app.post('/add-movie', async (req, res) => {
                 poster_path: poster_path,
                 freeEmbedCode: freeEmbedCode !== undefined ? freeEmbedCode : existingData.freeEmbedCode,
                 proEmbedCode: proEmbedCode !== undefined ? proEmbedCode : existingData.proEmbedCode,
-                // Si se envía como GRATIS, se sobreescribe isPremium a false. Si se envía como PRO, se sobreescribe a true.
+                // Si se envía como GRATIS, se sobreescribe isPremium a false. Si se envía como PRO, se sobreesscribe a true.
                 isPremium: isPremium
             };
         } else {
@@ -634,6 +640,16 @@ bot.on('message', async (msg) => {
         const { selectedMedia, proEmbedCode } = adminState[chatId];
         const freeEmbedCode = userText !== 'no' ? userText : null;
         
+        // =========================================================
+        // === CORRECCIÓN CRÍTICA: VERIFICACIÓN DEL ID ===
+        // =========================================================
+        if (!selectedMedia || !selectedMedia.id) {
+            bot.sendMessage(chatId, '❌ ERROR CRÍTICO: El ID de la película se perdió. Reinicia el proceso de subir la película con /subir.');
+            adminState[chatId] = { step: 'menu' };
+            return;
+        }
+        // =========================================================
+
         adminState[chatId].movieDataToSave = {
             tmdbId: selectedMedia.id.toString(), 
             title: selectedMedia.title,
@@ -1029,6 +1045,11 @@ bot.on('callback_query', async (callbackQuery) => {
         const { movieDataToSave } = adminState[chatId];
         
         try {
+            // VERIFICACIÓN CRÍTICA ANTES DE PUBLICAR
+            if (!movieDataToSave || !movieDataToSave.tmdbId) {
+                throw new Error("Datos de película incompletos o tmdbId faltante.");
+            }
+
             // 1. Guardar o actualizar la película en la app
             await axios.post(`${RENDER_BACKEND_URL}/add-movie`, movieDataToSave);
             bot.sendMessage(chatId, `✅ Película "${movieDataToSave.title}" guardada con éxito en la app.`);
@@ -1059,7 +1080,7 @@ bot.on('callback_query', async (callbackQuery) => {
 
         } catch (error) {
             console.error("Error al guardar/publicar la película:", error);
-            bot.sendMessage(chatId, 'Hubo un error al guardar o publicar la película.');
+            bot.sendMessage(chatId, 'Hubo un error al guardar o publicar la película. Revisa el estado de la película en Firestore y reinicia con /subir.');
             adminState[chatId] = { step: 'menu' }; // Resetear estado en caso de error
         }
     
