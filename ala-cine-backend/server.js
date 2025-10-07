@@ -461,8 +461,10 @@ async function publishMovieToChannel(movieData) {
                     `⭐ ${movieData.isPremium ? 'Contenido PRO' : 'Contenido GRATIS/PRO'}`;
 
     // Enlaces dinámicos
-    const tmaLink = process.env.TELEGRAM_MINIAPP_URL + '?startapp=' + movieData.tmdbId;
-    // Esto resuelve en la ruta /app/details/:tmdbId que redirigirá a tu App Nativa o Tienda
+    // ⚠️ CRÍTICO: Usamos el formato t.me deep link para que Telegram lo abra internamente.
+    const botUsername = process.env.TELEGRAM_BOT_USERNAME || 'SuBotUsername'; // Asume que tienes un env para el username.
+    const tmeDeepLink = `https://t.me/${botUsername}/?startapp=${movieData.tmdbId}`; 
+    // Enlace de fallback para la app nativa (App Link)
     const appDeepLinkFallback = `${RENDER_BACKEND_URL}/app/details/${movieData.tmdbId}`;
 
     const options = {
@@ -470,10 +472,10 @@ async function publishMovieToChannel(movieData) {
         parse_mode: 'Markdown',
         reply_markup: {
             inline_keyboard: [
-                // Fila 1: CAMBIADO DE 'web_app' A 'url' para evitar BUTTON_TYPE_INVALID en canales
+                // Fila 1: Usamos 'url' con el deep link de t.me para forzar la apertura interna
                 [{ 
                     text: '▶️ Ver ahora en la App', 
-                    url: tmaLink 
+                    url: tmeDeepLink 
                 }],
                 // Fila 2: Botón de fallback para el App Link Nativo (url) - EN FILA SEPARADA
                 [{ 
@@ -511,8 +513,10 @@ async function publishSeriesEpisodeToChannel(seriesData) {
                     `⭐ ${seriesData.isPremium ? 'Contenido PRO' : 'Contenido GRATIS/PRO'}`;
 
     // Enlaces dinámicos
-    const tmaLink = process.env.TELEGRAM_MINIAPP_URL + '?startapp=' + seriesData.tmdbId;
-    // Esto resuelve en la ruta /app/details/:tmdbId que redirigirá a tu App Nativa o Tienda
+    // ⚠️ CRÍTICO: Usamos el formato t.me deep link para que Telegram lo abra internamente.
+    const botUsername = process.env.TELEGRAM_BOT_USERNAME || 'SuBotUsername'; // Asume que tienes un env para el username.
+    const tmeDeepLink = `https://t.me/${botUsername}/?startapp=${seriesData.tmdbId}`; 
+    // Enlace de fallback para la app nativa (App Link)
     const appDeepLinkFallback = `${RENDER_BACKEND_URL}/app/details/${seriesData.tmdbId}`;
 
     const options = {
@@ -520,10 +524,10 @@ async function publishSeriesEpisodeToChannel(seriesData) {
         parse_mode: 'Markdown',
         reply_markup: {
             inline_keyboard: [
-                // Fila 1: CAMBIADO DE 'web_app' A 'url' para evitar BUTTON_TYPE_INVALID en canales
+                // Fila 1: Usamos 'url' con el deep link de t.me para forzar la apertura interna
                 [{ 
                     text: '▶️ Ver ahora en la App', 
-                    url: tmaLink 
+                    url: tmeDeepLink 
                 }],
                 // Fila 2: Botón de fallback para el App Link Nativo (url) - EN FILA SEPARADA
                 [{ 
