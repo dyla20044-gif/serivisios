@@ -470,10 +470,10 @@ async function publishMovieToChannel(movieData) {
         parse_mode: 'Markdown',
         reply_markup: {
             inline_keyboard: [
-                // Fila 1: Botón principal para la Mini App (web_app)
+                // Fila 1: CAMBIADO DE 'web_app' A 'url' para evitar BUTTON_TYPE_INVALID en canales
                 [{ 
                     text: '▶️ Ver ahora en la App', 
-                    web_app: { url: tmaLink } 
+                    url: tmaLink 
                 }],
                 // Fila 2: Botón de fallback para el App Link Nativo (url) - EN FILA SEPARADA
                 [{ 
@@ -520,10 +520,10 @@ async function publishSeriesEpisodeToChannel(seriesData) {
         parse_mode: 'Markdown',
         reply_markup: {
             inline_keyboard: [
-                // Fila 1: Botón principal para la Mini App (web_app)
+                // Fila 1: CAMBIADO DE 'web_app' A 'url' para evitar BUTTON_TYPE_INVALID en canales
                 [{ 
                     text: '▶️ Ver ahora en la App', 
-                    web_app: { url: tmaLink } 
+                    url: tmaLink 
                 }],
                 // Fila 2: Botón de fallback para el App Link Nativo (url) - EN FILA SEPARADA
                 [{ 
@@ -1280,7 +1280,7 @@ bot.on('callback_query', async (callbackQuery) => {
             adminState[chatId] = { step: 'menu' }; // Resetear estado al menú principal
         }
     }
-}); // <--- CIERRE FALTANTE 1
+});
 
 // =======================================================================
 // === NUEVA FUNCIÓN: VERIFICADOR DE ACTUALIZACIONES (/api/app-update) ===
@@ -1303,4 +1303,4 @@ app.get('/api/app-update', (req, res) => {
 
 app.listen(PORT, () => {
     console.log(`Servidor de backend de Sala Cine iniciado en el puerto ${PORT}`);
-}); // <--- CIERRE FALTANTE 2
+});
