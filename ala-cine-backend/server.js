@@ -349,7 +349,7 @@ app.get('/paypal/success', (req, res) => {
                 } catch (dbError) {
                     console.error("Error al actualizar la base de datos de Firebase:", dbError);
                     // El pago se ejecutó, pero la base de datos falló (necesita revisión manual)
-                    res.send('<html><body><h1>⚠️ Advertencia: Pago recibido, pero la cuenta Premium no se activó automáticamente.</h1><p>Por favor, contacta con soporte con el ID de transacción: ' + paymentId + '</p></body></html>');
+                    res.send('<html><body><h1>⚠️ Advertencia: Pago recibido, pero la cuenta Premium no se activó automáticamente.</h1><p>Por favor, contacta con soporte con tu ID de transacción: ' + paymentId + '</p></body></html>');
                 }
             } else {
                 // El pago se ejecutó, pero el ID de usuario no fue guardado en la transacción
@@ -452,7 +452,7 @@ app.post('/api/notify', async (req, res) => {
  * - TELEGRAM_BOT_USERNAME: Nombre de usuario de tu bot.
  * - COOLDOWN_REPUBLISH_DAYS: Número de días de espera para republicar una película.
  */
-const TELEGRAM_CHANNEL_A_ID = process.env.TELEGRAM_CHANNEL_A_ID;
+const TELEGRAM_CHANNEL_A_ID = process.env.TELEGRAM_CHANNEL_ID;
 const TELEGRAM_CHANNEL_B_ID = process.env.TELEGRAM_CHANNEL_B_ID;
 const TELEGRAM_BOT_USERNAME = process.env.TELEGRAM_BOT_USERNAME;
 const COOLDOWN_REPUBLISH_DAYS = parseInt(process.env.COOLDOWN_REPUBLISH_DAYS, 10) || 30;
