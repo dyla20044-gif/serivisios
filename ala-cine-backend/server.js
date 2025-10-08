@@ -443,28 +443,65 @@ app.post('/api/notify', async (req, res) => {
 
 
 // -----------------------------------------------------------
-// === INICIO DE FUNCIONES DE PUBLICACIÓN EN CANAL (CORREGIDAS Y MEJORADAS) ===
+// === NUEVAS FUNCIONES PARA EL FLUJO DE PUBLICACIÓN EN CANALES ===
 // -----------------------------------------------------------
+/*
+ * Nuevas variables de entorno requeridas:
+ * - TELEGRAM_CHANNEL_A_ID: ID/username del canal principal público.
+ * - TELEGRAM_CHANNEL_B_ID: ID/username del canal de la comunidad.
+ * - TELEGRAM_BOT_USERNAME: Nombre de usuario de tu bot.
+ * - COOLDOWN_REPUBLISH_DAYS: Número de días de espera para republicar una película.
+ */
+const TELEGRAM_CHANNEL_A_ID = process.env.TELEGRAM_CHANNEL_A_ID;
+const TELEGRAM_CHANNEL_B_ID = process.env.TELEGRAM_CHANNEL_B_ID;
+const TELEGRAM_BOT_USERNAME = process.env.TELEGRAM_BOT_USERNAME;
+const COOLDOWN_REPUBLISH_DAYS = parseInt(process.env.COOLDOWN_REPUBLISH_DAYS, 10) || 30;
 
-// Función para publicar una nueva película en el canal de Telegram (CORREGIDA)
-async function publishMovieToChannel(movieData) {
-    // CRÍTICO: Asegúrate de que process.env.TELEGRAM_CHANNEL_ID contenga el ID de tu canal 
-    // (ej. -1001234567890) y que el bot sea administrador con permisos de publicación.
-    const CHANNEL_ID = process.env.TELEGRAM_CHANNEL_ID || ADMIN_CHAT_ID; 
+/**
+ * Publica un post en el canal de la comunidad (Canal B) con un enlace al post original.
+ * @param {string} permalink El enlace permanente al post en el canal A.
+ * @param {object} mediaData Los datos de la película o serie para el post.
+ * @param {string} mediaType Tipo de contenido ('movie' o 'series').
+ * @param {string} contentTitle El título del contenido para el mensaje.
+ */
+async function publishToCommunityChannel(permalink, mediaData, mediaType, contentTitle) {
+    try {
+        const posterUrl = mediaData.poster_path ? `https://image.tmdb.org/t/p/w500${mediaData.poster_path}` : 'https://placehold.co/500x750?text=No+Poster';
+        const description = (mediaType === 'movie') 
+            ? `🎥 ¡Nueva película agregada! Haz clic para verla en Sala Cine.`
+            : `📺 ¡Nuevo episodio agregado! Haz clic para ver los detalles.`;
 
-    // Obtener la URL del póster (usando fallback si no hay)
+        const options = {
+            caption: `**¡Nuevo en Sala Cine!**\n\n${description}\n\n*${contentTitle}*`,
+            parse_mode: 'Markdown',
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: '▶️ Ver más', url: permalink }]
+                ]
+            }
+        };
+
+        await bot.sendPhoto(TELEGRAM_CHANNEL_B_ID, posterUrl, options);
+    } catch (error) {
+        console.error('Error al publicar en el canal de la comunidad:', error.message);
+        bot.sendMessage(ADMIN_CHAT_ID, `⚠️ Error al publicar el post de ${contentTitle} en el canal de la comunidad. Revisa los logs.`);
+    }
+}
+
+/**
+ * Encapsula el flujo completo de publicación:
+ * 1. Publica en el canal principal (A).
+ * 2. Obtiene el enlace permanente.
+ * 3. Publica en el canal de la comunidad (B) con el enlace.
+ * @param {object} movieData Los datos de la película a publicar.
+ */
+async function publishMovieToChannels(movieData) {
     const posterUrl = movieData.poster_path ? `https://image.tmdb.org/t/p/w500${movieData.poster_path}` : 'https://placehold.co/500x750?text=No+Poster';
-    
-    // Contenido del mensaje para el canal
     const caption = `🎬 **${movieData.title}**\n\n` +
                     `${movieData.overview || 'Sin sinopsis disponible.'}\n\n` +
                     `⭐ ${movieData.isPremium ? 'Contenido PRO' : 'Contenido GRATIS/PRO'}`;
 
-    // Enlaces dinámicos
-    // ⚠️ CRÍTICO: Usamos el formato t.me deep link para que Telegram lo abra internamente.
-    const botUsername = process.env.TELEGRAM_BOT_USERNAME || 'SuBotUsername'; // Asume que tienes un env para el username.
-    const tmeDeepLink = `https://t.me/${botUsername}/?startapp=${movieData.tmdbId}`; 
-    // Enlace de fallback para la app nativa (App Link)
+    const tmeDeepLink = `https://t.me/${TELEGRAM_BOT_USERNAME}/?startapp=${movieData.tmdbId}`;
     const appDeepLinkFallback = `${RENDER_BACKEND_URL}/app/details/${movieData.tmdbId}`;
 
     const options = {
@@ -472,51 +509,46 @@ async function publishMovieToChannel(movieData) {
         parse_mode: 'Markdown',
         reply_markup: {
             inline_keyboard: [
-                // Fila 1: Usamos 'url' con el deep link de t.me para forzar la apertura interna
-                [{ 
-                    text: '▶️ Ver ahora en la App', 
-                    url: tmeDeepLink 
-                }],
-                // Fila 2: Botón de fallback para el App Link Nativo (url) - EN FILA SEPARADA
-                [{ 
-                    text: '📱 Abrir en Android', 
-                    url: appDeepLinkFallback 
-                }]
+                [{ text: '▶️ Ver ahora', url: tmeDeepLink }],
+                [{ text: '📱 Ver en el celular (Android)', url: appDeepLinkFallback }]
             ]
         }
     };
 
-    // Publicar la película en el canal
     try {
-        await bot.sendPhoto(CHANNEL_ID, posterUrl, options);
+        const sentMessage = await bot.sendPhoto(TELEGRAM_CHANNEL_A_ID, posterUrl, options);
+        
+        // Obtener el permalink del mensaje recién publicado
+        const channelUsername = TELEGRAM_CHANNEL_A_ID.startsWith('@') ? TELEGRAM_CHANNEL_A_ID.substring(1) : TELEGRAM_CHANNEL_A_ID;
+        const permalink = `https://t.me/${channelUsername}/${sentMessage.message_id}`;
+        
+        // Publicar en el canal de la comunidad
+        await publishToCommunityChannel(permalink, movieData, 'movie', movieData.title);
+
+        return { success: true };
     } catch (error) {
-        console.error('Error CRÍTICO al publicar la película en el canal:', error.message);
-        // Notificar al administrador si la publicación falla
-        bot.sendMessage(ADMIN_CHAT_ID, `⚠️ Error al publicar la película *${movieData.title}* en el canal. Revisa los logs. Posiblemente el bot no es admin del canal o el ID es incorrecto.`, { parse_mode: 'Markdown' });
+        console.error('Error al publicar película en canales:', error.message);
+        bot.sendMessage(ADMIN_CHAT_ID, `⚠️ Error al publicar la película *${movieData.title}* en el canal principal. Revisa los logs.`);
+        return { success: false, error: error.message };
     }
 }
 
-// Función para publicar un nuevo episodio en el canal de Telegram (CORREGIDA)
-async function publishSeriesEpisodeToChannel(seriesData) {
-    // CRÍTICO: Asegúrate de que process.env.TELEGRAM_CHANNEL_ID contenga el ID de tu canal 
-    // (ej. -1001234567890) y que el bot sea administrador con permisos de publicación.
-    const CHANNEL_ID = process.env.TELEGRAM_CHANNEL_ID || ADMIN_CHAT_ID; 
-
-    // Obtener la URL del póster (usando fallback si no hay)
+/**
+ * Encapsula el flujo completo de publicación de un episodio de serie.
+ * 1. Publica en el canal principal (A).
+ * 2. Obtiene el enlace permanente.
+ * 3. Publica en el canal de la comunidad (B) con el enlace.
+ * @param {object} seriesData Los datos de la serie a publicar.
+ */
+async function publishSeriesEpisodeToChannels(seriesData) {
     const posterUrl = seriesData.poster_path ? `https://image.tmdb.org/t/p/w500${seriesData.poster_path}` : 'https://placehold.co/500x750?text=No+Poster';
     const contentTitle = seriesData.title + ` - T${seriesData.seasonNumber} E${seriesData.episodeNumber}`;
-    
-    // Contenido del mensaje para el canal
     const caption = `🆕 **¡Nuevo Episodio!**\n\n` +
                     `🎬 **${contentTitle}**\n\n` +
                     `📺 ${seriesData.overview || 'Sin sinopsis disponible.'}\n\n` +
                     `⭐ ${seriesData.isPremium ? 'Contenido PRO' : 'Contenido GRATIS/PRO'}`;
 
-    // Enlaces dinámicos
-    // ⚠️ CRÍTICO: Usamos el formato t.me deep link para que Telegram lo abra internamente.
-    const botUsername = process.env.TELEGRAM_BOT_USERNAME || 'SuBotUsername'; // Asume que tienes un env para el username.
-    const tmeDeepLink = `https://t.me/${botUsername}/?startapp=${seriesData.tmdbId}`; 
-    // Enlace de fallback para la app nativa (App Link)
+    const tmeDeepLink = `https://t.me/${TELEGRAM_BOT_USERNAME}/?startapp=${seriesData.tmdbId}`;
     const appDeepLinkFallback = `${RENDER_BACKEND_URL}/app/details/${seriesData.tmdbId}`;
 
     const options = {
@@ -524,32 +556,68 @@ async function publishSeriesEpisodeToChannel(seriesData) {
         parse_mode: 'Markdown',
         reply_markup: {
             inline_keyboard: [
-                // Fila 1: Usamos 'url' con el deep link de t.me para forzar la apertura interna
-                [{ 
-                    text: '▶️ Ver ahora en la App', 
-                    url: tmeDeepLink 
-                }],
-                // Fila 2: Botón de fallback para el App Link Nativo (url) - EN FILA SEPARADA
-                [{ 
-                    text: '📱 Abrir en Android', 
-                    url: appDeepLinkFallback 
-                }]
+                [{ text: '▶️ Ver ahora', url: tmeDeepLink }],
+                [{ text: '📱 Ver en el celular (Android)', url: appDeepLinkFallback }]
             ]
         }
     };
 
-    // Publicar el episodio en el canal
     try {
-        await bot.sendPhoto(CHANNEL_ID, posterUrl, options);
+        const sentMessage = await bot.sendPhoto(TELEGRAM_CHANNEL_A_ID, posterUrl, options);
+
+        // Obtener el permalink del mensaje recién publicado
+        const channelUsername = TELEGRAM_CHANNEL_A_ID.startsWith('@') ? TELEGRAM_CHANNEL_A_ID.substring(1) : TELEGRAM_CHANNEL_A_ID;
+        const permalink = `https://t.me/${channelUsername}/${sentMessage.message_id}`;
+
+        // Publicar en el canal de la comunidad
+        await publishToCommunityChannel(permalink, seriesData, 'series', contentTitle);
+
+        return { success: true };
     } catch (error) {
-        console.error('Error CRÍTICO al publicar el episodio en el canal:', error.message);
-        // Notificar al administrador si la publicación falla
-        bot.sendMessage(ADMIN_CHAT_ID, `⚠️ Error al publicar el episodio *${contentTitle}* en el canal. Revisa los logs. Posiblemente el bot no es admin del canal o el ID es incorrecto.`, { parse_mode: 'Markdown' });
+        console.error('Error al publicar episodio en canales:', error.message);
+        bot.sendMessage(ADMIN_CHAT_ID, `⚠️ Error al publicar el episodio *${contentTitle}* en el canal principal. Revisa los logs.`);
+        return { success: false, error: error.message };
     }
 }
 
+// Endpoint para activar la republicación automática desde un servicio externo (como un cron job)
+app.post('/api/republish', async (req, res) => {
+    try {
+        const moviesRef = db.collection('movies');
+        // Busca una película que no haya sido republicada o que lo haya sido hace más de X días
+        const snapshot = await moviesRef
+            .where('last_reposted_at', '<', admin.firestore.Timestamp.fromMillis(Date.now() - COOLDOWN_REPUBLISH_DAYS * 24 * 60 * 60 * 1000))
+            .limit(1)
+            .get();
+
+        if (snapshot.empty) {
+            console.log('No hay películas elegibles para republicar.');
+            return res.status(200).json({ message: 'No hay películas elegibles para republicar en este momento.' });
+        }
+
+        const movieDoc = snapshot.docs[0];
+        const movieData = movieDoc.data();
+        
+        console.log(`Republicando película: ${movieData.title}`);
+
+        const publishResult = await publishMovieToChannels(movieData);
+
+        if (publishResult.success) {
+            // Actualizar la marca de tiempo de la última republicación
+            await movieDoc.ref.update({ last_reposted_at: admin.firestore.FieldValue.serverTimestamp() });
+            res.status(200).json({ message: `Republicación exitosa de: ${movieData.title}` });
+        } else {
+            res.status(500).json({ error: `Fallo la republicación de ${movieData.title}` });
+        }
+
+    } catch (error) {
+        console.error("Error en el proceso de republicación:", error);
+        res.status(500).json({ error: "Error interno del servidor durante la republicación." });
+    }
+});
+
 // -----------------------------------------------------------
-// === FIN DE FUNCIONES DE PUBLICACIÓN EN CANAL (CORREGIDAS Y MEJORADAS) ===
+// === FIN DE NUEVAS FUNCIONES PARA EL FLUJO DE PUBLICACIÓN EN CANALES ===
 // -----------------------------------------------------------
 
 
@@ -805,7 +873,7 @@ bot.on('message', async (msg) => {
         adminState[chatId].seriesDataToSave = {
             tmdbId: selectedSeries.tmdbId || selectedSeries.id, 
             title: selectedSeries.title || selectedSeries.name,
-            overview: selectedMedia.overview,
+            overview: selectedSeries.overview,
             poster_path: selectedSeries.poster_path,
             seasonNumber: season,
             episodeNumber: episode,
@@ -1039,7 +1107,7 @@ bot.on('callback_query', async (callbackQuery) => {
         adminState[chatId] = {
             step: 'awaiting_pro_link_series',
             selectedSeries: seriesData,
-            season: seasonNumber,
+            season: parseInt(seasonNumber),
             episode: nextEpisode
         };
         bot.sendMessage(chatId, `Genial. Ahora, envía el reproductor PRO para el episodio ${nextEpisode} de la temporada ${seasonNumber}. Si no hay, escribe "no".`);
@@ -1150,94 +1218,69 @@ bot.on('callback_query', async (callbackQuery) => {
         };
         bot.sendMessage(chatId, `Gestionando Temporada ${seasonNumber}. Envía el reproductor PRO para el episodio ${nextEpisode}. Si no hay, escribe "no".`);
 
-    // === MODIFICACIÓN DE FLUJO PARA PELÍCULAS: DESPUÉS DE GUARDAR, PREGUNTAR POR PUSH ===
-    } else if (data.startsWith('save_only_') || data.startsWith('save_and_publish_')) {
-        const isPublish = data.startsWith('save_and_publish_');
+    } else if (data.startsWith('save_only_')) {
         const { movieDataToSave } = adminState[chatId];
-        
         try {
-            // VERIFICACIÓN CRÍTICA ANTES DE PUBLICAR
-            if (!movieDataToSave || !movieDataToSave.tmdbId) {
-                throw new Error("Datos de película incompletos o tmdbId faltante.");
-            }
-
-            // 1. Guardar o actualizar la película en la app
+            if (!movieDataToSave || !movieDataToSave.tmdbId) {
+                throw new Error("Datos de película incompletos o tmdbId faltante.");
+            }
             await axios.post(`${RENDER_BACKEND_URL}/add-movie`, movieDataToSave);
             bot.sendMessage(chatId, `✅ Película "${movieDataToSave.title}" guardada con éxito en la app.`);
-
-            // 2. Publicar en el canal de Telegram (si se seleccionó)
-            if (isPublish) {
-                bot.sendMessage(chatId, `Ahora publicando en el canal...`);
-                await publishMovieToChannel(movieDataToSave);
-                bot.sendMessage(chatId, `🎉 ¡Película publicada en el canal con éxito!`);
+            adminState[chatId] = { step: 'menu' };
+        } catch (error) {
+            console.error("Error al guardar la película:", error);
+            bot.sendMessage(chatId, 'Hubo un error al guardar la película.');
+            adminState[chatId] = { step: 'menu' };
+        }
+    } else if (data.startsWith('save_and_publish_')) {
+        const { movieDataToSave } = adminState[chatId];
+        try {
+            if (!movieDataToSave || !movieDataToSave.tmdbId) {
+                throw new Error("Datos de película incompletos o tmdbId faltante.");
             }
-            
-            // 3. NUEVO PASO: Preguntar por Notificación Push
-            const options = {
-                reply_markup: {
-                    inline_keyboard: [
-                        [{ text: '🚀 Enviar Notificación Push', callback_data: `send_push_${movieDataToSave.tmdbId}_movie` }]
-                    ]
-                }
-            };
-            // Guardar datos temporales para el siguiente paso
-            adminState[chatId] = { 
-                step: 'awaiting_push_action', 
-                tmdbId: movieDataToSave.tmdbId, 
-                mediaType: 'movie', 
-                title: movieDataToSave.title 
-            };
-            bot.sendMessage(chatId, `¿Quieres notificar a los usuarios de la aplicación sobre esta película?`, options);
-
+            await axios.post(`${RENDER_BACKEND_URL}/add-movie`, movieDataToSave);
+            bot.sendMessage(chatId, `✅ Película "${movieDataToSave.title}" guardada con éxito en la app.`);
+            
+            // Llama a la nueva función que maneja la publicación en ambos canales
+            await publishMovieToChannels(movieDataToSave);
+            
+            // El mensaje de éxito lo maneja la nueva función, así que solo limpiamos el estado
+            adminState[chatId] = { step: 'menu' };
         } catch (error) {
             console.error("Error al guardar/publicar la película:", error);
             bot.sendMessage(chatId, 'Hubo un error al guardar o publicar la película. Revisa el estado de la película en Firestore y reinicia con /subir.');
-            adminState[chatId] = { step: 'menu' }; // Resetear estado en caso de error
+            adminState[chatId] = { step: 'menu' };
         }
-    
-    // === MODIFICACIÓN DE FLUJO PARA SERIES: DESPUÉS DE GUARDAR, PREGUNTAR POR PUSH ===
-    } else if (data.startsWith('save_only_series_') || data.startsWith('save_and_publish_series_')) {
-        const isPublish = data.startsWith('save_and_publish_series_');
+    } else if (data.startsWith('save_only_series_')) {
         const { seriesDataToSave } = adminState[chatId];
-        
         try {
-            // 1. Guardar o actualizar el episodio en la app
             await axios.post(`${RENDER_BACKEND_URL}/add-series-episode`, seriesDataToSave);
             const contentTitle = seriesDataToSave.title + ` T${seriesDataToSave.seasonNumber} E${seriesDataToSave.episodeNumber}`;
             bot.sendMessage(chatId, `✅ Episodio ${seriesDataToSave.episodeNumber} de la temporada ${seriesDataToSave.seasonNumber} guardado con éxito.`);
-            
-            // 2. Publicar en el canal de Telegram (si se seleccionó)
-            if (isPublish) {
-                bot.sendMessage(chatId, `Ahora publicando en el canal...`);
-                await publishSeriesEpisodeToChannel(seriesDataToSave);
-                bot.sendMessage(chatId, `🎉 ¡Episodio publicado en el canal con éxito!`);
-            }
-
-            // 3. NUEVO PASO: Preguntar por Notificación Push
-            const tmdbId = seriesDataToSave.tmdbId;
-            const options = {
-                reply_markup: {
-                    inline_keyboard: [
-                        [{ text: '🚀 Enviar Notificación Push', callback_data: `send_push_${tmdbId}_series` }]
-                    ]
-                }
-            };
-            // Guardar datos temporales para el siguiente paso
-             adminState[chatId] = { 
-                step: 'awaiting_push_action', 
-                tmdbId: tmdbId, 
-                mediaType: 'series', 
-                title: contentTitle 
-            };
-            bot.sendMessage(chatId, `¿Quieres notificar a los usuarios de la aplicación sobre este nuevo episodio?`, options);
-
+            adminState[chatId] = { step: 'menu' };
+        } catch (error) {
+            console.error("Error al guardar el episodio:", error);
+            bot.sendMessage(chatId, 'Hubo un error al guardar el episodio.');
+            adminState[chatId] = { step: 'menu' };
+        }
+    } else if (data.startsWith('save_and_publish_series_')) {
+        const { seriesDataToSave } = adminState[chatId];
+        try {
+            await axios.post(`${RENDER_BACKEND_URL}/add-series-episode`, seriesDataToSave);
+            const contentTitle = seriesDataToSave.title + ` T${seriesDataToSave.seasonNumber} E${seriesDataToSave.episodeNumber}`;
+            bot.sendMessage(chatId, `✅ Episodio ${seriesDataToSave.episodeNumber} de la temporada ${seriesDataToSave.seasonNumber} guardado con éxito.`);
+            
+            // Llama a la nueva función que maneja la publicación en ambos canales
+            await publishSeriesEpisodeToChannels(seriesDataToSave);
+            
+            // El mensaje de éxito lo maneja la nueva función, así que solo limpiamos el estado
+            adminState[chatId] = { step: 'menu' };
         } catch (error) {
             console.error("Error al guardar/publicar el episodio:", error);
             bot.sendMessage(chatId, 'Hubo un error al guardar o publicar el episodio.');
-            adminState[chatId] = { step: 'menu' }; // Resetear estado en caso de error
+            adminState[chatId] = { step: 'menu' };
         }
 
-    // === NUEVO HANDLER PARA ENVIAR LA NOTIFICACIÓN PUSH ===
     } else if (data.startsWith('send_push_')) {
         const parts = data.split('_');
         const tmdbId = parts[2];
@@ -1285,280 +1328,6 @@ bot.on('callback_query', async (callbackQuery) => {
         }
     }
 });
-
-// =======================================================================
-// === NUEVA FUNCIÓN: VERIFICADOR DE ACTUALIZACIONES (/api/app-update) ===
-// =======================================================================
-
-app.get('/api/app-update', (req, res) => {
-  // CRÍTICO: latest_version_code DEBE coincidir con el versionCode del APK más reciente (en tu caso, 2)
-  const updateInfo = {
-    "latest_version_code": 4, 
-    "update_url": "https://google-play.onrender.com", // <-- TU PÁGINA DE TIENDA
-    "force_update": true, // <--- TRUE: Obliga a actualizar
-    "update_message": "¡Tenemos una nueva versión (1.4) con TV en vivo y mejoras! Presiona 'Actualizar Ahora' para ir a la tienda de descarga."
-  };
-  
-  res.status(200).json(updateInfo);
-});
-
-
-// =======================================================================
-// === NUEVAS FUNCIONES Y VARIABLES PARA EL FLUJO DE PUBLICACIÓN EN CANALES ===
-// =======================================================================
-/*
- * Nuevas variables de entorno requeridas:
- * - TELEGRAM_CHANNEL_A_ID: ID del canal público de películas. Ejemplo: @sala_cine_oficial
- * - TELEGRAM_CHANNEL_B_ID: ID del canal de la comunidad. Ejemplo: @sala_cine_comunidad
- * - COOLDOWN_REPUBLISH_DAYS: Número de días de espera para volver a republicar una película.
- */
-const TELEGRAM_CHANNEL_A_ID = process.env.TELEGRAM_CHANNEL_A_ID;
-const TELEGRAM_CHANNEL_B_ID = process.env.TELEGRAM_CHANNEL_B_ID;
-const COOLDOWN_REPUBLISH_DAYS = parseInt(process.env.COOLDOWN_REPUBLISH_DAYS, 10) || 30; // 30 días por defecto
-
-/**
- * Publica un post en el canal de la comunidad (Canal B) con un enlace al post original.
- * @param {string} permalink El enlace permanente al post en el canal A.
- * @param {object} mediaData Los datos de la película o serie para el post.
- * @param {string} mediaType Tipo de contenido ('movie' o 'series').
- * @param {string} contentTitle El título del contenido para el mensaje.
- */
-async function publishToCommunityChannel(permalink, mediaData, mediaType, contentTitle) {
-    try {
-        const posterUrl = mediaData.poster_path ? `https://image.tmdb.org/t/p/w500${mediaData.poster_path}` : 'https://placehold.co/500x750?text=No+Poster';
-        const description = (mediaType === 'movie') 
-            ? `🎥 ¡Nueva película agregada! Haz clic para verla en Sala Cine.`
-            : `📺 ¡Nuevo episodio agregado! Haz clic para ver los detalles.`;
-
-        const options = {
-            caption: `**¡Nuevo en Sala Cine!**\n\n${description}\n\n*${contentTitle}*`,
-            parse_mode: 'Markdown',
-            reply_markup: {
-                inline_keyboard: [
-                    [{ text: '▶️ Ver más', url: permalink }]
-                ]
-            }
-        };
-
-        await bot.sendPhoto(TELEGRAM_CHANNEL_B_ID, posterUrl, options);
-    } catch (error) {
-        console.error('Error al publicar en el canal de la comunidad:', error.message);
-        bot.sendMessage(ADMIN_CHAT_ID, `⚠️ Error al publicar el post de ${contentTitle} en el canal de la comunidad. Revisa los logs.`);
-    }
-}
-
-/**
- * Encapsula el flujo completo de publicación:
- * 1. Publica en el canal principal (A).
- * 2. Obtiene el enlace permanente.
- * 3. Publica en el canal de la comunidad (B) con el enlace.
- * @param {object} movieData Los datos de la película a publicar.
- */
-async function publishMovieToChannels(movieData) {
-    const posterUrl = movieData.poster_path ? `https://image.tmdb.org/t/p/w500${movieData.poster_path}` : 'https://placehold.co/500x750?text=No+Poster';
-    const caption = `🎬 **${movieData.title}**\n\n` +
-                    `${movieData.overview || 'Sin sinopsis disponible.'}\n\n` +
-                    `⭐ ${movieData.isPremium ? 'Contenido PRO' : 'Contenido GRATIS/PRO'}`;
-
-    const botUsername = process.env.TELEGRAM_BOT_USERNAME || 'SuBotUsername';
-    const tmeDeepLink = `https://t.me/${botUsername}/?startapp=${movieData.tmdbId}`;
-    const appDeepLinkFallback = `${RENDER_BACKEND_URL}/app/details/${movieData.tmdbId}`;
-
-    const options = {
-        caption: caption,
-        parse_mode: 'Markdown',
-        reply_markup: {
-            inline_keyboard: [
-                [{ text: '▶️ Ver ahora', url: tmeDeepLink }],
-                [{ text: '📱 Ver en el celular (Android)', url: appDeepLinkFallback }]
-            ]
-        }
-    };
-
-    try {
-        const sentMessage = await bot.sendPhoto(TELEGRAM_CHANNEL_A_ID, posterUrl, options);
-        
-        // Obtener el permalink del mensaje recién publicado
-        const permalink = `https://t.me/${TELEGRAM_CHANNEL_A_ID.substring(1)}/${sentMessage.message_id}`;
-        
-        // Publicar en el canal de la comunidad
-        await publishToCommunityChannel(permalink, movieData, 'movie', movieData.title);
-
-        return { success: true };
-    } catch (error) {
-        console.error('Error al publicar película en canales:', error.message);
-        bot.sendMessage(ADMIN_CHAT_ID, `⚠️ Error al publicar la película *${movieData.title}* en el canal principal. Revisa los logs.`);
-        return { success: false, error: error.message };
-    }
-}
-
-/**
- * Encapsula el flujo completo de publicación de un episodio de serie.
- * 1. Publica en el canal principal (A).
- * 2. Obtiene el enlace permanente.
- * 3. Publica en el canal de la comunidad (B) con el enlace.
- * @param {object} seriesData Los datos de la serie a publicar.
- */
-async function publishSeriesEpisodeToChannels(seriesData) {
-    const posterUrl = seriesData.poster_path ? `https://image.tmdb.org/t/p/w500${seriesData.poster_path}` : 'https://placehold.co/500x750?text=No+Poster';
-    const contentTitle = seriesData.title + ` - T${seriesData.seasonNumber} E${seriesData.episodeNumber}`;
-    const caption = `🆕 **¡Nuevo Episodio!**\n\n` +
-                    `🎬 **${contentTitle}**\n\n` +
-                    `📺 ${seriesData.overview || 'Sin sinopsis disponible.'}\n\n` +
-                    `⭐ ${seriesData.isPremium ? 'Contenido PRO' : 'Contenido GRATIS/PRO'}`;
-
-    const botUsername = process.env.TELEGRAM_BOT_USERNAME || 'SuBotUsername';
-    const tmeDeepLink = `https://t.me/${botUsername}/?startapp=${seriesData.tmdbId}`;
-    const appDeepLinkFallback = `${RENDER_BACKEND_URL}/app/details/${seriesData.tmdbId}`;
-
-    const options = {
-        caption: caption,
-        parse_mode: 'Markdown',
-        reply_markup: {
-            inline_keyboard: [
-                [{ text: '▶️ Ver ahora', url: tmeDeepLink }],
-                [{ text: '📱 Ver en el celular (Android)', url: appDeepLinkFallback }]
-            ]
-        }
-    };
-
-    try {
-        const sentMessage = await bot.sendPhoto(TELEGRAM_CHANNEL_A_ID, posterUrl, options);
-
-        // Obtener el permalink del mensaje recién publicado
-        const permalink = `https://t.me/${TELEGRAM_CHANNEL_A_ID.substring(1)}/${sentMessage.message_id}`;
-
-        // Publicar en el canal de la comunidad
-        await publishToCommunityChannel(permalink, seriesData, 'series', contentTitle);
-
-        return { success: true };
-    } catch (error) {
-        console.error('Error al publicar episodio en canales:', error.message);
-        bot.sendMessage(ADMIN_CHAT_ID, `⚠️ Error al publicar el episodio *${contentTitle}* en el canal principal. Revisa los logs.`);
-        return { success: false, error: error.message };
-    }
-}
-
-// Endpoint para activar la republicación automática desde un servicio externo (como un cron job)
-app.post('/api/republish', async (req, res) => {
-    try {
-        const moviesRef = db.collection('movies');
-        // Busca una película que no haya sido republicada o que lo haya sido hace más de X días
-        const snapshot = await moviesRef
-            .where('last_reposted_at', '<', admin.firestore.Timestamp.fromMillis(Date.now() - COOLDOWN_REPUBLISH_DAYS * 24 * 60 * 60 * 1000))
-            .limit(1)
-            .get();
-
-        if (snapshot.empty) {
-            console.log('No hay películas elegibles para republicar.');
-            return res.status(200).json({ message: 'No hay películas elegibles para republicar en este momento.' });
-        }
-
-        const movieDoc = snapshot.docs[0];
-        const movieData = movieDoc.data();
-        
-        console.log(`Republicando película: ${movieData.title}`);
-
-        const publishResult = await publishMovieToChannels(movieData);
-
-        if (publishResult.success) {
-            // Actualizar la marca de tiempo de la última republicación
-            await movieDoc.ref.update({ last_reposted_at: admin.firestore.FieldValue.serverTimestamp() });
-            res.status(200).json({ message: `Republicación exitosa de: ${movieData.title}` });
-        } else {
-            res.status(500).json({ error: `Fallo la republicación de ${movieData.title}` });
-        }
-
-    } catch (error) {
-        console.error("Error en el proceso de republicación:", error);
-        res.status(500).json({ error: "Error interno del servidor durante la republicación." });
-    }
-});
-
-// =======================================================================
-// === FIN DE NUEVAS FUNCIONES Y VARIABLES PARA EL FLUJO DE PUBLICACIÓN EN CANALES ===
-// =======================================================================
-
-
-// Reemplazando las llamadas a las funciones de publicación antiguas
-bot.on('callback_query', async (callbackQuery) => {
-    const msg = callbackQuery.message;
-    const data = callbackQuery.data;
-    const chatId = msg.chat.id;
-    if (chatId !== ADMIN_CHAT_ID) return;
-
-    // ... (El resto de la lógica de callback_query permanece igual)
-
-    // === MODIFICACIÓN DEL MANEJADOR DE EVENTOS: AHORA LLAMA A LAS NUEVAS FUNCIONES ===
-    if (data.startsWith('save_only_')) {
-        const { movieDataToSave } = adminState[chatId];
-        try {
-            if (!movieDataToSave || !movieDataToSave.tmdbId) {
-                throw new Error("Datos de película incompletos o tmdbId faltante.");
-            }
-            await axios.post(`${RENDER_BACKEND_URL}/add-movie`, movieDataToSave);
-            bot.sendMessage(chatId, `✅ Película "${movieDataToSave.title}" guardada con éxito en la app.`);
-            adminState[chatId] = { step: 'menu' };
-        } catch (error) {
-            console.error("Error al guardar la película:", error);
-            bot.sendMessage(chatId, 'Hubo un error al guardar la película.');
-            adminState[chatId] = { step: 'menu' };
-        }
-    } else if (data.startsWith('save_and_publish_')) {
-        const { movieDataToSave } = adminState[chatId];
-        try {
-            if (!movieDataToSave || !movieDataToSave.tmdbId) {
-                throw new Error("Datos de película incompletos o tmdbId faltante.");
-            }
-            await axios.post(`${RENDER_BACKEND_URL}/add-movie`, movieDataToSave);
-            bot.sendMessage(chatId, `✅ Película "${movieDataToSave.title}" guardada con éxito en la app.`);
-            
-            // Llama a la nueva función que maneja la publicación en ambos canales
-            await publishMovieToChannels(movieDataToSave);
-            
-            // El mensaje de éxito lo maneja la nueva función, así que solo limpiamos el estado
-            adminState[chatId] = { step: 'menu' };
-        } catch (error) {
-            console.error("Error al guardar/publicar la película:", error);
-            bot.sendMessage(chatId, 'Hubo un error al guardar o publicar la película. Revisa el estado de la película en Firestore y reinicia con /subir.');
-            adminState[chatId] = { step: 'menu' };
-        }
-    } else if (data.startsWith('save_only_series_')) {
-        const { seriesDataToSave } = adminState[chatId];
-        try {
-            await axios.post(`${RENDER_BACKEND_URL}/add-series-episode`, seriesDataToSave);
-            const contentTitle = seriesDataToSave.title + ` T${seriesDataToSave.seasonNumber} E${seriesDataToSave.episodeNumber}`;
-            bot.sendMessage(chatId, `✅ Episodio ${seriesDataToSave.episodeNumber} de la temporada ${seriesDataToSave.seasonNumber} guardado con éxito.`);
-            adminState[chatId] = { step: 'menu' };
-        } catch (error) {
-            console.error("Error al guardar el episodio:", error);
-            bot.sendMessage(chatId, 'Hubo un error al guardar el episodio.');
-            adminState[chatId] = { step: 'menu' };
-        }
-    } else if (data.startsWith('save_and_publish_series_')) {
-        const { seriesDataToSave } = adminState[chatId];
-        try {
-            await axios.post(`${RENDER_BACKEND_URL}/add-series-episode`, seriesDataToSave);
-            const contentTitle = seriesDataToSave.title + ` T${seriesDataToSave.seasonNumber} E${seriesDataToSave.episodeNumber}`;
-            bot.sendMessage(chatId, `✅ Episodio ${seriesDataToSave.episodeNumber} de la temporada ${seriesDataToSave.seasonNumber} guardado con éxito.`);
-            
-            // Llama a la nueva función que maneja la publicación en ambos canales
-            await publishSeriesEpisodeToChannels(seriesDataToSave);
-            
-            // El mensaje de éxito lo maneja la nueva función, así que solo limpiamos el estado
-            adminState[chatId] = { step: 'menu' };
-        } catch (error) {
-            console.error("Error al guardar/publicar el episodio:", error);
-            bot.sendMessage(chatId, 'Hubo un error al guardar o publicar el episodio.');
-            adminState[chatId] = { step: 'menu' };
-        }
-    } else if (data.startsWith('send_push_')) {
-        // ... (La lógica de notificación push permanece igual)
-    }
-});
-// =======================================================================
-// === FIN DE LA MODIFICACIÓN EN MANEJADORES DE EVENTOS ===
-// =======================================================================
 
 // =======================================================================
 // === NUEVA FUNCIÓN: VERIFICADOR DE ACTUALIZACIONES (/api/app-update) ===
