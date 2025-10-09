@@ -1252,36 +1252,84 @@ bot.on('callback_query', async (callbackQuery) => {
             adminState[chatId] = { step: 'menu' };
         }
     } else if (data.startsWith('save_only_series_')) {
-        const { seriesDataToSave } = adminState[chatId];
-        try {
-            await axios.post(`${RENDER_BACKEND_URL}/add-series-episode`, seriesDataToSave);
-            const contentTitle = seriesDataToSave.title + ` T${seriesDataToSave.seasonNumber} E${seriesDataToSave.episodeNumber}`;
-            bot.sendMessage(chatId, `✅ Episodio ${seriesDataToSave.episodeNumber} de la temporada ${seriesDataToSave.seasonNumber} guardado con éxito.`);
-            adminState[chatId] = { step: 'menu' };
-        } catch (error) {
-            console.error("Error al guardar el episodio:", error);
-            bot.sendMessage(chatId, 'Hubo un error al guardar el episodio.');
-            adminState[chatId] = { step: 'menu' };
-        }
-    } else if (data.startsWith('save_and_publish_series_')) {
-        const { seriesDataToSave } = adminState[chatId];
-        try {
-            await axios.post(`${RENDER_BACKEND_URL}/add-series-episode`, seriesDataToSave);
-            const contentTitle = seriesDataToSave.title + ` T${seriesDataToSave.seasonNumber} E${seriesDataToSave.episodeNumber}`;
-            bot.sendMessage(chatId, `✅ Episodio ${seriesDataToSave.episodeNumber} de la temporada ${seriesDataToSave.seasonNumber} guardado con éxito.`);
-            
-            // Llama a la nueva función que maneja la publicación en ambos canales
-            await publishSeriesEpisodeToChannels(seriesDataToSave);
-            
-            // El mensaje de éxito lo maneja la nueva función, así que solo limpiamos el estado
-            adminState[chatId] = { step: 'menu' };
-        } catch (error) {
-            console.error("Error al guardar/publicar el episodio:", error);
-            bot.sendMessage(chatId, 'Hubo un error al guardar o publicar el episodio.');
-            adminState[chatId] = { step: 'menu' };
-        }
+        const { seriesDataToSave } = adminState[chatId];
+        try {
+            await axios.post(`${RENDER_BACKEND_URL}/add-series-episode`, seriesDataToSave);
+            const contentTitle = seriesDataToSave.title;
+            const tmdbId = seriesDataToSave.tmdbId;
+            const seasonNumber = seriesDataToSave.seasonNumber;
+            const episodeNumber = seriesDataToSave.episodeNumber;
 
-    } else if (data.startsWith('send_push_')) {
+            // Prepara el botón para el siguiente episodio
+            const seriesRef = db.collection('series').doc(tmdbId);
+            const seriesDoc = await seriesRef.get();
+            const seriesData = seriesDoc.exists ? seriesDoc.data() : null;
+
+            let lastEpisode = 0;
+            if (seriesData?.seasons?.[seasonNumber]?.episodes) {
+                lastEpisode = Object.keys(seriesData.seasons[seasonNumber].episodes).length;
+            }
+            const nextEpisode = lastEpisode + 1;
+
+            const options = {
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: `➡️ Agregar Episodio ${nextEpisode}`, callback_data: `add_next_episode_${tmdbId}_${seasonNumber}` }],
+                        [{ text: '✅ Finalizar', callback_data: `finish_series_${tmdbId}` }]
+                    ]
+                },
+                parse_mode: 'Markdown'
+            };
+            
+            bot.sendMessage(chatId, `✅ Episodio ${episodeNumber} de la temporada ${seasonNumber} guardado con éxito. ¿Quieres agregar el siguiente?`, options);
+            adminState[chatId] = { step: 'awaiting_series_action' }; // Nuevo estado para esperar una acción
+            
+        } catch (error) {
+            console.error("Error al guardar el episodio:", error);
+            bot.sendMessage(chatId, 'Hubo un error al guardar el episodio.');
+            adminState[chatId] = { step: 'menu' };
+        }
+    } else if (data.startsWith('save_and_publish_series_')) {
+        const { seriesDataToSave } = adminState[chatId];
+        try {
+            await axios.post(`${RENDER_BACKEND_URL}/add-series-episode`, seriesDataToSave);
+            const contentTitle = seriesDataToSave.title + ` T${seriesDataToSave.seasonNumber} E${seriesDataToSave.episodeNumber}`;
+            bot.sendMessage(chatId, `✅ Episodio ${seriesDataToSave.episodeNumber} de la temporada ${seriesDataToSave.seasonNumber} guardado con éxito.`);
+            
+            // Llama a la nueva función que maneja la publicación en ambos canales
+            await publishSeriesEpisodeToChannels(seriesDataToSave);
+
+            // Prepara el botón para el siguiente episodio
+            const tmdbId = seriesDataToSave.tmdbId;
+            const seasonNumber = seriesDataToSave.seasonNumber;
+            const seriesRef = db.collection('series').doc(tmdbId);
+            const seriesDoc = await seriesRef.get();
+            const seriesData = seriesDoc.exists ? seriesDoc.data() : null;
+
+            let lastEpisode = 0;
+            if (seriesData?.seasons?.[seasonNumber]?.episodes) {
+                lastEpisode = Object.keys(seriesData.seasons[seasonNumber].episodes).length;
+            }
+            const nextEpisode = lastEpisode + 1;
+
+            const options = {
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: `➡️ Agregar Episodio ${nextEpisode}`, callback_data: `add_next_episode_${tmdbId}_${seasonNumber}` }],
+                        [{ text: '✅ Finalizar', callback_data: `finish_series_${tmdbId}` }]
+                    ]
+                },
+                parse_mode: 'Markdown'
+            };
+            
+            bot.sendMessage(chatId, `¿Quieres agregar el siguiente episodio?`, options);
+            adminState[chatId] = { step: 'awaiting_series_action' }; // Nuevo estado para esperar una acción
+        } catch (error) {
+            console.error("Error al guardar/publicar el episodio:", error);
+            bot.sendMessage(chatId, 'Hubo un error al guardar o publicar el episodio.');
+            adminState[chatId] = { step: 'menu' };
+        }
+    } else if (data.startsWith('send_push_')) {
         const parts = data.split('_');
         const tmdbId = parts[2];
         const mediaType = parts[3];
@@ -1326,7 +1374,14 @@ bot.on('callback_query', async (callbackQuery) => {
         } finally {
             adminState[chatId] = { step: 'menu' }; // Resetear estado al menú principal
         }
-    }
+    } else if (data.startsWith('finish_series_')) {
+        const tmdbId = data.replace('finish_series_', '');
+        // Opcional: Marcar la serie como "finalizada" o "publicada" en Firestore
+        const seriesRef = db.collection('series').doc(tmdbId);
+        await seriesRef.update({ status: 'completed' });
+        bot.sendMessage(chatId, '✅ Proceso de adición de episodios finalizado. Volviendo al menú principal.');
+        adminState[chatId] = { step: 'menu' };
+    }
 });
 
 // =======================================================================
