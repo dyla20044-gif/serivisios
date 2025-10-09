@@ -1632,9 +1632,17 @@ app.get('/api/app-update', (req, res) => {
   res.status(200).json(updateInfo);
 });
 
+// =======================================================================
+// === NUEVA FUNCIÓN: ENDPOINT PARA GOOGLE APP LINKS VERIFICATION ===
+// =======================================================================
+
+const path = require('path');
+
+app.use('/.well-known', express.static(path.join(__dirname, '.well-known')));
 
 // =======================================================================
 
+// === CÓDIGO ORIGINAL QUE DEBE VENIR DESPUÉS ===
 app.listen(PORT, () => {
-    console.log(`Servidor de backend de Sala Cine iniciado en el puerto ${PORT}`);
+    console.log(`Servidor de backend de Sala Cine iniciado en el puerto ${PORT}`);
 });
