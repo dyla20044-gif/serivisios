@@ -1633,12 +1633,13 @@ app.get('/api/app-update', (req, res) => {
 });
 
 // =======================================================================
-// === NUEVA FUNCIÓN: ENDPOINT PARA GOOGLE APP LINKS VERIFICATION ===
+// === NUEVA SOLUCIÓN: ENDPOINT PARA GOOGLE APP LINKS VERIFICATION ===
 // =======================================================================
 
-const path = require('path');
-
-app.use('/.well-known', express.static(path.join(__dirname, '.well-known')));
+app.get('/.well-known/assetlinks.json', (req, res) => {
+    // Esto asegura que el archivo se sirva sin importar la configuración de Render
+    res.sendFile('assetlinks.json', { root: __dirname });
+});
 
 // =======================================================================
 
