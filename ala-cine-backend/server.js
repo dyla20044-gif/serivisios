@@ -21,7 +21,7 @@ const db = admin.firestore();
 const messaging = admin.messaging(); // <--- CRÍTICO: Inicialización del servicio de mensajería
 
 paypal.configure({
-    'mode': 'live',
+    'mode': 'sandbox',
     'client_id': process.env.PAYPAL_CLIENT_ID,
     'client_secret': process.env.PAYPAL_CLIENT_SECRET
 });
