@@ -78,8 +78,8 @@ app.post(`/bot${token}`, (req, res) => {
 // -------------------------------------------------------------------------
 
 /* Esta ruta se activa si el usuario toca el botón "Abrir en App Nativa" 
-  y la aplicación de Android NO está instalada (App Link falla). 
-  Redirige al usuario a la tienda personalizada.
+ * y la aplicación de Android NO está instalada (App Link falla). 
+ * Redirige al usuario a la tienda personalizada.
 */
 app.get('/app/details/:tmdbId', (req, res) => {
     const tmdbId = req.params.tmdbId;
@@ -1247,6 +1247,7 @@ bot.on('callback_query', async (callbackQuery) => {
             bot.sendMessage(chatId, 'Hubo un error al guardar o publicar la película. Revisa el estado de la película en Firestore y reinicia con /subir.');
             adminState[chatId] = { step: 'menu' };
         }
+    // INICIO DEL CÓDIGO CORREGIDO
     } else if (data.startsWith('save_only_series_')) {
         const { seriesDataToSave } = adminState[chatId];
         try {
@@ -1254,7 +1255,7 @@ bot.on('callback_query', async (callbackQuery) => {
                 throw new Error("Datos de la serie incompletos o tmdbId faltante.");
             }
             await axios.post(`${RENDER_BACKEND_URL}/add-series-episode`, seriesDataToSave);
-            const contentTitle = seriesDataToSave.title;
+            
             const tmdbId = seriesDataToSave.tmdbId;
             const seasonNumber = seriesDataToSave.seasonNumber;
             const episodeNumber = seriesDataToSave.episodeNumber;
@@ -1281,7 +1282,7 @@ bot.on('callback_query', async (callbackQuery) => {
             };
             
             bot.sendMessage(chatId, `✅ Episodio ${episodeNumber} de la temporada ${seasonNumber} guardado con éxito. ¿Quieres agregar el siguiente?`, options);
-            adminState[chatId] = { step: 'awaiting_series_action' }; // Nuevo estado para esperar una acción
+            adminState[chatId] = { step: 'awaiting_series_action' }; 
             
         } catch (error) {
             console.error("Error al guardar el episodio:", error);
@@ -1298,10 +1299,8 @@ bot.on('callback_query', async (callbackQuery) => {
             const contentTitle = seriesDataToSave.title + ` T${seriesDataToSave.seasonNumber} E${seriesDataToSave.episodeNumber}`;
             bot.sendMessage(chatId, `✅ Episodio ${seriesDataToSave.episodeNumber} de la temporada ${seriesDataToSave.seasonNumber} guardado con éxito.`);
             
-            // Llama a la nueva función que maneja la publicación en ambos canales
             await publishSeriesEpisodeToChannels(seriesDataToSave);
 
-            // Prepara el botón para el siguiente episodio
             const tmdbId = seriesDataToSave.tmdbId;
             const seasonNumber = seriesDataToSave.seasonNumber;
             const seriesRef = db.collection('series').doc(tmdbId);
@@ -1325,12 +1324,13 @@ bot.on('callback_query', async (callbackQuery) => {
             };
             
             bot.sendMessage(chatId, `¿Quieres agregar el siguiente episodio?`, options);
-            adminState[chatId] = { step: 'awaiting_series_action' }; // Nuevo estado para esperar una acción
+            adminState[chatId] = { step: 'awaiting_series_action' };
         } catch (error) {
             console.error("Error al guardar/publicar el episodio:", error);
             bot.sendMessage(chatId, 'Hubo un error al guardar o publicar el episodio.');
             adminState[chatId] = { step: 'menu' };
         }
+    // FIN DEL CÓDIGO CORREGIDO
     } else if (data.startsWith('send_push_')) {
         const parts = data.split('_');
         const tmdbId = parts[2];
