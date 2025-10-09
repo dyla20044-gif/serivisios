@@ -1260,18 +1260,72 @@ bot.on('callback_query', async (callbackQuery) => {
             bot.sendMessage(chatId, 'Hubo un error al guardar o publicar la película. Revisa el estado de la película en Firestore y reinicia con /subir.');
             adminState[chatId] = { step: 'menu' };
         }
-    } else if (data.startsWith('save_and_publish_series_')) {
+    // LÓGICA CORREGIDA PARA EL BOTÓN "GUARDAR Y PUBLICAR" PARA SERIES
+    } else if (data.startsWith('save_only_series_')) {
         const { seriesDataToSave } = adminState[chatId];
         try {
             if (!seriesDataToSave || !seriesDataToSave.tmdbId) {
                 throw new Error("Datos de la serie incompletos o tmdbId faltante.");
             }
             await axios.post(`${RENDER_BACKEND_URL}/add-series-episode`, seriesDataToSave);
-            const contentTitle = seriesDataToSave.title + ` T${seriesDataToSave.seasonNumber} E${seriesDataToSave.episodeNumber}`;
+            
+            const tmdbId = seriesDataToSave.tmdbId;
+            const seasonNumber = seriesDataToSave.seasonNumber;
+            const episodeNumber = seriesDataToSave.episodeNumber;
+
+            // Prepara el botón para el siguiente episodio
+            const seriesRef = db.collection('series').doc(tmdbId);
+            const seriesDoc = await seriesRef.get();
+            const seriesData = seriesDoc.exists ? seriesDoc.data() : null;
+
+            let lastEpisode = 0;
+            if (seriesData?.seasons?.[seasonNumber]?.episodes) {
+                lastEpisode = Object.keys(seriesData.seasons[seasonNumber].episodes).length;
+            }
+            const nextEpisode = lastEpisode + 1;
+
+            const options = {
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: `➡️ Agregar Episodio ${nextEpisode}`, callback_data: `add_next_episode_${tmdbId}_${seasonNumber}` }],
+                        [{ text: '✅ Finalizar', callback_data: `finish_series_${tmdbId}` }]
+                    ]
+                },
+                parse_mode: 'Markdown'
+            };
+            
+            bot.sendMessage(chatId, `✅ Episodio ${episodeNumber} de la temporada ${seasonNumber} guardado con éxito. ¿Quieres agregar el siguiente?`, options);
+            adminState[chatId] = { step: 'awaiting_series_action' }; 
+            
+        } catch (error) {
+            console.error("Error al guardar el episodio:", error);
+            bot.sendMessage(chatId, 'Hubo un error al guardar el episodio.');
+            adminState[chatId] = { step: 'menu' };
+        }
+    } else if (data.startsWith('save_and_publish_series_')) {
+        const { selectedSeries, season, episode, proEmbedCode, freeEmbedCode } = adminState[chatId];
+        try {
+            if (!selectedSeries || !selectedSeries.tmdbId) {
+                throw new Error("Datos de la serie incompletos o tmdbId faltante.");
+            }
+            
+            const seriesDataToSave = {
+                tmdbId: selectedSeries.tmdbId, 
+                title: selectedSeries.title || selectedSeries.name,
+                overview: selectedSeries.overview,
+                poster_path: selectedSeries.poster_path,
+                seasonNumber: season,
+                episodeNumber: episode,
+                proEmbedCode: proEmbedCode,
+                freeEmbedCode: freeEmbedCode,
+                isPremium: !!proEmbedCode && !freeEmbedCode
+            };
+
+            await axios.post(`${RENDER_BACKEND_URL}/add-series-episode`, seriesDataToSave);
             bot.sendMessage(chatId, `✅ Episodio ${seriesDataToSave.episodeNumber} de la temporada ${seriesDataToSave.seasonNumber} guardado y publicado con éxito.`);
             
             await publishSeriesEpisodeToChannels(seriesDataToSave);
-            
+
             const tmdbId = seriesDataToSave.tmdbId;
             const seasonNumber = seriesDataToSave.seasonNumber;
             const seriesRef = db.collection('series').doc(tmdbId);
