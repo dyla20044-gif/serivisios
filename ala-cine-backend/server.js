@@ -878,6 +878,7 @@ bot.on('message', async (msg) => {
             isPremium: !!proEmbedCode && !freeEmbedCode
         };
         
+        // CÓDIGO CORREGIDO: Muestra los botones de "Guardar" y "Publicar"
         adminState[chatId].step = 'awaiting_publish_choice_series';
         const options = {
             reply_markup: {
@@ -1247,7 +1248,6 @@ bot.on('callback_query', async (callbackQuery) => {
             bot.sendMessage(chatId, 'Hubo un error al guardar o publicar la película. Revisa el estado de la película en Firestore y reinicia con /subir.');
             adminState[chatId] = { step: 'menu' };
         }
-    // INICIO DEL CÓDIGO CORREGIDO
     } else if (data.startsWith('save_only_series_')) {
         const { seriesDataToSave } = adminState[chatId];
         try {
@@ -1299,6 +1299,7 @@ bot.on('callback_query', async (callbackQuery) => {
             const contentTitle = seriesDataToSave.title + ` T${seriesDataToSave.seasonNumber} E${seriesDataToSave.episodeNumber}`;
             bot.sendMessage(chatId, `✅ Episodio ${seriesDataToSave.episodeNumber} de la temporada ${seriesDataToSave.seasonNumber} guardado con éxito.`);
             
+            // Llama a la nueva función que maneja la publicación en ambos canales
             await publishSeriesEpisodeToChannels(seriesDataToSave);
 
             const tmdbId = seriesDataToSave.tmdbId;
@@ -1330,7 +1331,6 @@ bot.on('callback_query', async (callbackQuery) => {
             bot.sendMessage(chatId, 'Hubo un error al guardar o publicar el episodio.');
             adminState[chatId] = { step: 'menu' };
         }
-    // FIN DEL CÓDIGO CORREGIDO
     } else if (data.startsWith('send_push_')) {
         const parts = data.split('_');
         const tmdbId = parts[2];
