@@ -1,0 +1,9 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "com.salacine.app",
+    "sha256_cert_fingerprints":
+    ["1E:A3:31:FB:84:44:AB:9D:6A:4D:99:82:FA:2A:99:9B:EE:2E:84:D0:D8:AC:60:37:F2:0E:A0:36:A3:83:CA:73"]
+  }
+}]
