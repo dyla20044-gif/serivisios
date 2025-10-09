@@ -1254,6 +1254,9 @@ bot.on('callback_query', async (callbackQuery) => {
     } else if (data.startsWith('save_only_series_')) {
         const { seriesDataToSave } = adminState[chatId];
         try {
+            if (!seriesDataToSave || !seriesDataToSave.tmdbId) {
+                throw new Error("Datos de la serie incompletos o tmdbId faltante.");
+            }
             await axios.post(`${RENDER_BACKEND_URL}/add-series-episode`, seriesDataToSave);
             const contentTitle = seriesDataToSave.title;
             const tmdbId = seriesDataToSave.tmdbId;
@@ -1292,6 +1295,9 @@ bot.on('callback_query', async (callbackQuery) => {
     } else if (data.startsWith('save_and_publish_series_')) {
         const { seriesDataToSave } = adminState[chatId];
         try {
+            if (!seriesDataToSave || !seriesDataToSave.tmdbId) {
+                throw new Error("Datos de la serie incompletos o tmdbId faltante.");
+            }
             await axios.post(`${RENDER_BACKEND_URL}/add-series-episode`, seriesDataToSave);
             const contentTitle = seriesDataToSave.title + ` T${seriesDataToSave.seasonNumber} E${seriesDataToSave.episodeNumber}`;
             bot.sendMessage(chatId, `✅ Episodio ${seriesDataToSave.episodeNumber} de la temporada ${seriesDataToSave.seasonNumber} guardado con éxito.`);
