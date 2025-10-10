@@ -522,8 +522,10 @@ async function publishMovieToChannels(movieData) {
         const channelUsername = TELEGRAM_CHANNEL_A_ID.startsWith('@') ? TELEGRAM_CHANNEL_A_ID.substring(1) : TELEGRAM_CHANNEL_A_ID;
         const permalink = `https://t.me/${channelUsername}/${sentMessage.message_id}`;
         
-        // Publicar en el canal de la comunidad
-        await publishToCommunityChannel(permalink, movieData, 'movie', movieData.title);
+        // **CRÍTICO: Añadido un retraso de 10 segundos antes de publicar en el canal de la comunidad.**
+        setTimeout(async () => {
+            await publishToCommunityChannel(permalink, movieData, 'movie', movieData.title);
+        }, 10000); // 10,000 milisegundos = 10 segundos
 
         return { success: true };
     } catch (error) {
@@ -569,8 +571,10 @@ async function publishSeriesEpisodeToChannels(seriesData) {
         const channelUsername = TELEGRAM_CHANNEL_A_ID.startsWith('@') ? TELEGRAM_CHANNEL_A_ID.substring(1) : TELEGRAM_CHANNEL_A_ID;
         const permalink = `https://t.me/${channelUsername}/${sentMessage.message_id}`;
 
-        // Publicar en el canal de la comunidad
-        await publishToCommunityChannel(permalink, seriesData, 'series', contentTitle);
+        // **CRÍTICO: Añadido un retraso de 10 segundos antes de publicar en el canal de la comunidad.**
+        setTimeout(async () => {
+            await publishToCommunityChannel(permalink, seriesData, 'series', contentTitle);
+        }, 10000); // 10,000 milisegundos = 10 segundos
 
         return { success: true };
     } catch (error) {
@@ -579,42 +583,6 @@ async function publishSeriesEpisodeToChannels(seriesData) {
         return { success: false, error: error.message };
     }
 }
-
-// Endpoint para activar la republicación automática desde un servicio externo (como un cron job)
-app.post('/api/republish', async (req, res) => {
-    try {
-        const moviesRef = db.collection('movies');
-        // Busca una película que no haya sido republicada o que lo haya sido hace más de X días
-        const snapshot = await moviesRef
-            .where('last_reposted_at', '<', admin.firestore.Timestamp.fromMillis(Date.now() - COOLDOWN_REPUBLISH_DAYS * 24 * 60 * 60 * 1000))
-            .limit(1)
-            .get();
-
-        if (snapshot.empty) {
-            console.log('No hay películas elegibles para republicar.');
-            return res.status(200).json({ message: 'No hay películas elegibles para republicar en este momento.' });
-        }
-
-        const movieDoc = snapshot.docs[0];
-        const movieData = movieDoc.data();
-        
-        console.log(`Republicando película: ${movieData.title}`);
-
-        const publishResult = await publishMovieToChannels(movieData);
-
-        if (publishResult.success) {
-            // Actualizar la marca de tiempo de la última republicación
-            await movieDoc.ref.update({ last_reposted_at: admin.firestore.FieldValue.serverTimestamp() });
-            res.status(200).json({ message: `Republicación exitosa de: ${movieData.title}` });
-        } else {
-            res.status(500).json({ error: `Fallo la republicación de ${movieData.title}` });
-        }
-
-    } catch (error) {
-        console.error("Error en el proceso de republicación:", error);
-        res.status(500).json({ error: "Error interno del servidor durante la republicación." });
-    }
-});
 
 // -----------------------------------------------------------
 // === FIN DE NUEVAS FUNCIONES PARA EL FLUJO DE PUBLICACIÓN EN CANALES ===
@@ -1120,213 +1088,6 @@ bot.on('callback_query', async (callbackQuery) => {
             episode: nextEpisode
         };
         bot.sendMessage(chatId, `Genial. Ahora, envía el reproductor PRO para el episodio ${nextEpisode} de la temporada ${seasonNumber}. Si no hay, escribe "no".`);
-
-    } else if (data.startsWith('add_new_season_')) {
-        const tmdbId = data.replace('add_new_season_', '');
-        try {
-            const tmdbUrl = `https://api.themoviedb.org/3/tv/${tmdbId}?api_key=${TMDB_API_KEY}&language=es-ES`;
-            const response = await axios.get(tmdbUrl);
-            const tmdbSeries = response.data;
-
-            const seriesRef = db.collection('series').doc(tmdbId);
-            const seriesDoc = await seriesRef.get();
-            const existingSeasons = seriesDoc.exists && seriesDoc.data().seasons ? Object.keys(seriesDoc.data().seasons) : [];
-
-            const availableSeasons = tmdbSeries.seasons.filter(s => !existingSeasons.includes(s.season_number.toString()));
-
-            if (availableSeasons.length > 0) {
-                const buttons = availableSeasons.map(s => [{
-                    text: `Temporada ${s.season_number}`,
-                    callback_data: `select_season_${tmdbId}_${s.season_number}`
-                }]);
-                bot.sendMessage(chatId, `Seleccionaste "${tmdbSeries.name}". ¿Qué temporada quieres agregar?`, {
-                    reply_markup: { inline_keyboard: buttons }
-                });
-            } else {
-                bot.sendMessage(chatId, 'Todas las temporadas de esta serie ya han sido agregadas.');
-            }
-        } catch (error) {
-            console.error("Error al obtener datos de TMDB para nueva temporada:", error);
-            bot.sendMessage(chatId, 'Hubo un error al obtener la información de las temporadas.');
-        }
-
-    } else if (data.startsWith('solicitud_')) {
-        const tmdbId = data.replace('solicitud_', '');
-        try {
-            const tmdbUrl = `https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${TMDB_API_KEY}&language=es-ES`;
-            const response = await axios.get(tmdbUrl);
-            const mediaData = response.data;
-            adminState[chatId] = { selectedMedia: mediaData, mediaType: 'movie', step: 'awaiting_pro_link_movie' };
-            bot.sendMessage(chatId, `Seleccionaste "${mediaData.title}". Envía el reproductor PRO. Si no hay, escribe "no".`);
-
-            const requestsRef = db.collection('requests');
-            const snapshot = await requestsRef.where('tmdbId', '==', tmdbId).get();
-            snapshot.forEach(doc => {
-                doc.ref.delete();
-            });
-        } catch (error) {
-            console.error("Error al obtener datos de TMDB para solicitud:", error);
-            bot.sendMessage(chatId, 'Hubo un error al obtener la información de la película. Intenta de nuevo.');
-        }
-
-    } else if (data === 'manage_movies') {
-        adminState[chatId] = { step: 'search_manage' };
-        bot.sendMessage(chatId, 'Por favor, escribe el nombre de la película o serie que quieres gestionar.');
-    } else if (data.startsWith('delete_select_')) {
-        const [_, __, tmdbId, mediaType] = data.split('_');
-        bot.sendMessage(chatId, `La lógica para eliminar el contenido ${tmdbId} (${mediaType}) está lista para ser implementada.`);
-    } else if (data === 'delete_movie') {
-        adminState[chatId] = { step: 'search_delete' };
-        bot.sendMessage(chatId, 'Por favor, escribe el nombre de la película o serie que quieres eliminar.');
-    } else if (data === 'no_action') {
-        bot.sendMessage(chatId, 'No se requiere ninguna acción para este contenido.');
-    } else if (data.startsWith('select_season_')) {
-        const [_, __, tmdbId, seasonNumber] = data.split('_'); 
-        try {
-            const tmdbUrl = `https://api.themoviedb.org/3/tv/${tmdbId}?api_key=${TMDB_API_KEY}&language=es-ES`;
-            const response = await axios.get(tmdbUrl);
-            const mediaData = response.data;
-            
-            mediaData.tmdbId = mediaData.id.toString();
-            
-            adminState[chatId] = { 
-                step: 'awaiting_pro_link_series', 
-                selectedSeries: mediaData, 
-                season: parseInt(seasonNumber), 
-                episode: 1
-            };
-            bot.sendMessage(chatId, `Perfecto, Temporada ${seasonNumber} seleccionada. Ahora, envía el reproductor PRO para el episodio 1. Si no hay, escribe "no".`);
-        } catch (error) {
-            console.error("Error al seleccionar temporada:", error);
-            bot.sendMessage(chatId, 'Hubo un error al obtener la información de la temporada. Por favor, intenta de nuevo.');
-        }
-    // Lógica nueva para mostrar los episodios de la temporada
-    } else if (data.startsWith('manage_season_')) {
-        const parts = data.split('_');
-        const tmdbId = parts[2];
-        const seasonNumber = parts[3];
-        
-        const seriesRef = db.collection('series').doc(tmdbId);
-        const seriesDoc = await seriesRef.get();
-        const selectedSeries = seriesDoc.exists ? seriesDoc.data() : null;
-        
-        if (!selectedSeries || !selectedSeries.seasons || !selectedSeries.seasons[seasonNumber]) {
-             bot.sendMessage(chatId, 'Error: No se encontraron episodios para esta temporada.');
-             return;
-        }
-
-        const episodes = selectedSeries.seasons[seasonNumber].episodes;
-        const episodeNumbers = Object.keys(episodes).sort((a, b) => parseInt(a) - parseInt(b));
-        
-        if (episodeNumbers.length === 0) {
-            bot.sendMessage(chatId, `La Temporada ${seasonNumber} no tiene episodios agregados. Puedes añadir uno nuevo.`);
-            // Añade una opción para empezar a añadir episodios en esta temporada
-            const options = {
-                reply_markup: {
-                    inline_keyboard: [
-                        [{ text: '➕ Añadir Episodio 1', callback_data: `add_episode_season_${tmdbId}_${seasonNumber}_1` }]
-                    ]
-                }
-            };
-            bot.sendMessage(chatId, `¿Qué quieres hacer ahora?`, options);
-            return;
-        }
-
-        const buttons = episodeNumbers.map(ep => [{
-            text: `Episodio ${ep}`,
-            callback_data: `manage_episode_${tmdbId}_${seasonNumber}_${ep}`
-        }]);
-        
-        const options = {
-            reply_markup: {
-                inline_keyboard: buttons
-            },
-            parse_mode: 'Markdown'
-        };
-        bot.sendMessage(chatId, `**Temporada ${seasonNumber}**\n\nSelecciona el episodio que quieres gestionar:`, options);
-    // Lógica nueva para gestionar un episodio individual
-    } else if (data.startsWith('manage_episode_')) {
-        const parts = data.split('_');
-        const tmdbId = parts[2];
-        const seasonNumber = parts[3];
-        const episodeNumber = parts[4];
-        
-        const seriesRef = db.collection('series').doc(tmdbId);
-        const seriesDoc = await seriesRef.get();
-        const seriesData = seriesDoc.exists ? seriesDoc.data() : null;
-        
-        if (!seriesData) {
-            bot.sendMessage(chatId, 'Error: Serie no encontrada en la base de datos.');
-            return;
-        }
-        
-        const episodeData = seriesData.seasons?.[seasonNumber]?.episodes?.[episodeNumber];
-        if (!episodeData) {
-            bot.sendMessage(chatId, 'Error: Episodio no encontrado.');
-            return;
-        }
-        
-        // Guardar el estado para el flujo de edición
-        adminState[chatId] = {
-            step: 'awaiting_pro_link_series',
-            selectedSeries: { tmdbId: tmdbId, title: seriesData.title, poster_path: seriesData.poster_path },
-            season: parseInt(seasonNumber),
-            episode: parseInt(episodeNumber)
-        };
-
-        const currentPro = episodeData.proEmbedCode ? '✅' : '❌';
-        const currentFree = episodeData.freeEmbedCode ? '✅' : '❌';
-        
-        const message = `**Gestionando Episodio ${episodeNumber} de la Temporada ${seasonNumber}**\n\n` +
-                        `Estado actual:\n` +
-                        `PRO: ${currentPro}\n` +
-                        `GRATIS: ${currentFree}\n\n` +
-                        `¿Qué reproductor deseas actualizar?`;
-                        
-        const options = {
-            reply_markup: {
-                inline_keyboard: [
-                    [{ text: 'Actualizar PRO', callback_data: `update_pro_${tmdbId}_${seasonNumber}_${episodeNumber}` }],
-                    [{ text: 'Actualizar GRATIS', callback_data: `update_free_${tmdbId}_${seasonNumber}_${episodeNumber}` }]
-                ]
-            },
-            parse_mode: 'Markdown'
-        };
-        bot.sendMessage(chatId, message, options);
-
-    } else if (data.startsWith('update_pro_')) {
-        const parts = data.split('_');
-        const tmdbId = parts[2];
-        const seasonNumber = parts[3];
-        const episodeNumber = parts[4];
-
-        // Guardar el estado para el flujo de actualización
-        adminState[chatId] = {
-            step: 'awaiting_pro_link_series_update',
-            tmdbId: tmdbId,
-            season: parseInt(seasonNumber),
-            episode: parseInt(episodeNumber),
-            updateType: 'pro'
-        };
-        
-        bot.sendMessage(chatId, `Envía el nuevo reproductor PRO para el episodio ${episodeNumber} de la temporada ${seasonNumber}.`);
-    
-    } else if (data.startsWith('update_free_')) {
-        const parts = data.split('_');
-        const tmdbId = parts[2];
-        const seasonNumber = parts[3];
-        const episodeNumber = parts[4];
-
-        // Guardar el estado para el flujo de actualización
-        adminState[chatId] = {
-            step: 'awaiting_free_link_series_update',
-            tmdbId: tmdbId,
-            season: parseInt(seasonNumber),
-            episode: parseInt(episodeNumber),
-            updateType: 'free'
-        };
-        
-        bot.sendMessage(chatId, `Envía el nuevo reproductor GRATIS para el episodio ${episodeNumber} de la temporada ${seasonNumber}. Si no hay, escribe "no".`);
 
     } else if (data.startsWith('add_new_season_')) {
         const tmdbId = data.replace('add_new_season_', '');
