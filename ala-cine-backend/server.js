@@ -785,13 +785,15 @@ bot.on('message', async (msg) => {
         bot.sendMessage(chatId, `¡Reproductor PRO recibido! Ahora, envía el reproductor GRATIS para "${selectedMedia.title}". Si no hay, escribe "no".`);
     } else if (adminState[chatId] && adminState[chatId].step === 'awaiting_free_link_movie') {
         const { selectedMedia, proEmbedCode } = adminState[chatId];
-        const freeEmbedCode = userText !== 'no' ? userText : null;
         
+        // VERIFICACIÓN AÑADIDA
         if (!selectedMedia || !selectedMedia.id) {
             bot.sendMessage(chatId, '❌ ERROR CRÍTICO: El ID de la película se perdió. Reinicia el proceso de subir la película con /subir.');
             adminState[chatId] = { step: 'menu' };
             return;
         }
+
+        const freeEmbedCode = userText !== 'no' ? userText : null;
 
         adminState[chatId].movieDataToSave = {
             tmdbId: selectedMedia.id.toString(), 
