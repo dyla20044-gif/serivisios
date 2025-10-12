@@ -476,7 +476,7 @@ async function publishToCommunityChannel(permalink, mediaData, mediaType, conten
             parse_mode: 'Markdown',
             reply_markup: {
                 inline_keyboard: [
-                    [{ text: '▶️ Ver más', url: permalink }]
+                    [{ text: '▶️ ver ahora ', url: permalink }]
                 ]
             }
         };
@@ -504,17 +504,16 @@ async function publishMovieToChannels(movieData) {
     const tmeDeepLink = `https://t.me/${TELEGRAM_BOT_USERNAME}/?startapp=${movieData.tmdbId}`;
     const appDeepLinkFallback = `${RENDER_BACKEND_URL}/app/details/${movieData.tmdbId}`;
 
-    const options = {
-        caption: caption,
-        parse_mode: 'Markdown',
-        reply_markup: {
-            inline_keyboard: [
-                [{ text: '▶️ Ver ahora', url: tmeDeepLink }],
-                [{ text: '📱 Ver en el celular (Android)', url: appDeepLinkFallback }]
-            ]
-        }
-    };
-
+   const options = {
+    caption: caption,
+    parse_mode: 'Markdown',
+    reply_markup: {
+        inline_keyboard: [
+            [{ text: '🤖 Ver ahora (Android)', url: appDeepLinkFallback }],
+            [{ text: '🍎 Ver ahora (iPhone)', url: tmeDeepLink }]
+        ]
+    }
+};
     try {
         const sentMessage = await bot.sendPhoto(TELEGRAM_CHANNEL_A_ID, posterUrl, options);
         
