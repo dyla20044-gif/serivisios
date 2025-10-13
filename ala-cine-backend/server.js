@@ -5,7 +5,7 @@ const TelegramBot = require('node-telegram-bot-api');
 const admin = require('firebase-admin');
 const axios = require('axios');
 const dotenv = require('dotenv');
-const url = require('url');
+const url = require('url'); // <--- AÑADIDO
 
 const app = express();
 
@@ -19,7 +19,7 @@ admin.initializeApp({
   credential: admin.credential.cert(serviceAccount)
 });
 const db = admin.firestore();
-const messaging = admin.messaging();
+const messaging = admin.messaging(); // <--- CRÍTICO: Inicialización del servicio de mensajería
 
 paypal.configure({
     'mode': 'sandbox',
@@ -28,7 +28,7 @@ paypal.configure({
 });
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
-const GODSTREAM_API_KEY = process.env.GODSTREAM_API_KEY;
+const GODSTREAM_API_KEY = process.env.GODSTREAM_API_KEY; // <--- AÑADIDO
 
 // === SOLUCIÓN 1: CAMBIO DE POLLING A WEBHOOK PARA TELEGRAM ===
 const RENDER_BACKEND_URL = 'https://serivisios.onrender.com';
@@ -178,16 +178,21 @@ app.get('/api/get-embed-code', async (req, res) => {
                 } else {
                     // Loguea la respuesta completa para que puedas ver el error
                     console.error("Error al obtener el enlace directo de GoodStream. Respuesta de la API:", godstreamData);
+                    // Retorna un error, ya que no se pudo obtener el enlace directo.
                     return res.status(500).json({
                         error: "No se pudo obtener el enlace directo de GoodStream. Por favor, revisa el log de tu servidor."
                     });
                 }
             } catch (apiError) {
+                // Captura el error de la llamada a la API (por ejemplo, si la URL no existe)
                 console.error("Error al obtener enlace directo de GodStream:", apiError);
                 return res.status(500).json({
                     error: "Error al obtener enlace directo de GoodStream. Detalles: " + apiError.message
                 });
             }
+        } else {
+            // Si no hay código de inserción PRO, devolvemos un 404
+            return res.status(404).json({ error: 'No se encontró código de reproductor PRO para este contenido.' });
         }
     }
 
