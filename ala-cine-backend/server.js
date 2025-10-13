@@ -176,18 +176,18 @@ app.get('/api/get-embed-code', async (req, res) => {
                 const godstreamResponse = await axios.get(apiUrl);
                 const godstreamData = godstreamResponse.data;
 
-                // <--- LÓGICA MEJORADA DE MANEJO DE ERRORES --->
+                // === LÓGICA CORREGIDA PARA EL MANEJO DE LA RESPUESTA ===
+                // Solo si la API responde con estado 200 y tiene un enlace, devolvemos un éxito
                 if (godstreamData.estado === 200 && godstreamData.resultado && godstreamData.resultado.versiones && godstreamData.resultado.versiones.length > 0) {
                     const videoUrl = godstreamData.resultado.versiones[0].url;
                     return res.status(200).json({
                         directLink: videoUrl
                     });
                 } else {
-                    // Loguea la respuesta completa para que puedas ver el error
+                    // Si el estado no es 200, o la respuesta no tiene el formato esperado, devolvemos un error.
                     console.error("Error al obtener el enlace directo de GoodStream. Respuesta de la API:", godstreamData);
-                    // Retorna un error, ya que no se pudo obtener el enlace directo.
                     return res.status(500).json({
-                        error: "No se pudo obtener el enlace directo de GoodStream. Por favor, revisa el log de tu servidor."
+                        error: "No se pudo obtener el enlace directo de GoodStream."
                     });
                 }
             } catch (apiError) {
@@ -1203,6 +1203,7 @@ bot.on('callback_query', async (callbackQuery) => {
             console.error("Error al seleccionar temporada:", error);
             bot.sendMessage(chatId, 'Hubo un error al obtener la información de la temporada. Por favor, intenta de nuevo.');
         }
+
     } else if (data.startsWith('manage_season_')) {
         const [_, __, tmdbId, seasonNumber] = data.split('_');
         
