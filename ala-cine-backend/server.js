@@ -5,6 +5,7 @@ const TelegramBot = require('node-telegram-bot-api');
 const admin = require('firebase-admin');
 const axios = require('axios');
 const dotenv = require('dotenv');
+const url = require('url'); // <--- AÑADIDO
 
 const app = express();
 
@@ -27,6 +28,7 @@ paypal.configure({
 });
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
+const GODSTREAM_API_KEY = process.env.GODSTREAM_API_KEY; // <--- AÑADIDO
 
 // === SOLUCIÓN 1: CAMBIO DE POLLING A WEBHOOK PARA TELEGRAM ===
 const RENDER_BACKEND_URL = 'https://serivisios.onrender.com';
@@ -130,7 +132,7 @@ app.post('/request-movie', async (req, res) => {
 });
 
 // -----------------------------------------------------------
-// === ENDPOINT DE VIDEO ===
+// === ENDPOINT DE VIDEO MODIFICADO ===
 // -----------------------------------------------------------
 
 app.get('/api/get-embed-code', async (req, res) => {
@@ -151,16 +153,65 @@ app.get('/api/get-embed-code', async (req, res) => {
 
     const data = doc.data();
 
+    // LÓGICA MODIFICADA PARA MANEJAR USUARIOS PRO
     if (mediaType === 'movies') {
-        const embedCode = isPro === 'true' ? data.proEmbedCode : data.freeEmbedCode;
+        let embedCode = isPro === 'true' ? data.proEmbedCode : data.freeEmbedCode;
+        
+        // <--- AÑADIDO: SI ES USUARIO PRO Y HAY ENLACE PRO, CONVERTIRLO A MP4 DIRECTO
+        if (isPro === 'true' && embedCode) {
+            const fileCode = url.parse(embedCode).pathname.split('-')[1].replace('.html', '');
+            
+            // Construye la URL de la API de GodStream
+            const apiUrl = `https://goodstream.one/api/file/direct_link?key=${GODSTREAM_API_KEY}&file_code=${fileCode}`;
+
+            try {
+                // Hace la petición a la API de GodStream
+                const godstreamResponse = await axios.get(apiUrl);
+
+                // Encuentra la URL del video MP4 de mayor calidad ('h' o 'n' si no hay)
+                const versions = godstreamResponse.data.resultado.versiones;
+                const mp4Url = versions.find(v => v.name === 'h')?.url || versions[0]?.url;
+
+                // Envía la URL del video puro al cliente
+                if (mp4Url) {
+                    return res.json({ embedCode: mp4Url });
+                }
+            } catch (apiError) {
+                console.error("Error al obtener enlace directo de GodStream:", apiError);
+                // Si falla, se queda con el enlace de inserción original
+            }
+        }
+        // ---> FIN DE LÓGICA AÑADIDA
+
+        // Esta parte se ejecuta para usuarios gratis, o si la petición a la API de GodStream falló
         if (embedCode) {
             res.json({ embedCode });
         } else {
             res.status(404).json({ error: `No se encontró código de reproductor para esta película.` });
         }
     } else { // series
-        const episodeData = data.seasons?.[season]?.episodes?.[episode];
-        const embedCode = isPro === 'true' ? episodeData?.proEmbedCode : episodeData?.freeEmbedCode;
+        let episodeData = data.seasons?.[season]?.episodes?.[episode];
+        let embedCode = isPro === 'true' ? episodeData?.proEmbedCode : episodeData?.freeEmbedCode;
+
+        // <--- AÑADIDO: LÓGICA SIMILAR PARA SERIES
+        if (isPro === 'true' && embedCode) {
+            const fileCode = url.parse(embedCode).pathname.split('-')[1].replace('.html', '');
+            const apiUrl = `https://goodstream.one/api/file/direct_link?key=${GODSTREAM_API_KEY}&file_code=${fileCode}`;
+            
+            try {
+                const godstreamResponse = await axios.get(apiUrl);
+                const versions = godstreamResponse.data.resultado.versiones;
+                const mp4Url = versions.find(v => v.name === 'h')?.url || versions[0]?.url;
+
+                if (mp4Url) {
+                    return res.json({ embedCode: mp4Url });
+                }
+            } catch (apiError) {
+                console.error("Error al obtener enlace directo de GodStream para serie:", apiError);
+            }
+        }
+        // ---> FIN DE LÓGICA AÑADIDA
+
         if (embedCode) {
             res.json({ embedCode });
         } else {
