@@ -153,73 +153,50 @@ app.get('/api/get-embed-code', async (req, res) => {
 
     const data = doc.data();
 
-    // LÓGICA MODIFICADA PARA MANEJAR USUARIOS PRO
-    if (mediaType === 'movies') {
-        let embedCode = isPro === 'true' ? data.proEmbedCode : data.freeEmbedCode;
-        
-        // <--- AÑADIDO: SI ES USUARIO PRO Y HAY ENLACE PRO, CONVERTIRLO A MP4 DIRECTO
-        if (isPro === 'true' && embedCode) {
-            const fileCode = url.parse(embedCode).pathname.split('-')[1].replace('.html', '');
-            
-            // Construye la URL de la API de GodStream
-            const apiUrl = `https://goodstream.one/api/file/direct_link?key=${GODSTREAM_API_KEY}&file_code=${fileCode}`;
+    // LÓGICA SEPARADA PARA MANEJAR USUARIOS PRO Y GRATUITOS
+    if (isPro === 'true') {
+        let embedCode = mediaType === 'movies' ? data.proEmbedCode : data.seasons?.[season]?.episodes?.[episode]?.proEmbedCode;
 
+        if (embedCode) {
             try {
-                // Hace la petición a la API de GodStream
-                const godstreamResponse = await axios.get(apiUrl);
+                // Asegúrate de que el enlace tenga un formato válido antes de intentar extraer
+                const embedUrl = new URL(embedCode);
+                const fileCode = embedUrl.pathname.split('/').pop().split('-')[1].replace('.html', '');
+                
+                // Construye la URL de la API de GodStream
+                const apiUrl = `https://goodstream.one/api/file/direct_link?key=${GODSTREAM_API_KEY}&file_code=${fileCode}`;
 
-                // Encuentra la URL del video MP4 de mayor calidad ('h' o 'n' si no hay)
+                // Petición a la API de GodStream
+                const godstreamResponse = await axios.get(apiUrl);
+                
+                // Encuentra la URL del video MP4 de mayor calidad
                 const versions = godstreamResponse.data.resultado.versiones;
                 const mp4Url = versions.find(v => v.name === 'h')?.url || versions[0]?.url;
 
-                // Envía la URL del video puro al cliente
+                // Si se encuentra una URL, la devuelve y la ejecución del código termina aquí
                 if (mp4Url) {
                     return res.json({ embedCode: mp4Url });
                 }
             } catch (apiError) {
                 console.error("Error al obtener enlace directo de GodStream:", apiError);
-                // Si falla, se queda con el enlace de inserción original
+                // Si la petición a la API falla, regresa el enlace de inserción original como fallback
+                console.warn("Retornando enlace de inserción por fallo de API para usuario PRO.");
+                return res.json({ embedCode: embedCode });
             }
-        }
-        // ---> FIN DE LÓGICA AÑADIDA
-
-        // Esta parte se ejecuta para usuarios gratis, o si la petición a la API de GodStream falló
-        if (embedCode) {
-            res.json({ embedCode });
-        } else {
-            res.status(404).json({ error: `No se encontró código de reproductor para esta película.` });
-        }
-    } else { // series
-        let episodeData = data.seasons?.[season]?.episodes?.[episode];
-        let embedCode = isPro === 'true' ? episodeData?.proEmbedCode : episodeData?.freeEmbedCode;
-
-        // <--- AÑADIDO: LÓGICA SIMILAR PARA SERIES
-        if (isPro === 'true' && embedCode) {
-            const fileCode = url.parse(embedCode).pathname.split('-')[1].replace('.html', '');
-            const apiUrl = `https://goodstream.one/api/file/direct_link?key=${GODSTREAM_API_KEY}&file_code=${fileCode}`;
-            
-            try {
-                const godstreamResponse = await axios.get(apiUrl);
-                const versions = godstreamResponse.data.resultado.versiones;
-                const mp4Url = versions.find(v => v.name === 'h')?.url || versions[0]?.url;
-
-                if (mp4Url) {
-                    return res.json({ embedCode: mp4Url });
-                }
-            } catch (apiError) {
-                console.error("Error al obtener enlace directo de GodStream para serie:", apiError);
-            }
-        }
-        // ---> FIN DE LÓGICA AÑADIDA
-
-        if (embedCode) {
-            res.json({ embedCode });
-        } else {
-            res.status(404).json({ error: `No se encontró código de reproductor para el episodio ${episode}.` });
         }
     }
+
+    // Lógica para usuarios GRATUITOS (o si la lógica PRO no encontró un enlace)
+    let embedCode = mediaType === 'movies' ? data.freeEmbedCode : data.seasons?.[season]?.episodes?.[episode]?.freeEmbedCode;
+    
+    if (embedCode) {
+        return res.json({ embedCode });
+    } else {
+        return res.status(404).json({ error: `No se encontró código de reproductor para este contenido.` });
+    }
+
   } catch (error) {
-    console.error("Error al obtener el código embed:", error);
+    console.error("Error general al obtener el código embed:", error);
     res.status(500).json({ error: "Error interno del servidor" });
   }
 });
