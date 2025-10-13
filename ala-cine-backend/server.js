@@ -155,49 +155,46 @@ app.get('/api/get-embed-code', async (req, res) => {
 
     // LÓGICA SEPARADA PARA MANEJAR USUARIOS PRO Y GRATUITOS
     if (isPro === 'true') {
-        console.log("LOG: Petición para usuario PRO."); // LOG: Inicio de la lógica PRO
         let embedCode = mediaType === 'movies' ? data.proEmbedCode : data.seasons?.[season]?.episodes?.[episode]?.proEmbedCode;
-        console.log(`LOG: Enlace de Firestore para PRO: ${embedCode}`); // LOG: Muestra el enlace original de Firestore
 
         if (embedCode) {
             try {
-                // Asegúrate de que el enlace tenga un formato válido antes de intentar extraer
-                const embedUrl = new URL(embedCode);
+                // CORRECCIÓN CRÍTICA: Extraer la URL de la etiqueta iframe antes de usar 'new URL'
+                let embedUrlString = embedCode;
+                if (embedCode.startsWith('<iframe')) {
+                    const srcMatch = embedCode.match(/src="([^"]*)"/i);
+                    if (srcMatch && srcMatch[1]) {
+                        embedUrlString = srcMatch[1];
+                    } else {
+                        throw new Error("No se pudo extraer la URL del iframe.");
+                    }
+                }
+                
+                // Ahora, crea el objeto URL a partir de la URL limpia
+                const embedUrl = new URL(embedUrlString);
+                
+                // Luego extrae el código de archivo único
                 const fileCode = embedUrl.pathname.split('/').pop().split('-')[1].replace('.html', '');
                 
-                console.log(`LOG: Código de archivo extraído: ${fileCode}`); // LOG: Muestra el código de archivo extraído
-                
-                // Construye la URL de la API de GodStream
                 const apiUrl = `https://goodstream.one/api/file/direct_link?key=${GODSTREAM_API_KEY}&file_code=${fileCode}`;
-                console.log(`LOG: URL de API de GodStream: ${apiUrl}`); // LOG: Muestra la URL completa de la API
 
-                // Petición a la API de GodStream
                 const godstreamResponse = await axios.get(apiUrl);
-                console.log("LOG: Respuesta completa de GodStream:", godstreamResponse.data); // LOG: Muestra la respuesta completa de la API
                 
-                // Encuentra la URL del video MP4 de mayor calidad
                 const versions = godstreamResponse.data.resultado.versiones;
                 const mp4Url = versions.find(v => v.name === 'h')?.url || versions[0]?.url;
 
-                console.log(`LOG: URL MP4 final: ${mp4Url}`); // LOG: Muestra la URL MP4 final
-                
-                // Si se encuentra una URL, la devuelve y la ejecución del código termina aquí
                 if (mp4Url) {
                     return res.json({ embedCode: mp4Url });
                 }
             } catch (apiError) {
                 console.error("Error al obtener enlace directo de GodStream:", apiError);
-                console.log(`LOG: Fallando a embedCode original debido a un error de API: ${embedCode}`); // LOG: Aviso de fallback
-                // Si la petición a la API falla, regresa el enlace de inserción original como fallback
                 return res.json({ embedCode: embedCode });
             }
         }
     }
 
-    console.log("LOG: Petición para usuario GRATUITO o lógica PRO fallida."); // LOG: Inicio de la lógica GRATUITA
     // Lógica para usuarios GRATUITOS (o si la lógica PRO no encontró un enlace)
     let embedCode = mediaType === 'movies' ? data.freeEmbedCode : data.seasons?.[season]?.episodes?.[episode]?.freeEmbedCode;
-    console.log(`LOG: Enlace de Firestore para GRATUITO: ${embedCode}`); // LOG: Muestra el enlace original de Firestore
     
     if (embedCode) {
         return res.json({ embedCode });
