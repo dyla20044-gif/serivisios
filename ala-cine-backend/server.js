@@ -2389,7 +2389,7 @@ async function tv_filterChannels(countryCode) {
 window.tv_loadChannel = tv_loadChannel;
 window.tv_filterChannels = tv_filterChannels;
 // Aseguramos que el switchScreen también esté en el global, ya que es el controlador central
-window.switchScreen = switchScreen; 
+window.switchScreen = switchScreen;
 // Y la función para renderizar los botones, que es llamada por la navegación
 window.renderCountryButtons = renderCountryButtons;
 
