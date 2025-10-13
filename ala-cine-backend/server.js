@@ -167,16 +167,26 @@ app.get('/api/get-embed-code', async (req, res) => {
                 const apiUrl = `https://goodstream.one/api/file/direct_link?key=${GODSTREAM_API_KEY}&file_code=${fileCode}`;
 
                 const godstreamResponse = await axios.get(apiUrl);
-                
-                const versions = godstreamResponse.data.resultado.versiones;
-                const mp4Url = versions.find(v => v.name === 'h')?.url || versions[0]?.url;
+                const godstreamData = godstreamResponse.data;
 
-                if (mp4Url) {
-                    return res.json({ embedCode: mp4Url });
+                // <--- LÓGICA MEJORADA DE MANEJO DE ERRORES --->
+                if (godstreamData.estado === 200 && godstreamData.resultado && godstreamData.resultado.versiones && godstreamData.resultado.versiones.length > 0) {
+                    const videoUrl = godstreamData.resultado.versiones[0].url;
+                    res.status(200).json({
+                        directLink: videoUrl
+                    });
+                } else {
+                    // Loguea la respuesta completa para que puedas ver el error
+                    console.error("Error al obtener el enlace directo de GoodStream. Respuesta de la API:", godstreamData);
+                    res.status(500).json({
+                        error: "No se pudo obtener el enlace directo de GoodStream. Por favor, revisa el log de tu servidor."
+                    });
                 }
             } catch (apiError) {
                 console.error("Error al obtener enlace directo de GodStream:", apiError);
-                return res.json({ embedCode: embedCode });
+                res.status(500).json({
+                    error: "Error al obtener enlace directo de GoodStream. Detalles: " + apiError.message
+                });
             }
         }
     }
@@ -880,7 +890,7 @@ bot.on('message', async (msg) => {
                     inline_keyboard: [
                         [{ text: '➡️ Agregar Siguiente Episodio', callback_data: `add_next_episode_${seriesDataToSave.tmdbId}_${seriesDataToSave.seasonNumber}` }],
                         [{ text: '✅ Publicar en el canal y finalizar', callback_data: `save_and_publish_series_${seriesDataToSave.tmdbId}` }],
-                        [{ text: '✅ Finalizar', callback_data: `finish_series_${tmdbId}` }]
+                        [{ text: '✅ Finalizar', callback_data: `finish_series_${seriesDataToSave.tmdbId}` }]
                     ]
                 }
             };
