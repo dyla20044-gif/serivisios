@@ -161,8 +161,15 @@ app.get('/api/get-embed-code', async (req, res) => {
             try {
                 const embedUrl = new URL(embedCode);
                 
-                // Luego extrae el código de archivo único
-                const fileCode = embedUrl.pathname.split('/').pop().split('-')[1].replace('.html', '');
+                // === CÓDIGO CORREGIDO PARA EVITAR EL ERROR 500 ===
+                const parts = embedUrl.pathname.split('/');
+                const lastPart = parts.pop();
+                const fileCode = lastPart.split('-')[1]?.replace('.html', '');
+
+                if (!fileCode) {
+                    return res.status(404).json({ error: 'El formato del reproductor PRO es inválido.' });
+                }
+                // === FIN DEL CÓDIGO CORREGIDO ===
                 
                 const apiUrl = `https://goodstream.one/api/file/direct_link?key=${GODSTREAM_API_KEY}&file_code=${fileCode}`;
 
@@ -398,10 +405,6 @@ app.get('/paypal/success', (req, res) => {
             res.send('<html><body><h1>❌ ERROR: El pago no fue aprobado.</h1><p>Estado del pago: ' + payment.state + '</p></body></html>');
         }
     });
-});
-
-app.get('/paypal/cancel', (req, res) => {
-    res.send('<html><body><h1>Pago con PayPal cancelado.</h1></body></html>');
 });
 
 app.post('/create-binance-payment', (req, res) => {
@@ -1270,8 +1273,6 @@ bot.on('callback_query', async (callbackQuery) => {
             
             const tmdbId = seriesDataToSave.tmdbId;
             const seasonNumber = seriesDataToSave.seasonNumber;
-            const episodeNumber = seriesDataToSave.episodeNumber;
-
             const seriesRef = db.collection('series').doc(tmdbId);
             const seriesDoc = await seriesRef.get();
             const seriesData = seriesDoc.exists ? seriesDoc.data() : null;
