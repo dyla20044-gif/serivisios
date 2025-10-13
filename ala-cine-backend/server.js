@@ -86,7 +86,7 @@ app.post(`/bot${token}`, (req, res) => {
 app.get('/app/details/:tmdbId', (req, res) => {
     const tmdbId = req.params.tmdbId;
     
-    // Si la App Nativa falla, redirigimos a la URL de tu tienda personalizada
+    // Si la App Nativa falla, redirigimos a la Tienda Personalizada
     if (process.env.APP_DOWNLOAD_URL) {
         console.log(`App Nativa no instalada. Redirigiendo a la Tienda Personalizada: ${process.env.APP_DOWNLOAD_URL}`);
         return res.redirect(302, process.env.APP_DOWNLOAD_URL);
@@ -159,19 +159,7 @@ app.get('/api/get-embed-code', async (req, res) => {
 
         if (embedCode) {
             try {
-                // CORRECCIÓN CRÍTICA: Extraer la URL de la etiqueta iframe antes de usar 'new URL'
-                let embedUrlString = embedCode;
-                if (embedCode.startsWith('<iframe')) {
-                    const srcMatch = embedCode.match(/src="([^"]*)"/i);
-                    if (srcMatch && srcMatch[1]) {
-                        embedUrlString = srcMatch[1];
-                    } else {
-                        throw new Error("No se pudo extraer la URL del iframe.");
-                    }
-                }
-                
-                // Ahora, crea el objeto URL a partir de la URL limpia
-                const embedUrl = new URL(embedUrlString);
+                const embedUrl = new URL(embedCode);
                 
                 // Luego extrae el código de archivo único
                 const fileCode = embedUrl.pathname.split('/').pop().split('-')[1].replace('.html', '');
@@ -892,7 +880,7 @@ bot.on('message', async (msg) => {
                     inline_keyboard: [
                         [{ text: '➡️ Agregar Siguiente Episodio', callback_data: `add_next_episode_${seriesDataToSave.tmdbId}_${seriesDataToSave.seasonNumber}` }],
                         [{ text: '✅ Publicar en el canal y finalizar', callback_data: `save_and_publish_series_${seriesDataToSave.tmdbId}` }],
-                        [{ text: '✅ Finalizar', callback_data: `finish_series_${seriesDataToSave.tmdbId}` }]
+                        [{ text: '✅ Finalizar', callback_data: `finish_series_${tmdbId}` }]
                     ]
                 }
             };
