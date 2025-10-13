@@ -1334,7 +1334,7 @@ bot.on('callback_query', async (callbackQuery) => {
             const seasonNumber = seriesDataToSave.seasonNumber;
             const seriesRef = db.collection('series').doc(tmdbId);
             const seriesDoc = await seriesRef.get();
-            const seriesData = seriesDoc.exists ? seriesDoc.data() : null;
+            const seriesData = seriesDoc.exists ? seriesData.data() : null;
 
             let lastEpisode = 0;
             if (seriesData?.seasons?.[seasonNumber]?.episodes) {
