@@ -5,7 +5,7 @@ const TelegramBot = require('node-telegram-bot-api');
 const admin = require('firebase-admin');
 const axios = require('axios');
 const dotenv = require('dotenv');
-const url = require('url'); // <--- AÑADIDO
+const url = require('url');
 
 const app = express();
 
@@ -19,7 +19,7 @@ admin.initializeApp({
   credential: admin.credential.cert(serviceAccount)
 });
 const db = admin.firestore();
-const messaging = admin.messaging(); // <--- CRÍTICO: Inicialización del servicio de mensajería
+const messaging = admin.messaging();
 
 paypal.configure({
     'mode': 'sandbox',
@@ -28,7 +28,7 @@ paypal.configure({
 });
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
-const GODSTREAM_API_KEY = process.env.GODSTREAM_API_KEY; // <--- AÑADIDO
+const GODSTREAM_API_KEY = process.env.GODSTREAM_API_KEY;
 
 // === SOLUCIÓN 1: CAMBIO DE POLLING A WEBHOOK PARA TELEGRAM ===
 const RENDER_BACKEND_URL = 'https://serivisios.onrender.com';
@@ -172,19 +172,19 @@ app.get('/api/get-embed-code', async (req, res) => {
                 // <--- LÓGICA MEJORADA DE MANEJO DE ERRORES --->
                 if (godstreamData.estado === 200 && godstreamData.resultado && godstreamData.resultado.versiones && godstreamData.resultado.versiones.length > 0) {
                     const videoUrl = godstreamData.resultado.versiones[0].url;
-                    res.status(200).json({
+                    return res.status(200).json({
                         directLink: videoUrl
                     });
                 } else {
                     // Loguea la respuesta completa para que puedas ver el error
                     console.error("Error al obtener el enlace directo de GoodStream. Respuesta de la API:", godstreamData);
-                    res.status(500).json({
+                    return res.status(500).json({
                         error: "No se pudo obtener el enlace directo de GoodStream. Por favor, revisa el log de tu servidor."
                     });
                 }
             } catch (apiError) {
                 console.error("Error al obtener enlace directo de GodStream:", apiError);
-                res.status(500).json({
+                return res.status(500).json({
                     error: "Error al obtener enlace directo de GoodStream. Detalles: " + apiError.message
                 });
             }
@@ -774,9 +774,7 @@ bot.on('message', async (msg) => {
             console.error("Error al buscar en TMDB:", error);
             bot.sendMessage(chatId, 'Hubo un error al buscar el contenido. Intenta de nuevo.');
         }
-    } else if (adminState[chatId] && adminState[chatId].step === 'awaiting_event_image') { // NUEVO HANDLER: Evento - Recibe URL
-        // Step 2: User sends the image URL
-        // Simple validación de URL (puede ser una URL de imagen o un archivo subido, asumimos URL simple)
+    } else if (adminState[chatId] && adminState[chatId].step === 'awaiting_event_image') {
         if (!userText.startsWith('http')) {
             bot.sendMessage(chatId, '❌ Por favor, envía un ENLACE (URL) de imagen válido.');
             return;
@@ -785,8 +783,7 @@ bot.on('message', async (msg) => {
         adminState[chatId].step = 'awaiting_event_description';
         bot.sendMessage(chatId, '¡Enlace de la fotografía recibido! Ahora, envía la DESCRIPCIÓN del evento.');
 
-    } else if (adminState[chatId] && adminState[chatId].step === 'awaiting_event_description') { // NUEVO HANDLER: Evento - Recibe Descripción
-        // Step 3: User sends the description and we save the event as a notification.
+    } else if (adminState[chatId] && adminState[chatId].step === 'awaiting_event_description') {
         const { imageUrl } = adminState[chatId];
         const description = userText;
         
@@ -818,7 +815,6 @@ bot.on('message', async (msg) => {
     } else if (adminState[chatId] && adminState[chatId].step === 'awaiting_free_link_movie') {
         const { selectedMedia, proEmbedCode } = adminState[chatId];
         
-        // VERIFICACIÓN AÑADIDA
         if (!selectedMedia || !selectedMedia.id) {
             bot.sendMessage(chatId, '❌ ERROR CRÍTICO: El ID de la película se perdió. Reinicia el proceso de subir la película con /subir.');
             adminState[chatId] = { step: 'menu' };
@@ -858,7 +854,6 @@ bot.on('message', async (msg) => {
         adminState[chatId].proEmbedCode = userText;
         adminState[chatId].step = 'awaiting_free_link_series';
         bot.sendMessage(chatId, `¡Reproductor PRO recibido! Ahora, envía el reproductor GRATIS para el episodio ${episode} de la temporada ${season}. Si no hay, escribe "no".`);
-    // NUEVA LÓGICA: Se activará cuando se envíe el reproductor GRATIS de una serie
     } else if (adminState[chatId] && adminState[chatId].step === 'awaiting_free_link_series') {
         if (!adminState[chatId].selectedSeries) {
             bot.sendMessage(chatId, 'Error: El estado de la serie se ha perdido. Por favor, reinicia el proceso.');
@@ -884,7 +879,6 @@ bot.on('message', async (msg) => {
             await axios.post(`${RENDER_BACKEND_URL}/add-series-episode`, seriesDataToSave);
             bot.sendMessage(chatId, `✅ Episodio ${episode} de la temporada ${season} guardado con éxito en la app.`);
             
-            // Lógica para enviar los botones de "Agregar Siguiente" o "Finalizar"
             const options = {
                 reply_markup: {
                     inline_keyboard: [
@@ -901,7 +895,6 @@ bot.on('message', async (msg) => {
             console.error("Error al guardar el episodio:", error);
             bot.sendMessage(chatId, 'Hubo un error al guardar el episodio.');
         } finally {
-            // No reseteamos el estado para que el usuario pueda tomar una acción
         }
     } else if (adminState[chatId] && adminState[chatId].step === 'search_delete') {
           try {
@@ -1262,7 +1255,6 @@ bot.on('callback_query', async (callbackQuery) => {
             bot.sendMessage(chatId, 'Hubo un error al guardar o publicar la película. Revisa el estado de la película en Firestore y reinicia con /subir.');
             adminState[chatId] = { step: 'menu' };
         }
-    // LÓGICA CORREGIDA PARA EL BOTÓN "GUARDAR Y PUBLICAR" PARA SERIES
     } else if (data.startsWith('save_only_series_')) {
         const { seriesDataToSave } = adminState[chatId];
         try {
@@ -1275,7 +1267,6 @@ bot.on('callback_query', async (callbackQuery) => {
             const seasonNumber = seriesDataToSave.seasonNumber;
             const episodeNumber = seriesDataToSave.episodeNumber;
 
-            // Prepara el botón para el siguiente episodio
             const seriesRef = db.collection('series').doc(tmdbId);
             const seriesDoc = await seriesRef.get();
             const seriesData = seriesDoc.exists ? seriesDoc.data() : null;
@@ -1361,9 +1352,8 @@ bot.on('callback_query', async (callbackQuery) => {
         const tmdbId = parts[2];
         const mediaType = parts[3];
         const state = adminState[chatId];
-        const title = state.title; // El título debe estar en el estado temporal
+        const title = state.title;
 
-        // Si el estado se perdió, no se puede continuar
         if (!title) {
              bot.editMessageReplyMarkup({ inline_keyboard: [] }, { 
                  chat_id: chatId, 
@@ -1375,19 +1365,17 @@ bot.on('callback_query', async (callbackQuery) => {
         }
 
         try {
-            // Llama al nuevo endpoint para enviar la notificación push
             await axios.post(`${RENDER_BACKEND_URL}/api/notify`, {
                 tmdbId,
                 mediaType,
                 title
             });
             
-            // Actualizar mensaje de Telegram para confirmar la acción
             bot.editMessageText(`✅ Notificaciones push para *${title}* programadas para envío.`, {
                 chat_id: chatId, 
                 message_id: msg.message_id,
                 parse_mode: 'Markdown',
-                reply_markup: { inline_keyboard: [] } // Quitar el botón
+                reply_markup: { inline_keyboard: [] }
             });
 
         } catch (error) {
@@ -1396,14 +1384,13 @@ bot.on('callback_query', async (callbackQuery) => {
                 chat_id: chatId, 
                 message_id: msg.message_id,
                 parse_mode: 'Markdown',
-                reply_markup: { inline_keyboard: [] } // Quitar el botón
+                reply_markup: { inline_keyboard: [] }
             });
         } finally {
-            adminState[chatId] = { step: 'menu' }; // Resetear estado al menú principal
+            adminState[chatId] = { step: 'menu' };
         }
     } else if (data.startsWith('finish_series_')) {
         const tmdbId = data.replace('finish_series_', '');
-        // Opcional: Marcar la serie como "finalizada" o "publicada" en Firestore
         const seriesRef = db.collection('series').doc(tmdbId);
         await seriesRef.update({ status: 'completed' });
         bot.sendMessage(chatId, '✅ Proceso de adición de episodios finalizado. Volviendo al menú principal.');
@@ -1416,11 +1403,10 @@ bot.on('callback_query', async (callbackQuery) => {
 // =======================================================================
 
 app.get('/api/app-update', (req, res) => {
-  // CRÍTICO: latest_version_code DEBE coincidir con el versionCode del APK más reciente (en tu caso, 2)
   const updateInfo = {
     "latest_version_code": 4, 
-    "update_url": "https://google-play.onrender.com", // <-- TU PÁGINA DE TIENDA
-    "force_update": true, // <--- TRUE: Obliga a actualizar
+    "update_url": "https://google-play.onrender.com", 
+    "force_update": true, 
     "update_message": "¡Tenemos una nueva versión (1.4) con TV en vivo y mejoras! Presiona 'Actualizar Ahora' para ir a la tienda de descarga."
   };
   
@@ -1432,7 +1418,6 @@ app.get('/api/app-update', (req, res) => {
 // =======================================================================
 
 app.get('/.well-known/assetlinks.json', (req, res) => {
-    // Esto asegura que el archivo se sirva sin importar la configuración de Render
     res.sendFile('assetlinks.json', { root: __dirname });
 });
 
