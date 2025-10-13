@@ -948,7 +948,7 @@ function renderComments(tmdbId) {
         
         snapshot.docs.forEach(doc => {
             const data = doc.data();
-            const date = data.timestamp.toDate().toLocaleDateString('es-ES', { year: 'numeric', month: 'short', day: 'numeric' });
+            const date = data.timestamp.toDate().toLocaleDateString('es-ES', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
             
             const commentItem = document.createElement('div');
             commentItem.className = 'comment-item';
@@ -1278,8 +1278,7 @@ async function fetchHistory() {
         }
     } catch (e) {
         // [Cita Firebase Error] Te aconsejo hacer clic en el enlace de la consola para crear el índice.
-        console.error("Error al obtener el historial: ", e);
-        historySection.style.display = 'none';
+        console.error("Error al agregar al historial: ", e);
     }
 }
 
@@ -1883,9 +1882,9 @@ profileHelpCenter.addEventListener('click', (e) => {
 });
 
 showSignupLink.addEventListener('click', (e) => {
-    e.preventDefault();
-    loginForm.classList.remove('active-form');
-    signupForm.classList.add('active-form');
+        e.preventDefault();
+        loginForm.classList.remove('active-form');
+        signupForm.classList.add('active-form');
 });
 
 showLoginLink.addEventListener('click', (e) => {
