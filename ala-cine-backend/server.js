@@ -86,7 +86,7 @@ app.post(`/bot${token}`, (req, res) => {
 app.get('/app/details/:tmdbId', (req, res) => {
     const tmdbId = req.params.tmdbId;
     
-    // Si la App Nativa falla, redirigimos a la Tienda Personalizada
+    // Si la App Nativa falla, redirigimos a la URL de tu tienda personalizada
     if (process.env.APP_DOWNLOAD_URL) {
         console.log(`App Nativa no instalada. Redirigiendo a la Tienda Personalizada: ${process.env.APP_DOWNLOAD_URL}`);
         return res.redirect(302, process.env.APP_DOWNLOAD_URL);
@@ -153,67 +153,73 @@ app.get('/api/get-embed-code', async (req, res) => {
 
     const data = doc.data();
 
-    // LÓGICA SEPARADA PARA MANEJAR USUARIOS PRO Y GRATUITOS
-    if (isPro === 'true') {
-        let embedCode = mediaType === 'movies' ? data.proEmbedCode : data.seasons?.[season]?.episodes?.[episode]?.proEmbedCode;
+    // LÓGICA MODIFICADA PARA MANEJAR USUARIOS PRO
+    if (mediaType === 'movies') {
+        let embedCode = isPro === 'true' ? data.proEmbedCode : data.freeEmbedCode;
+        
+        // <--- AÑADIDO: SI ES USUARIO PRO Y HAY ENLACE PRO, CONVERTIRLO A MP4 DIRECTO
+        if (isPro === 'true' && embedCode) {
+            const fileCode = url.parse(embedCode).pathname.split('-')[1].replace('.html', '');
+            
+            // Construye la URL de la API de GodStream
+            const apiUrl = `https://goodstream.one/api/file/direct_link?key=${GODSTREAM_API_KEY}&file_code=${fileCode}`;
 
-        if (embedCode) {
             try {
-                const embedUrl = new URL(embedCode);
-                
-                // === CÓDIGO CORREGIDO PARA EVITAR EL ERROR 500 ===
-                const parts = embedUrl.pathname.split('/');
-                const lastPart = parts.pop();
-                const fileCode = lastPart.split('-')[1]?.replace('.html', '');
-
-                if (!fileCode) {
-                    return res.status(404).json({ error: 'El formato del reproductor PRO es inválido.' });
-                }
-                // === FIN DEL CÓDIGO CORREGIDO ===
-                
-                const apiUrl = `https://goodstream.one/api/file/direct_link?key=${GODSTREAM_API_KEY}&file_code=${fileCode}`;
-
+                // Hace la petición a la API de GodStream
                 const godstreamResponse = await axios.get(apiUrl);
-                const godstreamData = godstreamResponse.data;
 
-                // <--- LÓGICA MEJORADA DE MANEJO DE ERRORES --->
-                if (godstreamData.estado === 200 && godstreamData.resultado && godstreamData.resultado.versiones && godstreamData.resultado.versiones.length > 0) {
-                    const videoUrl = godstreamData.resultado.versiones[0].url;
-                    return res.status(200).json({
-                        directLink: videoUrl
-                    });
-                } else {
-                    // Loguea la respuesta completa para que puedas ver el error
-                    console.error("Error al obtener el enlace directo de GoodStream. Respuesta de la API:", godstreamData);
-                    // Retorna un error, ya que no se pudo obtener el enlace directo.
-                    return res.status(500).json({
-                        error: "No se pudo obtener el enlace directo de GoodStream. Por favor, revisa el log de tu servidor."
-                    });
+                // Encuentra la URL del video MP4 de mayor calidad ('h' o 'n' si no hay)
+                const versions = godstreamResponse.data.resultado.versiones;
+                const mp4Url = versions.find(v => v.name === 'h')?.url || versions[0]?.url;
+
+                // Envía la URL del video puro al cliente
+                if (mp4Url) {
+                    return res.json({ embedCode: mp4Url });
                 }
             } catch (apiError) {
-                // Captura el error de la llamada a la API (por ejemplo, si la URL no existe)
                 console.error("Error al obtener enlace directo de GodStream:", apiError);
-                return res.status(500).json({
-                    error: "Error al obtener enlace directo de GoodStream. Detalles: " + apiError.message
-                });
+                // Si falla, se queda con el enlace de inserción original
             }
+        }
+        // ---> FIN DE LÓGICA AÑADIDA
+
+        // Esta parte se ejecuta para usuarios gratis, o si la petición a la API de GodStream falló
+        if (embedCode) {
+            res.json({ embedCode });
         } else {
-            // Si no hay código de inserción PRO, devolvemos un 404
-            return res.status(404).json({ error: 'No se encontró código de reproductor PRO para este contenido.' });
+            res.status(404).json({ error: `No se encontró código de reproductor para esta película.` });
+        }
+    } else { // series
+        let episodeData = data.seasons?.[season]?.episodes?.[episode];
+        let embedCode = isPro === 'true' ? episodeData?.proEmbedCode : episodeData?.freeEmbedCode;
+
+        // <--- AÑADIDO: LÓGICA SIMILAR PARA SERIES
+        if (isPro === 'true' && embedCode) {
+            const fileCode = url.parse(embedCode).pathname.split('-')[1].replace('.html', '');
+            const apiUrl = `https://goodstream.one/api/file/direct_link?key=${GODSTREAM_API_KEY}&file_code=${fileCode}`;
+            
+            try {
+                const godstreamResponse = await axios.get(apiUrl);
+                const versions = godstreamResponse.data.resultado.versiones;
+                const mp4Url = versions.find(v => v.name === 'h')?.url || versions[0]?.url;
+
+                if (mp4Url) {
+                    return res.json({ embedCode: mp4Url });
+                }
+            } catch (apiError) {
+                console.error("Error al obtener enlace directo de GodStream para serie:", apiError);
+            }
+        }
+        // ---> FIN DE LÓGICA AÑADIDA
+
+        if (embedCode) {
+            res.json({ embedCode });
+        } else {
+            res.status(404).json({ error: `No se encontró código de reproductor para el episodio ${episode}.` });
         }
     }
-
-    // Lógica para usuarios GRATUITOS (o si la lógica PRO no encontró un enlace)
-    let embedCode = mediaType === 'movies' ? data.freeEmbedCode : data.seasons?.[season]?.episodes?.[episode]?.freeEmbedCode;
-    
-    if (embedCode) {
-        return res.json({ embedCode });
-    } else {
-        return res.status(404).json({ error: `No se encontró código de reproductor para este contenido.` });
-    }
-
   } catch (error) {
-    console.error("Error general al obtener el código embed:", error);
+    console.error("Error al obtener el código embed:", error);
     res.status(500).json({ error: "Error interno del servidor" });
   }
 });
@@ -405,6 +411,10 @@ app.get('/paypal/success', (req, res) => {
             res.send('<html><body><h1>❌ ERROR: El pago no fue aprobado.</h1><p>Estado del pago: ' + payment.state + '</p></body></html>');
         }
     });
+});
+
+app.get('/paypal/cancel', (req, res) => {
+    res.send('<html><body><h1>Pago con PayPal cancelado.</h1></body></html>');
 });
 
 app.post('/create-binance-payment', (req, res) => {
@@ -782,7 +792,9 @@ bot.on('message', async (msg) => {
             console.error("Error al buscar en TMDB:", error);
             bot.sendMessage(chatId, 'Hubo un error al buscar el contenido. Intenta de nuevo.');
         }
-    } else if (adminState[chatId] && adminState[chatId].step === 'awaiting_event_image') {
+    } else if (adminState[chatId] && adminState[chatId].step === 'awaiting_event_image') { // NUEVO HANDLER: Evento - Recibe URL
+        // Step 2: User sends the image URL
+        // Simple validación de URL (puede ser una URL de imagen o un archivo subido, asumimos URL simple)
         if (!userText.startsWith('http')) {
             bot.sendMessage(chatId, '❌ Por favor, envía un ENLACE (URL) de imagen válido.');
             return;
@@ -791,7 +803,8 @@ bot.on('message', async (msg) => {
         adminState[chatId].step = 'awaiting_event_description';
         bot.sendMessage(chatId, '¡Enlace de la fotografía recibido! Ahora, envía la DESCRIPCIÓN del evento.');
 
-    } else if (adminState[chatId] && adminState[chatId].step === 'awaiting_event_description') {
+    } else if (adminState[chatId] && adminState[chatId].step === 'awaiting_event_description') { // NUEVO HANDLER: Evento - Recibe Descripción
+        // Step 3: User sends the description and we save the event as a notification.
         const { imageUrl } = adminState[chatId];
         const description = userText;
         
@@ -823,6 +836,7 @@ bot.on('message', async (msg) => {
     } else if (adminState[chatId] && adminState[chatId].step === 'awaiting_free_link_movie') {
         const { selectedMedia, proEmbedCode } = adminState[chatId];
         
+        // VERIFICACIÓN AÑADIDA
         if (!selectedMedia || !selectedMedia.id) {
             bot.sendMessage(chatId, '❌ ERROR CRÍTICO: El ID de la película se perdió. Reinicia el proceso de subir la película con /subir.');
             adminState[chatId] = { step: 'menu' };
@@ -862,6 +876,7 @@ bot.on('message', async (msg) => {
         adminState[chatId].proEmbedCode = userText;
         adminState[chatId].step = 'awaiting_free_link_series';
         bot.sendMessage(chatId, `¡Reproductor PRO recibido! Ahora, envía el reproductor GRATIS para el episodio ${episode} de la temporada ${season}. Si no hay, escribe "no".`);
+    // NUEVA LÓGICA: Se activará cuando se envíe el reproductor GRATIS de una serie
     } else if (adminState[chatId] && adminState[chatId].step === 'awaiting_free_link_series') {
         if (!adminState[chatId].selectedSeries) {
             bot.sendMessage(chatId, 'Error: El estado de la serie se ha perdido. Por favor, reinicia el proceso.');
@@ -887,6 +902,7 @@ bot.on('message', async (msg) => {
             await axios.post(`${RENDER_BACKEND_URL}/add-series-episode`, seriesDataToSave);
             bot.sendMessage(chatId, `✅ Episodio ${episode} de la temporada ${season} guardado con éxito en la app.`);
             
+            // Lógica para enviar los botones de "Agregar Siguiente" o "Finalizar"
             const options = {
                 reply_markup: {
                     inline_keyboard: [
@@ -903,6 +919,7 @@ bot.on('message', async (msg) => {
             console.error("Error al guardar el episodio:", error);
             bot.sendMessage(chatId, 'Hubo un error al guardar el episodio.');
         } finally {
+            // No reseteamos el estado para que el usuario pueda tomar una acción
         }
     } else if (adminState[chatId] && adminState[chatId].step === 'search_delete') {
           try {
@@ -1263,6 +1280,7 @@ bot.on('callback_query', async (callbackQuery) => {
             bot.sendMessage(chatId, 'Hubo un error al guardar o publicar la película. Revisa el estado de la película en Firestore y reinicia con /subir.');
             adminState[chatId] = { step: 'menu' };
         }
+    // LÓGICA CORREGIDA PARA EL BOTÓN "GUARDAR Y PUBLICAR" PARA SERIES
     } else if (data.startsWith('save_only_series_')) {
         const { seriesDataToSave } = adminState[chatId];
         try {
@@ -1273,6 +1291,9 @@ bot.on('callback_query', async (callbackQuery) => {
             
             const tmdbId = seriesDataToSave.tmdbId;
             const seasonNumber = seriesDataToSave.seasonNumber;
+            const episodeNumber = seriesDataToSave.episodeNumber;
+
+            // Prepara el botón para el siguiente episodio
             const seriesRef = db.collection('series').doc(tmdbId);
             const seriesDoc = await seriesRef.get();
             const seriesData = seriesDoc.exists ? seriesDoc.data() : null;
@@ -1329,7 +1350,7 @@ bot.on('callback_query', async (callbackQuery) => {
             const seasonNumber = seriesDataToSave.seasonNumber;
             const seriesRef = db.collection('series').doc(tmdbId);
             const seriesDoc = await seriesRef.get();
-            const seriesData = seriesDoc.exists ? seriesData.data() : null;
+            const seriesData = seriesDoc.exists ? seriesDoc.data() : null;
 
             let lastEpisode = 0;
             if (seriesData?.seasons?.[seasonNumber]?.episodes) {
@@ -1358,8 +1379,9 @@ bot.on('callback_query', async (callbackQuery) => {
         const tmdbId = parts[2];
         const mediaType = parts[3];
         const state = adminState[chatId];
-        const title = state.title;
+        const title = state.title; // El título debe estar en el estado temporal
 
+        // Si el estado se perdió, no se puede continuar
         if (!title) {
              bot.editMessageReplyMarkup({ inline_keyboard: [] }, { 
                  chat_id: chatId, 
@@ -1371,17 +1393,19 @@ bot.on('callback_query', async (callbackQuery) => {
         }
 
         try {
+            // Llama al nuevo endpoint para enviar la notificación push
             await axios.post(`${RENDER_BACKEND_URL}/api/notify`, {
                 tmdbId,
                 mediaType,
                 title
             });
             
+            // Actualizar mensaje de Telegram para confirmar la acción
             bot.editMessageText(`✅ Notificaciones push para *${title}* programadas para envío.`, {
                 chat_id: chatId, 
                 message_id: msg.message_id,
                 parse_mode: 'Markdown',
-                reply_markup: { inline_keyboard: [] }
+                reply_markup: { inline_keyboard: [] } // Quitar el botón
             });
 
         } catch (error) {
@@ -1390,13 +1414,14 @@ bot.on('callback_query', async (callbackQuery) => {
                 chat_id: chatId, 
                 message_id: msg.message_id,
                 parse_mode: 'Markdown',
-                reply_markup: { inline_keyboard: [] }
+                reply_markup: { inline_keyboard: [] } // Quitar el botón
             });
         } finally {
-            adminState[chatId] = { step: 'menu' };
+            adminState[chatId] = { step: 'menu' }; // Resetear estado al menú principal
         }
     } else if (data.startsWith('finish_series_')) {
         const tmdbId = data.replace('finish_series_', '');
+        // Opcional: Marcar la serie como "finalizada" o "publicada" en Firestore
         const seriesRef = db.collection('series').doc(tmdbId);
         await seriesRef.update({ status: 'completed' });
         bot.sendMessage(chatId, '✅ Proceso de adición de episodios finalizado. Volviendo al menú principal.');
@@ -1409,10 +1434,11 @@ bot.on('callback_query', async (callbackQuery) => {
 // =======================================================================
 
 app.get('/api/app-update', (req, res) => {
+  // CRÍTICO: latest_version_code DEBE coincidir con el versionCode del APK más reciente (en tu caso, 2)
   const updateInfo = {
     "latest_version_code": 4, 
-    "update_url": "https://google-play.onrender.com", 
-    "force_update": true, 
+    "update_url": "https://google-play.onrender.com", // <-- TU PÁGINA DE TIENDA
+    "force_update": true, // <--- TRUE: Obliga a actualizar
     "update_message": "¡Tenemos una nueva versión (1.4) con TV en vivo y mejoras! Presiona 'Actualizar Ahora' para ir a la tienda de descarga."
   };
   
@@ -1424,6 +1450,7 @@ app.get('/api/app-update', (req, res) => {
 // =======================================================================
 
 app.get('/.well-known/assetlinks.json', (req, res) => {
+    // Esto asegura que el archivo se sirva sin importar la configuración de Render
     res.sendFile('assetlinks.json', { root: __dirname });
 });
 
