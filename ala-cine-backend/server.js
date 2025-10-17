@@ -177,6 +177,7 @@ app.get('/api/get-embed-code', async (req, res) => {
     const doc = await mongoDb.collection(collectionName).findOne({ tmdbId: id });
     
     if (!doc) {
+      // Devolvemos 404 si el contenido no existe, permitiendo al cliente mostrar "Pedir"
       return res.status(404).json({ error: `${mediaType} no encontrada en el catálogo de Mongo.` });
     }
 
@@ -243,6 +244,125 @@ app.get('/api/get-embed-code', async (req, res) => {
 
 
 // -----------------------------------------------------------
+// === NUEVAS RUTAS DE MÉTRICAS (VISTAS Y LIKES) ===
+// -----------------------------------------------------------
+
+// RUTA 1: Obtener el contador de Vistas o Likes (GET /api/get-metrics)
+app.get('/api/get-metrics', async (req, res) => {
+    if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
+
+    const { id, field } = req.query; // field can be 'views' or 'likes'
+
+    if (!id || !field) {
+        return res.status(400).json({ error: "ID y campo de métrica son requeridos." });
+    }
+    
+    if (field !== 'views' && field !== 'likes') {
+        return res.status(400).json({ error: "Campo de métrica inválido. Debe ser 'views' o 'likes'." });
+    }
+
+    try {
+        const movieCollection = mongoDb.collection('media_catalog');
+        const seriesCollection = mongoDb.collection('series_catalog');
+        
+        // 1. Buscar en películas
+        let doc = await movieCollection.findOne({ tmdbId: id.toString() }, { projection: { [field]: 1 } });
+        
+        // 2. Si no es película, buscar en series
+        if (!doc) {
+            doc = await seriesCollection.findOne({ tmdbId: id.toString() }, { projection: { [field]: 1 } });
+        }
+
+        // Devolvemos el valor encontrado o 0 si el campo no existe.
+        if (doc && doc[field] !== undefined) {
+            res.status(200).json({ count: doc[field] });
+        } else {
+            res.status(200).json({ count: 0 }); 
+        }
+
+    } catch (error) {
+        console.error(`Error al obtener métricas (${field}) en MongoDB:`, error);
+        res.status(500).json({ error: "Error interno del servidor al obtener la métrica." });
+    }
+});
+
+
+// RUTA 2: Incrementar el contador de Vistas (POST /api/increment-views)
+app.post('/api/increment-views', async (req, res) => {
+    if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
+    const { tmdbId } = req.body;
+
+    if (!tmdbId) return res.status(400).json({ error: "tmdbId es requerido." });
+
+    try {
+        const movieCollection = mongoDb.collection('media_catalog');
+        const seriesCollection = mongoDb.collection('series_catalog');
+
+        // Intentar actualizar como película (usa upsert: true para inicializar 'views' si no existe)
+        const movieResult = await movieCollection.updateOne(
+            { tmdbId: tmdbId.toString() },
+            { $inc: { views: 1 } },
+            { upsert: true }
+        );
+
+        // Si no es una película, intentar actualizar como serie
+        if (movieResult.modifiedCount === 0) {
+            await seriesCollection.updateOne(
+                { tmdbId: tmdbId.toString() },
+                { $inc: { views: 1 } },
+                { upsert: true }
+            );
+        }
+        
+        // Respondemos 200 ya que la vista fue procesada, sin necesidad de bloquear la reproducción.
+        res.status(200).json({ message: 'Vista registrada.' });
+    } catch (error) {
+        console.error("Error al incrementar vistas en MongoDB:", error);
+        res.status(500).json({ error: "Error interno del servidor al registrar la vista." });
+    }
+});
+
+
+// RUTA 3: Incrementar el contador de Likes (POST /api/increment-likes)
+app.post('/api/increment-likes', async (req, res) => {
+    if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
+    const { tmdbId } = req.body;
+
+    if (!tmdbId) return res.status(400).json({ error: "tmdbId es requerido." });
+
+    try {
+        const movieCollection = mongoDb.collection('media_catalog');
+        const seriesCollection = mongoDb.collection('series_catalog');
+
+        // Intentar actualizar como película (usa upsert: true para inicializar 'likes' si no existe)
+        const movieResult = await movieCollection.updateOne(
+            { tmdbId: tmdbId.toString() },
+            { $inc: { likes: 1 } },
+            { upsert: true }
+        );
+
+        // Si no es una película, intentar actualizar como serie
+        if (movieResult.modifiedCount === 0) {
+            await seriesCollection.updateOne(
+                { tmdbId: tmdbId.toString() },
+                { $inc: { likes: 1 } },
+                { upsert: true }
+            );
+        }
+        
+        res.status(200).json({ message: 'Like registrado.' });
+    } catch (error) {
+        console.error("Error al incrementar likes en MongoDB:", error);
+        res.status(500).json({ error: "Error interno del servidor al registrar el like." });
+    }
+});
+
+// -----------------------------------------------------------
+// === FIN DE NUEVAS RUTAS DE MÉTRICAS (VISTAS Y LIKES) ===
+// -----------------------------------------------------------
+
+
+// -----------------------------------------------------------
 // === RUTA CRÍTICA MODIFICADA: AHORA ESCRIBE EN MONGODB (CATÁLOGO) ===
 // -----------------------------------------------------------
 
@@ -264,6 +384,7 @@ app.post('/add-movie', async (req, res) => {
         let updateQuery = {};
         let options = { upsert: true };
 
+        // Al actualizar o insertar, aseguramos que los contadores se mantengan o se inicialicen
         if (existingMovie) {
             updateQuery = {
                 $set: {
@@ -273,7 +394,9 @@ app.post('/add-movie', async (req, res) => {
                     freeEmbedCode: freeEmbedCode !== undefined ? freeEmbedCode : existingMovie.freeEmbedCode,
                     proEmbedCode: proEmbedCode !== undefined ? proEmbedCode : existingMovie.proEmbedCode,
                     isPremium: isPremium
-                }
+                },
+                // Asegurar que los campos de métricas existan si la película ya existe
+                $setOnInsert: { views: 0, likes: 0 }
             };
         } else {
             updateQuery = {
@@ -284,9 +407,12 @@ app.post('/add-movie', async (req, res) => {
                     overview,
                     freeEmbedCode, 
                     proEmbedCode,
-                    isPremium
+                    isPremium,
+                    views: 0, // Inicializar vistas
+                    likes: 0  // Inicializar likes
                 }
             };
+            options = { upsert: true }; // En este caso, $set ya cubre todo, pero mantenemos upsert
         }
         
         await movieCollection.updateOne({ tmdbId: tmdbId.toString() }, updateQuery, options);
@@ -322,7 +448,9 @@ app.post('/add-series-episode', async (req, res) => {
                 isPremium: isPremium,
                 [episodePath + '.freeEmbedCode']: freeEmbedCode,
                 [episodePath + '.proEmbedCode']: proEmbedCode
-            }
+            },
+            // Inicializar vistas y likes solo si se crea el documento por primera vez
+            $setOnInsert: { views: 0, likes: 0 } 
         };
 
         await seriesCollection.updateOne(
