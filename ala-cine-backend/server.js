@@ -18,7 +18,7 @@ const contentCache = {};
 const CACHE_TTL = 3600000; // 1 hora en milisegundos
 // ==========================================
 
-// === NUEVA FUNCIÓN COMPARTIDA PARA OBTENER DATOS CON CACHÉ (CRÍTICO) ===
+// === NUEVA FUNCIÓN COMPARTIDA PARA OBTENER DATOS CON CACHÉ (CRÍTICO - FIX DE ERROR 500) ===
 async function getMediaDataWithCache(id, mediaType) {
     const docId = id.toString();
     
@@ -32,23 +32,30 @@ async function getMediaDataWithCache(id, mediaType) {
         return cachedItem.data;
     }
 
-    // 2. Cache Miss: Leer Firestore
-    const docRef = db.collection(mediaType).doc(docId);
-    const doc = await docRef.get(); // 👈 LECTURA A FIRESTORE
+    // 2. Cache Miss: Leer Firestore con manejo de errores (CRÍTICO)
+    try {
+        const docRef = db.collection(mediaType).doc(docId);
+        const doc = await docRef.get(); // 👈 LECTURA A FIRESTORE
 
-    if (!doc.exists) {
-        return null; // No encontrado
+        if (!doc.exists) {
+            return null; // No encontrado
+        }
+
+        const data = doc.data();
+
+        // 3. Actualizar la Caché
+        contentCache[docId] = { 
+            data: data, 
+            timestamp: now 
+        };
+        console.log(`[Cache Miss] Leyendo Firestore y guardando en caché para: ${docId}`);
+        return data;
+    } catch (error) {
+        // Si hay un error de DB (cuota excedida, conexión), devolvemos null para que el endpoint devuelva 404/Error,
+        // evitando el fallo interno del servidor (Error 500).
+        console.error(`[CRÍTICO] Error al leer Firestore en getMediaDataWithCache para ${docId}:`, error);
+        return null; 
     }
-
-    const data = doc.data();
-
-    // 3. Actualizar la Caché
-    contentCache[docId] = { 
-        data: data, 
-        timestamp: now 
-    };
-    console.log(`[Cache Miss] Leyendo Firestore y guardando en caché para: ${docId}`);
-    return data;
 }
 // ========================================================================
 
@@ -240,9 +247,9 @@ app.get('/api/get-embed-code', async (req, res) => {
 
         // Esta parte se ejecuta para usuarios gratis, o si la petición a GodStream falló.
         if (embedCode) {
-            res.json({ embedCode });
+            return res.json({ embedCode });
         } else {
-            res.status(404).json({ error: `No se encontró código de reproductor para esta película.` });
+            return res.status(404).json({ error: `No se encontró código de reproductor para esta película.` });
         }
     } else { // series
         let episodeData = data.seasons?.[season]?.episodes?.[episode];
@@ -279,9 +286,9 @@ app.get('/api/get-embed-code', async (req, res) => {
         // FIN DE LÓGICA GOOSTREAM --->
 
         if (embedCode) {
-            res.json({ embedCode });
+            return res.json({ embedCode });
         } else {
-            res.status(404).json({ error: `No se encontró código de reproductor para el episodio ${episode}.` });
+            return res.status(404).json({ error: `No se encontró código de reproductor para el episodio ${episode}.` });
         }
     }
   } catch (error) {
@@ -310,7 +317,8 @@ app.get('/api/counts/:id', async (req, res) => {
         const data = await getMediaDataWithCache(tmdbId, mediaType);
 
         if (!data) {
-            return res.status(404).json({ error: `${mediaType} no encontrada con ID ${tmdbId}` });
+            // Si data es null, significa que no se encontró el documento o falló la lectura de la DB.
+            return res.status(404).json({ error: `${mediaType} no encontrada o fallo en conexión con DB con ID ${tmdbId}` });
         }
 
         // Devolver solo los campos de contadores (asumiendo que estos existen en los documentos de Firestore)
