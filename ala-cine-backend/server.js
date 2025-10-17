@@ -18,6 +18,41 @@ const contentCache = {};
 const CACHE_TTL = 3600000; // 1 hora en milisegundos
 // ==========================================
 
+// === NUEVA FUNCIÓN COMPARTIDA PARA OBTENER DATOS CON CACHÉ (CRÍTICO) ===
+async function getMediaDataWithCache(id, mediaType) {
+    const docId = id.toString();
+    
+    // 1. Verificar Caché
+    const cachedItem = contentCache[docId];
+    const now = Date.now();
+
+    if (cachedItem && (now - cachedItem.timestamp < CACHE_TTL)) {
+        // Cache Hit
+        console.log(`[Cache Hit] Devolviendo datos de Firestore desde caché para: ${docId}`);
+        return cachedItem.data;
+    }
+
+    // 2. Cache Miss: Leer Firestore
+    const docRef = db.collection(mediaType).doc(docId);
+    const doc = await docRef.get(); // 👈 LECTURA A FIRESTORE
+
+    if (!doc.exists) {
+        return null; // No encontrado
+    }
+
+    const data = doc.data();
+
+    // 3. Actualizar la Caché
+    contentCache[docId] = { 
+        data: data, 
+        timestamp: now 
+    };
+    console.log(`[Cache Miss] Leyendo Firestore y guardando en caché para: ${docId}`);
+    return data;
+}
+// ========================================================================
+
+
 // === CONFIGURACIONES ===
 const serviceAccount = JSON.parse(process.env.FIREBASE_ADMIN_SDK);
 admin.initializeApp({
@@ -137,7 +172,7 @@ app.post('/request-movie', async (req, res) => {
 });
 
 // -----------------------------------------------------------
-// === ENDPOINT DE VIDEO CON LÓGICA DE CACHÉ ===
+// === ENDPOINT DE VIDEO CON LÓGICA DE CACHÉ (MODIFICADO) ===
 // -----------------------------------------------------------
 
 app.get('/api/get-embed-code', async (req, res) => {
@@ -149,38 +184,14 @@ app.get('/api/get-embed-code', async (req, res) => {
 
   try {
     const mediaType = season && episode ? 'series' : 'movies';
-    const docId = id; // El ID del documento de Firestore es el TMDB ID base.
     
-    // --- LÓGICA DE CACHÉ IMPLEMENTADA AQUÍ ---
-    let data = null;
-    const cachedItem = contentCache[docId];
-    const now = Date.now();
-
-    if (cachedItem && (now - cachedItem.timestamp < CACHE_TTL)) {
-        // Caso 1: ¡Éxito de la Caché! No se toca Firestore.
-        data = cachedItem.data;
-        console.log(`[Cache Hit] Devolviendo datos de Firestore desde caché para: ${docId}`);
-
-    } else {
-        // Caso 2: Caché expirada o no existe. Ir a Firestore.
-
-        const docRef = db.collection(mediaType).doc(docId);
-        const doc = await docRef.get(); // 👈 LECTURA A FIRESTORE
-
-        if (!doc.exists) {
-          return res.status(404).json({ error: `${mediaType} no encontrada` });
-        }
-
-        data = doc.data();
-
-        // Actualizar la caché
-        contentCache[docId] = { 
-            data: data, 
-            timestamp: now 
-        };
-        console.log(`[Cache Miss] Leyendo Firestore y guardando en caché para: ${docId}`);
+    // --- USO DE FUNCIÓN COMPARTIDA DE CACHÉ (CRÍTICO) ---
+    const data = await getMediaDataWithCache(id, mediaType);
+    
+    if (!data) {
+        return res.status(404).json({ error: `${mediaType} no encontrada` });
     }
-    // --- FIN DE LA LÓGICA DE CACHÉ ---
+    // --- FIN DE USO DE CACHÉ ---
     
     // ----------------------------------------------------
     // LÓGICA ORIGINAL DE MANEJO DE VÍDEO (USANDO 'data')
@@ -281,6 +292,43 @@ app.get('/api/get-embed-code', async (req, res) => {
 });
 
 
+// -----------------------------------------------------------
+// === NUEVA RUTA: LECTURA DE CONTADORES CON CACHÉ (CRÍTICO) ===
+// -----------------------------------------------------------
+app.get('/api/counts/:id', async (req, res) => {
+    const tmdbId = req.params.id;
+    // Asumimos que el tipo se pasa como query parameter o por defecto es 'movies'
+    const mediaType = req.query.type === 'series' ? 'series' : 'movies'; 
+
+    if (!tmdbId) {
+        return res.status(400).json({ error: "ID de contenido no proporcionado" });
+    }
+
+    try {
+        // Reutilizar la función de caché. Esto garantiza que SÓLO se hará una lectura 
+        // a Firestore si el item no está en caché o está expirado.
+        const data = await getMediaDataWithCache(tmdbId, mediaType);
+
+        if (!data) {
+            return res.status(404).json({ error: `${mediaType} no encontrada con ID ${tmdbId}` });
+        }
+
+        // Devolver solo los campos de contadores (asumiendo que estos existen en los documentos de Firestore)
+        const counts = {
+            views: data.views || 0,
+            likes: data.likes || 0
+        };
+        
+        res.status(200).json(counts);
+
+    } catch (error) {
+        console.error("Error al obtener contadores con caché:", error);
+        res.status(500).json({ error: "Error interno del servidor al procesar la solicitud de contadores." });
+    }
+});
+// -----------------------------------------------------------
+
+
 app.post('/add-movie', async (req, res) => {
     try {
         const { tmdbId, title, poster_path, freeEmbedCode, proEmbedCode, isPremium } = req.body;
@@ -322,7 +370,7 @@ app.post('/add-movie', async (req, res) => {
         }
         await movieRef.set(movieDataToSave);
         
-        // --- LIMPIEZA DE CACHÉ DESPUÉS DE LA ESCRITURA ---
+        // --- LIMPIEZA DE CACHÉ DESPUÉS DE LA ESCRITURA (CONFIRMADO) ---
         delete contentCache[tmdbId.toString()];
         // --- FIN LIMPIEZA ---
 
@@ -384,7 +432,7 @@ app.post('/add-series-episode', async (req, res) => {
         }
         await seriesRef.set(seriesDataToSave);
         
-        // --- LIMPIEZA DE CACHÉ DESPUÉS DE LA ESCRITURA ---
+        // --- LIMPIEZA DE CACHÉ DESPUÉS DE LA ESCRITURA (CONFIRMADO) ---
         // Limpiamos la caché de la serie completa para forzar una nueva lectura
         delete contentCache[tmdbId.toString()];
         // --- FIN LIMPIEZA ---
