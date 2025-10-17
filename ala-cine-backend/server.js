@@ -13,6 +13,11 @@ dotenv.config();
 
 const PORT = process.env.PORT || 3000;
 
+// === CONFIGURACIÓN DE CACHÉ EN MEMORIA ===
+const contentCache = {}; 
+const CACHE_TTL = 3600000; // 1 hora en milisegundos
+// ==========================================
+
 // === CONFIGURACIONES ===
 const serviceAccount = JSON.parse(process.env.FIREBASE_ADMIN_SDK);
 admin.initializeApp({
@@ -132,7 +137,7 @@ app.post('/request-movie', async (req, res) => {
 });
 
 // -----------------------------------------------------------
-// === ENDPOINT DE VIDEO MODIFICADO ===
+// === ENDPOINT DE VIDEO CON LÓGICA DE CACHÉ ===
 // -----------------------------------------------------------
 
 app.get('/api/get-embed-code', async (req, res) => {
@@ -144,46 +149,85 @@ app.get('/api/get-embed-code', async (req, res) => {
 
   try {
     const mediaType = season && episode ? 'series' : 'movies';
-    const docRef = db.collection(mediaType).doc(id);
-    const doc = await docRef.get();
+    const docId = id; // El ID del documento de Firestore es el TMDB ID base.
     
-    if (!doc.exists) {
-      return res.status(404).json({ error: `${mediaType} no encontrada` });
+    // --- LÓGICA DE CACHÉ IMPLEMENTADA AQUÍ ---
+    let data = null;
+    const cachedItem = contentCache[docId];
+    const now = Date.now();
+
+    if (cachedItem && (now - cachedItem.timestamp < CACHE_TTL)) {
+        // Caso 1: ¡Éxito de la Caché! No se toca Firestore.
+        data = cachedItem.data;
+        console.log(`[Cache Hit] Devolviendo datos de Firestore desde caché para: ${docId}`);
+
+    } else {
+        // Caso 2: Caché expirada o no existe. Ir a Firestore.
+
+        const docRef = db.collection(mediaType).doc(docId);
+        const doc = await docRef.get(); // 👈 LECTURA A FIRESTORE
+
+        if (!doc.exists) {
+          return res.status(404).json({ error: `${mediaType} no encontrada` });
+        }
+
+        data = doc.data();
+
+        // Actualizar la caché
+        contentCache[docId] = { 
+            data: data, 
+            timestamp: now 
+        };
+        console.log(`[Cache Miss] Leyendo Firestore y guardando en caché para: ${docId}`);
     }
+    // --- FIN DE LA LÓGICA DE CACHÉ ---
+    
+    // ----------------------------------------------------
+    // LÓGICA ORIGINAL DE MANEJO DE VÍDEO (USANDO 'data')
+    // ----------------------------------------------------
 
-    const data = doc.data();
-
-    // LÓGICA MODIFICADA PARA MANEJAR USUARIOS PRO
     if (mediaType === 'movies') {
         let embedCode = isPro === 'true' ? data.proEmbedCode : data.freeEmbedCode;
         
-        // <--- AÑADIDO: SI ES USUARIO PRO Y HAY ENLACE PRO, CONVERTIRLO A MP4 DIRECTO
+        // <--- LÓGICA GOOSTREAM: CONVERTIR LINK DE EMBED A MP4 DIRECTO PARA PRO
         if (isPro === 'true' && embedCode) {
-            const fileCode = url.parse(embedCode).pathname.split('-')[1].replace('.html', '');
+            // Asegura que el embedCode sea un enlace para poder parsearlo
+            if (!embedCode.startsWith('http')) {
+                console.warn(`EmbedCode inválido para GodStream: ${embedCode}`);
+                return res.json({ embedCode: 'Enlace de reproductor inválido.' });
+            }
             
-            // Construye la URL de la API de GodStream
-            const apiUrl = `https://goodstream.one/api/file/direct_link?key=${GODSTREAM_API_KEY}&file_code=${fileCode}`;
+            // Extrae el file_code del path, asumiendo el formato /embed-FILECODE.html
+            const pathname = url.parse(embedCode).pathname;
+            const fileCodeMatch = pathname.match(/embed-([a-zA-Z0-9]+)\.html/);
+            
+            if (fileCodeMatch && fileCodeMatch[1]) {
+                const fileCode = fileCodeMatch[1];
+                
+                // Construye la URL de la API de GodStream
+                const apiUrl = `https://goodstream.one/api/file/direct_link?key=${GODSTREAM_API_KEY}&file_code=${fileCode}`;
 
-            try {
-                // Hace la petición a la API de GodStream
-                const godstreamResponse = await axios.get(apiUrl);
+                try {
+                    // Hace la petición a la API de GodStream
+                    const godstreamResponse = await axios.get(apiUrl);
 
-                // Encuentra la URL del video MP4 de mayor calidad ('h' o 'n' si no hay)
-                const versions = godstreamResponse.data.resultado.versiones;
-                const mp4Url = versions.find(v => v.name === 'h')?.url || versions[0]?.url;
+                    // Encuentra la URL del video MP4 de mayor calidad ('h' o 'n' si no hay)
+                    const versions = godstreamResponse.data.resultado.versiones;
+                    const mp4Url = versions.find(v => v.name === 'h')?.url || versions[0]?.url;
 
-                // Envía la URL del video puro al cliente
-                if (mp4Url) {
-                    return res.json({ embedCode: mp4Url });
+                    // Envía la URL del video puro al cliente
+                    if (mp4Url) {
+                        return res.json({ embedCode: mp4Url });
+                    }
+                } catch (apiError) {
+                    // Si GodStream API falla, se usa el enlace de inserción (embedCode) como fallback
+                    console.error("Error al obtener enlace directo de GodStream. Usando embed original:", apiError.message);
                 }
-            } catch (apiError) {
-                console.error("Error al obtener enlace directo de GodStream:", apiError);
-                // Si falla, se queda con el enlace de inserción original
             }
         }
-        // ---> FIN DE LÓGICA AÑADIDA
+        // FIN DE LÓGICA GOOSTREAM --->
 
-        // Esta parte se ejecuta para usuarios gratis, o si la petición a la API de GodStream falló
+        // Esta parte se ejecuta para usuarios gratis, o si la petición a GodStream falló.
         if (embedCode) {
             res.json({ embedCode });
         } else {
@@ -193,24 +237,35 @@ app.get('/api/get-embed-code', async (req, res) => {
         let episodeData = data.seasons?.[season]?.episodes?.[episode];
         let embedCode = isPro === 'true' ? episodeData?.proEmbedCode : episodeData?.freeEmbedCode;
 
-        // <--- AÑADIDO: LÓGICA SIMILAR PARA SERIES
+        // <--- LÓGICA GOOSTREAM: CONVERTIR LINK DE EMBED A MP4 DIRECTO PARA PRO
         if (isPro === 'true' && embedCode) {
-            const fileCode = url.parse(embedCode).pathname.split('-')[1].replace('.html', '');
-            const apiUrl = `https://goodstream.one/api/file/direct_link?key=${GODSTREAM_API_KEY}&file_code=${fileCode}`;
-            
-            try {
-                const godstreamResponse = await axios.get(apiUrl);
-                const versions = godstreamResponse.data.resultado.versiones;
-                const mp4Url = versions.find(v => v.name === 'h')?.url || versions[0]?.url;
+            if (!embedCode.startsWith('http')) {
+                console.warn(`EmbedCode inválido para GodStream: ${embedCode}`);
+                return res.json({ embedCode: 'Enlace de reproductor inválido.' });
+            }
 
-                if (mp4Url) {
-                    return res.json({ embedCode: mp4Url });
+            const pathname = url.parse(embedCode).pathname;
+            const fileCodeMatch = pathname.match(/embed-([a-zA-Z0-9]+)\.html/);
+            
+            if (fileCodeMatch && fileCodeMatch[1]) {
+                const fileCode = fileCodeMatch[1];
+                const apiUrl = `https://goodstream.one/api/file/direct_link?key=${GODSTREAM_API_KEY}&file_code=${fileCode}`;
+                
+                try {
+                    const godstreamResponse = await axios.get(apiUrl);
+                    const versions = godstreamResponse.data.resultado.versiones;
+                    const mp4Url = versions.find(v => v.name === 'h')?.url || versions[0]?.url;
+
+                    if (mp4Url) {
+                        return res.json({ embedCode: mp4Url });
+                    }
+                } catch (apiError) {
+                    // Si GodStream API falla, se usa el enlace de inserción (embedCode) como fallback
+                    console.error("Error al obtener enlace directo de GodStream para serie. Usando embed original:", apiError.message);
                 }
-            } catch (apiError) {
-                console.error("Error al obtener enlace directo de GodStream para serie:", apiError);
             }
         }
-        // ---> FIN DE LÓGICA AÑADIDA
+        // FIN DE LÓGICA GOOSTREAM --->
 
         if (embedCode) {
             res.json({ embedCode });
@@ -220,7 +275,8 @@ app.get('/api/get-embed-code', async (req, res) => {
     }
   } catch (error) {
     console.error("Error al obtener el código embed:", error);
-    res.status(500).json({ error: "Error interno del servidor" });
+    // Este error es el de CUOTA EXCEDIDA de Firebase.
+    res.status(500).json({ error: "Error interno del servidor. (Cuota de Base de Datos Agotada)" });
   }
 });
 
@@ -265,6 +321,11 @@ app.post('/add-movie', async (req, res) => {
             };
         }
         await movieRef.set(movieDataToSave);
+        
+        // --- LIMPIEZA DE CACHÉ DESPUÉS DE LA ESCRITURA ---
+        delete contentCache[tmdbId.toString()];
+        // --- FIN LIMPIEZA ---
+
         res.status(200).json({ message: 'Película agregada/actualizada en la base de datos.' });
 
     } catch (error) {
@@ -322,6 +383,12 @@ app.post('/add-series-episode', async (req, res) => {
             };
         }
         await seriesRef.set(seriesDataToSave);
+        
+        // --- LIMPIEZA DE CACHÉ DESPUÉS DE LA ESCRITURA ---
+        // Limpiamos la caché de la serie completa para forzar una nueva lectura
+        delete contentCache[tmdbId.toString()];
+        // --- FIN LIMPIEZA ---
+        
         res.status(200).json({ message: `Episodio ${episodeNumber} de la temporada ${seasonNumber} agregado/actualizado en la base de datos.` });
     } catch (error) {
         console.error("Error al agregar/actualizar episodio de serie en Firestore:", error);
