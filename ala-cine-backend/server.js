@@ -6,7 +6,7 @@ const admin = require('firebase-admin');
 const axios = require('axios');
 const dotenv = require('dotenv');
 const url = require('url'); 
-const { MongoClient, ServerApiVersion } = require('mongodb'); // <<< NUEVO: Dependencia de MongoDB
+const { MongoClient, ServerApiVersion } = require('mongodb'); // CONEXIÓN MONGO
 
 const app = express();
 
@@ -15,6 +15,7 @@ dotenv.config();
 const PORT = process.env.PORT || 3000;
 
 // === CONFIGURACIONES DE FIREBASE (Mantenido para Auth y Pagos) ===
+// NOTA: Asegúrate de que FIREBASE_ADMIN_SDK está bien configurado en Render
 const serviceAccount = JSON.parse(process.env.FIREBASE_ADMIN_SDK);
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount)
@@ -40,8 +41,9 @@ const ADMIN_CHAT_ID = parseInt(process.env.ADMIN_CHAT_ID, 10);
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
 
 // === CONFIGURACIÓN DE MONGODB ATLAS ===
-const MONGO_URI = process.env.MONGO_URI;
-const MONGO_DB_NAME = process.env.MONGO_DB_NAME || 'sala_cine'; // Usar variable de entorno o 'sala_cine' por defecto
+// Utiliza la URI con la contraseña simple que ya funciona (MiContrasena12345 o la que elegiste)
+const MONGO_URI = process.env.MONGO_URI; 
+const MONGO_DB_NAME = process.env.MONGO_DB_NAME || 'sala_cine'; 
 
 const client = new MongoClient(MONGO_URI, {
     serverApi: {
@@ -51,7 +53,7 @@ const client = new MongoClient(MONGO_URI, {
     }
 });
 
-let mongoDb; // Objeto de base de datos de MongoDB
+let mongoDb; 
 
 async function connectToMongo() {
     try {
@@ -539,6 +541,57 @@ app.get('/api/app-update', (req, res) => {
   };
   
   res.status(200).json(updateInfo);
+});
+
+// =======================================================================
+// === ENDPOINT TEMPORAL DE MIGRACIÓN (EJECUTAR UNA SOLA VEZ) ===
+// =======================================================================
+
+app.get('/admin/migrate-firestore-to-mongo-secret', async (req, res) => {
+    if (!mongoDb) {
+        return res.status(503).send("Error: MongoDB no está conectado.");
+    }
+
+    try {
+        // --- 1. MIGRACIÓN DE PELÍCULAS ---
+        // 'movies' es la colección de Firebase
+        const moviesSnapshot = await db.collection('movies').get(); 
+        const moviesData = moviesSnapshot.docs.map(doc => ({ ...doc.data(), tmdbId: doc.id }));
+        
+        if (moviesData.length > 0) {
+            // 'media_catalog' es la colección de MongoDB
+            await mongoDb.collection('media_catalog').deleteMany({}); 
+            await mongoDb.collection('media_catalog').insertMany(moviesData);
+        }
+
+        // --- 2. MIGRACIÓN DE SERIES ---
+        // 'series' es la colección de Firebase
+        const seriesSnapshot = await db.collection('series').get(); 
+        const seriesData = seriesSnapshot.docs.map(doc => ({ ...doc.data(), tmdbId: doc.id }));
+
+        if (seriesData.length > 0) {
+            // 'series_catalog' es la colección de MongoDB
+            await mongoDb.collection('series_catalog').deleteMany({});
+            await mongoDb.collection('series_catalog').insertMany(seriesData);
+        }
+
+        const successMessage = `✅ Migración completada. Películas: ${moviesData.length}. Series: ${seriesData.length}. Colecciones de Firebase 'movies' y 'series' copiadas a MongoDB Atlas.`;
+        
+        console.log(successMessage);
+        res.send(`<h1>${successMessage}</h1>`);
+
+    } catch (error) {
+        console.error("Error durante la migración:", error);
+        res.status(500).send(`<h1>❌ ERROR CRÍTICO EN LA MIGRACIÓN:</h1><p>${error.message}</p>`);
+    }
+});
+// =======================================================================
+// === NUEVA SOLUCIÓN: ENDPOINT PARA GOOGLE APP LINKS VERIFICATION ===
+// =======================================================================
+
+app.get('/.well-known/assetlinks.json', (req, res) => {
+    // Esto asegura que el archivo se sirva sin importar la configuración de Render
+    res.sendFile('assetlinks.json', { root: __dirname });
 });
 
 // =======================================================================
