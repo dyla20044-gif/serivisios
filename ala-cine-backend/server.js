@@ -5,6 +5,8 @@ const TelegramBot = require('node-telegram-bot-api');
 const admin = require('firebase-admin');
 const axios = require('axios');
 const dotenv = require('dotenv');
+const url = require('url'); 
+const { MongoClient, ServerApiVersion } = require('mongodb'); // CONEXIÓN MONGO
 
 const app = express();
 
@@ -17,8 +19,8 @@ const serviceAccount = JSON.parse(process.env.FIREBASE_ADMIN_SDK);
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount)
 });
-const db = admin.firestore();
-const messaging = admin.messaging(); // <--- CRÍTICO: Inicialización del servicio de mensajería
+const db = admin.firestore(); // USADO SOLO PARA USUARIOS/PAGOS/SOLICITUDES
+const messaging = admin.messaging(); 
 
 paypal.configure({
     'mode': 'sandbox',
@@ -27,8 +29,8 @@ paypal.configure({
 });
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
+const GODSTREAM_API_KEY = process.env.GODSTREAM_API_KEY; 
 
-// === SOLUCIÓN 1: CAMBIO DE POLLING A WEBHOOK PARA TELEGRAM ===
 const RENDER_BACKEND_URL = 'https://serivisios.onrender.com';
 const bot = new TelegramBot(token);
 const webhookUrl = `${RENDER_BACKEND_URL}/bot${token}`;
@@ -36,6 +38,35 @@ bot.setWebHook(webhookUrl);
 
 const ADMIN_CHAT_ID = parseInt(process.env.ADMIN_CHAT_ID, 10);
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
+
+// === CONFIGURACIÓN DE MONGODB ATLAS ===
+const MONGO_URI = process.env.MONGO_URI; 
+const MONGO_DB_NAME = process.env.MONGO_DB_NAME || 'sala_cine'; 
+
+const client = new MongoClient(MONGO_URI, {
+    serverApi: {
+        version: ServerApiVersion.v1,
+        strict: true,
+        deprecationErrors: true,
+    }
+});
+
+let mongoDb; 
+
+async function connectToMongo() {
+    try {
+        await client.connect();
+        mongoDb = client.db(MONGO_DB_NAME); 
+        console.log(`✅ Conexión a MongoDB Atlas [${MONGO_DB_NAME}] exitosa!`);
+    } catch (e) {
+        console.error("❌ Error al conectar a MongoDB Atlas:", e);
+        process.exit(1);
+    }
+}
+
+connectToMongo(); 
+// === FIN CONFIGURACIÓN DE MONGODB ===
+
 
 // === CONFIGURACIÓN DE ATJOS DEL BOT ===
 bot.setMyCommands([
@@ -67,7 +98,6 @@ app.get('/', (req, res) => {
   res.send('¡El bot y el servidor de Sala Cine están activos!');
 });
 
-// === NUEVO ENDPOINT PARA RECIBIR ACTUALIZACIONES DEL WEBHOOK DE TELEGRAM ===
 app.post(`/bot${token}`, (req, res) => {
   bot.processUpdate(req.body);
   res.sendStatus(200);
@@ -77,27 +107,20 @@ app.post(`/bot${token}`, (req, res) => {
 // === RUTA CRÍTICA: MANEJO DE APP LINK Y REDIRECCIÓN DE FALLO ===
 // -------------------------------------------------------------------------
 
-/* Esta ruta se activa si el usuario toca el botón "Abrir en App Nativa" 
- * y la aplicación de Android NO está instalada (App Link falla). 
- * Redirige al usuario a la tienda personalizada.
-*/
 app.get('/app/details/:tmdbId', (req, res) => {
     const tmdbId = req.params.tmdbId;
     
-    // Si la App Nativa falla, redirigimos a la URL de tu tienda personalizada
     if (process.env.APP_DOWNLOAD_URL) {
         console.log(`App Nativa no instalada. Redirigiendo a la Tienda Personalizada: ${process.env.APP_DOWNLOAD_URL}`);
         return res.redirect(302, process.env.APP_DOWNLOAD_URL);
     }
 
-    // Último Fallback: Si no hay tienda definida, redirigimos a la TMA.
     if (process.env.TELEGRAM_MINIAPP_URL) {
         const tmaLink = process.env.TELEGRAM_MINIAPP_URL + '?startapp=' + tmdbId;
         console.log('APP_DOWNLOAD_URL no definida. Redirigiendo al fallback de la TMA.');
         return res.redirect(302, tmaLink);
     }
 
-    // Fallo Total
     res.status(404).send('No se encontró la aplicación de destino ni un enlace de descarga.');
 });
 
@@ -112,6 +135,7 @@ app.post('/request-movie', async (req, res) => {
     const message = `🔔 *Solicitud de película:* ${movieTitle}\n\nUn usuario ha solicitado esta película.`;
     
     try {
+        // Usa db.collection('requests') (FIREBASE) ya que es BAJA FRECUENCIA
         await bot.sendPhoto(ADMIN_CHAT_ID, posterUrl, {
             caption: message,
             parse_mode: 'Markdown',
@@ -130,10 +154,14 @@ app.post('/request-movie', async (req, res) => {
 });
 
 // -----------------------------------------------------------
-// === ENDPOINT DE VIDEO ===
+// === RUTA CRÍTICA MODIFICADA: AHORA LEE DE MONGODB (ALTO TRÁFICO) ===
 // -----------------------------------------------------------
 
 app.get('/api/get-embed-code', async (req, res) => {
+  if (!mongoDb) {
+    return res.status(503).json({ error: "Base de datos no disponible." });
+  }
+
   const { id, season, episode, isPro } = req.query;
   
   if (!id) {
@@ -142,25 +170,65 @@ app.get('/api/get-embed-code', async (req, res) => {
 
   try {
     const mediaType = season && episode ? 'series' : 'movies';
-    const docRef = db.collection(mediaType).doc(id);
-    const doc = await docRef.get();
+    // MONGODB: Colecciones de Catálogo
+    const collectionName = (mediaType === 'movies') ? 'media_catalog' : 'series_catalog'; 
     
-    if (!doc.exists) {
-      return res.status(404).json({ error: `${mediaType} no encontrada` });
+    // MONGODB: Busca el documento por tmdbId (String)
+    const doc = await mongoDb.collection(collectionName).findOne({ tmdbId: id });
+    
+    if (!doc) {
+      return res.status(404).json({ error: `${mediaType} no encontrada en el catálogo de Mongo.` });
     }
 
-    const data = doc.data();
+    const data = doc;
+    let embedCode = null;
 
     if (mediaType === 'movies') {
-        const embedCode = isPro === 'true' ? data.proEmbedCode : data.freeEmbedCode;
+        embedCode = isPro === 'true' ? data.proEmbedCode : data.freeEmbedCode;
+        
+        if (isPro === 'true' && embedCode) {
+            const fileCode = url.parse(embedCode).pathname.split('-')[1].replace('.html', '');
+            const apiUrl = `https://goodstream.one/api/file/direct_link?key=${process.env.GODSTREAM_API_KEY}&file_code=${fileCode}`;
+
+            try {
+                const godstreamResponse = await axios.get(apiUrl);
+                const versions = godstreamResponse.data.resultado.versiones;
+                const mp4Url = versions.find(v => v.name === 'h')?.url || versions[0]?.url;
+
+                if (mp4Url) {
+                    return res.json({ embedCode: mp4Url });
+                }
+            } catch (apiError) {
+                console.error("Error al obtener enlace directo de GodStream:", apiError);
+            }
+        }
+
         if (embedCode) {
             res.json({ embedCode });
         } else {
             res.status(404).json({ error: `No se encontró código de reproductor para esta película.` });
         }
     } else { // series
-        const episodeData = data.seasons?.[season]?.episodes?.[episode];
-        const embedCode = isPro === 'true' ? episodeData?.proEmbedCode : episodeData?.freeEmbedCode;
+        let episodeData = data.seasons?.[season]?.episodes?.[episode];
+        let embedCode = isPro === 'true' ? episodeData?.proEmbedCode : episodeData?.freeEmbedCode;
+
+        if (isPro === 'true' && embedCode) {
+            const fileCode = url.parse(embedCode).pathname.split('-')[1].replace('.html', '');
+            const apiUrl = `https://goodstream.one/api/file/direct_link?key=${process.env.GODSTREAM_API_KEY}&file_code=${fileCode}`;
+            
+            try {
+                const godstreamResponse = await axios.get(apiUrl);
+                const versions = godstreamResponse.data.resultado.versiones;
+                const mp4Url = versions.find(v => v.name === 'h')?.url || versions[0]?.url;
+
+                if (mp4Url) {
+                    return res.json({ embedCode: mp4Url });
+                }
+            } catch (apiError) {
+                console.error("Error al obtener enlace directo de GodStream para serie:", apiError);
+            }
+        }
+
         if (embedCode) {
             res.json({ embedCode });
         } else {
@@ -168,145 +236,137 @@ app.get('/api/get-embed-code', async (req, res) => {
         }
     }
   } catch (error) {
-    console.error("Error al obtener el código embed:", error);
+    console.error("Error crítico al obtener el código embed:", error);
     res.status(500).json({ error: "Error interno del servidor" });
   }
 });
 
 
+// -----------------------------------------------------------
+// === RUTA CRÍTICA MODIFICADA: AHORA ESCRIBE EN MONGODB (CATÁLOGO) ===
+// -----------------------------------------------------------
+
 app.post('/add-movie', async (req, res) => {
+    if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
+
     try {
-        const { tmdbId, title, poster_path, freeEmbedCode, proEmbedCode, isPremium } = req.body;
-        
-        // Verificar si el tmdbId es válido antes de intentar guardar
+        const { tmdbId, title, poster_path, freeEmbedCode, proEmbedCode, isPremium, overview } = req.body; 
+
         if (!tmdbId) {
             console.error("Error: Intentando guardar película sin tmdbId.");
             return res.status(400).json({ error: 'tmdbId es requerido para guardar la película.' });
         }
+        
+        const movieCollection = mongoDb.collection('media_catalog');
+        
+        const existingMovie = await movieCollection.findOne({ tmdbId: tmdbId.toString() });
 
-        // Verificar si la película ya existe
-        const movieRef = db.collection('movies').doc(tmdbId.toString());
-        const movieDoc = await movieRef.get();
+        let updateQuery = {};
+        let options = { upsert: true };
 
-        let movieDataToSave = {};
-
-        if (movieDoc.exists) {
-            const existingData = movieDoc.data();
-            // Lógica para no sobreescribir si el código es nulo
-            movieDataToSave = {
-                ...existingData,
-                title: title,
-                poster_path: poster_path,
-                freeEmbedCode: freeEmbedCode !== undefined ? freeEmbedCode : existingData.freeEmbedCode,
-                proEmbedCode: proEmbedCode !== undefined ? proEmbedCode : existingData.proEmbedCode,
-                // Si se envía como GRATIS, se sobreescribe isPremium a false. Si se envía como PRO, se sobreesscribe a true.
-                isPremium: isPremium
+        if (existingMovie) {
+            updateQuery = {
+                $set: {
+                    title: title,
+                    poster_path: poster_path,
+                    overview: overview,
+                    freeEmbedCode: freeEmbedCode !== undefined ? freeEmbedCode : existingMovie.freeEmbedCode,
+                    proEmbedCode: proEmbedCode !== undefined ? proEmbedCode : existingMovie.proEmbedCode,
+                    isPremium: isPremium
+                }
             };
         } else {
-            // Si la película no existe, la creamos
-            movieDataToSave = {
-                tmdbId,
-                title,
-                poster_path,
-                freeEmbedCode, 
-                proEmbedCode,
-                isPremium
+            updateQuery = {
+                $set: {
+                    tmdbId: tmdbId.toString(),
+                    title,
+                    poster_path,
+                    overview,
+                    freeEmbedCode, 
+                    proEmbedCode,
+                    isPremium
+                }
             };
         }
-        await movieRef.set(movieDataToSave);
-        res.status(200).json({ message: 'Película agregada/actualizada en la base de datos.' });
+        
+        await movieCollection.updateOne({ tmdbId: tmdbId.toString() }, updateQuery, options);
+        
+        res.status(200).json({ message: 'Película agregada/actualizada en MongoDB Atlas.' });
 
     } catch (error) {
-        console.error("Error al agregar/actualizar película en Firestore:", error);
+        console.error("Error al agregar/actualizar película en MongoDB:", error);
         res.status(500).json({ error: 'Error al agregar/actualizar la película en la base de datos.' });
     }
 });
 
+// -----------------------------------------------------------
+// === RUTA CRÍTICA MODIFICADA: AHORA ESCRIBE EN MONGODB (SERIES) ===
+// -----------------------------------------------------------
+
 app.post('/add-series-episode', async (req, res) => {
+    if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
+
     try {
-        const { tmdbId, title, poster_path, seasonNumber, episodeNumber, freeEmbedCode, proEmbedCode, isPremium } = req.body;
+        const { tmdbId, title, poster_path, overview, seasonNumber, episodeNumber, freeEmbedCode, proEmbedCode, isPremium } = req.body;
+        
+        const seriesCollection = mongoDb.collection('series_catalog');
+        
+        const episodePath = `seasons.${seasonNumber}.episodes.${episodeNumber}`;
 
-        const seriesRef = db.collection('series').doc(tmdbId.toString());
-        const seriesDoc = await seriesRef.get();
-
-        let seriesDataToSave = {};
-
-        if (seriesDoc.exists) {
-            const existingData = seriesDoc.data();
-            const existingEpisode = existingData.seasons?.[seasonNumber]?.episodes?.[episodeNumber] || {};
-            
-            const newEpisodeData = {
-                freeEmbedCode: freeEmbedCode !== undefined ? freeEmbedCode : existingEpisode.freeEmbedCode,
-                proEmbedCode: proEmbedCode !== undefined ? proEmbedCode : existingEpisode.proEmbedCode
-            };
-            
-            seriesDataToSave = {
-                ...existingData,
+        const updateData = {
+            $set: {
+                tmdbId: tmdbId.toString(),
                 title: title,
                 poster_path: poster_path,
+                overview: overview,
                 isPremium: isPremium,
-                seasons: {
-                    ...existingData.seasons,
-                    [seasonNumber]: {
-                        episodes: {
-                            ...(existingData.seasons?.[seasonNumber]?.episodes),
-                            [episodeNumber]: newEpisodeData
-                        }
-                    }
-                }
-            };
-        } else {
-            seriesDataToSave = {
-                tmdbId,
-                title,
-                poster_path,
-                isPremium,
-                seasons: {
-                    [seasonNumber]: {
-                        episodes: {
-                            [episodeNumber]: { freeEmbedCode, proEmbedCode }
-                        }
-                    }
-                }
-            };
-        }
-        await seriesRef.set(seriesDataToSave);
-        res.status(200).json({ message: `Episodio ${episodeNumber} de la temporada ${seasonNumber} agregado/actualizado en la base de datos.` });
+                [episodePath + '.freeEmbedCode']: freeEmbedCode,
+                [episodePath + '.proEmbedCode']: proEmbedCode
+            }
+        };
+
+        await seriesCollection.updateOne(
+            { tmdbId: tmdbId.toString() },
+            updateData,
+            { upsert: true }
+        );
+        
+        res.status(200).json({ message: `Episodio ${episodeNumber} de la temporada ${seasonNumber} agregado/actualizado en MongoDB Atlas.` });
+    
     } catch (error) {
-        console.error("Error al agregar/actualizar episodio de serie en Firestore:", error);
+        console.error("Error al agregar/actualizar episodio de serie en MongoDB:", error);
         res.status(500).json({ error: 'Error al agregar/actualizar el episodio de la serie en la base de datos.' });
     }
 });
 
-// === MODIFICADO: Envía el userId a PayPal ===
+
+// -----------------------------------------------------------
+// === LÓGICA DE BAJO TRÁFICO (MANTENIDA EN FIREBASE) ===
+// -----------------------------------------------------------
+
 app.post('/create-paypal-payment', (req, res) => {
     const plan = req.body.plan;
     const amount = (plan === 'annual') ? '19.99' : '1.99';
-    const userId = req.body.userId; // NUEVO: Capturamos el ID de Firebase
+    const userId = req.body.userId; 
 
     const create_payment_json = {
         "intent": "sale",
-        "payer": {
-            "payment_method": "paypal"
-        },
+        "payer": { "payment_method": "paypal" },
         "redirect_urls": {
             "return_url": `${RENDER_BACKEND_URL}/paypal/success`,
             "cancel_url": `${RENDER_BACKEND_URL}/paypal/cancel`
         },
         "transactions": [{
-            "amount": {
-                "currency": "USD",
-                "total": amount
-            },
+            "amount": { "currency": "USD", "total": amount },
             "description": `Suscripción al plan ${plan} de Sala Cine`,
-            "invoice_number": userId // NUEVO: Lo pasamos a PayPal para recuperarlo luego
+            "invoice_number": userId 
         }]
     };
 
     paypal.payment.create(create_payment_json, function (error, payment) {
         if (error) {
             console.error("Error de PayPal:", error.response);
-            res.status(500).json({ error: "Error al crear el pago con PayPal. Revisa los logs de tu servidor para más detalles." });
+            res.status(500).json({ error: "Error al crear el pago con PayPal." });
         } else {
             for (let i = 0; i < payment.links.length; i++) {
                 if (payment.links[i].rel === 'approval_url') {
@@ -319,45 +379,35 @@ app.post('/create-paypal-payment', (req, res) => {
     });
 });
 
-// === CRÍTICO MODIFICADO: Ejecuta el pago y activa el Premium ===
 app.get('/paypal/success', (req, res) => {
     const payerId = req.query.PayerID;
     const paymentId = req.query.paymentId;
     
-    // 1. Ejecutar la transacción (Capturar el dinero)
     paypal.payment.execute(paymentId, { "payer_id": payerId }, async function (error, payment) {
         if (error) {
             console.error("Error al ejecutar el pago:", error.response);
-            // Mensaje de error visible para el usuario
-            return res.send('<html><body><h1>❌ ERROR: El pago no pudo ser procesado.</h1><p>Por favor, contacta con soporte con tu ID de transacción.</p></body></html>');
+            return res.send('<html><body><h1>❌ ERROR: El pago no pudo ser procesado.</h1></body></html>');
         }
 
-        // 2. Verificar el estado y obtener el ID de usuario
         if (payment.state === 'approved' || payment.state === 'completed') {
-            // El invoice_number contiene el ID de usuario de Firebase
             const userId = payment.transactions[0].invoice_number; 
             
             if (userId) {
                 try {
-                    // 3. Activar la cuenta Premium en Firebase
+                    // FIREBASE: Actualiza el estado PRO (Baja Frecuencia)
                     const userDocRef = db.collection('users').doc(userId);
-                    // Usar set con merge: true para crear el documento si no existe, o actualizar si existe
                     await userDocRef.set({ isPro: true }, { merge: true });
                     
-                    // Notificar al usuario que regrese a la app
-                    res.send('<html><body><h1>✅ ¡Pago Exitoso! Cuenta Premium Activada.</h1><p>Vuelve a la aplicación para disfrutar de tu contenido PRO.</p></body></html>');
+                    res.send('<html><body><h1>✅ ¡Pago Exitoso! Cuenta Premium Activada.</h1><p>Vuelve a la aplicación.</p></body></html>');
                 } catch (dbError) {
                     console.error("Error al actualizar la base de datos de Firebase:", dbError);
-                    // El pago se ejecutó, pero la base de datos falló (necesita revisión manual)
-                    res.send('<html><body><h1>⚠️ Advertencia: Pago recibido, pero la cuenta Premium no se activó automáticamente.</h1><p>Por favor, contacta con soporte con el ID de transacción: ' + paymentId + '</p></body></html>');
+                    res.send('<html><body><h1>⚠️ Advertencia: Pago recibido, pero la cuenta Premium no se activó automáticamente.</h1></body></html>');
                 }
             } else {
-                // El pago se ejecutó, pero el ID de usuario no fue guardado en la transacción
-                 res.send('<html><body><h1>✅ ¡Pago Exitoso! Contacta a soporte para activar tu Premium</h1><p>Vuelve a la aplicación y contacta a soporte con tu ID de transacción: ' + paymentId + '</p></body></html>');
+                 res.send('<html><body><h1>✅ ¡Pago Exitoso! Contacta a soporte para activar tu Premium</h1></body></html>');
             }
         } else {
-            // Estado no aprobado (puede ser "pendiente", "fallido", etc.)
-            res.send('<html><body><h1>❌ ERROR: El pago no fue aprobado.</h1><p>Estado del pago: ' + payment.state + '</p></body></html>');
+            res.send('<html><body><h1>❌ ERROR: El pago no fue aprobado.</h1></body></html>');
         }
     });
 });
@@ -374,14 +424,12 @@ app.post('/create-binance-payment', (req, res) => {
 // === INICIO DE NUEVAS FUNCIONES Y ENDPOINT DE NOTIFICACIÓN PUSH ===
 // -----------------------------------------------------------
 
-// Función para buscar tokens y enviar notificación push con Firebase Cloud Messaging (FCM)
 async function sendPushNotification(tmdbId, mediaType, contentTitle) {
     try {
-        // Seleccionamos todos los usuarios que tienen un token FCM
         const tokensSnapshot = await db.collection('users').select('fcmToken').get();
         const registrationTokens = tokensSnapshot.docs
             .map(doc => doc.data().fcmToken)
-            .filter(token => token); // Filtrar tokens nulos o vacíos
+            .filter(token => token); 
 
         if (registrationTokens.length === 0) {
             console.log("No se encontraron tokens FCM para enviar notificaciones.");
@@ -394,17 +442,14 @@ async function sendPushNotification(tmdbId, mediaType, contentTitle) {
                 body: `¡Ya puedes ver ${contentTitle} en Sala Cine!`,
             },
             data: {
-                // CRÍTICO: Enviamos el ID para que MyFirebaseMessagingService sepa dónde redirigir
                 tmdbId: tmdbId.toString(), 
                 mediaType: mediaType,
                 action: 'open_content' 
             },
-            tokens: registrationTokens // Envía a la lista de tokens
+            tokens: registrationTokens
         };
 
-        // Envía el mensaje a todos los tokens
         const response = await messaging.sendEachForMulticast(message);
-
         console.log('Notificación FCM enviada con éxito:', response.successCount);
         return { success: true, response: response };
 
@@ -414,8 +459,6 @@ async function sendPushNotification(tmdbId, mediaType, contentTitle) {
     }
 }
 
-// ENDPOINT DEDICADO: POST /api/notify
-// Este es llamado por el bot de Telegram para enviar la notificación
 app.post('/api/notify', async (req, res) => {
     const { tmdbId, mediaType, title } = req.body;
     
@@ -445,25 +488,12 @@ app.post('/api/notify', async (req, res) => {
 // -----------------------------------------------------------
 // === NUEVAS FUNCIONES PARA EL FLUJO DE PUBLICACIÓN EN CANALES ===
 // -----------------------------------------------------------
-/*
- * Nuevas variables de entorno requeridas:
- * - TELEGRAM_CHANNEL_A_ID: ID/username del canal principal público.
- * - TELEGRAM_CHANNEL_B_ID: ID/username del canal de la comunidad.
- * - TELEGRAM_BOT_USERNAME: Nombre de usuario de tu bot.
- * - COOLDOWN_REPUBLISH_DAYS: Número de días de espera para republicar una película.
- */
+
 const TELEGRAM_CHANNEL_A_ID = process.env.TELEGRAM_CHANNEL_A_ID;
 const TELEGRAM_CHANNEL_B_ID = process.env.TELEGRAM_CHANNEL_B_ID;
 const TELEGRAM_BOT_USERNAME = process.env.TELEGRAM_BOT_USERNAME;
 const COOLDOWN_REPUBLISH_DAYS = parseInt(process.env.COOLDOWN_REPUBLISH_DAYS, 10) || 30;
 
-/**
- * Publica un post en el canal de la comunidad (Canal B) con un enlace al post original.
- * @param {string} permalink El enlace permanente al post en el canal A.
- * @param {object} mediaData Los datos de la película o serie para el post.
- * @param {string} mediaType Tipo de contenido ('movie' o 'series').
- * @param {string} contentTitle El título del contenido para el mensaje.
- */
 async function publishToCommunityChannel(permalink, mediaData, mediaType, contentTitle) {
     try {
         const posterUrl = mediaData.poster_path ? `https://image.tmdb.org/t/p/w500${mediaData.poster_path}` : 'https://placehold.co/500x750?text=No+Poster';
@@ -488,13 +518,6 @@ async function publishToCommunityChannel(permalink, mediaData, mediaType, conten
     }
 }
 
-/**
- * Encapsula el flujo completo de publicación:
- * 1. Publica en el canal principal (A).
- * 2. Obtiene el enlace permanente.
- * 3. Publica en el canal de la comunidad (B) con el enlace.
- * @param {object} movieData Los datos de la película a publicar.
- */
 async function publishMovieToChannels(movieData) {
     const posterUrl = movieData.poster_path ? `https://image.tmdb.org/t/p/w500${movieData.poster_path}` : 'https://placehold.co/500x750?text=No+Poster';
     const caption = `🎬 **${movieData.title}**\n\n` +
@@ -517,14 +540,12 @@ async function publishMovieToChannels(movieData) {
     try {
         const sentMessage = await bot.sendPhoto(TELEGRAM_CHANNEL_A_ID, posterUrl, options);
         
-        // Obtener el permalink del mensaje recién publicado
         const channelUsername = TELEGRAM_CHANNEL_A_ID.startsWith('@') ? TELEGRAM_CHANNEL_A_ID.substring(1) : TELEGRAM_CHANNEL_A_ID;
-        const permalink = `https://t.me/${channelUsername}/${sentMessage.message_id}`;
+        const permalink = `https://tme.me/${channelUsername}/${sentMessage.message_id}`; // CORREGIDO: T.ME
         
-        // **CRÍTICO: Añadido un retraso de 10 segundos antes de publicar en el canal de la comunidad.**
         setTimeout(async () => {
             await publishToCommunityChannel(permalink, movieData, 'movie', movieData.title);
-        }, 10000); // 10,000 milisegundos = 10 segundos
+        }, 10000); 
 
         return { success: true };
     } catch (error) {
@@ -534,13 +555,6 @@ async function publishMovieToChannels(movieData) {
     }
 }
 
-/**
- * Encapsula el flujo completo de publicación de un episodio de serie.
- * 1. Publica en el canal principal (A).
- * 2. Obtiene el enlace permanente.
- * 3. Publica en el canal de la comunidad (B) con el enlace.
- * @param {object} seriesData Los datos de la serie a publicar.
- */
 async function publishSeriesEpisodeToChannels(seriesData) {
     const posterUrl = seriesData.poster_path ? `https://image.tmdb.org/t/p/w500${seriesData.poster_path}` : 'https://placehold.co/500x750?text=No+Poster';
     const contentTitle = seriesData.title + ` - T${seriesData.seasonNumber} E${seriesData.episodeNumber}`;
@@ -566,14 +580,12 @@ async function publishSeriesEpisodeToChannels(seriesData) {
     try {
         const sentMessage = await bot.sendPhoto(TELEGRAM_CHANNEL_A_ID, posterUrl, options);
 
-        // Obtener el permalink del mensaje recién publicado
         const channelUsername = TELEGRAM_CHANNEL_A_ID.startsWith('@') ? TELEGRAM_CHANNEL_A_ID.substring(1) : TELEGRAM_CHANNEL_A_ID;
-        const permalink = `https://t.me/${channelUsername}/${sentMessage.message_id}`;
+        const permalink = `https://tme.me/${channelUsername}/${sentMessage.message_id}`; // CORREGIDO: T.ME
 
-        // **CRÍTICO: Añadido un retraso de 10 segundos antes de publicar en el canal de la comunidad.**
         setTimeout(async () => {
             await publishToCommunityChannel(permalink, seriesData, 'series', contentTitle);
-        }, 10000); // 10,000 milisegundos = 10 segundos
+        }, 10000); 
 
         return { success: true };
     } catch (error) {
@@ -589,7 +601,7 @@ async function publishSeriesEpisodeToChannels(seriesData) {
 
 
 // === LÓGICA DEL BOT DE TELEGRAM ===
-bot.onText(/\/start/, (msg) => {
+bot.onText(/\/start|\/subir/, (msg) => {
     const chatId = msg.chat.id;
     if (chatId !== ADMIN_CHAT_ID) {
         bot.sendMessage(chatId, 'Lo siento, no tienes permiso para usar este bot.');
@@ -601,7 +613,7 @@ bot.onText(/\/start/, (msg) => {
             inline_keyboard: [
                 [{ text: 'Agregar películas', callback_data: 'add_movie' }],
                 [{ text: 'Agregar series', callback_data: 'add_series' }],
-                [{ text: 'Eventos', callback_data: 'eventos' }], // MODIFICADO: Carrusel -> Eventos
+                [{ text: 'Eventos', callback_data: 'eventos' }], 
                 [{ text: 'Gestionar películas', callback_data: 'manage_movies' }],
                 [{ text: 'Eliminar película', callback_data: 'delete_movie' }]
             ]
@@ -610,51 +622,6 @@ bot.onText(/\/start/, (msg) => {
     bot.sendMessage(chatId, '¡Hola! ¿Qué quieres hacer hoy?', options);
 });
 
-bot.onText(/\/subir/, (msg) => {
-    const chatId = msg.chat.id;
-    if (chatId !== ADMIN_CHAT_ID) return;
-    adminState[chatId] = { step: 'menu' };
-    const options = {
-        reply_markup: {
-            inline_keyboard: [
-                [{ text: 'Agregar películas', callback_data: 'add_movie' }],
-                [{ text: 'Agregar series', callback_data: 'add_series' }],
-                [{ text: 'Eventos', callback_data: 'eventos' }], // MODIFICADO: Carrusel -> Eventos
-                [{ text: 'Gestionar películas', callback_data: 'manage_movies' }],
-                [{ text: 'Eliminar película', callback_data: 'delete_movie' }]
-            ]
-        }
-    };
-    bot.sendMessage(chatId, '¡Hola! ¿Qué quieres hacer hoy?', options);
-});
-
-bot.onText(/\/editar/, (msg) => {
-    const chatId = msg.chat.id;
-    if (chatId !== ADMIN_CHAT_ID) return;
-    adminState[chatId] = { step: 'search_edit', mediaType: 'movie' };
-    bot.sendMessage(chatId, 'Por favor, escribe el nombre de la película o serie que quieres editar.');
-});
-
-bot.onText(/\/pedidos/, async (msg) => {
-    const chatId = msg.chat.id;
-    if (chatId !== ADMIN_CHAT_ID) return;
-    try {
-        const requestsRef = db.collection('requests');
-        const snapshot = await requestsRef.get();
-        if (snapshot.empty) {
-            return bot.sendMessage(chatId, 'No hay solicitudes pendientes en este momento.');
-        }
-        let message = '📋 *Solicitudes de Películas:*\n\n';
-        snapshot.forEach(doc => {
-            const data = doc.data();
-            message += `🎬 ${data.movieTitle}\n_Solicitado por: ${data.userName || 'Anónimo'} el ${data.requestedAt.toDate().toLocaleDateString()}_\n\n`;
-        });
-        bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
-    } catch (error) {
-        console.error("Error fetching requests:", error);
-        bot.sendMessage(chatId, 'Hubo un error al obtener las solicitudes.');
-    }
-});
 
 bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
@@ -672,14 +639,15 @@ bot.on('message', async (msg) => {
                 const results = data.results.slice(0, 5);
                 
                 for (const item of results) {
+                    // === ARREGLO CRÍTICO: BÚSQUEDA DE EXISTENCIA EN MONGODB ===
+                    const existingMovie = await mongoDb.collection('media_catalog').findOne({ tmdbId: item.id.toString() });
+                    const existingData = existingMovie || null;
+                    // === FIN ARREGLO CRÍTICO ===
+
                     const posterUrl = item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : 'https://placehold.co/500x750?text=No+Poster';
                     const title = item.title || item.name;
                     const date = item.release_date || item.first_air_date;
                     const message = `🎬 *${title}* (${date ? date.substring(0, 4) : 'N/A'})\n\n${item.overview || 'Sin sinopsis disponible.'}`;
-                    
-                    const docRef = db.collection('movies').doc(item.id.toString());
-                    const doc = await docRef.get();
-                    const existingData = doc.exists ? doc.data() : null;
                     
                     let buttons = [];
                     if (existingData) {
@@ -711,15 +679,16 @@ bot.on('message', async (msg) => {
                 const results = data.results.slice(0, 5);
                 
                 for (const item of results) {
+                    // === ARREGLO CRÍTICO: BÚSQUEDA DE EXISTENCIA EN MONGODB ===
+                    const existingSeries = await mongoDb.collection('series_catalog').findOne({ tmdbId: item.id.toString() });
+                    const existingData = existingSeries || null;
+                    // === FIN ARREGLO CRÍTICO ===
+
                     const posterUrl = item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : 'https://placehold.co/500x750?text=No+Poster';
                     const title = item.title || item.name;
                     const date = item.first_air_date;
                     const message = `🎬 *${title}* (${date ? date.substring(0, 4) : 'N/A'})\n\n${item.overview || 'Sin sinopsis disponible.'}`;
                     
-                    const docRef = db.collection('series').doc(item.id.toString());
-                    const doc = await docRef.get();
-                    const existingData = doc.exists ? doc.data() : null;
-
                     let buttons = [];
                     if (existingData) {
                         buttons.push([{ text: '✅ Gestionar', callback_data: `manage_series_${item.id}` }]);
@@ -741,9 +710,7 @@ bot.on('message', async (msg) => {
             console.error("Error al buscar en TMDB:", error);
             bot.sendMessage(chatId, 'Hubo un error al buscar el contenido. Intenta de nuevo.');
         }
-    } else if (adminState[chatId] && adminState[chatId].step === 'awaiting_event_image') { // NUEVO HANDLER: Evento - Recibe URL
-        // Step 2: User sends the image URL
-        // Simple validación de URL (puede ser una URL de imagen o un archivo subido, asumimos URL simple)
+    } else if (adminState[chatId] && adminState[chatId].step === 'awaiting_event_image') {
         if (!userText.startsWith('http')) {
             bot.sendMessage(chatId, '❌ Por favor, envía un ENLACE (URL) de imagen válido.');
             return;
@@ -752,8 +719,7 @@ bot.on('message', async (msg) => {
         adminState[chatId].step = 'awaiting_event_description';
         bot.sendMessage(chatId, '¡Enlace de la fotografía recibido! Ahora, envía la DESCRIPCIÓN del evento.');
 
-    } else if (adminState[chatId] && adminState[chatId].step === 'awaiting_event_description') { // NUEVO HANDLER: Evento - Recibe Descripción
-        // Step 3: User sends the description and we save the event as a notification.
+    } else if (adminState[chatId] && adminState[chatId].step === 'awaiting_event_description') {
         const { imageUrl } = adminState[chatId];
         const description = userText;
         
@@ -785,7 +751,6 @@ bot.on('message', async (msg) => {
     } else if (adminState[chatId] && adminState[chatId].step === 'awaiting_free_link_movie') {
         const { selectedMedia, proEmbedCode } = adminState[chatId];
         
-        // VERIFICACIÓN AÑADIDA
         if (!selectedMedia || !selectedMedia.id) {
             bot.sendMessage(chatId, '❌ ERROR CRÍTICO: El ID de la película se perdió. Reinicia el proceso de subir la película con /subir.');
             adminState[chatId] = { step: 'menu' };
@@ -825,7 +790,6 @@ bot.on('message', async (msg) => {
         adminState[chatId].proEmbedCode = userText;
         adminState[chatId].step = 'awaiting_free_link_series';
         bot.sendMessage(chatId, `¡Reproductor PRO recibido! Ahora, envía el reproductor GRATIS para el episodio ${episode} de la temporada ${season}. Si no hay, escribe "no".`);
-    // NUEVA LÓGICA: Se activará cuando se envíe el reproductor GRATIS de una serie
     } else if (adminState[chatId] && adminState[chatId].step === 'awaiting_free_link_series') {
         if (!adminState[chatId].selectedSeries) {
             bot.sendMessage(chatId, 'Error: El estado de la serie se ha perdido. Por favor, reinicia el proceso.');
@@ -851,7 +815,6 @@ bot.on('message', async (msg) => {
             await axios.post(`${RENDER_BACKEND_URL}/add-series-episode`, seriesDataToSave);
             bot.sendMessage(chatId, `✅ Episodio ${episode} de la temporada ${season} guardado con éxito en la app.`);
             
-            // Lógica para enviar los botones de "Agregar Siguiente" o "Finalizar"
             const options = {
                 reply_markup: {
                     inline_keyboard: [
@@ -868,7 +831,6 @@ bot.on('message', async (msg) => {
             console.error("Error al guardar el episodio:", error);
             bot.sendMessage(chatId, 'Hubo un error al guardar el episodio.');
         } finally {
-            // No reseteamos el estado para que el usuario pueda tomar una acción
         }
     } else if (adminState[chatId] && adminState[chatId].step === 'search_delete') {
           try {
@@ -960,12 +922,11 @@ bot.on('callback_query', async (callbackQuery) => {
         }
     } else if (data.startsWith('manage_movie_')) {
         const tmdbId = data.replace('manage_movie_', '');
-        const docRef = db.collection('movies').doc(tmdbId);
-        const doc = await docRef.get();
-        const existingData = doc.exists ? doc.data() : null;
+        // La consulta de gestión debe ir a MongoDB
+        const existingData = await mongoDb.collection('media_catalog').findOne({ tmdbId: tmdbId });
 
         if (!existingData) {
-            bot.sendMessage(chatId, 'Error: Película no encontrada en la base de datos.');
+            bot.sendMessage(chatId, 'Error: Película no encontrada en la base de datos de MongoDB.');
             return;
         }
         
@@ -985,12 +946,11 @@ bot.on('callback_query', async (callbackQuery) => {
         bot.sendMessage(chatId, `Gestionando "${existingData.title}". ¿Qué versión quieres agregar?`, options);
     } else if (data.startsWith('manage_series_')) {
         const tmdbId = data.replace('manage_series_', '');
-        const seriesRef = db.collection('series').doc(tmdbId);
-        const seriesDoc = await seriesRef.get();
-        const seriesData = seriesDoc.exists ? seriesDoc.data() : null;
+        // La consulta de gestión debe ir a MongoDB
+        const seriesData = await mongoDb.collection('series_catalog').findOne({ tmdbId: tmdbId });
         
         if (!seriesData) {
-            bot.sendMessage(chatId, 'Error: Serie no encontrada en la base de datos.');
+            bot.sendMessage(chatId, 'Error: Serie no encontrada en la base de datos de MongoDB.');
             return;
         }
 
@@ -1019,28 +979,34 @@ bot.on('callback_query', async (callbackQuery) => {
 
     } else if (data.startsWith('add_pro_movie_')) {
         const tmdbId = data.replace('add_pro_movie_', '');
-        const docRef = db.collection('movies').doc(tmdbId);
-        const doc = await docRef.get();
-        const existingData = doc.data();
+        const existingData = await mongoDb.collection('media_catalog').findOne({ tmdbId: tmdbId });
+        
+        if (!existingData) {
+             bot.sendMessage(chatId, 'Error: Película no encontrada para gestionar.');
+             return;
+        }
+
         adminState[chatId] = { selectedMedia: existingData, mediaType: 'movie', freeEmbedCode: existingData.freeEmbedCode };
         adminState[chatId].step = 'awaiting_pro_link_movie';
         bot.sendMessage(chatId, `Envía el reproductor PRO para "${existingData.title}".`);
     } else if (data.startsWith('add_free_movie_')) {
         const tmdbId = data.replace('add_free_movie_', '');
-        const docRef = db.collection('movies').doc(tmdbId);
-        const doc = await docRef.get();
-        const existingData = doc.data();
+        const existingData = await mongoDb.collection('media_catalog').findOne({ tmdbId: tmdbId });
+
+        if (!existingData) {
+             bot.sendMessage(chatId, 'Error: Película no encontrada para gestionar.');
+             return;
+        }
+        
         adminState[chatId] = { selectedMedia: existingData, mediaType: 'movie', proEmbedCode: existingData.proEmbedCode };
         adminState[chatId].step = 'awaiting_free_link_movie';
         bot.sendMessage(chatId, `Envía el reproductor GRATIS para "${existingData.title}".`);
     } else if (data.startsWith('add_episode_series_')) {
         const tmdbId = data.replace('add_episode_series_', '');
-        const seriesRef = db.collection('series').doc(tmdbId);
-        const seriesDoc = await seriesRef.get();
-        const seriesData = seriesDoc.exists ? seriesDoc.data() : null;
+        const seriesData = await mongoDb.collection('series_catalog').findOne({ tmdbId: tmdbId });
         
         if (!seriesData) {
-            bot.sendMessage(chatId, 'Error: Serie no encontrada en la base de datos.');
+            bot.sendMessage(chatId, 'Error: Serie no encontrada en la base de datos de MongoDB.');
             return;
         }
 
@@ -1064,12 +1030,10 @@ bot.on('callback_query', async (callbackQuery) => {
         const tmdbId = parts[3];
         const seasonNumber = parts[4];
 
-        const seriesRef = db.collection('series').doc(tmdbId);
-        const seriesDoc = await seriesRef.get();
-        const seriesData = seriesDoc.exists ? seriesDoc.data() : null;
+        const seriesData = await mongoDb.collection('series_catalog').findOne({ tmdbId: tmdbId });
 
         if (!seriesData) {
-            bot.sendMessage(chatId, 'Error: Serie no encontrada en la base de datos.');
+            bot.sendMessage(chatId, 'Error: Serie no encontrada en la base de datos de MongoDB.');
             return;
         }
         
@@ -1097,11 +1061,10 @@ bot.on('callback_query', async (callbackQuery) => {
             const response = await axios.get(tmdbUrl);
             const tmdbSeries = response.data;
 
-            const seriesRef = db.collection('series').doc(tmdbId);
-            const seriesDoc = await seriesRef.get();
-            const existingSeasons = seriesDoc.exists && seriesDoc.data().seasons ? Object.keys(seriesDoc.data().seasons) : [];
+            const existingSeasons = await mongoDb.collection('series_catalog').findOne({ tmdbId: tmdbId }, { projection: { seasons: 1 } });
+            const existingSeasonNumbers = existingSeasons && existingSeasons.seasons ? Object.keys(existingSeasons.seasons) : [];
 
-            const availableSeasons = tmdbSeries.seasons.filter(s => !existingSeasons.includes(s.season_number.toString()));
+            const availableSeasons = tmdbSeries.seasons.filter(s => !existingSeasonNumbers.includes(s.season_number.toString()));
 
             if (availableSeasons.length > 0) {
                 const buttons = availableSeasons.map(s => [{
@@ -1172,12 +1135,10 @@ bot.on('callback_query', async (callbackQuery) => {
     } else if (data.startsWith('manage_season_')) {
         const [_, __, tmdbId, seasonNumber] = data.split('_');
         
-        const seriesRef = db.collection('series').doc(tmdbId);
-        const seriesDoc = await seriesRef.get();
-        const selectedSeries = seriesDoc.exists ? seriesDoc.data() : null;
+        const selectedSeries = await mongoDb.collection('series_catalog').findOne({ tmdbId: tmdbId });
         
         if (!selectedSeries) {
-             bot.sendMessage(chatId, 'Error: Serie no encontrada en la base de datos.');
+             bot.sendMessage(chatId, 'Error: Serie no encontrada en la base de datos de MongoDB.');
              return;
         }
 
@@ -1219,17 +1180,14 @@ bot.on('callback_query', async (callbackQuery) => {
             await axios.post(`${RENDER_BACKEND_URL}/add-movie`, movieDataToSave);
             bot.sendMessage(chatId, `✅ Película "${movieDataToSave.title}" guardada con éxito en la app.`);
             
-            // Llama a la nueva función que maneja la publicación en ambos canales
             await publishMovieToChannels(movieDataToSave);
             
-            // El mensaje de éxito lo maneja la nueva función, así que solo limpiamos el estado
             adminState[chatId] = { step: 'menu' };
         } catch (error) {
             console.error("Error al guardar/publicar la película:", error);
             bot.sendMessage(chatId, 'Hubo un error al guardar o publicar la película. Revisa el estado de la película en Firestore y reinicia con /subir.');
             adminState[chatId] = { step: 'menu' };
         }
-    // LÓGICA CORREGIDA PARA EL BOTÓN "GUARDAR Y PUBLICAR" PARA SERIES
     } else if (data.startsWith('save_only_series_')) {
         const { seriesDataToSave } = adminState[chatId];
         try {
@@ -1242,10 +1200,7 @@ bot.on('callback_query', async (callbackQuery) => {
             const seasonNumber = seriesDataToSave.seasonNumber;
             const episodeNumber = seriesDataToSave.episodeNumber;
 
-            // Prepara el botón para el siguiente episodio
-            const seriesRef = db.collection('series').doc(tmdbId);
-            const seriesDoc = await seriesRef.get();
-            const seriesData = seriesDoc.exists ? seriesDoc.data() : null;
+            const seriesData = await mongoDb.collection('series_catalog').findOne({ tmdbId: tmdbId });
 
             let lastEpisode = 0;
             if (seriesData?.seasons?.[seasonNumber]?.episodes) {
@@ -1297,9 +1252,7 @@ bot.on('callback_query', async (callbackQuery) => {
 
             const tmdbId = seriesDataToSave.tmdbId;
             const seasonNumber = seriesDataToSave.seasonNumber;
-            const seriesRef = db.collection('series').doc(tmdbId);
-            const seriesDoc = await seriesRef.get();
-            const seriesData = seriesDoc.exists ? seriesDoc.data() : null;
+            const seriesData = await mongoDb.collection('series_catalog').findOne({ tmdbId: tmdbId });
 
             let lastEpisode = 0;
             if (seriesData?.seasons?.[seasonNumber]?.episodes) {
@@ -1328,9 +1281,8 @@ bot.on('callback_query', async (callbackQuery) => {
         const tmdbId = parts[2];
         const mediaType = parts[3];
         const state = adminState[chatId];
-        const title = state.title; // El título debe estar en el estado temporal
+        const title = state.title;
 
-        // Si el estado se perdió, no se puede continuar
         if (!title) {
              bot.editMessageReplyMarkup({ inline_keyboard: [] }, { 
                  chat_id: chatId, 
@@ -1342,19 +1294,17 @@ bot.on('callback_query', async (callbackQuery) => {
         }
 
         try {
-            // Llama al nuevo endpoint para enviar la notificación push
             await axios.post(`${RENDER_BACKEND_URL}/api/notify`, {
                 tmdbId,
                 mediaType,
                 title
             });
             
-            // Actualizar mensaje de Telegram para confirmar la acción
             bot.editMessageText(`✅ Notificaciones push para *${title}* programadas para envío.`, {
                 chat_id: chatId, 
                 message_id: msg.message_id,
                 parse_mode: 'Markdown',
-                reply_markup: { inline_keyboard: [] } // Quitar el botón
+                reply_markup: { inline_keyboard: [] } 
             });
 
         } catch (error) {
@@ -1363,14 +1313,13 @@ bot.on('callback_query', async (callbackQuery) => {
                 chat_id: chatId, 
                 message_id: msg.message_id,
                 parse_mode: 'Markdown',
-                reply_markup: { inline_keyboard: [] } // Quitar el botón
+                reply_markup: { inline_keyboard: [] } 
             });
         } finally {
-            adminState[chatId] = { step: 'menu' }; // Resetear estado al menú principal
+            adminState[chatId] = { step: 'menu' }; 
         }
     } else if (data.startsWith('finish_series_')) {
         const tmdbId = data.replace('finish_series_', '');
-        // Opcional: Marcar la serie como "finalizada" o "publicada" en Firestore
         const seriesRef = db.collection('series').doc(tmdbId);
         await seriesRef.update({ status: 'completed' });
         bot.sendMessage(chatId, '✅ Proceso de adición de episodios finalizado. Volviendo al menú principal.');
@@ -1378,16 +1327,17 @@ bot.on('callback_query', async (callbackQuery) => {
     }
 });
 
+
 // =======================================================================
-// === NUEVA FUNCIÓN: VERIFICADOR DE ACTUALIZACIONES (/api/app-update) ===
+// === VERIFICADOR DE ACTUALIZACIONES (/api/app-update) - RESTAURADO ===
 // =======================================================================
 
 app.get('/api/app-update', (req, res) => {
   // CRÍTICO: latest_version_code DEBE coincidir con el versionCode del APK más reciente (en tu caso, 2)
   const updateInfo = {
-    "latest_version_code": 4, 
-    "update_url": "https://google-play.onrender.com", // <-- TU PÁGINA DE TIENDA
-    "force_update": true, // <--- TRUE: Obliga a actualizar
+    "latest_version_code": 4, // <-- PUEDES CAMBIAR ESTE NÚMERO PARA FORZAR LA ACTUALIZACIÓN
+    "update_url": "https://google-play.onrender.com", 
+    "force_update": true, 
     "update_message": "¡Tenemos una nueva versión (1.4) con TV en vivo y mejoras! Presiona 'Actualizar Ahora' para ir a la tienda de descarga."
   };
   
@@ -1395,17 +1345,15 @@ app.get('/api/app-update', (req, res) => {
 });
 
 // =======================================================================
-// === NUEVA SOLUCIÓN: ENDPOINT PARA GOOGLE APP LINKS VERIFICATION ===
+// === ENDPOINT PARA GOOGLE APP LINKS VERIFICATION ===
 // =======================================================================
 
 app.get('/.well-known/assetlinks.json', (req, res) => {
-    // Esto asegura que el archivo se sirva sin importar la configuración de Render
     res.sendFile('assetlinks.json', { root: __dirname });
 });
 
 // =======================================================================
 
-// === CÓDIGO ORIGINAL QUE DEBE VENIR DESPUÉS ===
 app.listen(PORT, () => {
     console.log(`Servidor de backend de Sala Cine iniciado en el puerto ${PORT}`);
 });
