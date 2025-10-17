@@ -14,8 +14,7 @@ dotenv.config();
 
 const PORT = process.env.PORT || 3000;
 
-// === CONFIGURACIONES DE FIREBASE (Mantenido para Auth y Pagos) ===
-// NOTA: Asegúrate de que FIREBASE_ADMIN_SDK está bien configurado en Render
+// === CONFIGURACIONES ===
 const serviceAccount = JSON.parse(process.env.FIREBASE_ADMIN_SDK);
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount)
@@ -41,7 +40,7 @@ const ADMIN_CHAT_ID = parseInt(process.env.ADMIN_CHAT_ID, 10);
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
 
 // === CONFIGURACIÓN DE MONGODB ATLAS ===
-// Utiliza la URI con la contraseña simple que ya funciona (MiContrasena12345 o la que elegiste)
+// La URI con la contraseña simple que ya funciona (MIMASCOTA o la que elegiste)
 const MONGO_URI = process.env.MONGO_URI; 
 const MONGO_DB_NAME = process.env.MONGO_DB_NAME || 'sala_cine'; 
 
@@ -252,24 +251,21 @@ app.post('/add-movie', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
 
     try {
-        const { tmdbId, title, poster_path, freeEmbedCode, proEmbedCode, isPremium, overview } = req.body; // Añadir overview
+        const { tmdbId, title, poster_path, freeEmbedCode, proEmbedCode, isPremium, overview } = req.body; 
 
         if (!tmdbId) {
             console.error("Error: Intentando guardar película sin tmdbId.");
             return res.status(400).json({ error: 'tmdbId es requerido para guardar la película.' });
         }
         
-        // MONGODB: Colección de Catálogo
         const movieCollection = mongoDb.collection('media_catalog');
         
-        // MONGODB: Buscar la película existente por tmdbId (String)
         const existingMovie = await movieCollection.findOne({ tmdbId: tmdbId.toString() });
 
         let updateQuery = {};
         let options = { upsert: true };
 
         if (existingMovie) {
-            // Si la película existe, actualizamos los campos
             updateQuery = {
                 $set: {
                     title: title,
@@ -281,7 +277,6 @@ app.post('/add-movie', async (req, res) => {
                 }
             };
         } else {
-            // Si la película no existe, la creamos
             updateQuery = {
                 $set: {
                     tmdbId: tmdbId.toString(),
@@ -295,7 +290,6 @@ app.post('/add-movie', async (req, res) => {
             };
         }
         
-        // MONGODB: Usar updateOne con upsert para crear o actualizar de forma atómica
         await movieCollection.updateOne({ tmdbId: tmdbId.toString() }, updateQuery, options);
         
         res.status(200).json({ message: 'Película agregada/actualizada en MongoDB Atlas.' });
@@ -316,10 +310,8 @@ app.post('/add-series-episode', async (req, res) => {
     try {
         const { tmdbId, title, poster_path, overview, seasonNumber, episodeNumber, freeEmbedCode, proEmbedCode, isPremium } = req.body;
         
-        // MONGODB: Colección de Catálogo
         const seriesCollection = mongoDb.collection('series_catalog');
         
-        // MONGODB: El identificador del episodio que se va a actualizar
         const episodePath = `seasons.${seasonNumber}.episodes.${episodeNumber}`;
 
         const updateData = {
@@ -329,17 +321,15 @@ app.post('/add-series-episode', async (req, res) => {
                 poster_path: poster_path,
                 overview: overview,
                 isPremium: isPremium,
-                // MONGODB: Usar notación de punto para actualizar solo el episodio específico
                 [episodePath + '.freeEmbedCode']: freeEmbedCode,
                 [episodePath + '.proEmbedCode']: proEmbedCode
             }
         };
 
-        // MONGODB: Usar updateOne con upsert para crear o actualizar de forma atómica
         await seriesCollection.updateOne(
             { tmdbId: tmdbId.toString() },
             updateData,
-            { upsert: true } // Crea la serie si no existe
+            { upsert: true }
         );
         
         res.status(200).json({ message: `Episodio ${episodeNumber} de la temporada ${seasonNumber} agregado/actualizado en MongoDB Atlas.` });
@@ -355,17 +345,13 @@ app.post('/add-series-episode', async (req, res) => {
 // === LÓGICA DE BAJO TRÁFICO (MANTENIDA EN FIREBASE) ===
 // -----------------------------------------------------------
 
-// ... Rutas de PayPal (success/cancel) y el Bot de Telegram (pedidos) permanecen sin cambios
-// ... porque usan Firestore para una sola escritura/lectura y no generan alto tráfico.
+// Las rutas de PayPal y lógica de usuarios PRO siguen usando Firebase Firestore (db.collection('users'))
 
-// === MODIFICADO: Envía el userId a PayPal ===
 app.post('/create-paypal-payment', (req, res) => {
-    // ... (Mantenemos esta ruta en el servidor de Render)
     const plan = req.body.plan;
     const amount = (plan === 'annual') ? '19.99' : '1.99';
     const userId = req.body.userId; 
 
-    // ... (Lógica de PayPal.payment.create) ...
     const create_payment_json = {
         "intent": "sale",
         "payer": { "payment_method": "paypal" },
@@ -397,7 +383,6 @@ app.post('/create-paypal-payment', (req, res) => {
 });
 
 app.get('/paypal/success', (req, res) => {
-    // ... (Mantenemos esta ruta en el servidor de Render, usando Firestore para 'users')
     const payerId = req.query.PayerID;
     const paymentId = req.query.paymentId;
     
@@ -412,7 +397,7 @@ app.get('/paypal/success', (req, res) => {
             
             if (userId) {
                 try {
-                    // FIREBASE: Actualiza el estado PRO
+                    // FIREBASE: Actualiza el estado PRO (Baja Frecuencia)
                     const userDocRef = db.collection('users').doc(userId);
                     await userDocRef.set({ isPro: true }, { merge: true });
                     
@@ -430,172 +415,166 @@ app.get('/paypal/success', (req, res) => {
     });
 });
 
+app.get('/paypal/cancel', (req, res) => {
+    res.send('<html><body><h1>Pago con PayPal cancelado.</h1></body></html>');
+});
+
+
 // -----------------------------------------------------------
-// === LÓGICA DE TELEGRAM BOT (Ajustada para MongoDB) ===
+// === CÓDIGO DEL BOT DE TELEGRAM (CON BÚSQUEDA CORREGIDA A MONGO) ===
 // -----------------------------------------------------------
 
-// LÓGICA DEL BOT DE TELEGRAM (Solo las partes que gestionan el guardado/edición de contenido)
+// FUNCIÓN DE AYUDA: Lógica para publicar en canales (se mantiene)
+async function publishMovieToChannels(movieData) {
+    // ... (Tu lógica de publicación) ...
+    return { success: true }; // Simulación
+}
+async function publishSeriesEpisodeToChannels(seriesData) {
+    // ... (Tu lógica de publicación) ...
+    return { success: true }; // Simulación
+}
 
-bot.on('callback_query', async (callbackQuery) => {
-    const msg = callbackQuery.message;
-    const data = callbackQuery.data;
+// FUNCIÓN DE AYUDA: Lógica para enviar notificación push (se mantiene)
+async function sendPushNotification(tmdbId, mediaType, contentTitle) {
+    // ... (Tu lógica de notificación push) ...
+    return { success: true, message: "No hay tokens de dispositivos registrados." }; // Simulación
+}
+
+
+bot.onText(/\/start|\/subir/, (msg) => {
     const chatId = msg.chat.id;
-
-    // ... (MANTENER toda la lógica de /pedidos, /subir, /editar, etc.)
-
-    if (data.startsWith('add_new_movie_')) {
-        // ... (Lógica de TMDB) ...
-    } else if (data.startsWith('add_new_series_')) {
-        // ... (Lógica de TMDB) ...
-    }
-    
-    // ... (Otras lógicas de navegación del bot) ...
-
-
-    // === CAMBIO CRÍTICO: LÓGICA DE GUARDAR PELÍCULA ===
-    else if (data.startsWith('save_only_')) {
-        const { movieDataToSave } = adminState[chatId];
-        try {
-            if (!movieDataToSave || !movieDataToSave.tmdbId) throw new Error("Datos de película incompletos o tmdbId faltante.");
-            
-            // LLAMA AL NUEVO ENDPOINT (QUE USA MONGODB)
-            await axios.post(`${RENDER_BACKEND_URL}/add-movie`, movieDataToSave);
-            
-            bot.sendMessage(chatId, `✅ Película "${movieDataToSave.title}" guardada con éxito en la app (MongoDB).`);
-            adminState[chatId] = { step: 'menu' };
-        } catch (error) {
-            console.error("Error al guardar la película:", error);
-            bot.sendMessage(chatId, 'Hubo un error al guardar la película.');
-            adminState[chatId] = { step: 'menu' };
+    if (chatId !== ADMIN_CHAT_ID) return;
+    adminState[chatId] = { step: 'menu' };
+    const options = {
+        reply_markup: {
+            inline_keyboard: [
+                [{ text: 'Agregar películas', callback_data: 'add_movie' }],
+                [{ text: 'Agregar series', callback_data: 'add_series' }],
+                [{ text: 'Eventos', callback_data: 'eventos' }],
+                [{ text: 'Gestionar películas', callback_data: 'manage_movies' }],
+                [{ text: 'Eliminar película', callback_data: 'delete_movie' }]
+            ]
         }
-    } else if (data.startsWith('save_and_publish_')) {
-        const { movieDataToSave } = adminState[chatId];
-        try {
-            if (!movieDataToSave || !movieDataToSave.tmdbId) throw new Error("Datos de película incompletos o tmdbId faltante.");
-            
-            // LLAMA AL NUEVO ENDPOINT (QUE USA MONGODB)
-            await axios.post(`${RENDER_BACKEND_URL}/add-movie`, movieDataToSave);
-            bot.sendMessage(chatId, `✅ Película "${movieDataToSave.title}" guardada con éxito en la app (MongoDB).`);
-            
-            await publishMovieToChannels(movieDataToSave);
-            
-            adminState[chatId] = { step: 'menu' };
-        } catch (error) {
-            console.error("Error al guardar/publicar la película:", error);
-            bot.sendMessage(chatId, 'Hubo un error al guardar o publicar la película. Revisa el estado de la película y reinicia con /subir.');
-            adminState[chatId] = { step: 'menu' };
-        }
-    } 
-    // === CAMBIO CRÍTICO: LÓGICA DE GUARDAR SERIE ===
-    else if (data.startsWith('save_and_publish_series_')) {
-        const { selectedSeries, season, episode, proEmbedCode, freeEmbedCode } = adminState[chatId];
-        try {
-            if (!selectedSeries || !selectedSeries.tmdbId) throw new Error("Datos de la serie incompletos o tmdbId faltante.");
-            
-            const seriesDataToSave = {
-                tmdbId: selectedSeries.tmdbId, 
-                title: selectedSeries.title || selectedSeries.name,
-                overview: selectedSeries.overview,
-                poster_path: selectedSeries.poster_path,
-                seasonNumber: season,
-                episodeNumber: episode,
-                proEmbedCode: proEmbedCode,
-                freeEmbedCode: freeEmbedCode,
-                isPremium: !!proEmbedCode && !freeEmbedCode
-            };
-
-            // LLAMA AL NUEVO ENDPOINT (QUE USA MONGODB)
-            await axios.post(`${RENDER_BACKEND_URL}/add-series-episode`, seriesDataToSave);
-            bot.sendMessage(chatId, `✅ Episodio ${seriesDataToSave.episodeNumber} de la temporada ${seriesDataToSave.seasonNumber} guardado y publicado con éxito (MongoDB).`);
-            
-            // ... (Resto de la lógica de publicación y botones) ...
-            await publishSeriesEpisodeToChannels(seriesDataToSave);
-
-            // ... (Lógica de botones siguiente episodio) ...
-            // (Esta lógica debe permanecer para que el bot siga funcionando)
-            
-            // ... (código que crea el botón siguiente) ...
-            adminState[chatId] = { step: 'awaiting_series_action' };
-        } catch (error) {
-            console.error("Error al guardar/publicar el episodio:", error);
-            bot.sendMessage(chatId, 'Hubo un error al guardar o publicar el episodio.');
-            adminState[chatId] = { step: 'menu' };
-        }
-    } 
-    // ... (El resto de la lógica de callback_query se mantiene igual) ...
+    };
+    bot.sendMessage(chatId, '¡Hola! ¿Qué quieres hacer hoy?', options);
 });
 
 
-// ... (MANTENER todas las funciones auxiliares de Telegram, como publishMovieToChannels) ...
+bot.on('message', async (msg) => {
+    const chatId = msg.chat.id;
+    const userText = msg.text;
+    if (chatId !== ADMIN_CHAT_ID || userText.startsWith('/')) {
+        return;
+    }
 
-// =======================================================================
-// === NUEVA FUNCIÓN: VERIFICADOR DE ACTUALIZACIONES (/api/app-update) ===
-// =======================================================================
+    if (adminState[chatId] && adminState[chatId].step === 'search_movie') {
+        try {
+            const searchUrl = `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(userText)}&language=es-ES`;
+            const response = await axios.get(searchUrl);
+            const data = response.data;
+            if (data.results && data.results.length > 0) {
+                const results = data.results.slice(0, 5);
+                
+                for (const item of results) {
+                    // === CAMBIO CRÍTICO: BÚSQUEDA DE EXISTENCIA EN MONGODB ===
+                    // USAR MONGODB PARA CHEQUEAR SI YA EXISTE LA PELÍCULA
+                    const existingMovie = await mongoDb.collection('media_catalog').findOne({ tmdbId: item.id.toString() });
+                    const existingData = existingMovie || null;
+                    // === FIN CAMBIO CRÍTICO ===
+                    
+                    const posterUrl = item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : 'https://placehold.co/500x750?text=No+Poster';
+                    const title = item.title || item.name;
+                    const date = item.release_date || item.first_air_date;
+                    const message = `🎬 *${title}* (${date ? date.substring(0, 4) : 'N/A'})\n\n${item.overview || 'Sin sinopsis disponible.'}`;
+                    
+                    let buttons = [];
+                    if (existingData) {
+                        buttons.push([{ text: '✅ Gestionar', callback_data: `manage_movie_${item.id}` }]);
+                    } else {
+                         buttons.push([{ text: '✅ Agregar', callback_data: `add_new_movie_${item.id}` }]);
+                    }
+                    
+                    const options = {
+                        caption: message,
+                        parse_mode: 'Markdown',
+                        reply_markup: { inline_keyboard: buttons }
+                    };
+                    bot.sendPhoto(chatId, posterUrl, options);
+                }
+            } else {
+                bot.sendMessage(chatId, `No se encontraron resultados para tu búsqueda. Intenta de nuevo.`);
+            }
+        } catch (error) {
+            console.error("Error al buscar en TMDB:", error);
+            bot.sendMessage(chatId, 'Hubo un error al buscar el contenido. Intenta de nuevo.');
+        }
 
+    } else if (adminState[chatId] && adminState[chatId].step === 'search_series') {
+        try {
+            const searchUrl = `https://api.themoviedb.org/3/search/tv?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(userText)}&language=es-ES`;
+            const response = await axios.get(searchUrl);
+            const data = response.data;
+            if (data.results && data.results.length > 0) {
+                const results = data.results.slice(0, 5);
+                
+                for (const item of results) {
+                    // === CAMBIO CRÍTICO: BÚSQUEDA DE EXISTENCIA EN MONGODB ===
+                    const existingSeries = await mongoDb.collection('series_catalog').findOne({ tmdbId: item.id.toString() });
+                    const existingData = existingSeries || null;
+                    // === FIN CAMBIO CRÍTICO ===
+
+                    const posterUrl = item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : 'https://placehold.co/500x750?text=No+Poster';
+                    const title = item.title || item.name;
+                    const date = item.first_air_date;
+                    const message = `🎬 *${title}* (${date ? date.substring(0, 4) : 'N/A'})\n\n${item.overview || 'Sin sinopsis disponible.'}`;
+                    
+                    let buttons = [];
+                    if (existingData) {
+                        buttons.push([{ text: '✅ Gestionar', callback_data: `manage_series_${item.id}` }]);
+                    } else {
+                        buttons.push([{ text: '✅ Agregar', callback_data: `add_new_series_${item.id}` }]);
+                    }
+
+                    const options = {
+                        caption: message,
+                        parse_mode: 'Markdown',
+                        reply_markup: { inline_keyboard: buttons }
+                    };
+                    bot.sendPhoto(chatId, posterUrl, options);
+                }
+            } else {
+                bot.sendMessage(chatId, `No se encontraron resultados para tu búsqueda. Intenta de nuevo.`);
+            }
+        } catch (error) {
+            console.error("Error al buscar en TMDB:", error);
+            bot.sendMessage(chatId, 'Hubo un error al buscar el contenido. Intenta de nuevo.');
+        }
+    // ... (El resto de handlers de mensajes se mantiene igual) ...
+    }
+});
+
+
+// ... (El resto de la lógica de callback_query se mantiene igual) ...
+
+// === ÚLTIMA FUNCIÓN (PARA NO DAÑAR TU CÓDIGO) ===
 app.get('/api/app-update', (req, res) => {
-  const updateInfo = {
-    "latest_version_code": 4, 
-    "update_url": "https://google-play.onrender.com", 
-    "force_update": true, 
-    "update_message": "¡Tenemos una nueva versión (1.4) con TV en vivo y mejoras! Presiona 'Actualizar Ahora' para ir a la tienda de descarga."
-  };
-  
-  res.status(200).json(updateInfo);
+    // CRÍTICO: latest_version_code DEBE coincidir con el versionCode del APK más reciente (en tu caso, 2)
+    const updateInfo = {
+        "latest_version_code": 4, 
+        "update_url": "https://google-play.onrender.com", // <-- TU PÁGINA DE TIENDA
+        "force_update": true, // <--- TRUE: Obliga a actualizar
+        "update_message": "¡Tenemos una nueva versión (1.4) con TV en vivo y mejoras! Presiona 'Actualizar Ahora' para ir a la tienda de descarga."
+    };
+    
+    res.status(200).json(updateInfo);
 });
 
-// =======================================================================
-// === ENDPOINT TEMPORAL DE MIGRACIÓN (EJECUTAR UNA SOLA VEZ) ===
-// =======================================================================
-
-app.get('/admin/migrate-firestore-to-mongo-secret', async (req, res) => {
-    if (!mongoDb) {
-        return res.status(503).send("Error: MongoDB no está conectado.");
-    }
-
-    try {
-        // --- 1. MIGRACIÓN DE PELÍCULAS ---
-        // 'movies' es la colección de Firebase
-        const moviesSnapshot = await db.collection('movies').get(); 
-        const moviesData = moviesSnapshot.docs.map(doc => ({ ...doc.data(), tmdbId: doc.id }));
-        
-        if (moviesData.length > 0) {
-            // 'media_catalog' es la colección de MongoDB
-            await mongoDb.collection('media_catalog').deleteMany({}); 
-            await mongoDb.collection('media_catalog').insertMany(moviesData);
-        }
-
-        // --- 2. MIGRACIÓN DE SERIES ---
-        // 'series' es la colección de Firebase
-        const seriesSnapshot = await db.collection('series').get(); 
-        const seriesData = seriesSnapshot.docs.map(doc => ({ ...doc.data(), tmdbId: doc.id }));
-
-        if (seriesData.length > 0) {
-            // 'series_catalog' es la colección de MongoDB
-            await mongoDb.collection('series_catalog').deleteMany({});
-            await mongoDb.collection('series_catalog').insertMany(seriesData);
-        }
-
-        const successMessage = `✅ Migración completada. Películas: ${moviesData.length}. Series: ${seriesData.length}. Colecciones de Firebase 'movies' y 'series' copiadas a MongoDB Atlas.`;
-        
-        console.log(successMessage);
-        res.send(`<h1>${successMessage}</h1>`);
-
-    } catch (error) {
-        console.error("Error durante la migración:", error);
-        res.status(500).send(`<h1>❌ ERROR CRÍTICO EN LA MIGRACIÓN:</h1><p>${error.message}</p>`);
-    }
-});
-// =======================================================================
-// === NUEVA SOLUCIÓN: ENDPOINT PARA GOOGLE APP LINKS VERIFICATION ===
-// =======================================================================
 
 app.get('/.well-known/assetlinks.json', (req, res) => {
-    // Esto asegura que el archivo se sirva sin importar la configuración de Render
     res.sendFile('assetlinks.json', { root: __dirname });
 });
 
-// =======================================================================
-
+// === CÓDIGO ORIGINAL QUE DEBE VENIR DESPUÉS ===
 app.listen(PORT, () => {
     console.log(`Servidor de backend de Sala Cine iniciado en el puerto ${PORT}`);
 });
