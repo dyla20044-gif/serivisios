@@ -177,7 +177,6 @@ app.get('/api/get-embed-code', async (req, res) => {
     const doc = await mongoDb.collection(collectionName).findOne({ tmdbId: id });
     
     if (!doc) {
-      // Devolvemos 404 si el contenido no existe, permitiendo al cliente mostrar "Pedir"
       return res.status(404).json({ error: `${mediaType} no encontrada en el catálogo de Mongo.` });
     }
 
@@ -242,12 +241,68 @@ app.get('/api/get-embed-code', async (req, res) => {
   }
 });
 
+// -----------------------------------------------------------
+// === NUEVA RUTA OPTIMIZADA: VERIFICACIÓN RÁPIDA DE TEMPORADA ===
+// -----------------------------------------------------------
+/**
+ * Nueva ruta para verificar la disponibilidad de todos los episodios de una temporada 
+ * con una sola consulta a MongoDB.
+ * Endpoint: GET /api/check-season-availability?id={tmdbId}&season={seasonNumber}
+ * Devuelve: { exists: boolean, totalEpisodes: number }
+ */
+app.get('/api/check-season-availability', async (req, res) => {
+    if (!mongoDb) {
+        return res.status(503).json({ error: "Base de datos no disponible." });
+    }
+
+    const { id, season } = req.query;
+
+    if (!id || !season) {
+        return res.status(400).json({ error: "ID y número de temporada son requeridos." });
+    }
+
+    try {
+        const seriesCollection = mongoDb.collection('series_catalog');
+        
+        // 1. Definir el campo de proyección para obtener solo los episodios de la temporada específica
+        const episodesField = `seasons.${season}.episodes`;
+        
+        // 2. Realizar la consulta a MongoDB
+        const doc = await seriesCollection.findOne(
+            { tmdbId: id.toString() },
+            { projection: { [episodesField]: 1 } }
+        );
+
+        if (!doc || !doc.seasons || !doc.seasons[season] || !doc.seasons[season].episodes) {
+            // El documento de la serie existe, pero la temporada o los episodios no.
+            return res.status(200).json({ exists: false, availableEpisodes: {} });
+        }
+
+        const availableEpisodes = doc.seasons[season].episodes;
+        
+        // 3. Procesar los episodios encontrados y determinar si hay algún enlace (PRO o GRATIS)
+        const availabilityMap = {};
+        for (const episodeNum in availableEpisodes) {
+            const epData = availableEpisodes[episodeNum];
+            // Si existe proEmbedCode O freeEmbedCode, consideramos que el episodio está DISPONIBLE
+            const isAvailable = (epData.proEmbedCode && epData.proEmbedCode !== '') || 
+                                (epData.freeEmbedCode && epData.freeEmbedCode !== '');
+            availabilityMap[episodeNum] = isAvailable;
+        }
+
+        res.status(200).json({ exists: true, availableEpisodes: availabilityMap });
+
+    } catch (error) {
+        console.error("Error al verificar disponibilidad de temporada en MongoDB:", error);
+        res.status(500).json({ error: "Error interno del servidor al verificar la disponibilidad." });
+    }
+});
+
 
 // -----------------------------------------------------------
-// === NUEVAS RUTAS DE MÉTRICAS (VISTAS Y LIKES) ===
+// === RUTA DE MÉTRICAS: Obtener el contador de Vistas o Likes (GET /api/get-metrics) ===
 // -----------------------------------------------------------
 
-// RUTA 1: Obtener el contador de Vistas o Likes (GET /api/get-metrics)
 app.get('/api/get-metrics', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
 
@@ -287,7 +342,10 @@ app.get('/api/get-metrics', async (req, res) => {
 });
 
 
-// RUTA 2: Incrementar el contador de Vistas (POST /api/increment-views)
+// -----------------------------------------------------------
+// === RUTA DE MÉTRICAS: Incrementar el contador de Vistas (POST /api/increment-views) ===
+// -----------------------------------------------------------
+
 app.post('/api/increment-views', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
     const { tmdbId } = req.body;
@@ -301,7 +359,7 @@ app.post('/api/increment-views', async (req, res) => {
         // Intentar actualizar como película (usa upsert: true para inicializar 'views' si no existe)
         const movieResult = await movieCollection.updateOne(
             { tmdbId: tmdbId.toString() },
-            { $inc: { views: 1 } },
+            { $inc: { views: 1 }, $setOnInsert: { likes: 0 } },
             { upsert: true }
         );
 
@@ -309,12 +367,11 @@ app.post('/api/increment-views', async (req, res) => {
         if (movieResult.modifiedCount === 0) {
             await seriesCollection.updateOne(
                 { tmdbId: tmdbId.toString() },
-                { $inc: { views: 1 } },
+                { $inc: { views: 1 }, $setOnInsert: { likes: 0 } },
                 { upsert: true }
             );
         }
         
-        // Respondemos 200 ya que la vista fue procesada, sin necesidad de bloquear la reproducción.
         res.status(200).json({ message: 'Vista registrada.' });
     } catch (error) {
         console.error("Error al incrementar vistas en MongoDB:", error);
@@ -323,7 +380,10 @@ app.post('/api/increment-views', async (req, res) => {
 });
 
 
-// RUTA 3: Incrementar el contador de Likes (POST /api/increment-likes)
+// -----------------------------------------------------------
+// === RUTA DE MÉTRICAS: Incrementar el contador de Likes (POST /api/increment-likes) ===
+// -----------------------------------------------------------
+
 app.post('/api/increment-likes', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
     const { tmdbId } = req.body;
@@ -337,7 +397,7 @@ app.post('/api/increment-likes', async (req, res) => {
         // Intentar actualizar como película (usa upsert: true para inicializar 'likes' si no existe)
         const movieResult = await movieCollection.updateOne(
             { tmdbId: tmdbId.toString() },
-            { $inc: { likes: 1 } },
+            { $inc: { likes: 1 }, $setOnInsert: { views: 0 } },
             { upsert: true }
         );
 
@@ -345,7 +405,7 @@ app.post('/api/increment-likes', async (req, res) => {
         if (movieResult.modifiedCount === 0) {
             await seriesCollection.updateOne(
                 { tmdbId: tmdbId.toString() },
-                { $inc: { likes: 1 } },
+                { $inc: { likes: 1 }, $setOnInsert: { views: 0 } },
                 { upsert: true }
             );
         }
@@ -357,13 +417,9 @@ app.post('/api/increment-likes', async (req, res) => {
     }
 });
 
-// -----------------------------------------------------------
-// === FIN DE NUEVAS RUTAS DE MÉTRICAS (VISTAS Y LIKES) ===
-// -----------------------------------------------------------
-
 
 // -----------------------------------------------------------
-// === RUTA CRÍTICA MODIFICADA: AHORA ESCRIBE EN MONGODB (CATÁLOGO) ===
+// === RUTA CRÍTICA: AGREGAR PELÍCULA (Incluye inicialización de métricas) ===
 // -----------------------------------------------------------
 
 app.post('/add-movie', async (req, res) => {
@@ -379,43 +435,24 @@ app.post('/add-movie', async (req, res) => {
         
         const movieCollection = mongoDb.collection('media_catalog');
         
-        const existingMovie = await movieCollection.findOne({ tmdbId: tmdbId.toString() });
-
-        let updateQuery = {};
-        let options = { upsert: true };
-
-        // Al actualizar o insertar, aseguramos que los contadores se mantengan o se inicialicen
-        if (existingMovie) {
-            updateQuery = {
-                $set: {
-                    title: title,
-                    poster_path: poster_path,
-                    overview: overview,
-                    freeEmbedCode: freeEmbedCode !== undefined ? freeEmbedCode : existingMovie.freeEmbedCode,
-                    proEmbedCode: proEmbedCode !== undefined ? proEmbedCode : existingMovie.proEmbedCode,
-                    isPremium: isPremium
-                },
-                // Asegurar que los campos de métricas existan si la película ya existe
-                $setOnInsert: { views: 0, likes: 0 }
-            };
-        } else {
-            updateQuery = {
-                $set: {
-                    tmdbId: tmdbId.toString(),
-                    title,
-                    poster_path,
-                    overview,
-                    freeEmbedCode, 
-                    proEmbedCode,
-                    isPremium,
-                    views: 0, // Inicializar vistas
-                    likes: 0  // Inicializar likes
-                }
-            };
-            options = { upsert: true }; // En este caso, $set ya cubre todo, pero mantenemos upsert
-        }
+        let updateQuery = {
+            $set: {
+                title: title,
+                poster_path: poster_path,
+                overview: overview,
+                freeEmbedCode: freeEmbedCode, // Se actualiza siempre, si es null, se guarda null
+                proEmbedCode: proEmbedCode,   // Se actualiza siempre
+                isPremium: isPremium
+            },
+            // CRÍTICO: Inicializar métricas si es un nuevo documento (upsert)
+            $setOnInsert: { tmdbId: tmdbId.toString(), views: 0, likes: 0 }
+        };
         
-        await movieCollection.updateOne({ tmdbId: tmdbId.toString() }, updateQuery, options);
+        await movieCollection.updateOne(
+            { tmdbId: tmdbId.toString() }, 
+            updateQuery, 
+            { upsert: true }
+        );
         
         res.status(200).json({ message: 'Película agregada/actualizada en MongoDB Atlas.' });
 
@@ -426,7 +463,7 @@ app.post('/add-movie', async (req, res) => {
 });
 
 // -----------------------------------------------------------
-// === RUTA CRÍTICA MODIFICADA: AHORA ESCRIBE EN MONGODB (SERIES) ===
+// === RUTA CRÍTICA: AGREGAR EPISODIO DE SERIE (Incluye inicialización de métricas) ===
 // -----------------------------------------------------------
 
 app.post('/add-series-episode', async (req, res) => {
@@ -441,7 +478,6 @@ app.post('/add-series-episode', async (req, res) => {
 
         const updateData = {
             $set: {
-                tmdbId: tmdbId.toString(),
                 title: title,
                 poster_path: poster_path,
                 overview: overview,
@@ -449,8 +485,8 @@ app.post('/add-series-episode', async (req, res) => {
                 [episodePath + '.freeEmbedCode']: freeEmbedCode,
                 [episodePath + '.proEmbedCode']: proEmbedCode
             },
-            // Inicializar vistas y likes solo si se crea el documento por primera vez
-            $setOnInsert: { views: 0, likes: 0 } 
+            // CRÍTICO: Inicializar métricas y otros campos si es un nuevo documento (upsert)
+            $setOnInsert: { tmdbId: tmdbId.toString(), views: 0, likes: 0 } 
         };
 
         await seriesCollection.updateOne(
