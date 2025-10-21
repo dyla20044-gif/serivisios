@@ -156,6 +156,7 @@ app.post('/request-movie', async (req, res) => {
 
 // =======================================================================
 // === NUEVA RUTA OPTIMIZADA PARA OBTENER TODOS LOS DATOS DE LA PELÍCULA ===
+// === ESTA ES LA RUTA QUE HA SIDO CORREGIDA ===
 // =======================================================================
 app.get('/api/get-movie-data', async (req, res) => {
     if (!mongoDb) {
@@ -172,32 +173,54 @@ app.get('/api/get-movie-data', async (req, res) => {
         const movieCollection = mongoDb.collection('media_catalog');
         const seriesCollection = mongoDb.collection('series_catalog');
 
-        // Definimos los campos que necesitamos para minimizar la transferencia de datos
-        const projection = {
-            projection: {
-                views: 1,
-                likes: 1,
-                freeEmbedCode: 1,
-                proEmbedCode: 1
-            }
+        // === INICIO DE LA CORRECCIÓN ===
+        
+        // 1. Definimos proyecciones separadas
+        const movieProjection = {
+            projection: { views: 1, likes: 1, freeEmbedCode: 1, proEmbedCode: 1 }
+        };
+        const seriesProjection = {
+            projection: { views: 1, likes: 1, seasons: 1 } // <-- Pedimos 'seasons'
         };
 
-        // 1. Buscamos primero en la colección de películas
-        let doc = await movieCollection.findOne({ tmdbId: id.toString() }, projection);
+        // 2. Buscamos primero en la colección de películas
+        let isMovie = true;
+        let doc = await movieCollection.findOne({ tmdbId: id.toString() }, movieProjection);
 
-        // 2. Si no se encuentra, buscamos en la colección de series
+        // 3. Si no se encuentra, buscamos en la colección de series
         if (!doc) {
-            doc = await seriesCollection.findOne({ tmdbId: id.toString() }, projection);
+            isMovie = false; // Marcamos que es una serie
+            doc = await seriesCollection.findOne({ tmdbId: id.toString() }, seriesProjection);
         }
 
-        // 3. Construimos la respuesta
+        // 4. Construimos la respuesta
         if (doc) {
-            const isAvailable = !!(doc.freeEmbedCode || doc.proEmbedCode); // Es true si existe cualquiera de los dos enlaces
+            let isAvailable = false; // Asumir 'false' por defecto
+            
+            if (isMovie) {
+                // Lógica original para películas (esta era correcta)
+                isAvailable = !!(doc.freeEmbedCode || doc.proEmbedCode);
+            } else {
+                // NUEVA LÓGICA PARA SERIES
+                // Comprobar si existe *alguna* temporada con *algún* episodio que tenga un enlace
+                if (doc.seasons) {
+                    // some() es eficiente, se detiene en cuanto encuentra uno
+                    isAvailable = Object.values(doc.seasons).some(season => 
+                        season && season.episodes && Object.values(season.episodes).some(ep => 
+                            (ep.freeEmbedCode && ep.freeEmbedCode !== '') || 
+                            (ep.proEmbedCode && ep.proEmbedCode !== '')
+                        )
+                    );
+                }
+            }
+
             res.status(200).json({
                 views: doc.views || 0,
                 likes: doc.likes || 0,
-                isAvailable: isAvailable
+                isAvailable: isAvailable // Usar el valor corregido
             });
+            // === FIN DE LA CORRECCIÓN ===
+
         } else {
             // Si el documento no existe en ninguna colección, devolvemos valores por defecto
             res.status(200).json({
@@ -1616,10 +1639,10 @@ bot.on('callback_query', async (callbackQuery) => {
 app.get('/api/app-update', (req, res) => {
   // CRÍTICO: latest_version_code DEBE coincidir con el versionCode del APK más reciente (en tu caso, 2)
   const updateInfo = {
-    "latest_version_code": 4, // <-- PUEDES CAMBIAR ESTE NÚMERO PARA FORZAR LA ACTUALIZACIÓN
-    "update_url": "https://google-play.onrender.com",
-    "force_update": true,
-    "update_message": "¡Tenemos una nueva versión (1.4) con TV en vivo y mejoras! Presiona 'Actualizar Ahora' para ir a la tienda de descarga."
+  	"latest_version_code": 4, // <-- PUEDES CAMBIAR ESTE NÚMERO PARA FORZAR LA ACTUALIZACIÓN
+  	"update_url": "https://google-play.onrender.com",
+  	"force_update": true,
+  	"update_message": "¡Tenemos una nueva versión (1.4) con TV en vivo y mejoras! Presiona 'Actualizar Ahora' para ir a la tienda de descarga."
   };
 
   res.status(200).json(updateInfo);
