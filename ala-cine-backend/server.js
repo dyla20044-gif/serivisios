@@ -1633,7 +1633,7 @@ app.get('/api/app-status', (req, res) => {
     const status = {
         // CRÍTICO: Debe estar en 'false' para el envío inicial a la Play Store.
         // Cambia esto a 'true' en tu servidor DESPUÉS de que Google apruebe la app.
-        isAppApproved: true, 
+        isAppApproved: false, 
         
         // IDs de contenido seguro (ej. trailers, contenido familiar o público)
         safeContentIds: [
