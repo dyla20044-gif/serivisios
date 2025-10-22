@@ -868,7 +868,7 @@ bot.on('message', async (msg) => {
                 if (results.length === 0) { bot.sendMessage(chatId, `No se encontraron películas o series.`); return; }
                 
                 for (const item of results) {
-I                    const posterUrl = item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : 'https://placehold.co/500x750?text=No+Poster';
+                    const posterUrl = item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : 'https://placehold.co/500x750?text=No+Poster';
                     const title = item.title || item.name;
                     const date = item.release_date || item.first_air_date;
                     const message = `🎬 *${title}* (${date ? date.substring(0, 4) : 'N/A'})\n\n${item.overview || 'Sin sinopsis.'}`;
@@ -963,7 +963,7 @@ bot.on('callback_query', async (callbackQuery) => {
 
         } else if (data.startsWith('select_season_')) {
             const [_, __, tmdbId, seasonNumber] = data.split('_');
-            const state = adminState[chatId];
+  _         const state = adminState[chatId];
             if (!state || !state.selectedSeries || state.selectedSeries.id.toString() !== tmdbId) {
                 bot.sendMessage(chatId, 'Error: Estado inconsistente. Reinicia.'); adminState[chatId] = { step: 'menu' }; return;
             }
@@ -989,7 +989,7 @@ bot.on('callback_query', async (callbackQuery) => {
             const tmdbId = data.split('_')[3];
             const tmdbUrl = `https://api.themoviedb.org/3/tv/${tmdbId}?api_key=${TMDB_API_KEY}&language=es-ES`;
             const response = await axios.get(tmdbUrl);
-  D          const existingDoc = await mongoDb.collection('series_catalog').findOne({ tmdbId: tmdbId }, { projection: { seasons: 1 } });
+            const existingDoc = await mongoDb.collection('series_catalog').findOne({ tmdbId: tmdbId }, { projection: { seasons: 1 } });
             const existingSeasons = existingDoc?.seasons ? Object.keys(existingDoc.seasons) : [];
             const availableSeasons = response.data.seasons?.filter(s => s.season_number > 0 && !existingSeasons.includes(s.season_number.toString()));
 
@@ -999,7 +999,7 @@ bot.on('callback_query', async (callbackQuery) => {
                 bot.sendMessage(chatId, `"${response.data.name}". ¿Qué temporada NUEVA agregar?`, { reply_markup: { inline_keyboard: buttons } });
             } else { bot.sendMessage(chatId, 'No hay más temporadas nuevas para agregar.'); }
 
-        } else if (data.startsWith('solicitud_')) {
+      _ } else if (data.startsWith('solicitud_')) {
             const tmdbId = data.split('_')[1];
             const tmdbUrl = `https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${TMDB_API_KEY}&language=es-ES`;
             const response = await axios.get(tmdbUrl);
@@ -1013,7 +1013,7 @@ bot.on('callback_query', async (callbackQuery) => {
             adminState[chatId] = { step: 'search_manage' }; // Reutiliza search_movie/series? O necesita lógica específica?
             bot.sendMessage(chatId, 'Escribe el nombre del contenido a gestionar.');
         } else if (data === 'delete_movie') {
-            adminState[chatId] = { step: 'search_delete' };
+    t       adminState[chatId] = { step: 'search_delete' };
             bot.sendMessage(chatId, 'Escribe el nombre del contenido a ELIMINAR.');
         } else if (data.startsWith('delete_confirm_')) {
             const [_, __, tmdbId, mediaType] = data.split('_');
@@ -1021,7 +1021,7 @@ bot.on('callback_query', async (callbackQuery) => {
             const result = await mongoDb.collection(collectionName).deleteOne({ tmdbId: tmdbId });
             if (result.deletedCount > 0) {
                 bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id });
-                bot.sendMessage(chatId, `✅ Contenido TMDB ID ${tmdbId} (${mediaType}) eliminado de MongoDB.`);
+A               bot.sendMessage(chatId, `✅ Contenido TMDB ID ${tmdbId} (${mediaType}) eliminado de MongoDB.`);
             } else {
                 bot.sendMessage(chatId, `⚠️ No se encontró el contenido TMDB ID ${tmdbId} (${mediaType}) para eliminar.`);
             }
@@ -1032,28 +1032,27 @@ bot.on('callback_query', async (callbackQuery) => {
             if (!movieDataToSave?.tmdbId) { bot.sendMessage(chatId, 'Error: Datos perdidos.'); adminState[chatId] = { step: 'menu' }; return; }
             await axios.post(`${RENDER_BACKEND_URL}/add-movie`, movieDataToSave);
             bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id });
-            bot.sendMessage(chatId, `✅ "${movieDataToSave.title}" guardada.`);
+Error:             bot.sendMessage(chatId, `✅ "${movieDataToSave.title}" guardada.`);
             adminState[chatId] = { step: 'menu' };
         } else if (data.startsWith('save_and_publish_')) {
-node:internal/modules/run_main:171:5)
             const { movieDataToSave } = adminState[chatId];
             if (!movieDataToSave?.tmdbId) { bot.sendMessage(chatId, 'Error: Datos perdidos.'); adminState[chatId] = { step: 'menu' }; return; }
+section: 'backend',
             await axios.post(`${RENDER_BACKEND_URL}/add-movie`, movieDataToSave);
             bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id });
             bot.sendMessage(chatId, `✅ "${movieDataToSave.title}" guardada. Publicando...`);
             // await publishMovieToChannels(movieDataToSave); // Descomenta si tienes esta función
-  D          // Preguntar si notificar
+            // Preguntar si notificar
             adminState[chatId].title = movieDataToSave.title; // Guardar título para notificación
             bot.sendMessage(chatId, `¿Enviar notificación push a los usuarios sobre "${movieDataToSave.title}"?`, {
                 reply_markup: { inline_keyboard: [[
                     { text: '📲 Sí, notificar', callback_data: `send_push_${movieDataToSave.tmdbId}_movie` },
-name: 'TypeError',
                     { text: '❌ No notificar', callback_data: `finish_no_push` }
                 ]]}
             });
             // No resetear step aquí, esperar respuesta de notificación
 
-        } else if (data.startsWith('add_next_episode_')) {
+Click         } else if (data.startsWith('add_next_episode_')) {
             const [_, __, ___, tmdbId, seasonNumber] = data.split('_');
             const seriesData = await mongoDb.collection('series_catalog').findOne({ tmdbId: tmdbId });
             if (!seriesData) { bot.sendMessage(chatId, 'Error: Serie no encontrada.'); return; }
@@ -1061,50 +1060,47 @@ name: 'TypeError',
             const nextEpisode = lastEpisode + 1;
             adminState[chatId] = {
                 step: 'awaiting_pro_link_series', selectedSeries: seriesData,
-section: 'backend',
                 season: parseInt(seasonNumber), episode: nextEpisode
             };
             bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id });
-            bot.sendMessage(chatId, `Siguiente: Envía link PRO para S${seasonNumber}E${nextEpisode} (o "no").`);
+d="button"             bot.sendMessage(chatId, `Siguiente: Envía link PRO para S${seasonNumber}E${nextEpisode} (o "no").`);
 
         } else if (data.startsWith('publish_this_episode_')) {
             const [_, __, ___, tmdbId, season, episode] = data.split('_');
             const state = adminState[chatId];
             const episodeData = state?.lastSavedEpisodeData; // Usar los datos guardados
+section: 'backend',
             if (!episodeData || episodeData.tmdbId !== tmdbId || episodeData.seasonNumber.toString() !== season || episodeData.episodeNumber.toString() !== episode) {
                 bot.sendMessage(chatId, 'Error: Datos del episodio no coinciden o se perdieron. Finalizando.');
                 adminState[chatId] = { step: 'menu' }; return;
-data: {
             }
             bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id });
             bot.sendMessage(chatId, `✅ Publicando S${season}E${episode}...`);
             // await publishSeriesEpisodeToChannels(episodeData); // Descomenta si tienes esta función
-Route: /api/get-embed-code
+Route: /
             adminState[chatId].title = `${episodeData.title} S${season}E${episode}`; // Para notificación
             bot.sendMessage(chatId, `¿Enviar notificación push sobre S${season}E${episode}?`, {
-                reply_markup: { inline_keyboard: [[
+      sentryVersion: '8.21.0',
+              reply_markup: { inline_keyboard: [[
                     { text: '📲 Sí, notificar', callback_data: `send_push_${tmdbId}_tv` }, // mediaType es 'tv'
                     { text: '❌ No notificar', callback_data: `finish_no_push` }
                 ]]}
             });
             // No resetear step, esperar respuesta
 
+id: '1e11440d995b452e85ab56b0d91f8682',
         } else if (data.startsWith('finish_series_') || data === 'finish_no_push') {
             bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id }).catch(()=>{}); // Ignorar error si el mensaje ya no existe
-A middleware is setting properties on `res.locals` before routing to the endpoint handler
             bot.sendMessage(chatId, '✅ Proceso finalizado. Volviendo al menú.');
             adminState[chatId] = { step: 'menu' };
         } else if (data.startsWith('send_push_')) {
-sentryVersion: '8.21.0',
             const [_, __, tmdbId, mediaType] = data.split('_');
             const state = adminState[chatId];
             const title = state?.title; // Título guardado previamente
-timestamp: 1761166649232
             if (!title) { bot.sendMessage(chatId, 'Error: Título perdido.'); adminState[chatId] = { step: 'menu' }; return; }
 
             await axios.post(`${RENDER_BACKEND_URL}/api/notify`, { tmdbId, mediaType, title });
             bot.editMessageText(`✅ Notificaciones push para *${title}* programadas.`, { chat_id: chatId, message_id: msg.message_id, parse_mode: 'Markdown', reply_markup: { inline_keyboard: [] } });
-section: 'backend',
             adminState[chatId] = { step: 'menu' };
         }
 
@@ -1113,7 +1109,6 @@ section: 'backend',
         bot.sendMessage(chatId, '❌ Ocurrió un error procesando tu solicitud.');
         // Considerar resetear el estado si el error es grave
         // adminState[chatId] = { step: 'menu' };
-Error: Failed to connect to MongoDB Atlas: MongooseServerSelectionError: Could not connect to any servers in your MongoDB Atlas cluster. One common reason is that you're trying to access the database from an IP that isn't whitelisted. Make sure your current IP address is on your Atlas cluster's IP whitelist: https://www.mongodb.com/docs/atlas/security-allow-connections-from-specific-ip-addresses/
     }
 });
 // =======================================================================
@@ -1129,7 +1124,6 @@ app.get('/api/app-update', (req, res) => {
   "latest_version_code": 4, // Actualiza esto con tu versionCode más reciente
   "update_url": "https://google-play.onrender.com", // Tu URL de descarga/tienda
   "force_update": true, // Poner en true para obligar la actualización
-A middleware is setting properties on `res.locals` before routing to the endpoint handler
   "update_message": "¡Nueva versión (1.4) disponible! Incluye TV en vivo y mejoras. Actualiza ahora."
  };
  res.status(200).json(updateInfo);
@@ -1143,7 +1137,6 @@ Si la aplicación cliente realiza una solicitud `GET` a `/api/get-embed-code`, s
     };
     res.json(status);
 });
-A middleware is setting properties on `res.locals` before routing to the endpoint handler
 
 app.get('/.well-known/assetlinks.json', (req, res) => {
 tampering: 'none',
@@ -1164,12 +1157,15 @@ app.listen(PORT, () => {
 
 // --- Manejo de errores no capturados ---
 process.on('uncaughtException', (error) => {
-  console.error('Uncaught Exception:', error); // <<< [FIX] AQUÍ ESTABA EL ERROR. YA ESTÁ CORREGIDO.
+  console.error('Uncaught Exception:', error);
   // Considera cerrar el proceso de forma controlada si es necesario
   // process.exit(1);
 });
 process.on('unhandledRejection', (reason, promise) => {
   console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+id: '1e11440d995b452e85ab56b0d91f8682',
+sentryVersion: '8.21.0',
+timestamp: 1761166649232
   // Considera cerrar el proceso de forma controlada si es necesario
   // process.exit(1);
 });
