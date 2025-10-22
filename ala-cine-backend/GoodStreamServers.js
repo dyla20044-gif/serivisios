@@ -1,4 +1,4 @@
-// Este es el contenido completo de GoodStreamServers.js
+// Este es el contenido completo de GoodStreamServers.js (con 1 línea de debug)
 const axios = require('axios');
 
 /**
@@ -19,7 +19,12 @@ async function getGodStreamLink(fileCode, apiKey) {
 
     try {
         const response = await axios.get(apiUrl);
-        const versions = response.data?.resultado?.versiones;
+        
+        // <<< ¡LÍNEA DE DEBUG AÑADIDA! >>>
+        // Esto nos mostrará en Render la respuesta COMPLETA de GodStream
+        console.log(`[DEBUG GodStream] Respuesta COMPLETA recibida para ${fileCode}:`, JSON.stringify(response.data, null, 2));
+
+        const versions = response.data?.resultado?.versiones; // El JSON original decía 'resultado'
 
         if (versions && versions.length > 0) {
             // Buscar calidad 'h' (alta), si no, 'n' (normal), si no, la primera que haya
