@@ -1,4 +1,4 @@
-// Este es el contenido completo de GoodStreamServers.js (con 1 línea de debug)
+// Este es el contenido completo y CORREGIDO de GoodStreamServers.js
 const axios = require('axios');
 
 /**
@@ -19,15 +19,20 @@ async function getGodStreamLink(fileCode, apiKey) {
 
     try {
         const response = await axios.get(apiUrl);
-        
-        // <<< ¡LÍNEA DE DEBUG AÑADIDA! >>>
-        // Esto nos mostrará en Render la respuesta COMPLETA de GodStream
-        console.log(`[DEBUG GodStream] Respuesta COMPLETA recibida para ${fileCode}:`, JSON.stringify(response.data, null, 2));
+        const responseData = response.data; // El JSON completo
 
-        const versions = response.data?.resultado?.versiones; // El JSON original decía 'resultado'
+        // <<< [CAMBIO CLAVE] Hacemos el código "bilingüe" >>>
+        
+        // 1. Busca el objeto 'resultado' (español) O 'result' (inglés)
+        const resultObj = responseData?.resultado || responseData?.result;
+
+        // 2. Dentro de ese objeto, busca 'versiones' (español) O 'versions' (inglés)
+        const versions = resultObj?.versiones || resultObj?.versions;
+        
+        // <<< [FIN DEL CAMBIO] >>>
 
         if (versions && versions.length > 0) {
-            // Buscar calidad 'h' (alta), si no, 'n' (normal), si no, la primera que haya
+            // Esta lógica está bien: busca la mejor calidad
             const mp4Url = versions.find(v => v.name === 'h')?.url ||
                            versions.find(v => v.name === 'n')?.url ||
                            versions[0]?.url;
@@ -38,8 +43,8 @@ async function getGodStreamLink(fileCode, apiKey) {
             }
         }
         
-        // Si la API responde OK pero no hay 'versions'
-        console.warn(`⚠️ [GodStream] API OK pero no se encontraron MP4s para ${fileCode}. Usando fallback.`);
+        // Si no se encontró 'versions' en ninguna de las formas...
+        console.warn(`⚠️ [GodStream] API OK pero no se encontraron MP4s para ${fileCode} (JSON: ${JSON.stringify(responseData)}). Usando fallback.`);
         return fallbackEmbedUrl;
 
     } catch (error) {
