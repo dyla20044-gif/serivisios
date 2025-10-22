@@ -7,7 +7,6 @@ const axios = require('axios');
 const dotenv = require('dotenv');
 const url = require('url');
 const { MongoClient, ServerApiVersion } = require('mongodb'); // CONEXIÓN MONGO
-const godstreamService = require('./GoodStreamServers.js'); // <<< [CAMBIO 1] IMPORTAMOS TU NUEVO ARCHIVO
 
 const app = express();
 
@@ -66,38 +65,6 @@ async function connectToMongo() {
 }
 
 connectToMongo();
-
-// === [CAMBIO 2] FUNCIÓN DE AYUDA MEJORADA PARA EXTRAER CÓDIGO ===
-function extractGodStreamCode(text) {
-    if (!text || typeof text !== 'string') {
-        return text;
-    }
-
-    // Caso 1: El admin pegó la URL completa
-    if (text.includes('goodstream.one/embed-')) {
-        try {
-            // Usamos new URL() para parsear de forma segura
-            const parsedUrl = new URL(text);
-            const pathname = parsedUrl.pathname; // -> /embed-gurkbeec2awc.html
-            const parts = pathname.split('-');   // -> ['/embed', 'gurkbeec2awc.html']
-            if (parts.length > 1) {
-                return parts[parts.length - 1].replace('.html', ''); // -> 'gurkbeec2awc'
-            }
-        } catch (e) {
-            console.error("Error al parsear URL de GodStream:", e.message);
-            return text; // Devolver original si falla el parseo
-        }
-    }
-    
-    // Caso 2: El admin pegó solo el código (o es un iframe/otra URL)
-    // Si NO es un iframe y NO es una http URL, asumimos que es un código de GodStream
-    if (!text.startsWith('<') && !text.startsWith('http')) {
-         return text; // Asume que es un file_code (ej: 'gurkbeec2awc')
-    }
-
-    // Caso 3: Es un iframe u otra URL (Dood, Voe, etc.)
-    return text;
-}
 // === FIN CONFIGURACIÓN DE MONGODB ===
 
 
@@ -268,12 +235,11 @@ app.get('/api/get-movie-data', async (req, res) => {
 });
 
 // =======================================================================
-// === [CAMBIO 3] RUTA PARA OBTENER CÓDIGO EMBED (CON LÓGICA PRO/FREE Y FALLBACK) ===
+// === RUTA PARA OBTENER CÓDIGO EMBED (MongoDB + Godstream) ===
 // =======================================================================
 app.get('/api/get-embed-code', async (req, res) => {
   if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
-  
-  const { id, season, episode, isPro } = req.query; // isPro viene como 'true' o 'false' (string)
+  const { id, season, episode, isPro } = req.query;
   if (!id) return res.status(400).json({ error: "ID no proporcionado" });
 
   try {
@@ -283,8 +249,7 @@ app.get('/api/get-embed-code', async (req, res) => {
 
     if (!doc) return res.status(404).json({ error: `${mediaType} no encontrada.` });
 
-    // 1. Obtener el código/iframe de la base de datos
-    let embedCode;
+    let embedCode = null;
     if (mediaType === 'movies') {
         embedCode = isPro === 'true' ? doc.proEmbedCode : doc.freeEmbedCode;
     } else {
@@ -292,38 +257,38 @@ app.get('/api/get-embed-code', async (req, res) => {
         embedCode = isPro === 'true' ? episodeData?.proEmbedCode : episodeData?.freeEmbedCode;
     }
 
-    if (!embedCode) {
-        return res.status(404).json({ error: `No se encontró código de reproductor.` });
-    }
-
-    // 2. Comprobar si es un código de GodStream
-    // (Asumimos que es GodStream si NO es un iframe y NO es una URL completa)
-    const isGodStreamCode = !embedCode.startsWith('<') && !embedCode.startsWith('http');
-
-    // 3. Aplicar la lógica de PRO vs GRATIS
-    if (isGodStreamCode) {
-        const fileCode = embedCode; // ej: 'gurkbeec2awc'
-
-        if (isPro === 'true') {
-            // --- Lógica PREMIUM ---
-            // Llama al servicio, que ya maneja el fallback
-            // Usamos la función importada de GoodStreamServers.js
-            const streamUrl = await godstreamService.getGodStreamLink(fileCode, GODSTREAM_API_KEY);
-            return res.json({ embedCode: streamUrl }); // Devuelve MP4 o Embed (fallback)
-
-        } else {
-            // --- Lógica GRATIS ---
-            // Devuelve solo el reproductor embed, sin llamar a la API
-            const freeEmbedUrl = `https://goodstream.one/embed-${fileCode}.html`;
-            return res.json({ embedCode: freeEmbedUrl });
+    // --- Lógica Godstream ---
+    if (isPro === 'true' && embedCode && embedCode.includes('goodstream')) {
+        const pathname = url.parse(embedCode).pathname || '';
+        const parts = pathname.split('-');
+        let fileCode = null;
+        if (parts.length > 1) {
+            fileCode = parts[parts.length - 1].replace('.html', '');
+        } else if (pathname.endsWith('.html')) {
+            fileCode = pathname.replace('/', '').replace('.html', '');
         }
-        
-    } else {
-        // --- Lógica para otros reproductores (IFRAMEs, etc.) ---
-        // Si no es GodStream (ej: un <iframe>), devuélvelo tal cual
-        return res.json({ embedCode });
-    }
 
+        if (fileCode && GODSTREAM_API_KEY) {
+            const apiUrl = `https://goodstream.one/api/file/direct_link?key=${GODSTREAM_API_KEY}&file_code=${fileCode}`;
+            try {
+                const godstreamResponse = await axios.get(apiUrl);
+                if (godstreamResponse.data?.resultado?.versiones) {
+                    const versions = godstreamResponse.data.resultado.versiones;
+                    const mp4Url = versions.find(v => v.name === 'h')?.url || versions[0]?.url;
+                    if (mp4Url) {
+                        return res.json({ embedCode: mp4Url }); // Devuelve enlace directo
+                    }
+                } else { console.error("Respuesta inesperada de GodStream:", godstreamResponse.data); }
+            } catch (apiError) { console.error("Error GodStream API:", apiError.message); }
+        } else { console.error("No se pudo extraer fileCode o falta API Key:", embedCode); }
+    }
+    // --- Fin Lógica Godstream ---
+
+    if (embedCode) {
+        res.json({ embedCode }); // Fallback al embed original
+    } else {
+        res.status(404).json({ error: `No se encontró código de reproductor.` });
+    }
   } catch (error) {
     console.error("Error crítico get-embed-code:", error);
     res.status(500).json({ error: "Error interno" });
@@ -772,23 +737,18 @@ bot.on('message', async (msg) => {
             console.error("Error guardando evento:", error);
             bot.sendMessage(chatId, '❌ Error guardando. Revisa logs.');
         } finally { adminState[chatId] = { step: 'menu' }; }
-    
-    // === [CAMBIO 4] LÓGICA DEL BOT ACTUALIZADA ===
-    } else if (adminState[chatId] && adminState[chatId].step === 'awaiting_pro_link_movie') {
+    } else if (adminState[chatId] && adminState[chatId].step === 'awaiting_pro_link_movie') {
         const { selectedMedia } = adminState[chatId];
-        // Usamos la nueva función extractGodStreamCode
-        adminState[chatId].proEmbedCode = userText.toLowerCase() === 'no' ? null : extractGodStreamCode(userText);
+        adminState[chatId].proEmbedCode = userText.toLowerCase() === 'no' ? null : userText; // Guardar null si es 'no'
         adminState[chatId].step = 'awaiting_free_link_movie';
-        bot.sendMessage(chatId, `PRO recibido (${adminState[chatId].proEmbedCode ? 'Link/Código' : 'Ninguno'}). Ahora envía el GRATIS para "${selectedMedia.title}". Escribe "no" si no hay.`);
-    
-    } else if (adminState[chatId] && adminState[chatId].step === 'awaiting_free_link_movie') {
+        bot.sendMessage(chatId, `PRO recibido (${adminState[chatId].proEmbedCode ? 'Link' : 'Ninguno'}). Ahora envía el GRATIS para "${selectedMedia.title}". Escribe "no" si no hay.`);
+    } else if (adminState[chatId] && adminState[chatId].step === 'awaiting_free_link_movie') {
         const { selectedMedia, proEmbedCode } = adminState[chatId];
         if (!selectedMedia?.id) {
             bot.sendMessage(chatId, '❌ ERROR: ID perdido. Reinicia con /subir.');
             adminState[chatId] = { step: 'menu' }; return;
         }
-        // Usamos la nueva función extractGodStreamCode
-        const freeEmbedCode = userText.toLowerCase() === 'no' ? null : extractGodStreamCode(userText);
+        const freeEmbedCode = userText.toLowerCase() === 'no' ? null : userText;
 
         // Validación: Al menos un link debe existir
         if (!proEmbedCode && !freeEmbedCode) {
@@ -805,25 +765,21 @@ bot.on('message', async (msg) => {
             [{ text: '💾 Guardar solo', callback_data: `save_only_${selectedMedia.id}` }],
             [{ text: '🚀 Guardar y Publicar', callback_data: `save_and_publish_${selectedMedia.id}` }]
         ]}};
-        bot.sendMessage(chatId, `GRATIS recibido (${freeEmbedCode ? 'Link/Código' : 'Ninguno'}). ¿Qué hacer ahora?`, options);
-    
-    } else if (adminState[chatId] && adminState[chatId].step === 'awaiting_pro_link_series') {
+        bot.sendMessage(chatId, `GRATIS recibido (${freeEmbedCode ? 'Link' : 'Ninguno'}). ¿Qué hacer ahora?`, options);
+    } else if (adminState[chatId] && adminState[chatId].step === 'awaiting_pro_link_series') {
         const { selectedSeries, season, episode } = adminState[chatId];
         if (!selectedSeries) {
             bot.sendMessage(chatId, 'Error: Estado perdido. Reinicia.'); adminState[chatId] = { step: 'menu' }; return;
         }
-        // Usamos la nueva función extractGodStreamCode
-        adminState[chatId].proEmbedCode = userText.toLowerCase() === 'no' ? null : extractGodStreamCode(userText);
+        adminState[chatId].proEmbedCode = userText.toLowerCase() === 'no' ? null : userText;
         adminState[chatId].step = 'awaiting_free_link_series';
-        bot.sendMessage(chatId, `PRO recibido (${adminState[chatId].proEmbedCode ? 'Link/Código' : 'Ninguno'}). Envía el GRATIS para S${season}E${episode}. Escribe "no" si no hay.`);
-    
-    } else if (adminState[chatId] && adminState[chatId].step === 'awaiting_free_link_series') {
+        bot.sendMessage(chatId, `PRO recibido (${adminState[chatId].proEmbedCode ? 'Link' : 'Ninguno'}). Envía el GRATIS para S${season}E${episode}. Escribe "no" si no hay.`);
+    } else if (adminState[chatId] && adminState[chatId].step === 'awaiting_free_link_series') {
         const { selectedSeries, season, episode, proEmbedCode } = adminState[chatId];
         if (!selectedSeries) {
             bot.sendMessage(chatId, 'Error: Estado perdido. Reinicia.'); adminState[chatId] = { step: 'menu' }; return;
         }
-        // Usamos la nueva función extractGodStreamCode
-        const freeEmbedCode = userText.toLowerCase() === 'no' ? null : extractGodStreamCode(userText);
+        const freeEmbedCode = userText.toLowerCase() === 'no' ? null : userText;
 
         // Validación: Al menos un link
         if (!proEmbedCode && !freeEmbedCode) {
@@ -856,9 +812,7 @@ bot.on('message', async (msg) => {
             console.error("Error guardando episodio:", error);
             bot.sendMessage(chatId, 'Error guardando episodio.');
         }
-    // === FIN DEL CAMBIO 4 ===
-    
-    } else if (adminState[chatId] && adminState[chatId].step === 'search_delete') {
+    } else if (adminState[chatId] && adminState[chatId].step === 'search_delete') {
           try {
             const searchUrl = `https://api.themoviedb.org/3/search/multi?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(userText)}&language=es-ES`;
             const response = await axios.get(searchUrl);
@@ -963,7 +917,7 @@ bot.on('callback_query', async (callbackQuery) => {
 
         } else if (data.startsWith('select_season_')) {
             const [_, __, tmdbId, seasonNumber] = data.split('_');
-  _         const state = adminState[chatId];
+            const state = adminState[chatId];
             if (!state || !state.selectedSeries || state.selectedSeries.id.toString() !== tmdbId) {
                 bot.sendMessage(chatId, 'Error: Estado inconsistente. Reinicia.'); adminState[chatId] = { step: 'menu' }; return;
             }
@@ -999,7 +953,7 @@ bot.on('callback_query', async (callbackQuery) => {
                 bot.sendMessage(chatId, `"${response.data.name}". ¿Qué temporada NUEVA agregar?`, { reply_markup: { inline_keyboard: buttons } });
             } else { bot.sendMessage(chatId, 'No hay más temporadas nuevas para agregar.'); }
 
-      _ } else if (data.startsWith('solicitud_')) {
+        } else if (data.startsWith('solicitud_')) {
             const tmdbId = data.split('_')[1];
             const tmdbUrl = `https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${TMDB_API_KEY}&language=es-ES`;
             const response = await axios.get(tmdbUrl);
@@ -1013,7 +967,7 @@ bot.on('callback_query', async (callbackQuery) => {
             adminState[chatId] = { step: 'search_manage' }; // Reutiliza search_movie/series? O necesita lógica específica?
             bot.sendMessage(chatId, 'Escribe el nombre del contenido a gestionar.');
         } else if (data === 'delete_movie') {
-    t       adminState[chatId] = { step: 'search_delete' };
+            adminState[chatId] = { step: 'search_delete' };
             bot.sendMessage(chatId, 'Escribe el nombre del contenido a ELIMINAR.');
         } else if (data.startsWith('delete_confirm_')) {
             const [_, __, tmdbId, mediaType] = data.split('_');
@@ -1021,7 +975,7 @@ bot.on('callback_query', async (callbackQuery) => {
             const result = await mongoDb.collection(collectionName).deleteOne({ tmdbId: tmdbId });
             if (result.deletedCount > 0) {
                 bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id });
-A               bot.sendMessage(chatId, `✅ Contenido TMDB ID ${tmdbId} (${mediaType}) eliminado de MongoDB.`);
+                bot.sendMessage(chatId, `✅ Contenido TMDB ID ${tmdbId} (${mediaType}) eliminado de MongoDB.`);
             } else {
                 bot.sendMessage(chatId, `⚠️ No se encontró el contenido TMDB ID ${tmdbId} (${mediaType}) para eliminar.`);
             }
@@ -1032,16 +986,15 @@ A               bot.sendMessage(chatId, `✅ Contenido TMDB ID ${tmdbId} 
             if (!movieDataToSave?.tmdbId) { bot.sendMessage(chatId, 'Error: Datos perdidos.'); adminState[chatId] = { step: 'menu' }; return; }
             await axios.post(`${RENDER_BACKEND_URL}/add-movie`, movieDataToSave);
             bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id });
-Error:             bot.sendMessage(chatId, `✅ "${movieDataToSave.title}" guardada.`);
+            bot.sendMessage(chatId, `✅ "${movieDataToSave.title}" guardada.`);
             adminState[chatId] = { step: 'menu' };
         } else if (data.startsWith('save_and_publish_')) {
             const { movieDataToSave } = adminState[chatId];
             if (!movieDataToSave?.tmdbId) { bot.sendMessage(chatId, 'Error: Datos perdidos.'); adminState[chatId] = { step: 'menu' }; return; }
-section: 'backend',
             await axios.post(`${RENDER_BACKEND_URL}/add-movie`, movieDataToSave);
             bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id });
             bot.sendMessage(chatId, `✅ "${movieDataToSave.title}" guardada. Publicando...`);
-            // await publishMovieToChannels(movieDataToSave); // Descomenta si tienes esta función
+            await publishMovieToChannels(movieDataToSave);
             // Preguntar si notificar
             adminState[chatId].title = movieDataToSave.title; // Guardar título para notificación
             bot.sendMessage(chatId, `¿Enviar notificación push a los usuarios sobre "${movieDataToSave.title}"?`, {
@@ -1052,7 +1005,7 @@ section: 'backend',
             });
             // No resetear step aquí, esperar respuesta de notificación
 
-Click         } else if (data.startsWith('add_next_episode_')) {
+        } else if (data.startsWith('add_next_episode_')) {
             const [_, __, ___, tmdbId, seasonNumber] = data.split('_');
             const seriesData = await mongoDb.collection('series_catalog').findOne({ tmdbId: tmdbId });
             if (!seriesData) { bot.sendMessage(chatId, 'Error: Serie no encontrada.'); return; }
@@ -1063,32 +1016,28 @@ Click         } else if (data.startsWith('add_next_episode_')) {
                 season: parseInt(seasonNumber), episode: nextEpisode
             };
             bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id });
-d="button"             bot.sendMessage(chatId, `Siguiente: Envía link PRO para S${seasonNumber}E${nextEpisode} (o "no").`);
+            bot.sendMessage(chatId, `Siguiente: Envía link PRO para S${seasonNumber}E${nextEpisode} (o "no").`);
 
         } else if (data.startsWith('publish_this_episode_')) {
             const [_, __, ___, tmdbId, season, episode] = data.split('_');
             const state = adminState[chatId];
             const episodeData = state?.lastSavedEpisodeData; // Usar los datos guardados
-section: 'backend',
             if (!episodeData || episodeData.tmdbId !== tmdbId || episodeData.seasonNumber.toString() !== season || episodeData.episodeNumber.toString() !== episode) {
                 bot.sendMessage(chatId, 'Error: Datos del episodio no coinciden o se perdieron. Finalizando.');
                 adminState[chatId] = { step: 'menu' }; return;
             }
             bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id });
             bot.sendMessage(chatId, `✅ Publicando S${season}E${episode}...`);
-            // await publishSeriesEpisodeToChannels(episodeData); // Descomenta si tienes esta función
-Route: /
+            await publishSeriesEpisodeToChannels(episodeData);
             adminState[chatId].title = `${episodeData.title} S${season}E${episode}`; // Para notificación
             bot.sendMessage(chatId, `¿Enviar notificación push sobre S${season}E${episode}?`, {
-      sentryVersion: '8.21.0',
-              reply_markup: { inline_keyboard: [[
+                reply_markup: { inline_keyboard: [[
                     { text: '📲 Sí, notificar', callback_data: `send_push_${tmdbId}_tv` }, // mediaType es 'tv'
                     { text: '❌ No notificar', callback_data: `finish_no_push` }
                 ]]}
             });
             // No resetear step, esperar respuesta
 
-id: '1e11440d995b452e85ab56b0d91f8682',
         } else if (data.startsWith('finish_series_') || data === 'finish_no_push') {
             bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id }).catch(()=>{}); // Ignorar error si el mensaje ya no existe
             bot.sendMessage(chatId, '✅ Proceso finalizado. Volviendo al menú.');
@@ -1133,13 +1082,11 @@ app.get('/api/app-status', (req, res) => {
     const status = {
         isAppApproved: true, // Cambia a true DESPUÉS de la aprobación de Google
         safeContentIds: [11104, 539, 4555, 27205, 33045] // IDs seguros
-Si la aplicación cliente realiza una solicitud `GET` a `/api/get-embed-code`, se producirá este error
     };
     res.json(status);
 });
 
 app.get('/.well-known/assetlinks.json', (req, res) => {
-tampering: 'none',
     res.sendFile('assetlinks.json', { root: __dirname });
 });
 
@@ -1163,9 +1110,6 @@ process.on('uncaughtException', (error) => {
 });
 process.on('unhandledRejection', (reason, promise) => {
   console.error('Unhandled Rejection at:', promise, 'reason:', reason);
-id: '1e11440d995b452e85ab56b0d91f8682',
-sentryVersion: '8.21.0',
-timestamp: 1761166649232
   // Considera cerrar el proceso de forma controlada si es necesario
   // process.exit(1);
 });
