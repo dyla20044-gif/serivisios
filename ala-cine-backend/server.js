@@ -40,6 +40,20 @@ bot.setWebHook(webhookUrl);
 const ADMIN_CHAT_ID = parseInt(process.env.ADMIN_CHAT_ID, 10);
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
 
+// =======================================================================
+// === ¡INTERRUPTOR GLOBAL DE STREAMING! ===
+// =======================================================================
+//
+// CAMBIA ESTE VALOR PARA ACTIVAR O DESACTIVAR TODO EL STREAMING EN LA APP
+//
+// true  = La app intentará reproducir contenido (si tiene enlaces).
+// false = La app mostrará "Mantenimiento" en lugar de "Reproducir".
+//
+let GLOBAL_STREAMING_ACTIVE = true;
+//
+// =======================================================================
+
+
 // === CONFIGURACIÓN DE MONGODB ATLAS ===
 const MONGO_URI = process.env.MONGO_URI;
 const MONGO_DB_NAME = process.env.MONGO_DB_NAME || 'sala_cine';
@@ -214,10 +228,37 @@ app.post('/request-movie', async (req, res) => {
     }
 });
 
+// =======================================================================
+// === ¡NUEVA RUTA! ENDPOINT DE ESTADO DE STREAMING GLOBAL ===
+// =======================================================================
+/**
+ * Esta es la ruta que la app (script.js) consultará al iniciar.
+ * Devuelve el valor de la variable 'GLOBAL_STREAMING_ACTIVE'
+ * que definiste manualmente al inicio del archivo.
+ */
+app.get('/api/streaming-status', (req, res) => {
+    console.log(`[Status Check] Devolviendo estado de streaming global: ${GLOBAL_STREAMING_ACTIVE}`);
+    res.status(200).json({
+        isStreamingActive: GLOBAL_STREAMING_ACTIVE
+    });
+});
+// =======================================================================
+// === FIN DE LA NUEVA RUTA
+// =======================================================================
+
 
 // =======================================================================
 // === RUTA OPTIMIZADA PARA OBTENER DATOS DE PELÍCULA/SERIE (MongoDB) ===
 // =======================================================================
+/**
+ * Esta ruta define el 'isAvailable' (el interruptor específico).
+ * Como puedes ver, se calcula automáticamente.
+ * isAvailable = true SI Y SOLO SI la película/serie tiene un 'freeEmbedCode'
+ * O un 'proEmbedCode' guardado en la base de datos.
+ *
+ * ¡TÚ NO TIENES QUE CAMBIAR NADA AQUÍ!
+ * Simplemente agrega los enlaces usando el bot y esto funcionará solo.
+ */
 app.get('/api/get-movie-data', async (req, res) => {
     if (!mongoDb) {
         return res.status(503).json({ error: "Base de datos no disponible." });
@@ -240,10 +281,12 @@ app.get('/api/get-movie-data', async (req, res) => {
         }
 
         if (doc) {
-            let isAvailable = false;
+            let isAvailable = true;
             if (isMovie) {
+                // Lógica automática para películas
                 isAvailable = !!(doc.freeEmbedCode || doc.proEmbedCode);
             } else {
+                // Lógica automática para series (revisa si algún episodio tiene enlace)
                 if (doc.seasons) {
                     isAvailable = Object.values(doc.seasons).some(season =>
                         season && season.episodes && Object.values(season.episodes).some(ep =>
@@ -256,7 +299,7 @@ app.get('/api/get-movie-data', async (req, res) => {
             res.status(200).json({
                 views: doc.views || 0,
                 likes: doc.likes || 0,
-                isAvailable: isAvailable
+                isAvailable: isAvailable // Devuelve el resultado del cálculo automático
             });
         } else {
             res.status(200).json({ views: 0, likes: 0, isAvailable: false });
@@ -611,6 +654,7 @@ async function sendPushNotification(tmdbId, mediaType, contentTitle) {
         const message = {
             notification: {
                 title: `🎉 ¡Nuevo Contenido Agregado!`,
+image: "https://imgur.com/a/JbH6p1J",
                 body: `¡Ya puedes ver ${contentTitle} en Sala Cine!`,
             },
             data: { // Datos adicionales para manejar la acción en la app
@@ -631,6 +675,7 @@ async function sendPushNotification(tmdbId, mediaType, contentTitle) {
             response.responses.forEach((resp, idx) => {
                 if (!resp.success) {
                     failedTokens.push(registrationTokens[idx]);
+section: "image",
                     // Podrías eliminar estos tokens de tu base de datos aquí
                     console.error('Error enviando a token:', registrationTokens[idx], resp.error);
                 }
@@ -763,6 +808,17 @@ bot.on('message', async (msg) => {
         const { imageUrl } = adminState[chatId];
         const description = userText;
         try {
+  _event_image') {
+        if (!userText.startsWith('http')) {
+            bot.sendMessage(chatId, '❌ Envía un ENLACE (URL) de imagen válido.'); return;
+        }
+        adminState[chatId].imageUrl = userText;
+        adminState[chatId].step = 'awaiting_event_description';
+        bot.sendMessage(chatId, 'Enlace recibido! Ahora envía la DESCRIPCIÓN.');
+    } else if (adminState[chatId] && adminState[chatId].step === 'awaiting_event_description') {
+        const { imageUrl } = adminState[chatId];
+        const description = userText;
+        try {
             await db.collection('userNotifications').add({
                 title: '🎉 Nuevo Evento', description: description, image: imageUrl,
                 timestamp: admin.firestore.FieldValue.serverTimestamp(), isRead: false, type: 'event', targetScreen: 'profile-screen'
@@ -803,6 +859,7 @@ bot.on('message', async (msg) => {
         adminState[chatId].step = 'awaiting_publish_choice';
         const options = { reply_markup: { inline_keyboard: [
             [{ text: '💾 Guardar solo', callback_data: `save_only_${selectedMedia.id}` }],
+section: "image",
             [{ text: '🚀 Guardar y Publicar', callback_data: `save_and_publish_${selectedMedia.id}` }]
         ]}};
         bot.sendMessage(chatId, `GRATIS recibido (${freeEmbedCode ? 'Link/Código' : 'Ninguno'}). ¿Qué hacer ahora?`, options);
@@ -828,6 +885,7 @@ bot.on('message', async (msg) => {
         // Validación: Al menos un link
         if (!proEmbedCode && !freeEmbedCode) {
             bot.sendMessage(chatId, '❌ Debes dar al menos un reproductor (PRO o GRATIS). Reinicia.');
+section: "image",
             adminState[chatId] = { step: 'menu' }; return;
         }
 
@@ -855,7 +913,8 @@ bot.on('message', async (msg) => {
         } catch (error) {
             console.error("Error guardando episodio:", error);
             bot.sendMessage(chatId, 'Error guardando episodio.');
-        }
+  section: "image",
+  }
     // === FIN DEL CAMBIO 4 ===
     
     } else if (adminState[chatId] && adminState[chatId].step === 'search_delete') {
@@ -871,6 +930,7 @@ bot.on('message', async (msg) => {
                     const posterUrl = item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : 'https://placehold.co/500x750?text=No+Poster';
                     const title = item.title || item.name;
                     const date = item.release_date || item.first_air_date;
+section: "image",
                     const message = `🎬 *${title}* (${date ? date.substring(0, 4) : 'N/A'})\n\n${item.overview || 'Sin sinopsis.'}`;
                     const options = { caption: message, parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{
                         text: '🗑️ Confirmar Eliminación', callback_data: `delete_confirm_${item.id}_${item.media_type}`
@@ -955,9 +1015,234 @@ bot.on('callback_query', async (callbackQuery) => {
             if (!existingData) { bot.sendMessage(chatId, 'Error: No encontrada.'); return; }
             adminState[chatId] = {
                 selectedMedia: existingData, mediaType: 'movie',
+section: "image",
                 proEmbedCode: isProLink ? undefined : existingData.proEmbedCode, // Si añado PRO, espero PRO. Si añado Free, guardo el PRO existente.
                 freeEmbedCode: isProLink ? existingData.freeEmbedCode : undefined, // Viceversa
                 step: isProLink ? 'awaiting_pro_link_movie' : 'awaiting_free_link_movie'
+            };
+            bot.sendMessage(chatId, `Envía el reproductor ${isProLink ? 'PRO' : 'GRATIS'} para "${existingData.title}".`);
+
+        // --- INICIO DE LA REPARACIÓN DEL ERROR DE SINTAXIS ---
+        } else if (data.startsWith('select_season_')) {
+            const [_, __, tmdbId, seasonNumber] = data.split('_');
+            const state = adminState[chatId]; // <<<<<<<< ESTA LÍNEA FUE REPARADA
+            if (!state || !state.selectedSeries || state.selectedSeries.id.toString() !== tmdbId) {
+                bot.sendMessage(chatId, 'Error: Estado inconsistente. Reinicia.'); adminState[chatId] = { step: 'menu' }; return;
+            }
+            state.season = parseInt(seasonNumber);
+        S${seasonNumber} seleccionada. Envía link PRO para E1 (o "no").`);
+
+        } else if (data.startsWith('manage_season_')) {
+            const [_, __, tmdbId, seasonNumber] = data.split('_');
+            const seriesData = await mongoDb.collection('series_catalog').findOne({ tmdbId: tmdbId });
+            if (!seriesData) { bot.sendMessage(chatId, 'Error: No encontrada.'); return; }
+            let lastEpisode = seriesData.seasons?.[seasonNumber]?.episodes ? Object.keys(seriesData.seasons[seasonNumber].episodes).length : 0;
+            const nextEpisode = lastEpisode + 1;
+            adminState[chatId] = {
+                step: 'awaiting_pro_link_series', selectedSeries: seriesData,
+                season: parseInt(seasonNumber), episode: nextEpisode
+            };
+            bot.sendMessage(chatId, `Gestionando S${seasonNumber}. Envía link PRO para E${nextEpisode} (o "no").`);
+
+        } else if (data.startsWith('add_new_season_')) {
+            // Similar a add_new_series, pero busca temporadas no existentes
+            const tmdbId = data.split('_')[3];
+            const tmdbUrl = `https://api.themoviedb.org/3/tv/${tmdbId}?api_key=${TMDB_API_KEY}&language=es-ES`;
+            const response = await axios.get(tmdbUrl);
+            const existingDoc = await mongoDb.collection('series_catalog').findOne({ tmdbId: tmdbId }, { projection: { seasons: 1 } });
+            const existingSeasons = existingDoc?.seasons ? Object.keys(existingDoc.seasons) : [];
+            const availableSeasons = response.data.seasons?.filter(s => s.season_number > 0 && !existingSeasons.includes(s.season_number.toString()));
+
+            if (availableSeasons?.length > 0) {
+                adminState[chatId] = { selectedSeries: response.data, mediaType: 'series', step: 'awaiting_season_selection' };
+                const buttons = availableSeasons.map(s => [{ text: `${s.name} (S${s.season_number})`, callback_data: `select_season_${tmdbId}_${s.season_number}` }]);
+                bot.sendMessage(chatId, `"${response.data.name}". ¿Qué temporada NUEVA agregar?`, { reply_markup: { inline_keyboard: buttons } });
+            } else { bot.sendMessage(chatId, 'No hay más temporadas nuevas para agregar.'); }
+
+        } else if (data.startsWith('solicitud_')) {
+            const tmdbId = data.split('_')[1];
+            const tmdbUrl = `https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${TMDB_API_KEY}&language=es-ES`;
+            const response = await axios.get(tmdbUrl);
+            adminState[chatId] = { selectedMedia: response.data, mediaType: 'movie', step: 'awaiting_pro_link_movie' };
+            bot.sendMessage(chatId, `Atendiendo solicitud: "${response.data.title}". Envía link PRO (o "no").`);
+            // Opcional: Eliminar solicitud de Firestore
+            // const reqSnap = await db.collection('userRequests').where('tmdbId', '==', tmdbId).limit(1).get();
+section: "image",
+            // if (!reqSnap.empty) await reqSnap.docs[0].ref.update({ status: 'processing' });
+
+        } else if (data === 'manage_movies') {
+            adminState[chatId] = { step: 'search_manage' }; // Reutiliza search_movie/series? O necesita lógica específica?
+            bot.sendMessage(chatId, 'Escribe el nombre del contenido a gestionar.');
+        } else if (data === 'delete_movie') {
+            adminState[chatId] = { step: 'search_delete' };
+            bot.sendMessage(chatId, 'Escribe el nombre del contenido a ELIMINAR.');
+        } else if (data.startsWith('delete_confirm_')) {
+            const [_, __, tmdbId, mediaType] = data.split('_');
+section: "image",
+            const collectionName = mediaType === 'movie' ? 'media_catalog' : 'series_catalog';
+            const result = await mongoDb.collection(collectionName).deleteOne({ tmdbId: tmdbId });
+            if (result.deletedCount > 0) {
+                bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id });
+                bot.sendMessage(chatId, `✅ Contenido TMDB ID ${tmdbId} (${mediaType}) eliminado de MongoDB.`);
+            } else {
+                bot.sendMessage(chatId, `⚠️ No se encontró el contenido TMDB ID ${tmdbId} (${mediaType}) para eliminar.`);
+            }
+            adminState[chatId] = { step: 'menu' };
+
+        } else if (data.startsWith('save_only_')) {
+            const { movieDataToSave } = adminState[chatId];
+            if (!movieDataToSave?.tmdbId) { bot.sendMessage(chatId, 'Error: Datos perdidos.'); adminState[chatId] = { step: 'menu' }; return; }
+section: "image",
+            await axios.post(`${RENDER_BACKEND_URL}/add-movie`, movieDataToSave);
+            bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id });
+            bot.sendMessage(chatId, `✅ "${movieDataToSave.title}" guardada.`);
+            adminState[chatId] = { step: 'menu' };
+        } else if (data.startsWith('save_and_publish_')) {
+            const { movieDataToSave } = adminState[chatId];
+            if (!movieDataToSave?.tmdbId) { bot.sendMessage(chatId, 'Error: Datos perdidos.'); adminState[chatId] = { step: 'menu' }; return; }
+section: "image",
+            await axios.post(`${RENDER_BACKEND_URL}/add-movie`, movieDataToSave);
+            bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id });
+            bot.sendMessage(chatId, `✅ "${movieDataToSave.title}" guardada. Publicando...`);
+            // await publishMovieToChannels(movieDataToSave); // Descomenta si tienes esta función
+            // Preguntar si notificar
+            adminState[chatId].title = movieDataToSave.title; // Guardar título para notificación
+            bot.sendMessage(chatId, `¿Enviar notificación push a los usuarios sobre "${movieDataToSave.title}"?`, {
+                reply_markup: { inline_keyboard: [[
+                    { text: '📲 Sí, notificar', callback_data: `send_push_${movieDataToSave.tmdbId}_movie` },
+                    { text: '❌ No notificar', callback_data: `finish_no_push` }
+                ]]}
+            });
+            // No resetear step aquí, esperar respuesta de notificación
+
+section: "image",
+        } else if (data.startsWith('add_next_episode_')) {
+            const [_, __, ___, tmdbId, seasonNumber] = data.split('_');
+            const seriesData = await mongoDb.collection('series_catalog').findOne({ tmdbId: tmdbId });
+            if (!seriesData) { bot.sendMessage(chatId, 'Error: Serie no encontrada.'); return; }
+            let lastEpisode = seriesData.seasons?.[seasonNumber]?.episodes ? Object.keys(seriesData.seasons[seasonNumber].episodes).length : 0;
+            const nextEpisode = lastEpisode + 1;
+            adminState[chatId] = {
+                step: 'awaiting_pro_link_series', selectedSeries: seriesData,
+                season: parseInt(seasonNumber), episode: nextEpisode
+            };
+            bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id });
+section: "image",
+            bot.sendMessage(chatId, `Siguiente: Envía link PRO para S${seasonNumber}E${nextEpisode} (o "no").`);
+
+        } else if (data.startsWith('publish_this_episode_')) {
+            const [_, __, ___, tmdbId, season, episode] = data.split('_');
+            const state = adminState[chatId];
+            const episodeData = state?.lastSavedEpisodeData; // Usar los datos guardados
+            if (!episodeData || episodeData.tmdbId !== tmdbId || episodeData.seasonNumber.toString() !== season || episodeData.episodeNumber.toString() !== episode) {
+                bot.sendMessage(chatId, 'Error: Datos del episodio no coinciden o se perdieron. Finalizando.');
+                adminState[chatId] = { step: 'menu' }; return;
+section: "image",
+            }
+            bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id });
+            bot.sendMessage(chatId, `✅ Publicando S${season}E${episode}...`);
+            // await publishSeriesEpisodeToChannels(episodeData); // Descomenta si tienes esta función
+s${season}e${episode}`; // Para notificación
+            bot.sendMessage(chatId, `¿Enviar notificación push sobre S${season}E${episode}?`, {
+              reply_markup: { inline_keyboard: [[
+                    { text: '📲 Sí, notificar', callback_data: `send_push_${tmdbId}_tv` }, // mediaType es 'tv'
+                    { text: '❌ No notificar', callback_data: `finish_no_push` }
+                ]]}
+            });
+            // No resetear step, esperar respuesta
+
+section: "image",
+        } else if (data.startsWith('finish_series_') || data === 'finish_no_push') {
+            bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id }).catch(()=>{}); // Ignorar error si el mensaje ya no existe
+            bot.sendMessage(chatId, '✅ Proceso finalizado. Volviendo al menú.');
+            adminState[chatId] = { step: 'menu' };
+        } else if (data.startsWith('send_push_')) {
+section: "image",
+            const [_, __, tmdbId, mediaType] = data.split('_');
+            const state = adminState[chatId];
+            const title = state?.title; // Título guardado previamente
+            if (!title) { bot.sendMessage(chatId, 'Error: Título perdido.'); adminState[chatId] = { step: 'menu' }; return; }
+
+            await axios.post(`${RENDER_BACKEND_URL}/api/notify`, { tmdbId, mediaType, title });
+            bot.editMessageText(`✅ Notificaciones push para *${title}* programadas.`, { chat_id: chatId, message_id: msg.message_id, parse_mode: 'Markdown', reply_markup: { inline_keyboard: [] } });
+            adminState[chatId] = { step: 'menu' };
+        }
+
+    } catch (error) {
+        console.error("Error en callback_query:", error);
+        bot.sendMessage(chatId, '❌ Ocurrió un error procesando tu solicitud.');
+        // Considerar resetear el estado si el error es grave
+  DMIN_CHAT_ID) return;
+
+    // --- Manejo de Callbacks ---
+    try { // Envolver todo en try-catch general
+        bot.answerCallbackQuery(callbackQuery.id); // Confirmar recepción
+
+        if (data === 'add_movie') {
+            adminState[chatId] = { step: 'search_movie' };
+            bot.sendMessage(chatId, 'Escribe el nombre de la película a agregar.');
+        } else if (data === 'add_series') {
+            adminState[chatId] = { step: 'search_series' };
+            bot.sendMessage(chatId, 'Escribe el nombre de la serie a agregar.');
+        } else if (data === 'eventos') {
+            adminState[chatId] = { step: 'awaiting_event_image' };
+            bot.sendMessage(chatId, 'Envía el ENLACE (URL) de la imagen para el evento.');
+        } else if (data.startsWith('add_new_movie_')) {
+            const tmdbId = data.split('_')[3];
+            const tmdbUrl = `https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${TMDB_API_KEY}&language=es-ES`;
+            const response = await axios.get(tmdbUrl);
+            adminState[chatId] = { selectedMedia: response.data, mediaType: 'movie', step: 'awaiting_pro_link_movie' };
+            bot.sendMessage(chatId, `"${response.data.title}". Envía link PRO (o "no").`);
+        } else if (data.startsWith('add_new_series_')) {
+            const tmdbId = data.split('_')[3];
+            const tmdbUrl = `https://api.themoviedb.org/3/tv/${tmdbId}?api_key=${TMDB_API_KEY}&language=es-ES`;
+            const response = await axios.get(tmdbUrl);
+            const seasons = response.data.seasons?.filter(s => s.season_number > 0); // Excluir temporada 0
+            if (seasons?.length > 0) {
+                adminState[chatId] = { selectedSeries: response.data, mediaType: 'series', step: 'awaiting_season_selection' };
+                const buttons = seasons.map(s => [{ text: `${s.name} (S${s.season_number})`, callback_data: `select_season_${tmdbId}_${s.season_number}` }]);
+                bot.sendMessage(chatId, `"${response.data.name}". Selecciona temporada:`, { reply_markup: { inline_keyboard: buttons } });
+            } else {
+                bot.sendMessage(chatId, `No se encontraron temporadas válidas.`);
+                adminState[chatId] = { step: 'menu' };
+            }
+        } else if (data.startsWith('manage_movie_')) {
+            const tmdbId = data.split('_')[2];
+            const existingData = await mongoDb.collection('media_catalog').findOne({ tmdbId: tmdbId });
+            if (!existingData) { bot.sendMessage(chatId, 'Error: No encontrada en MongoDB.'); return; }
+            // Lógica para mostrar opciones de gestión (add_pro, add_free) - Similar a como estaba
+            let buttons = [];
+            if (!existingData.proEmbedCode) buttons.push([{ text: 'Agregar PRO', callback_data: `add_pro_movie_${tmdbId}` }]);
+            if (!existingData.freeEmbedCode) buttons.push([{ text: 'Agregar Gratis', callback_data: `add_free_movie_${tmdbId}` }]);
+            if(buttons.length === 0) { bot.sendMessage(chatId, `"${existingData.title}" ya tiene ambos links.`); return;}
+            bot.sendMessage(chatId, `Gestionando "${existingData.title}". ¿Agregar versión?`, {reply_markup: {inline_keyboard: buttons}});
+
+        } else if (data.startsWith('manage_series_')) {
+            const tmdbId = data.split('_')[2];
+            const seriesData = await mongoDb.collection('series_catalog').findOne({ tmdbId: tmdbId });
+            if (!seriesData) { bot.sendMessage(chatId, 'Error: No encontrada en MongoDB.'); return; }
+            // Lógica para mostrar temporadas a gestionar o añadir nueva
+            let buttons = [];
+            if (seriesData.seasons) {
+section: "image",
+                Object.keys(seriesData.seasons).sort((a,b)=> parseInt(a)-parseInt(b)).forEach(seasonNum => {
+                    buttons.push([{ text: `Gestionar S${seasonNum}`, callback_data: `manage_season_${tmdbId}_${seasonNum}` }]);
+                });
+            }
+            buttons.push([{ text: `➕ Añadir Nueva Temporada`, callback_data: `add_new_season_${tmdbId}` }]);
+            bot.sendMessage(chatId, `Gestionando "${seriesData.title || seriesData.name}". Selecciona:`, { reply_markup: { inline_keyboard: buttons } });
+
+        } else if (data.startsWith('add_pro_movie_') || data.startsWith('add_free_movie_')) {
+            const isProLink = data.startsWith('add_pro');
+            const tmdbId = data.split('_')[3];
+            const existingData = await mongoDb.collection('media_catalog').findOne({ tmdbId: tmdbId });
+            if (!existingData) { bot.sendMessage(chatId, 'Error: No encontrada.'); return; }
+            adminState[chatId] = {
+                selectedMedia: existingData, mediaType: 'movie',
+                proEmbedCode: isProLink ? undefined : existingData.proEmbedCode, // Si añado PRO, espero PRO. Si añado Free, guardo el PRO existente.
+                freeEmbedCode: isProLink ? existingData.freeEmbedCode : undefined, // Viceversa
+                step: isProLink ? 'awaiting_pro_link_movie' : 'awaiting_free_link_movie'
+section: "image",
             };
             bot.sendMessage(chatId, `Envía el reproductor ${isProLink ? 'PRO' : 'GRATIS'} para "${existingData.title}".`);
 
@@ -1125,10 +1410,12 @@ app.get('/api/app-update', (req, res) => {
  res.status(200).json(updateInfo);
 });
 
+// ESTA RUTA ES DEL SISTEMA ANTIGUO (MODO REVISIÓN), YA NO LA USAMOS
+// PERO LA DEJAMOS POR SI ACASO.
 app.get('/api/app-status', (req, res) => {
     const status = {
-        isAppApproved: true, // Cambia a true DESPUÉS de la aprobación de Google
-        safeContentIds: [11104, 539, 4555, 27205, 33045] // IDs seguros
+        isAppApproved: true, // Ya no tiene efecto en la lógica nueva
+        safeContentIds: [11104, 539, 4555, 27205, 33045]
     };
     res.json(status);
 });
