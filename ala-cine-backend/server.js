@@ -49,7 +49,7 @@ const TMDB_API_KEY = process.env.TMDB_API_KEY;
 // true  = La app intentará reproducir contenido (si tiene enlaces).
 // false = La app mostrará "Mantenimiento" en lugar de "Reproducir".
 //
-let GLOBAL_STREAMING_ACTIVE = true;
+let GLOBAL_STREAMING_ACTIVE = false;
 //
 // =======================================================================
 
