@@ -1127,7 +1127,7 @@ app.get('/api/app-update', (req, res) => {
 
 app.get('/api/app-status', (req, res) => {
     const status = {
-        isAppApproved: true, // Cambia a true DESPUÉS de la aprobación de Google
+        isAppApproved: falce, // Cambia a true DESPUÉS de la aprobación de Google
         safeContentIds: [11104, 539, 4555, 27205, 33045] // IDs seguros
     };
     res.json(status);
