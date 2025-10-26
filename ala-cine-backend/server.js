@@ -24,7 +24,7 @@ const db = admin.firestore(); // USADO PARA USUARIOS/PAGOS/SOLICITUDES/NOTIFICAC
 const messaging = admin.messaging();
 
 paypal.configure({
-    'mode': 'sandbox', // Cambiar a 'live' en producción
+    'mode': process.env.PAYPAL_MODE || 'sandbox', // Usa variable de entorno o sandbox por defecto
     'client_id': process.env.PAYPAL_CLIENT_ID,
     'client_secret': process.env.PAYPAL_CLIENT_SECRET
 });
@@ -32,10 +32,20 @@ paypal.configure({
 const token = process.env.TELEGRAM_BOT_TOKEN;
 const GODSTREAM_API_KEY = process.env.GODSTREAM_API_KEY;
 
-const RENDER_BACKEND_URL = 'https://serivisios.onrender.com'; // Asegúrate que esta sea tu URL correcta
-const bot = new TelegramBot(token);
-const webhookUrl = `${RENDER_BACKEND_URL}/bot${token}`;
-bot.setWebHook(webhookUrl);
+const RENDER_BACKEND_URL = process.env.RENDER_EXTERNAL_URL || 'https://serivisios.onrender.com'; // Usa variable de Render o tu URL
+const bot = new TelegramBot(token); // No necesita webhook si usas polling localmente, pero sí en Render
+// Configura el webhook solo si estás en producción (Render)
+if (process.env.NODE_ENV === 'production') {
+    const webhookUrl = `${RENDER_BACKEND_URL}/bot${token}`;
+    bot.setWebHook(webhookUrl)
+       .then(() => console.log(`Webhook configurado en ${webhookUrl}`))
+       .catch((err) => console.error('Error configurando webhook:', err));
+} else {
+    console.log("Webhook no configurado (modo desarrollo). Usando polling.");
+    // Si necesitas polling en desarrollo:
+    // const bot = new TelegramBot(token, { polling: true });
+}
+
 
 const ADMIN_CHAT_ID = parseInt(process.env.ADMIN_CHAT_ID, 10);
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
@@ -93,7 +103,7 @@ function extractGodStreamCode(text) {
             // Usamos new URL() para parsear de forma segura
             const parsedUrl = new URL(text);
             const pathname = parsedUrl.pathname; // -> /embed-gurkbeec2awc.html
-            const parts = pathname.split('-');    // -> ['/embed', 'gurkbeec2awc.html']
+            const parts = pathname.split('-');   // -> ['/embed', 'gurkbeec2awc.html']
             if (parts.length > 1) {
                 return parts[parts.length - 1].replace('.html', ''); // -> 'gurkbeec2awc'
             }
@@ -147,11 +157,14 @@ app.get('/', (req, res) => {
   res.send('¡El bot y el servidor de Sala Cine están activos!');
 });
 
-// Ruta para procesar actualizaciones del bot
-app.post(`/bot${token}`, (req, res) => {
-  bot.processUpdate(req.body);
-  res.sendStatus(200);
-});
+// Ruta para procesar actualizaciones del bot (solo si usas webhook)
+if (process.env.NODE_ENV === 'production') {
+    app.post(`/bot${token}`, (req, res) => {
+        bot.processUpdate(req.body);
+        res.sendStatus(200);
+    });
+}
+
 
 // -------------------------------------------------------------------------
 // === RUTA CRÍTICA: MANEJO DE APP LINK Y REDIRECCIÓN DE FALLO ===
@@ -511,7 +524,7 @@ app.post('/add-series-episode', async (req, res) => {
 });
 
 // =======================================================================
-// === ¡NUEVA RUTA PARA ACTIVAR PREMIUM CON MONEDAS! ===
+// === RUTA CORREGIDA PARA ACTIVAR PREMIUM CON MONEDAS ===
 // =======================================================================
 app.post('/api/redeem-premium-time', async (req, res) => {
     const { userId, daysToAdd } = req.body;
@@ -527,39 +540,72 @@ app.post('/api/redeem-premium-time', async (req, res) => {
     }
 
     try {
-        // Referencia al documento del usuario en Firestore (donde está 'isPro')
-        // Usamos 'db' que es tu instancia global de admin.firestore()
+        // Referencia al documento del usuario en Firestore
         const userDocRef = db.collection('users').doc(userId);
+        const docSnap = await userDocRef.get(); // Leer el documento actual
 
-        // Actualizar el estado a Premium
-        // Usamos set con merge:true para crear el documento si no existe,
-        // o para actualizar solo el campo 'isPro' si ya existe sin borrar otros campos.
+        let newExpiryDate;
+        const now = new Date(); // Fecha y hora actuales
+
+        if (docSnap.exists && docSnap.data().premiumExpiry) {
+            // --- Lógica de Extensión ---
+            let currentExpiry;
+            const expiryData = docSnap.data().premiumExpiry;
+            // Manejar Timestamp de Firestore
+            if (expiryData.toDate && typeof expiryData.toDate === 'function') {
+                currentExpiry = expiryData.toDate();
+            }
+            // Manejar Número (milisegundos)
+            else if (typeof expiryData === 'number') {
+                currentExpiry = new Date(expiryData);
+            }
+            // Manejar String (fecha ISO)
+            else if (typeof expiryData === 'string') {
+                currentExpiry = new Date(expiryData);
+            } else {
+                console.warn(`Formato de premiumExpiry inesperado para ${userId}. Iniciando desde ahora.`);
+                currentExpiry = now; // Fallback: empezar desde ahora si el formato es raro
+            }
+
+
+            if (currentExpiry > now) {
+                // Si la suscripción actual está activa, añade días al final de la fecha existente
+                newExpiryDate = new Date(currentExpiry.getTime() + days * 24 * 60 * 60 * 1000);
+            } else {
+                // Si la suscripción expiró, empieza desde hoy
+                newExpiryDate = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+            }
+        } else {
+            // --- Lógica de Nueva Suscripción ---
+            // Si es la primera vez o no tiene fecha, empieza desde hoy
+            newExpiryDate = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+        }
+
+        // --- Actualiza AMBOS campos en Firebase ---
+        // Usamos set con merge:true para crear/actualizar sin borrar otros campos
         await userDocRef.set({
-            isPro: true
-            // Opcional: Podrías calcular y guardar una fecha de expiración si lo necesitas más adelante
-            // premiumExpiresAt: admin.firestore.Timestamp.fromDate(new Date(Date.now() + days * 24 * 60 * 60 * 1000))
+            isPro: true,
+            premiumExpiry: newExpiryDate // Guardamos como objeto Date (Admin SDK lo convierte a Timestamp)
         }, { merge: true });
 
-        console.log(`✅ Usuario ${userId} actualizado a Premium por ${days} días via monedas.`);
-        // Respondemos con éxito a la app
+        console.log(`✅ Premium activado/extendido para ${userId} hasta ${newExpiryDate.toISOString()}`);
         res.status(200).json({ success: true, message: `Premium activado por ${days} días.` });
 
     } catch (error) {
         console.error(`❌ Error al activar Premium para ${userId} via monedas:`, error);
-        // Respondemos con error a la app
         res.status(500).json({ success: false, error: 'Error interno del servidor al actualizar el estado del usuario.' });
     }
 });
 // =======================================================================
-// === FIN DE LA NUEVA RUTA ===
+// === FIN DE LA RUTA CORREGIDA ===
 // =======================================================================
 
 
 // =======================================================================
-// === RUTAS PAYPAL (Usan Firestore para estado PRO) ===
+// === RUTAS PAYPAL (Usan Firestore para estado PRO y Expiry) ===
 // =======================================================================
 app.post('/create-paypal-payment', (req, res) => {
-    const plan = req.body.plan;
+    const plan = req.body.plan; // 'monthly' o 'annual'
     const amount = (plan === 'annual') ? '19.99' : '1.99';
     const userId = req.body.userId; // ID de Firebase Auth
     if (!userId) return res.status(400).json({ error: "userId es requerido." });
@@ -574,13 +620,13 @@ app.post('/create-paypal-payment', (req, res) => {
         "transactions": [{
             "amount": { "currency": "USD", "total": amount },
             "description": `Suscripción al plan ${plan} de Sala Cine`,
-            "invoice_number": userId // Guarda userId aquí
+            "invoice_number": `${userId}|${plan}` // Guarda userId y plan aquí, separados por |
         }]
     };
 
     paypal.payment.create(create_payment_json, (error, payment) => {
         if (error) {
-            console.error("Error PayPal create:", error.response);
+            console.error("Error PayPal create:", error.response ? error.response.details : error);
             res.status(500).json({ error: "Error creando pago PayPal." });
         } else {
             const approvalUrl = payment.links.find(link => link.rel === 'approval_url');
@@ -600,25 +646,59 @@ app.get('/paypal/success', (req, res) => {
 
     paypal.payment.execute(paymentId, { "payer_id": payerId }, async (error, payment) => {
         if (error) {
-            console.error("Error PayPal execute:", error.response);
+            console.error("Error PayPal execute:", error.response ? error.response.details : error);
             return res.send('<html><body><h1>❌ ERROR: El pago no pudo ser procesado.</h1></body></html>');
         }
 
         if (payment.state === 'approved' || payment.state === 'completed') {
-            const userId = payment.transactions?.[0]?.invoice_number; // Recupera userId
-            if (userId) {
-                try {
-                    // FIREBASE: Actualiza el estado PRO
-                    const userDocRef = db.collection('users').doc(userId);
-                    await userDocRef.set({ isPro: true }, { merge: true });
-                    res.send('<html><body><h1>✅ ¡Pago Exitoso! Cuenta Premium Activada.</h1><p>Vuelve a la aplicación.</p></body></html>');
-                } catch (dbError) {
-                    console.error("Error Firestore update:", dbError);
-                    res.send('<html><body><h1>⚠️ Advertencia: Pago recibido, pero la cuenta no se activó automáticamente. Contacta soporte.</h1></body></html>');
-                }
+            const invoice_number = payment.transactions?.[0]?.invoice_number; // Recupera userId|plan
+            if (invoice_number) {
+                 const [userId, plan] = invoice_number.split('|'); // Separa userId y plan
+
+                 if(userId && plan) {
+                     try {
+                         const userDocRef = db.collection('users').doc(userId);
+                         const docSnap = await userDocRef.get();
+                         const daysToAdd = (plan === 'annual') ? 365 : 30;
+                         let newExpiryDate;
+                         const now = new Date();
+
+                         if (docSnap.exists && docSnap.data().premiumExpiry) {
+                             let currentExpiry;
+                             const expiryData = docSnap.data().premiumExpiry;
+                             if (expiryData.toDate) currentExpiry = expiryData.toDate();
+                             else if (typeof expiryData === 'number') currentExpiry = new Date(expiryData);
+                             else if (typeof expiryData === 'string') currentExpiry = new Date(expiryData);
+                             else currentExpiry = now;
+
+                             if (currentExpiry > now) {
+                                 newExpiryDate = new Date(currentExpiry.getTime() + daysToAdd * 24 * 60 * 60 * 1000);
+                             } else {
+                                 newExpiryDate = new Date(now.getTime() + daysToAdd * 24 * 60 * 60 * 1000);
+                             }
+                         } else {
+                             newExpiryDate = new Date(now.getTime() + daysToAdd * 24 * 60 * 60 * 1000);
+                         }
+
+                         // FIREBASE: Actualiza el estado PRO y la fecha de expiración
+                         await userDocRef.set({
+                             isPro: true,
+                             premiumExpiry: newExpiryDate
+                         }, { merge: true });
+
+                         res.send(`<html><body><h1>✅ ¡Pago Exitoso! Cuenta Premium (${plan}) Activada hasta ${newExpiryDate.toLocaleDateString()}.</h1><p>Vuelve a la aplicación.</p></body></html>`);
+
+                     } catch (dbError) {
+                         console.error("Error Firestore update:", dbError);
+                         res.send('<html><body><h1>⚠️ Advertencia: Pago recibido, pero la cuenta no se activó automáticamente. Contacta soporte.</h1></body></html>');
+                     }
+                 } else {
+                     console.error("Error: userId o plan no encontrado en invoice_number de PayPal:", invoice_number);
+                     res.send('<html><body><h1>✅ ¡Pago Exitoso! Pero hubo un error al obtener tu ID o plan. Contacta a soporte para activar tu Premium.</h1></body></html>');
+                 }
             } else {
-                 console.error("Error: userId no encontrado en la transacción de PayPal.");
-                 res.send('<html><body><h1>✅ ¡Pago Exitoso! Pero hubo un error al obtener tu ID. Contacta a soporte para activar tu Premium.</h1></body></html>');
+                 console.error("Error: invoice_number no encontrado en la transacción de PayPal.");
+                 res.send('<html><body><h1>✅ ¡Pago Exitoso! Pero hubo un error al obtener tu ID de usuario. Contacta a soporte para activar tu Premium.</h1></body></html>');
             }
         } else {
             res.send(`<html><body><h1>❌ ERROR: El pago no fue aprobado (Estado: ${payment.state}).</h1></body></html>`);
@@ -896,7 +976,7 @@ bot.on('message', async (msg) => {
             adminState[chatId] = { step: 'awaiting_series_action', lastSavedEpisodeData: seriesDataToSave }; // Guardamos datos del último ep
 
         } catch (error) {
-            console.error("Error guardando episodio:", error);
+            console.error("Error guardando episodio:", error.response ? error.response.data : error.message);
             bot.sendMessage(chatId, 'Error guardando episodio.');
         }
     // === FIN DEL CAMBIO ===
