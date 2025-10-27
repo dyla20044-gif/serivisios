@@ -264,13 +264,11 @@ app.get('/api/streaming-status', (req, res) => {
 // === RUTA OPTIMIZADA PARA OBTENER DATOS DE PELÍCULA/SERIE (MongoDB) ===
 // =======================================================================
 /**
- * Esta ruta define el 'isAvailable' (el interruptor específico).
- * Como puedes ver, se calcula automáticamente.
- * isAvailable = true SI Y SOLO SI la película/serie tiene un 'freeEmbedCode'
- * O un 'proEmbedCode' guardado en la base de datos.
- *
- * ¡TÚ NO TIENES QUE CAMBIAR NADA AQUÍ!
- * Simplemente agrega los enlaces usando el bot y esto funcionará solo.
+ * ¡CÓDIGO CORREGIDO!
+ * Esta ruta ahora comprueba primero la colección de SERIES.
+ * Si encuentra una serie con episodios válidos, devuelve isAvailable: true.
+ * Esto evita que las "entradas fantasma" en la colección de películas causen
+ * que las series aparezcan como "no disponibles".
  */
 app.get('/api/get-movie-data', async (req, res) => {
     if (!mongoDb) {
@@ -283,40 +281,68 @@ app.get('/api/get-movie-data', async (req, res) => {
     try {
         const movieCollection = mongoDb.collection('media_catalog');
         const seriesCollection = mongoDb.collection('series_catalog');
-        const movieProjection = { projection: { views: 1, likes: 1, freeEmbedCode: 1, proEmbedCode: 1 } };
+        
+        let docMovie = null;
+        let docSeries = null;
+        let views = 0;
+        let likes = 0;
+        let isAvailable = false;
+
+        // --- LÓGICA CORREGIDA ---
+        // 1. Siempre chequear si existe como SERIE primero.
         const seriesProjection = { projection: { views: 1, likes: 1, seasons: 1 } };
+        docSeries = await seriesCollection.findOne({ tmdbId: id.toString() }, seriesProjection);
 
-        let isMovie = true;
-        let doc = await movieCollection.findOne({ tmdbId: id.toString() }, movieProjection);
-        if (!doc) {
-            isMovie = false;
-            doc = await seriesCollection.findOne({ tmdbId: id.toString() }, seriesProjection);
-        }
-
-        if (doc) {
-            let isAvailable = false;
-            if (isMovie) {
-                // Lógica automática para películas
-                isAvailable = !!(doc.freeEmbedCode || doc.proEmbedCode);
-            } else {
-                // Lógica automática para series (revisa si algún episodio tiene enlace)
-                if (doc.seasons) {
-                    isAvailable = Object.values(doc.seasons).some(season =>
-                        season && season.episodes && Object.values(season.episodes).some(ep =>
-                            (ep.freeEmbedCode && ep.freeEmbedCode !== '') ||
-                            (ep.proEmbedCode && ep.proEmbedCode !== '')
-                        )
-                    );
-                }
+        if (docSeries) {
+            // Si se encuentra como serie, calcular su disponibilidad.
+            views = docSeries.views || 0;
+            likes = docSeries.likes || 0;
+            if (docSeries.seasons) {
+                isAvailable = Object.values(docSeries.seasons).some(season =>
+                    season && season.episodes && Object.values(season.episodes).some(ep =>
+                        (ep.freeEmbedCode && ep.freeEmbedCode !== '') ||
+                        (ep.proEmbedCode && ep.proEmbedCode !== '')
+                    )
+                );
             }
-            res.status(200).json({
-                views: doc.views || 0,
-                likes: doc.likes || 0,
-                isAvailable: isAvailable // Devuelve el resultado del cálculo automático
-            });
-        } else {
-            res.status(200).json({ views: 0, likes: 0, isAvailable: false });
+            // IMPORTANTE: Si está disponible como serie, retornamos DE INMEDIATO.
+            // Esto ignora cualquier "entrada fantasma" en la colección de películas.
+            if (isAvailable) {
+                return res.status(200).json({
+                    views: views,
+                    likes: likes,
+                    isAvailable: true
+                });
+            }
+            // Si no está disponible como serie (ej. 0 episodios), seguimos por si acaso es una película.
         }
+
+        // 2. Si NO se encontró como serie (o no tenía episodios), chequear como PELÍCULA.
+        const movieProjection = { projection: { views: 1, likes: 1, freeEmbedCode: 1, proEmbedCode: 1 } };
+        docMovie = await movieCollection.findOne({ tmdbId: id.toString() }, movieProjection);
+
+        if (docMovie) {
+            // Si se encuentra como película, calcular su disponibilidad.
+            // Usamos estas métricas solo si no las encontramos en series.
+            if (views === 0) views = docMovie.views || 0;
+            if (likes === 0) likes = docMovie.likes || 0;
+            
+            isAvailable = !!(docMovie.freeEmbedCode || docMovie.proEmbedCode);
+            
+            return res.status(200).json({
+                views: views,
+                likes: likes,
+                isAvailable: isAvailable
+            });
+        }
+        
+        // 3. Si no se encontró en NINGUNA colección (o no tenía enlaces en ninguna)
+        res.status(200).json({ 
+            views: views, // Retorna métricas de serie si se encontró, si no 0
+            likes: likes, // Retorna métricas de serie si se encontró, si no 0
+            isAvailable: false 
+        });
+
     } catch (error) {
         console.error(`Error crítico al obtener los datos consolidados en MongoDB:`, error);
         res.status(500).json({ error: "Error interno del servidor al obtener los datos." });
@@ -1122,15 +1148,57 @@ bot.on('callback_query', async (callbackQuery) => {
                 bot.sendMessage(chatId, `"${response.data.name}". ¿Qué temporada NUEVA agregar?`, { reply_markup: { inline_keyboard: buttons } });
             } else { bot.sendMessage(chatId, 'No hay más temporadas nuevas para agregar.'); }
 
+        // =======================================================================
+        // === ¡INICIO DE LA CORRECCIÓN DEL BOT! ===
+        // =======================================================================
         } else if (data.startsWith('solicitud_')) {
             const tmdbId = data.split('_')[1];
-            const tmdbUrl = `https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${TMDB_API_KEY}&language=es-ES`;
-            const response = await axios.get(tmdbUrl);
-            adminState[chatId] = { selectedMedia: response.data, mediaType: 'movie', step: 'awaiting_pro_link_movie' };
-            bot.sendMessage(chatId, `Atendiendo solicitud: "${response.data.title}". Envía link PRO (o "no").`);
-            // Opcional: Actualizar estado de solicitud en Firestore
-            // const reqSnap = await db.collection('userRequests').where('tmdbId', '==', tmdbId).limit(1).get();
-            // if (!reqSnap.empty) await reqSnap.docs[0].ref.update({ status: 'processing' });
+            let mediaData;
+            let mediaType;
+        
+            try {
+                // Intento 1: Buscar como Película
+                const movieUrl = `https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${TMDB_API_KEY}&language=es-ES`;
+                const movieResponse = await axios.get(movieUrl);
+                mediaData = movieResponse.data;
+                mediaType = 'movie';
+                console.log(`Solicitud ${tmdbId} encontrada como PELÍCULA.`);
+            } catch (movieError) {
+                // Si falla (ej. 404), Intento 2: Buscar como Serie
+                console.log(`Solicitud ${tmdbId} no es película, intentando como serie...`);
+                try {
+                    const tvUrl = `https://api.themoviedb.org/3/tv/${tmdbId}?api_key=${TMDB_API_KEY}&language=es-ES`;
+                    const tvResponse = await axios.get(tvUrl);
+                    mediaData = tvResponse.data;
+                    mediaType = 'series'; // Usar 'series' para que coincida con tu lógica
+                    console.log(`Solicitud ${tmdbId} encontrada como SERIE.`);
+                } catch (tvError) {
+                    console.error("Error al buscar solicitud en TMDB (Movie y TV):", tvError.message);
+                    bot.sendMessage(chatId, `❌ Error: No se pudo encontrar el TMDB ID ${tmdbId} ni como película ni como serie.`);
+                    return; // Salir si no se encuentra en ninguna
+                }
+            }
+        
+            // Ahora, continúa con la lógica correcta dependiendo del mediaType
+            if (mediaType === 'movie') {
+                // --- Flujo de Película (como lo tenías) ---
+                adminState[chatId] = { selectedMedia: mediaData, mediaType: 'movie', step: 'awaiting_pro_link_movie' };
+                bot.sendMessage(chatId, `Atendiendo solicitud (Película): "${mediaData.title}". Envía link PRO (o "no").`);
+            } else { 
+                // --- Flujo de Serie (copiado de 'add_new_series_') ---
+                const seasons = mediaData.seasons?.filter(s => s.season_number > 0);
+                if (seasons?.length > 0) {
+                    adminState[chatId] = { selectedSeries: mediaData, mediaType: 'series', step: 'awaiting_season_selection' };
+                    const buttons = seasons.map(s => [{ text: `${s.name} (S${s.season_number})`, callback_data: `select_season_${tmdbId}_${s.season_number}` }]);
+                    bot.sendMessage(chatId, `Atendiendo solicitud (Serie): "${mediaData.name}". Selecciona la temporada a la que quieres agregar episodios:`, { reply_markup: { inline_keyboard: buttons } });
+                } else {
+                    bot.sendMessage(chatId, `La serie "${mediaData.name}" no tiene temporadas válidas.`);
+                    adminState[chatId] = { step: 'menu' };
+                }
+            }
+        // =======================================================================
+        // === ¡FIN DE LA CORRECCIÓN DEL BOT! ===
+        // =======================================================================
 
         } else if (data === 'manage_movies') {
             adminState[chatId] = { step: 'search_manage' }; // ¿Reutilizar search_movie/series o lógica específica?
