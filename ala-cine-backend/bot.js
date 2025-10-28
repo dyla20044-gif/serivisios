@@ -1,6 +1,6 @@
 // Contenido completo y CORREGIDO de bot.js
 
-function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_ID, TMDB_API_KEY, RENDER_BACKEND_URL, axios, extractGodStreamCode) {
+function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_ID, TMDB_API_KEY, RENDER_BACKEND_URL, axios) { // <--- ELIMINADO extractGodStreamCode
 
     console.log("🤖 Lógica del Bot inicializada y escuchando...");
 
@@ -152,14 +152,20 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_ID, TMDB_API_KEY
         // --- Lógica de Añadir Links (PRO y GRATIS) ---
         else if (adminState[chatId] && adminState[chatId].step === 'awaiting_pro_link_movie') {
             const { selectedMedia } = adminState[chatId];
-            adminState[chatId].proEmbedCode = userText.toLowerCase() === 'no' ? null : extractGodStreamCode(userText);
+            
+            // [CAMBIO CLAVE] Guardamos el texto (iframe) directamente
+            adminState[chatId].proEmbedCode = userText.toLowerCase() === 'no' ? null : userText;
+            
             adminState[chatId].step = 'awaiting_free_link_movie';
-            bot.sendMessage(chatId, `PRO recibido (${adminState[chatId].proEmbedCode ? 'Link/Código' : 'Ninguno'}). Ahora envía el GRATIS para "${selectedMedia.title}". Escribe "no" si no hay.`);
+            bot.sendMessage(chatId, `PRO recibido (${adminState[chatId].proEmbedCode ? 'Embed completo' : 'Ninguno'}). Ahora envía el GRATIS para "${selectedMedia.title}". Escribe "no" si no hay.`);
 
         } else if (adminState[chatId] && adminState[chatId].step === 'awaiting_free_link_movie') {
             const { selectedMedia, proEmbedCode } = adminState[chatId];
             if (!selectedMedia?.id) { bot.sendMessage(chatId, 'Error: Se perdieron los datos de la película.'); adminState[chatId] = { step: 'menu' }; return; }
-            const freeEmbedCode = userText.toLowerCase() === 'no' ? null : extractGodStreamCode(userText);
+
+            // [CAMBIO CLAVE] Guardamos el texto (iframe) directamente
+            const freeEmbedCode = userText.toLowerCase() === 'no' ? null : userText;
+            
             if (!proEmbedCode && !freeEmbedCode) { bot.sendMessage(chatId, 'Error: Debes proporcionar al menos un enlace (PRO o GRATIS).'); return; }
 
             // Guardar datos temporalmente
@@ -178,19 +184,25 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_ID, TMDB_API_KEY
                     ]
                 }
             };
-            bot.sendMessage(chatId, `GRATIS recibido (${freeEmbedCode ? 'Link/Código' : 'Ninguno'}). ¿Qué hacer ahora?`, options);
+            bot.sendMessage(chatId, `GRATIS recibido (${freeEmbedCode ? 'Embed completo' : 'Ninguno'}). ¿Qué hacer ahora?`, options);
 
         } else if (adminState[chatId] && adminState[chatId].step === 'awaiting_pro_link_series') {
             const { selectedSeries, season, episode } = adminState[chatId];
             if (!selectedSeries) { bot.sendMessage(chatId, 'Error: Se perdieron los datos de la serie.'); adminState[chatId] = { step: 'menu' }; return; }
-            adminState[chatId].proEmbedCode = userText.toLowerCase() === 'no' ? null : extractGodStreamCode(userText);
+            
+            // [CAMBIO CLAVE] Guardamos el texto (iframe) directamente
+            adminState[chatId].proEmbedCode = userText.toLowerCase() === 'no' ? null : userText;
+            
             adminState[chatId].step = 'awaiting_free_link_series';
-            bot.sendMessage(chatId, `PRO recibido (${adminState[chatId].proEmbedCode ? 'Link/Código' : 'Ninguno'}). Envía el GRATIS para S${season}E${episode}. Escribe "no" si no hay.`);
+            bot.sendMessage(chatId, `PRO recibido (${adminState[chatId].proEmbedCode ? 'Embed completo' : 'Ninguno'}). Envía el GRATIS para S${season}E${episode}. Escribe "no" si no hay.`);
 
         } else if (adminState[chatId] && adminState[chatId].step === 'awaiting_free_link_series') {
             const { selectedSeries, season, episode, proEmbedCode } = adminState[chatId];
              if (!selectedSeries) { bot.sendMessage(chatId, 'Error: Se perdieron los datos de la serie.'); adminState[chatId] = { step: 'menu' }; return; }
-            const freeEmbedCode = userText.toLowerCase() === 'no' ? null : extractGodStreamCode(userText);
+            
+            // [CAMBIO CLAVE] Guardamos el texto (iframe) directamente
+            const freeEmbedCode = userText.toLowerCase() === 'no' ? null : userText;
+            
             if (!proEmbedCode && !freeEmbedCode) { bot.sendMessage(chatId, 'Error: Debes proporcionar al menos un enlace (PRO o GRATIS).'); return; }
 
             const seriesDataToSave = {
