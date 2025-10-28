@@ -388,7 +388,45 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_ID, TMDB_API_KEY
             }
             
             else if (data.startsWith('add_new_season_')) { /* ... (Lógica no implementada) ... */ }
-            else if (data.startsWith('solicitud_')) { /* ... (Lógica no implementada) ... */ }
+            
+            // +++ CAMBIO REALIZADO: Lógica para el botón de solicitud +++
+            else if (data.startsWith('solicitud_')) {
+                const tmdbId = data.split('_')[1]; // Obtiene el ID de la película (ej: solicitud_12345)
+                if (!tmdbId) { 
+                    bot.sendMessage(chatId, 'Error: No se pudo obtener el ID de la solicitud.'); 
+                    return; 
+                }
+                
+                // Quitamos los botones del mensaje de solicitud
+                bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id }).catch(() => {});
+
+                // Reutilizamos la lógica de 'add_new_movie_' para buscar la película y pedir los links
+                try {
+                    // (Asumimos que TMDB_API_KEY y axios están disponibles desde initializeBot)
+                    const movieUrl = `https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${TMDB_API_KEY}&language=es-ES`;
+                    const response = await axios.get(movieUrl);
+                    const movieData = response.data;
+                    if (!movieData) { bot.sendMessage(chatId, 'Error: No se encontraron detalles para esa película.'); return; }
+
+                    // Ponemos al bot en modo "esperando link PRO"
+                    adminState[chatId] = {
+                        step: 'awaiting_pro_link_movie', 
+                        selectedMedia: {
+                            id: movieData.id,
+                            title: movieData.title,
+                            overview: movieData.overview,
+                            poster_path: movieData.poster_path
+                        }
+                    };
+                    
+                    bot.sendMessage(chatId, `🎬 Solicitud seleccionada: *${movieData.title}*\n\nAhora envía el enlace PRO. Escribe "no" si no hay enlace PRO.`, { parse_mode: 'Markdown' });
+                
+                } catch (error) {
+                    console.error("Error al obtener detalles de TMDB en 'solicitud_':", error.message);
+                    bot.sendMessage(chatId, 'Error al obtener los detalles de la película desde TMDB.');
+                }
+            }
+            // +++ FIN DEL CAMBIO +++
 
             else if (data === 'manage_movies') { 
                 adminState[chatId] = { step: 'search_manage' }; // Usamos el nuevo step 'search_manage'
