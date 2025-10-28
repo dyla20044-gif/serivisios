@@ -10,6 +10,14 @@ const { MongoClient, ServerApiVersion } = require('mongodb');
 // const godstreamService = require('./GoodStreamServers.js'); // <--- ELIMINADO
 const initializeBot = require('./bot.js');
 
+// +++ INICIO DE CAMBIOS PARA CACHÉ +++
+const NodeCache = require('node-cache');
+// Configura el caché. stdTTL es el "Time To Live" (tiempo de vida) en segundos.
+// 3600 segundos = 1 hora (justo como pediste)
+// checkperiod: 120 (cada 2 minutos revisa si hay datos expirados para borrar)
+const miCache = new NodeCache({ stdTTL: 3600, checkperiod: 120 });
+// +++ FIN DE CAMBIOS PARA CACHÉ +++
+
 const app = express();
 dotenv.config();
 
@@ -197,43 +205,74 @@ app.get('/api/get-movie-data', async (req, res) => {
 });
 
 
+// =======================================================================
+// === RUTA /api/get-embed-code MODIFICADA CON CACHÉ ===
+// =======================================================================
 app.get('/api/get-embed-code', async (req, res) => {
-     // <--- INICIO DE LA LÓGICA MODIFICADA --->
-     if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
-     const { id, season, episode, isPro } = req.query;
-     if (!id) return res.status(400).json({ error: "ID no proporcionado" });
+    if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
+    const { id, season, episode, isPro } = req.query;
+    if (!id) return res.status(400).json({ error: "ID no proporcionado" });
 
-     try {
-         const mediaType = season && episode ? 'series' : 'movies';
-         const collectionName = (mediaType === 'movies') ? 'media_catalog' : 'series_catalog';
-         const doc = await mongoDb.collection(collectionName).findOne({ tmdbId: id.toString() }); // Buscar por String
-         if (!doc) return res.status(404).json({ error: `${mediaType} no encontrada.` });
+    // +++ INICIO DE LÓGICA DE CACHÉ +++
 
-         let embedCode;
-         if (mediaType === 'movies') {
+    // 1. Crear una "llave" (key) única para esta solicitud
+    // Ej: "embed-12345-pro" o "embed-54321-s1-e2-free"
+    const cacheKey = `embed-${id}-${season || 'movie'}-${episode || '1'}-${isPro === 'true' ? 'pro' : 'free'}`;
+
+    // 2. Intentar obtener los datos desde el caché
+    try {
+        const cachedData = miCache.get(cacheKey);
+        if (cachedData) {
+            // ¡ENCONTRADO EN CACHÉ! (Cache Hit)
+            console.log(`[Cache HIT] Sirviendo embed desde caché para: ${cacheKey}`);
+            return res.json({ embedCode: cachedData });
+        }
+    } catch (err) {
+        console.error("Error al leer del caché:", err);
+        // No es fatal, simplemente continuamos a la DB.
+    }
+
+    // 3. Si no está en caché (Cache Miss), buscar en MongoDB (tu lógica original)
+    console.log(`[Cache MISS] Buscando en MongoDB para: ${cacheKey}`);
+    try {
+        const mediaType = season && episode ? 'series' : 'movies';
+        const collectionName = (mediaType === 'movies') ? 'media_catalog' : 'series_catalog';
+        const doc = await mongoDb.collection(collectionName).findOne({ tmdbId: id.toString() }); // Buscar por String
+        if (!doc) return res.status(404).json({ error: `${mediaType} no encontrada.` });
+
+        let embedCode;
+        if (mediaType === 'movies') {
             // Lógica simplificada: Si es Pro, da el código pro. Si no, da el código gratis.
             embedCode = isPro === 'true' ? doc.proEmbedCode : doc.freeEmbedCode;
-         } else {
-             const episodeData = doc.seasons?.[season]?.episodes?.[episode];
-             // Lógica simplificada: Si es Pro, da el código pro. Si no, da el código gratis.
-             embedCode = isPro === 'true' ? episodeData?.proEmbedCode : episodeData?.freeEmbedCode;
-         }
+        } else {
+            const episodeData = doc.seasons?.[season]?.episodes?.[episode];
+            // Lógica simplificada: Si es Pro, da el código pro. Si no, da el código gratis.
+            embedCode = isPro === 'true' ? episodeData?.proEmbedCode : episodeData?.freeEmbedCode;
+        }
 
-         if (!embedCode) {
+        if (!embedCode) {
             console.log(`[Embed Code] No se encontró código para ${id} (isPro: ${isPro})`);
             return res.status(404).json({ error: `No se encontró código de reproductor.` });
-         }
+        }
+        
+        // 4. ¡GUARDAR en caché ANTES de responder!
+        // El 'embedCode' se guardará con la llave 'cacheKey' durante 1 hora (el stdTTL que definimos)
+        miCache.set(cacheKey, embedCode);
 
-         // Devolver el código (iframe) directamente
-         console.log(`[Embed Code] Sirviendo embed directo para ${id} (isPro: ${isPro})`);
-         return res.json({ embedCode: embedCode });
-         
-     } catch (error) {
-         console.error("Error crítico get-embed-code:", error);
-         res.status(500).json({ error: "Error interno" });
-     }
-     // <--- FIN DE LA LÓGICA MODIFICADA --->
+        // Devolver el código (iframe) directamente
+        console.log(`[MongoDB] Sirviendo embed directo y guardando en caché para ${id} (isPro: ${isPro})`);
+        return res.json({ embedCode: embedCode });
+        
+    } catch (error) {
+        console.error("Error crítico get-embed-code:", error);
+        res.status(500).json({ error: "Error interno" });
+    }
+    // +++ FIN DE LÓGICA DE CACHÉ +++
 });
+// =======================================================================
+// === FIN DE LA RUTA MODIFICADA ===
+// =======================================================================
+
 
 app.get('/api/check-season-availability', async (req, res) => {
     // ... (sin cambios)
