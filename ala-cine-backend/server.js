@@ -12,10 +12,10 @@ const initializeBot = require('./bot.js');
 
 // +++ INICIO DE CAMBIOS PARA CACHÉ +++
 const NodeCache = require('node-cache');
-// Configura el caché. stdTTL es el "Time To Live" (tiempo de vida) en segundos.
-// 3600 segundos = 1 hora (justo como pediste)
-// checkperiod: 120 (cada 2 minutos revisa si hay datos expirados para borrar)
-const miCache = new NodeCache({ stdTTL: 3600, checkperiod: 120 });
+// Caché para enlaces (1 hora TTL - 3600 segundos)
+const embedCache = new NodeCache({ stdTTL: 3600, checkperiod: 120 });
+// ¡NUEVO! Caché para contadores (5 minutos TTL - 300 segundos)
+const countsCache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
 // +++ FIN DE CAMBIOS PARA CACHÉ +++
 
 const app = express();
@@ -132,7 +132,7 @@ app.get('/app/details/:tmdbId', (req, res) => {
     res.status(404).send('No se encontró la aplicación de destino ni un enlace de descarga o fallback.');
 });
 
-// ... (rutas /request-movie, /api/streaming-status, /api/get-movie-data, etc., SIN CAMBIOS hasta /api/notify) ...
+// ... (ruta /request-movie, /api/streaming-status SIN CAMBIOS) ...
 app.post('/request-movie', async (req, res) => {
     // ... (sin cambios en esta ruta)
     const { title, poster_path, tmdbId, priority } = req.body;
@@ -172,11 +172,29 @@ app.get('/api/streaming-status', (req, res) => {
     res.status(200).json({ isStreamingActive: GLOBAL_STREAMING_ACTIVE });
 });
 
+
+// =======================================================================
+// === RUTA /api/get-movie-data MODIFICADA CON CACHÉ ===
+// =======================================================================
 app.get('/api/get-movie-data', async (req, res) => {
-    // ... (sin cambios)
     if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
     const { id } = req.query;
     if (!id) return res.status(400).json({ error: "El ID del contenido es requerido." });
+
+    // +++ INICIO DE LÓGICA DE CACHÉ (5 MINUTOS) +++
+    const cacheKey = `counts-data-${id}`;
+    try {
+        const cachedData = countsCache.get(cacheKey);
+        if (cachedData) {
+            console.log(`[Cache HIT] Sirviendo contadores desde caché para: ${cacheKey}`);
+            return res.status(200).json(cachedData);
+        }
+    } catch (err) {
+        console.error("Error al leer del caché de contadores:", err);
+    }
+    console.log(`[Cache MISS] Buscando contadores en MongoDB para: ${cacheKey}`);
+    // +++ FIN DE LÓGICA DE CACHÉ +++
+    
     try {
         const movieCollection = mongoDb.collection('media_catalog');
         const seriesCollection = mongoDb.collection('series_catalog');
@@ -188,16 +206,26 @@ app.get('/api/get-movie-data', async (req, res) => {
             if (docSeries.seasons) {
                 isAvailable = Object.values(docSeries.seasons).some(season => season && season.episodes && Object.values(season.episodes).some(ep => (ep.freeEmbedCode && ep.freeEmbedCode !== '') || (ep.proEmbedCode && ep.proEmbedCode !== '')));
             }
-            if (isAvailable) { return res.status(200).json({ views: views, likes: likes, isAvailable: true }); }
+            if (isAvailable) {
+                const responseData = { views: views, likes: likes, isAvailable: true };
+                countsCache.set(cacheKey, responseData); // Guardar en caché
+                return res.status(200).json(responseData);
+            }
         }
         const movieProjection = { projection: { views: 1, likes: 1, freeEmbedCode: 1, proEmbedCode: 1 } };
         docMovie = await movieCollection.findOne({ tmdbId: id.toString() }, movieProjection);
         if (docMovie) {
             if (views === 0) views = docMovie.views || 0; if (likes === 0) likes = docMovie.likes || 0;
             isAvailable = !!(docMovie.freeEmbedCode || docMovie.proEmbedCode);
-            return res.status(200).json({ views: views, likes: likes, isAvailable: isAvailable });
+            
+            const responseData = { views: views, likes: likes, isAvailable: isAvailable };
+            countsCache.set(cacheKey, responseData); // Guardar en caché
+            return res.status(200).json(responseData);
         }
-        res.status(200).json({ views: views, likes: likes, isAvailable: false }); // Devuelve 0s si no se encuentra
+        
+        const responseData_NotFound = { views: views, likes: likes, isAvailable: false };
+        countsCache.set(cacheKey, responseData_NotFound); // Guardar en caché (incluso si no se encuentra)
+        res.status(200).json(responseData_NotFound); // Devuelve 0s si no se encuentra
     } catch (error) {
         console.error(`Error crítico al obtener los datos consolidados en MongoDB:`, error);
         res.status(500).json({ error: "Error interno del servidor al obtener los datos." });
@@ -213,27 +241,21 @@ app.get('/api/get-embed-code', async (req, res) => {
     const { id, season, episode, isPro } = req.query;
     if (!id) return res.status(400).json({ error: "ID no proporcionado" });
 
-    // +++ INICIO DE LÓGICA DE CACHÉ +++
-
-    // 1. Crear una "llave" (key) única para esta solicitud
-    // Ej: "embed-12345-pro" o "embed-54321-s1-e2-free"
+    // +++ INICIO DE LÓGICA DE CACHÉ (1 HORA) +++
     const cacheKey = `embed-${id}-${season || 'movie'}-${episode || '1'}-${isPro === 'true' ? 'pro' : 'free'}`;
 
-    // 2. Intentar obtener los datos desde el caché
     try {
-        const cachedData = miCache.get(cacheKey);
+        // Usamos embedCache (el de 1 hora)
+        const cachedData = embedCache.get(cacheKey);
         if (cachedData) {
-            // ¡ENCONTRADO EN CACHÉ! (Cache Hit)
             console.log(`[Cache HIT] Sirviendo embed desde caché para: ${cacheKey}`);
             return res.json({ embedCode: cachedData });
         }
     } catch (err) {
-        console.error("Error al leer del caché:", err);
-        // No es fatal, simplemente continuamos a la DB.
+        console.error("Error al leer del caché de embeds:", err);
     }
 
-    // 3. Si no está en caché (Cache Miss), buscar en MongoDB (tu lógica original)
-    console.log(`[Cache MISS] Buscando en MongoDB para: ${cacheKey}`);
+    console.log(`[Cache MISS] Buscando embed en MongoDB para: ${cacheKey}`);
     try {
         const mediaType = season && episode ? 'series' : 'movies';
         const collectionName = (mediaType === 'movies') ? 'media_catalog' : 'series_catalog';
@@ -242,11 +264,9 @@ app.get('/api/get-embed-code', async (req, res) => {
 
         let embedCode;
         if (mediaType === 'movies') {
-            // Lógica simplificada: Si es Pro, da el código pro. Si no, da el código gratis.
             embedCode = isPro === 'true' ? doc.proEmbedCode : doc.freeEmbedCode;
         } else {
             const episodeData = doc.seasons?.[season]?.episodes?.[episode];
-            // Lógica simplificada: Si es Pro, da el código pro. Si no, da el código gratis.
             embedCode = isPro === 'true' ? episodeData?.proEmbedCode : episodeData?.freeEmbedCode;
         }
 
@@ -255,11 +275,9 @@ app.get('/api/get-embed-code', async (req, res) => {
             return res.status(404).json({ error: `No se encontró código de reproductor.` });
         }
         
-        // 4. ¡GUARDAR en caché ANTES de responder!
-        // El 'embedCode' se guardará con la llave 'cacheKey' durante 1 hora (el stdTTL que definimos)
-        miCache.set(cacheKey, embedCode);
+        // Guardamos en embedCache (el de 1 hora)
+        embedCache.set(cacheKey, embedCode);
 
-        // Devolver el código (iframe) directamente
         console.log(`[MongoDB] Sirviendo embed directo y guardando en caché para ${id} (isPro: ${isPro})`);
         return res.json({ embedCode: embedCode });
         
@@ -267,11 +285,7 @@ app.get('/api/get-embed-code', async (req, res) => {
         console.error("Error crítico get-embed-code:", error);
         res.status(500).json({ error: "Error interno" });
     }
-    // +++ FIN DE LÓGICA DE CACHÉ +++
 });
-// =======================================================================
-// === FIN DE LA RUTA MODIFICADA ===
-// =======================================================================
 
 
 app.get('/api/check-season-availability', async (req, res) => {
@@ -290,20 +304,47 @@ app.get('/api/check-season-availability', async (req, res) => {
      } catch (error) { console.error("Error check-season-availability:", error); res.status(500).json({ error: "Error interno." }); }
 });
 
+
+// =======================================================================
+// === RUTA /api/get-metrics MODIFICADA CON CACHÉ ===
+// =======================================================================
 app.get('/api/get-metrics', async (req, res) => {
-    // ... (sin cambios)
     if (!mongoDb) return res.status(503).json({ error: "BD no disponible." });
     const { id, field } = req.query;
     if (!id || !field || (field !== 'views' && field !== 'likes')) { return res.status(400).json({ error: "ID y campo ('views' o 'likes') requeridos." }); }
+
+    // +++ INICIO DE LÓGICA DE CACHÉ (5 MINUTOS) +++
+    const cacheKey = `counts-metrics-${id}-${field}`;
+    try {
+        const cachedData = countsCache.get(cacheKey);
+        if (cachedData) {
+            console.log(`[Cache HIT] Sirviendo métrica desde caché para: ${cacheKey}`);
+            return res.status(200).json(cachedData);
+        }
+    } catch (err) {
+        console.error("Error al leer del caché de métricas:", err);
+    }
+    console.log(`[Cache MISS] Buscando métrica en MongoDB para: ${cacheKey}`);
+    // +++ FIN DE LÓGICA DE CACHÉ +++
+
     try {
         let doc = await mongoDb.collection('media_catalog').findOne({ tmdbId: id.toString() }, { projection: { [field]: 1 } });
         if (!doc) doc = await mongoDb.collection('series_catalog').findOne({ tmdbId: id.toString() }, { projection: { [field]: 1 } });
-        res.status(200).json({ count: doc?.[field] || 0 });
+        
+        const responseData = { count: doc?.[field] || 0 };
+        countsCache.set(cacheKey, responseData); // Guardar en caché
+        res.status(200).json(responseData);
+
     } catch (error) { console.error(`Error get-metrics (${field}):`, error); res.status(500).json({ error: "Error interno." }); }
 });
 
+
+// =======================================================================
+// === RUTAS DE ESCRITURA (INCREMENTS) - SIN CACHÉ ===
+// =======================================================================
+
 app.post('/api/increment-views', async (req, res) => {
-    // ... (sin cambios)
+    // ¡ESTA RUTA NO LLEVA CACHÉ! ES UNA ESCRITURA.
     if (!mongoDb) return res.status(503).json({ error: "BD no disponible." });
     const { tmdbId } = req.body; if (!tmdbId) return res.status(400).json({ error: "tmdbId requerido." });
     try {
@@ -312,12 +353,18 @@ app.post('/api/increment-views', async (req, res) => {
         if (result.matchedCount === 0 && result.upsertedCount === 0) {
            result = await mongoDb.collection('series_catalog').updateOne({ tmdbId: tmdbId.toString() }, update, options);
         }
+        
+        // ¡IMPORTANTE! Invalidar el caché de contadores para este ID
+        // para que la próxima lectura muestre la vista nueva.
+        countsCache.del(`counts-data-${tmdbId}`);
+        countsCache.del(`counts-metrics-${tmdbId}-views`);
+
         res.status(200).json({ message: 'Vista registrada.' });
     } catch (error) { console.error("Error increment-views:", error); res.status(500).json({ error: "Error interno." }); }
 });
 
 app.post('/api/increment-likes', async (req, res) => {
-    // ... (sin cambios)
+    // ¡ESTA RUTA NO LLEVA CACHÉ! ES UNA ESCRITURA.
     if (!mongoDb) return res.status(503).json({ error: "BD no disponible." });
     const { tmdbId } = req.body; if (!tmdbId) return res.status(400).json({ error: "tmdbId requerido." });
     try {
@@ -326,6 +373,11 @@ app.post('/api/increment-likes', async (req, res) => {
          if (result.matchedCount === 0 && result.upsertedCount === 0) {
             result = await mongoDb.collection('series_catalog').updateOne({ tmdbId: tmdbId.toString() }, update, options);
          }
+
+        // ¡IMPORTANTE! Invalidar el caché de contadores para este ID
+        countsCache.del(`counts-data-${tmdbId}`);
+        countsCache.del(`counts-metrics-${tmdbId}-likes`);
+
         res.status(200).json({ message: 'Like registrado.' });
     } catch (error) { console.error("Error increment-likes:", error); res.status(500).json({ error: "Error interno." }); }
 });
@@ -338,6 +390,12 @@ app.post('/add-movie', async (req, res) => {
         if (!tmdbId) return res.status(400).json({ error: 'tmdbId requerido.' });
         const updateQuery = { $set: { title, poster_path, overview, freeEmbedCode, proEmbedCode, isPremium }, $setOnInsert: { tmdbId: tmdbId.toString(), views: 0, likes: 0, addedAt: new Date() } }; // Añadir fecha de adición
         await mongoDb.collection('media_catalog').updateOne({ tmdbId: tmdbId.toString() }, updateQuery, { upsert: true });
+        
+        // Invalidar cachés existentes para este ID
+        embedCache.del(`embed-${tmdbId}-movie-1-pro`);
+        embedCache.del(`embed-${tmdbId}-movie-1-free`);
+        countsCache.del(`counts-data-${tmdbId}`);
+
         res.status(200).json({ message: 'Película agregada/actualizada.' });
     } catch (error) { console.error("Error add-movie:", error); res.status(500).json({ error: 'Error interno.' }); }
 });
@@ -360,6 +418,12 @@ app.post('/add-series-episode', async (req, res) => {
             $setOnInsert: { tmdbId: tmdbId.toString(), views: 0, likes: 0, addedAt: new Date() } // Añadir fecha si la serie es nueva
         };
         await mongoDb.collection('series_catalog').updateOne({ tmdbId: tmdbId.toString() }, updateData, { upsert: true });
+
+        // Invalidar cachés existentes para este episodio
+        embedCache.del(`embed-${tmdbId}-${seasonNumber}-${episodeNumber}-pro`);
+        embedCache.del(`embed-${tmdbId}-${seasonNumber}-${episodeNumber}-free`);
+        countsCache.del(`counts-data-${tmdbId}`);
+
         res.status(200).json({ message: `Episodio S${seasonNumber}E${episodeNumber} agregado/actualizado.` });
     } catch (error) { console.error("Error add-series-episode:", error); res.status(500).json({ error: 'Error interno.' }); }
 });
