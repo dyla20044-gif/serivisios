@@ -165,13 +165,18 @@ app.post('/request-movie', async (req, res) => {
                     `*Prioridad:* ${priorityText}\n\n` +
                     `Un usuario ha solicitado este contenido.`;
     try {
-        await bot.sendMessage(ADMIN_CHAT_ID, `Recibida solicitud para: ${title} (Prioridad: ${priorityText})`); // Notificación simple
-        /* // Descomentar si quieres enviar foto también
+        
+        // +++ CAMBIO REALIZADO +++
+        // Comentamos la notificación simple
+        // await bot.sendMessage(ADMIN_CHAT_ID, `Recibida solicitud para: ${title} (Prioridad: ${priorityText})`); // Notificación simple
+        
+        // Descomentamos la notificación con foto y botón
         await bot.sendPhoto(ADMIN_CHAT_ID, posterUrl, {
             caption: message, parse_mode: 'Markdown',
             reply_markup: { inline_keyboard: [[{ text: '✅ Agregar ahora', callback_data: `solicitud_${tmdbId}` }]] }
         });
-        */
+        // +++ FIN DEL CAMBIO +++
+
         res.status(200).json({ message: 'Solicitud enviada al administrador.' });
     } catch (error) {
         console.error("Error al procesar la solicitud:", error);
