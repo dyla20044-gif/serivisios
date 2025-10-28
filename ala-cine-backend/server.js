@@ -7,7 +7,7 @@ const axios = require('axios');
 const dotenv = require('dotenv');
 const url = require('url');
 const { MongoClient, ServerApiVersion } = require('mongodb');
-const godstreamService = require('./GoodStreamServers.js');
+// const godstreamService = require('./GoodStreamServers.js'); // <--- ELIMINADO
 const initializeBot = require('./bot.js');
 
 const app = express();
@@ -38,7 +38,7 @@ paypal.configure({
 });
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
-const GODSTREAM_API_KEY = process.env.GODSTREAM_API_KEY;
+// const GODSTREAM_API_KEY = process.env.GODSTREAM_API_KEY; // <--- ELIMINADO
 const RENDER_BACKEND_URL = process.env.RENDER_EXTERNAL_URL || 'https://serivisios.onrender.com';
 const bot = new TelegramBot(token); // Creamos la instancia de bot aquí
 const ADMIN_CHAT_ID = parseInt(process.env.ADMIN_CHAT_ID, 10);
@@ -73,32 +73,7 @@ async function connectToMongo() {
 }
 
 // === FUNCIÓN DE AYUDA MEJORADA PARA EXTRAER CÓDIGO ===
-// ... (sin cambios) ...
-function extractGodStreamCode(text) {
-    if (!text || typeof text !== 'string') { return text; }
-    if (text.includes('goodstream.one/embed-')) {
-        try {
-            const parsedUrl = new URL(text);
-            const pathname = parsedUrl.pathname;
-            const parts = pathname.split('-');
-            if (parts.length > 1) {
-                return parts[parts.length - 1].replace('.html', '');
-            }
-        } catch (e) {
-            console.error("Error al parsear URL de GodStream:", e.message);
-            // No retornar el texto original si falla el parseo, podría ser un código
-            // Intentar extraer código de otra forma o retornar null/undefined
-            const codeMatch = text.match(/embed-([a-zA-Z0-9]+)\.html/);
-             if (codeMatch && codeMatch[1]) return codeMatch[1];
-             // Si sigue fallando, retornar el texto original como último recurso
-            return text;
-        }
-    }
-    // Si no es URL GoodStream pero tampoco empieza con < o http, asumimos que es código
-    if (!text.startsWith('<') && !text.startsWith('http')) { return text; }
-     // Si empieza con < (iframe) o http (otra URL), lo retornamos tal cual
-    return text;
-}
+// <--- TODA LA FUNCIÓN "extractGodStreamCode" HA SIDO ELIMINADA --->
 
 
 // === ESTADO DEL BOT ===
@@ -223,10 +198,11 @@ app.get('/api/get-movie-data', async (req, res) => {
 
 
 app.get('/api/get-embed-code', async (req, res) => {
-     // ... (sin cambios)
+     // <--- INICIO DE LA LÓGICA MODIFICADA --->
      if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
      const { id, season, episode, isPro } = req.query;
      if (!id) return res.status(400).json({ error: "ID no proporcionado" });
+
      try {
          const mediaType = season && episode ? 'series' : 'movies';
          const collectionName = (mediaType === 'movies') ? 'media_catalog' : 'series_catalog';
@@ -235,39 +211,28 @@ app.get('/api/get-embed-code', async (req, res) => {
 
          let embedCode;
          if (mediaType === 'movies') {
+            // Lógica simplificada: Si es Pro, da el código pro. Si no, da el código gratis.
             embedCode = isPro === 'true' ? doc.proEmbedCode : doc.freeEmbedCode;
          } else {
              const episodeData = doc.seasons?.[season]?.episodes?.[episode];
+             // Lógica simplificada: Si es Pro, da el código pro. Si no, da el código gratis.
              embedCode = isPro === 'true' ? episodeData?.proEmbedCode : episodeData?.freeEmbedCode;
          }
 
-         if (!embedCode) return res.status(404).json({ error: `No se encontró código de reproductor.` });
-
-         // Extraer código GodStream ANTES de verificar si es Pro
-         const godStreamCode = extractGodStreamCode(embedCode);
-         const isGodStreamCode = godStreamCode !== embedCode; // Si son diferentes, es un código extraído
-
-         if (isGodStreamCode && godStreamCode) {
-             if (isPro === 'true') {
-                 // Usuario PRO pide GodStream -> intentar obtener MP4 directo
-                 const streamUrl = await godstreamService.getGodStreamLink(godStreamCode, GODSTREAM_API_KEY);
-                 console.log(`[Embed Code] PRO request for GodStream ${godStreamCode}. Returning: ${streamUrl}`);
-                 return res.json({ embedCode: streamUrl }); // Puede ser MP4 o embed de fallback
-             } else {
-                 // Usuario GRATIS pide GodStream -> devolver embed normal
-                 const freeEmbedUrl = `https://goodstream.one/embed-${godStreamCode}.html`;
-                 console.log(`[Embed Code] FREE request for GodStream ${godStreamCode}. Returning embed: ${freeEmbedUrl}`);
-                 return res.json({ embedCode: freeEmbedUrl });
-             }
-         } else {
-             // Si no es GodStream (o no se pudo extraer código), devolver el embed original
-             console.log(`[Embed Code] Request for non-GodStream or raw code. Returning: ${embedCode}`);
-             return res.json({ embedCode: embedCode });
+         if (!embedCode) {
+            console.log(`[Embed Code] No se encontró código para ${id} (isPro: ${isPro})`);
+            return res.status(404).json({ error: `No se encontró código de reproductor.` });
          }
+
+         // Devolver el código (iframe) directamente
+         console.log(`[Embed Code] Sirviendo embed directo para ${id} (isPro: ${isPro})`);
+         return res.json({ embedCode: embedCode });
+         
      } catch (error) {
          console.error("Error crítico get-embed-code:", error);
          res.status(500).json({ error: "Error interno" });
      }
+     // <--- FIN DE LA LÓGICA MODIFICADA --->
 });
 
 app.get('/api/check-season-availability', async (req, res) => {
@@ -527,8 +492,8 @@ async function startServer() {
         ADMIN_CHAT_ID,
         TMDB_API_KEY,
         RENDER_BACKEND_URL,
-        axios,
-        extractGodStreamCode
+        axios
+        // extractGodStreamCode // <--- ELIMINADO
     );
 
     app.listen(PORT, () => {
