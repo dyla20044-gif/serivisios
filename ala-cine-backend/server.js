@@ -179,7 +179,7 @@ app.post('/api/request-diamond', async (req, res) => {
     }
 
     // 2. Formatear el mensaje para el bot (igual que el de películas)
-    const posterUrl = "https://i.ibb.co/L6TqT2V/ff-100.png"; // URL genérica de FF
+    const posterUrl = "https://i.imgur.com/Pqs2yRd.jpeg"; // URL genérica de FF
     const message = `💎 *¡Solicitud de Diamantes!* 💎\n\n` +
                     `*Usuario:* ${email || 'No especificado'}\n` +
                     `*ID de Jugador:* \`${gameId}\`\n` + // Usar \` (comilla grave) para que se pueda copiar
