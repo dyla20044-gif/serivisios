@@ -472,12 +472,48 @@ app.post('/add-series-episode', async (req, res) => {
     } catch (error) { console.error("Error add-series-episode:", error); res.status(500).json({ error: 'Error interno.' }); }
 });
 
+// =======================================================================
+// === RUTA /api/redeem-premium-time (CON DEPURACIÓN AÑADIDA) ===
+// =======================================================================
 app.post('/api/redeem-premium-time', async (req, res) => {
-    const { userId, daysToAdd } = req.body; if (!userId || !daysToAdd) { return res.status(400).json({ success: false, error: 'userId y daysToAdd son requeridos.' }); }
-    const days = parseInt(daysToAdd, 10); if (isNaN(days) || days <= 0) { return res.status(400).json({ success: false, error: 'daysToAdd debe ser un número positivo.' }); }
+    
+    // --- DEBUG INICIO ---
+    console.log("=============================================");
+    console.log("INICIO DEPURACIÓN: /api/redeem-premium-time");
+    
+    const { userId, daysToAdd } = req.body; 
+    
+    console.log(`Datos recibidos: UserID=${userId}, DaysToAdd=${daysToAdd}`);
+
+    if (!userId || !daysToAdd) { 
+        console.log("Error: Faltan datos en la solicitud.");
+        console.log("FIN DEPURACIÓN");
+        console.log("=============================================");
+        return res.status(400).json({ success: false, error: 'userId y daysToAdd son requeridos.' }); 
+    }
+    
+    const days = parseInt(daysToAdd, 10); 
+    if (isNaN(days) || days <= 0) { 
+        console.log(`Error: 'daysToAdd' no es un número válido (${daysToAdd}).`);
+        console.log("FIN DEPURACIÓN");
+        console.log("=============================================");
+        return res.status(400).json({ success: false, error: 'daysToAdd debe ser un número positivo.' }); 
+    }
+    // --- DEBUG FIN ---
+
     try {
-        const userDocRef = db.collection('users').doc(userId); const docSnap = await userDocRef.get(); let newExpiryDate; const now = new Date();
+        // --- DEBUG INICIO ---
+        console.log(`Referencia de documento: db.collection('users').doc('${userId}')`);
+        const userDocRef = db.collection('users').doc(userId); 
+        
+        console.log("Intentando leer documento (get)...");
+        const docSnap = await userDocRef.get(); 
+        
+        let newExpiryDate; 
+        const now = new Date();
+        
         if (docSnap.exists && docSnap.data().premiumExpiry) {
+            console.log("El usuario ya tiene 'premiumExpiry'. Calculando extensión.");
             let currentExpiry; const expiryData = docSnap.data().premiumExpiry;
             if (expiryData.toDate && typeof expiryData.toDate === 'function') { currentExpiry = expiryData.toDate(); }
             else if (typeof expiryData === 'number') { currentExpiry = new Date(expiryData); }
@@ -485,23 +521,61 @@ app.post('/api/redeem-premium-time', async (req, res) => {
             else { console.warn(`Formato de premiumExpiry inesperado para ${userId}. Iniciando desde ahora.`); currentExpiry = now; }
             if (currentExpiry > now) { newExpiryDate = new Date(currentExpiry.getTime() + days * 24 * 60 * 60 * 1000); }
             else { newExpiryDate = new Date(now.getTime() + days * 24 * 60 * 60 * 1000); }
-        } else { newExpiryDate = new Date(now.getTime() + days * 24 * 60 * 60 * 1000); }
+        } else { 
+            console.log("El usuario no tiene 'premiumExpiry' o el documento no existe. Creando una nueva fecha desde ahora.");
+            newExpiryDate = new Date(now.getTime() + days * 24 * 60 * 60 * 1000); 
+        }
+        
+        console.log(`Nueva fecha de expiración calculada: ${newExpiryDate.toISOString()}`);
+        // --- DEBUG FIN ---
+
         
         // =======================================================================
         // === INICIO: CORRECCIÓN BUG isPro
         // =======================================================================
-        // ¡AQUÍ ESTÁ LA LÓGICA CORRECTA!
+        
+        // --- DEBUG INICIO ---
+        console.log("Intentando escribir en Firestore: { isPro: true, premiumExpiry: ... }");
+        // --- DEBUG FIN ---
+
         await userDocRef.set({ isPro: true, premiumExpiry: newExpiryDate }, { merge: true });
         
-        // Agregamos un log para confirmar en el servidor
+        // --- DEBUG INICIO ---
+        console.log("✅ ESCRITURA EXITOSA en Firestore.");
         console.log(`✅ [isPro Bug Check] Premium activado/extendido para ${userId} hasta ${newExpiryDate.toISOString()}. isPro FUE establecido a true.`);
+        // --- DEBUG FIN ---
+        
         // =======================================================================
         // === FIN: CORRECCIÓN BUG isPro
         // =======================================================================
 
+        // --- DEBUG INICIO ---
+        console.log("Enviando respuesta 200 (OK) al cliente.");
+        console.log("FIN DEPURACIÓN");
+        console.log("=============================================");
+        // --- DEBUG FIN ---
         res.status(200).json({ success: true, message: `Premium activado por ${days} días.` });
-    } catch (error) { console.error(`❌ Error al activar Premium para ${userId} via monedas:`, error); res.status(500).json({ success: false, error: 'Error interno del servidor al actualizar el estado del usuario.' }); }
+
+    } catch (error) { 
+        // --- DEBUG INICIO ---
+        // --- ESTO ES LO MÁS IMPORTANTE ---
+        console.error(`❌ ERROR FATAL en /api/redeem-premium-time:`);
+        console.error("Mensaje de Error:", error.message);
+        console.error("Código de Error:", error.code);
+        console.error("Detalles completos del error:", JSON.stringify(error, null, 2));
+        console.log("Enviando respuesta 500 (Error) al cliente.");
+        console.log("FIN DEPURACIÓN");
+        console.log("=============================================");
+        // --- DEBUG FIN ---
+        
+        console.error(`❌ Error al activar Premium para ${userId} via monedas:`, error); 
+        res.status(500).json({ success: false, error: 'Error interno del servidor al actualizar el estado del usuario.' }); 
+    }
 });
+// =======================================================================
+// === FIN DE LA RUTA MODIFICADA ===
+// =======================================================================
+
 
 // --- Rutas PayPal (sin cambios) ---
 app.post('/create-paypal-payment', (req, res) => {
