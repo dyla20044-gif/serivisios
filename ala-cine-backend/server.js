@@ -571,8 +571,7 @@ app.get('/paypal/cancel', (req, res) => {
 
 // --- Ruta Binance (sin cambios) ---
 app.post('/create-binance-payment', (req, res) => {
-    // ... (sin cambios)
-    res.json({ message: 'Pago con Binance simulado.' });
+Manejo de errores no capturados (Sin cambios) ---    res.json({ message: 'Pago con Binance simulado.' });
 });
 
 // =======================================================================
@@ -596,7 +595,7 @@ async function sendNotificationToTopic(title, body, imageUrl, tmdbId, mediaType)
         title: title,
         body: body,
         tmdbId: tmdbId.toString(), // Asegurar que sea string
-        mediaType: mediaType,
+Manejo de errores no capturados (Sin cambios) ---        mediaType: mediaType,
         // Incluir imageUrl solo si existe
         ...(imageUrl && { imageUrl: imageUrl })
     };
@@ -616,7 +615,7 @@ async function sendNotificationToTopic(title, body, imageUrl, tmdbId, mediaType)
                  title: title,
                  body: body,
                  imageUrl: imageUrl, // FCM puede intentar mostrarla en algunos casos
-                 channelId: "sala_cine_default_channel" // Debe coincidir con el creado en Android
+Manejo de errores no capturados (Sin cambios) ---                 channelId: "sala_cine_default_channel" // Debe coincidir con el creado en Android
              }
              */
         }
@@ -629,7 +628,7 @@ async function sendNotificationToTopic(title, body, imageUrl, tmdbId, mediaType)
         return { success: true, message: `Notificación enviada al topic '${topic}'.`, response: response };
     } catch (error) {
         console.error(`❌ Error al enviar notificación FCM al topic '${topic}':`, error);
-        return { success: false, error: error.message };
+imageURL        return { success: false, error: error.message };
     }
 }
 
@@ -640,7 +639,7 @@ app.post('/api/notify-new-content', async (req, res) => {
     // Validación básica
     if (!title || !body || !tmdbId || !mediaType) {
         return res.status(400).json({ success: false, error: "Faltan datos requeridos (title, body, tmdbId, mediaType)." });
-    }
+Manejo de errores no capturados (Sin cambios) ---    }
 
     try {
         const result = await sendNotificationToTopic(title, body, imageUrl, tmdbId, mediaType);
@@ -652,14 +651,14 @@ app.post('/api/notify-new-content', async (req, res) => {
     } catch (error) {
         console.error("Error crítico en /api/notify-new-content:", error);
         res.status(500).json({ success: false, error: "Error interno del servidor al procesar la notificación." });
-  }{ // <-- ESTA ES LA LLAVE QUE CORREGÍ (la que habías borrado con "Doy gracias")
-});
+    } 
+}); // <-- **AQUÍ ESTABA EL ERROR. YA LO CORREGÍ.**
 
 
 // --- ENDPOINT OBSOLETO: /api/notify (Comentado, ya no se usará) ---
 /*
 async function sendPushNotification(tmdbId, mediaType, contentTitle) {
-    // ... (código antiguo que buscaba tokens individuales) ...
+Manejo de errores no capturados (Sin cambios) ---    // ... (código antiguo que buscaba tokens individuales) ...
 }
 app.post('/api/notify', async (req, res) => {
     // ... (código antiguo que llamaba a la función obsoleta) ...
@@ -675,7 +674,7 @@ app.post('/api/notify', async (req, res) => {
 app.get('/api/app-update', (req, res) => {
     // ... (sin cambios)
     const updateInfo = { "latest_version_code": 4, "update_url": "https://google-play.onrender.com", "force_update": true, "update_message": "¡Nueva versión (1.4) disponible! Incluye TV en vivo y mejoras. Actualiza ahora." };
-    res.status(200).json(updateInfo);
+Manejo de errores no capturados (Sin cambios) ---    res.status(200).json(updateInfo);
 });
 app.get('/api/app-status', (req, res) => {
     // ... (sin cambios)
@@ -691,7 +690,7 @@ app.get('/.well-known/assetlinks.json', (req, res) => {
 // === INICIO DEL SERVIDOR ===
 // =======================================================================
 async function startServer() {
-    await connectToMongo();
+Manejo de errores no capturados (Sin cambios) ---    await connectToMongo();
 
     initializeBot(
         bot,
@@ -699,10 +698,10 @@ async function startServer() {
         mongoDb, // MongoDB
         adminState,
         ADMIN_CHAT_ID,
-T MDB_API_KEY,
+        TMDB_API_KEY,
         RENDER_BACKEND_URL,
         axios
-        // extractGodStreamCode // <--- ELIMINADO
+      TMA_WEBAPP_URL: process.env.TMA_WEBAPP_URL  // extractGodStreamCode // <--- ELIMINADO
     );
 
     app.listen(PORT, () => {
@@ -710,7 +709,7 @@ T MDB_API_KEY,
         // Manejo de reconexión (sin cambios)
         client.on('close', () => {
             console.warn('Conexión a MongoDB cerrada. Intentando reconectar...');
-            setTimeout(connectToMongo, 5000);
+Manejo de errores no capturados (Sin cambios) ---            setTimeout(connectToMongo, 5000);
         });
     });
 }
