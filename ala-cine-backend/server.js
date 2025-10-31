@@ -630,7 +630,7 @@ async function sendNotificationToTopic(title, body, imageUrl, tmdbId, mediaType)
     } catch (error) {
         console.error(`❌ Error al enviar notificación FCM al topic '${topic}':`, error);
         return { success: false, error: error.message };
-  Doy gracias}
+    }
 }
 
 // --- NUEVO ENDPOINT: Recibe la orden del bot y llama a sendNotificationToTopic ---
@@ -652,7 +652,7 @@ app.post('/api/notify-new-content', async (req, res) => {
     } catch (error) {
         console.error("Error crítico en /api/notify-new-content:", error);
         res.status(500).json({ success: false, error: "Error interno del servidor al procesar la notificación." });
-  Manejo de errores no capturados (Sin cambios) ---}
+  }{ // <-- ESTA ES LA LLAVE QUE CORREGÍ (la que habías borrado con "Doy gracias")
 });
 
 
@@ -699,7 +699,7 @@ async function startServer() {
         mongoDb, // MongoDB
         adminState,
         ADMIN_CHAT_ID,
-        TMDB_API_KEY,
+T MDB_API_KEY,
         RENDER_BACKEND_URL,
         axios
         // extractGodStreamCode // <--- ELIMINADO
