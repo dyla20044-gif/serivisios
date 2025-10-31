@@ -182,7 +182,7 @@ app.post('/api/request-diamond', async (req, res) => {
     const posterUrl = "https://i.ibb.co/L6TqT2V/ff-100.png"; // URL genérica de FF
     const message = `💎 *¡Solicitud de Diamantes!* 💎\n\n` +
                     `*Usuario:* ${email || 'No especificado'}\n` +
-                    `*ID de Jugador:* \`${gameId}\`\n` + // Usar ` (comilla grave) para que se pueda copiar
+                    `*ID de Jugador:* \`${gameId}\`\n` + // Usar \` (comilla grave) para que se pueda copiar
                     `*Producto:* ${diamonds} Diamantes\n` +
                     `*Costo:* ${costInCoins} 🪙`;
 
