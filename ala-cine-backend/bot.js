@@ -438,7 +438,26 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_ID, TMDB_API_KEY
                     bot.sendMessage(chatId, 'Error al obtener los detalles de la película desde TMDB.');
                 }
             }
-            // +++ FIN DEL CAMBIO +++
+            
+            // =======================================================================
+            // === INICIO: NUEVA LÓGICA PARA BOTÓN DE PEDIDO DE DIAMANTES
+            // =======================================================================
+            else if (data.startsWith('diamond_completed_')) {
+                const gameId = data.split('_')[2]; // Obtiene el ID del jugador (ej: diamond_completed_12345678)
+                
+                // 1. Quitar el botón del mensaje original
+                bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id }).catch(() => {});
+
+                // 2. Enviar confirmación al admin
+                bot.sendMessage(chatId, `✅ Pedido de diamantes para el ID \`${gameId}\` marcado como completado.`);
+                
+                // 3. (Opcional) Aquí podrías agregar lógica para notificar al usuario
+                //    en la app (mediante Push o escribiendo en Firestore) que su pedido fue completado.
+            }
+            // =======================================================================
+            // === FIN: NUEVA LÓGICA PARA BOTÓN DE PEDIDO DE DIAMANTES
+            // =======================================================================
+
 
             else if (data === 'manage_movies') { 
                 adminState[chatId] = { step: 'search_manage' }; // Usamos el nuevo step 'search_manage'
