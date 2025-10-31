@@ -167,6 +167,50 @@ app.post('/request-movie', async (req, res) => {
     }
 });
 
+// =======================================================================
+// === INICIO: NUEVA RUTA PARA PEDIDOS DE DIAMANTES
+// =======================================================================
+app.post('/api/request-diamond', async (req, res) => {
+    // 1. Extraer los datos del cuerpo de la solicitud (enviados desde rewards.js)
+    const { userId, email, gameId, diamonds, costInCoins } = req.body;
+
+    if (!userId || !gameId || !diamonds) {
+        return res.status(400).json({ error: 'Faltan datos (userId, gameId, diamonds).' });
+    }
+
+    // 2. Formatear el mensaje para el bot (igual que el de películas)
+    const posterUrl = "https://i.ibb.co/L6TqT2V/ff-100.png"; // URL genérica de FF
+    const message = `💎 *¡Solicitud de Diamantes!* 💎\n\n` +
+                    `*Usuario:* ${email || 'No especificado'}\n` +
+                    `*ID de Jugador:* \`${gameId}\`\n` + // Usar ` (comilla grave) para que se pueda copiar
+                    `*Producto:* ${diamonds} Diamantes\n` +
+                    `*Costo:* ${costInCoins} 🪙`;
+
+    try {
+        // 3. Enviar la notificación al admin con un botón de "Completado"
+        await bot.sendPhoto(ADMIN_CHAT_ID, posterUrl, {
+            caption: message, 
+            parse_mode: 'Markdown',
+            reply_markup: { 
+                inline_keyboard: [
+                    // Este botón le avisará al bot que ya hiciste la recarga
+                    [{ text: '✅ Marcar como Recargado', callback_data: `diamond_completed_${gameId}` }]
+                ] 
+            }
+        });
+
+        // 4. Responder a la app que todo salió bien
+        res.status(200).json({ message: 'Solicitud de diamantes enviada al administrador.' });
+    } catch (error) {
+        console.error("Error al procesar la solicitud de diamantes:", error);
+        res.status(500).json({ error: 'Error al enviar la notificación de diamantes.' });
+    }
+});
+// =======================================================================
+// === FIN: NUEVA RUTA PARA PEDIDOS DE DIAMANTES
+// =======================================================================
+
+
 app.get('/api/streaming-status', (req, res) => {
     console.log(`[Status Check] Devolviendo estado de streaming global: ${GLOBAL_STREAMING_ACTIVE}`);
     res.status(200).json({ isStreamingActive: GLOBAL_STREAMING_ACTIVE });
@@ -429,7 +473,6 @@ app.post('/add-series-episode', async (req, res) => {
 });
 
 app.post('/api/redeem-premium-time', async (req, res) => {
-    // ... (sin cambios)
     const { userId, daysToAdd } = req.body; if (!userId || !daysToAdd) { return res.status(400).json({ success: false, error: 'userId y daysToAdd son requeridos.' }); }
     const days = parseInt(daysToAdd, 10); if (isNaN(days) || days <= 0) { return res.status(400).json({ success: false, error: 'daysToAdd debe ser un número positivo.' }); }
     try {
@@ -443,8 +486,19 @@ app.post('/api/redeem-premium-time', async (req, res) => {
             if (currentExpiry > now) { newExpiryDate = new Date(currentExpiry.getTime() + days * 24 * 60 * 60 * 1000); }
             else { newExpiryDate = new Date(now.getTime() + days * 24 * 60 * 60 * 1000); }
         } else { newExpiryDate = new Date(now.getTime() + days * 24 * 60 * 60 * 1000); }
+        
+        // =======================================================================
+        // === INICIO: CORRECCIÓN BUG isPro
+        // =======================================================================
+        // ¡AQUÍ ESTÁ LA LÓGICA CORRECTA!
         await userDocRef.set({ isPro: true, premiumExpiry: newExpiryDate }, { merge: true });
-        console.log(`✅ Premium activado/extendido para ${userId} hasta ${newExpiryDate.toISOString()}`);
+        
+        // Agregamos un log para confirmar en el servidor
+        console.log(`✅ [isPro Bug Check] Premium activado/extendido para ${userId} hasta ${newExpiryDate.toISOString()}. isPro FUE establecido a true.`);
+        // =======================================================================
+        // === FIN: CORRECCIÓN BUG isPro
+        // =======================================================================
+
         res.status(200).json({ success: true, message: `Premium activado por ${days} días.` });
     } catch (error) { console.error(`❌ Error al activar Premium para ${userId} via monedas:`, error); res.status(500).json({ success: false, error: 'Error interno del servidor al actualizar el estado del usuario.' }); }
 });
