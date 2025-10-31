@@ -454,6 +454,7 @@ app.post('/add-series-episode', async (req, res) => {
         const updateData = {
             $set: {
                 title, poster_path, overview, isPremium,
+      _path, overview, isPremium,
                 [`seasons.${seasonNumber}.name`]: `Temporada ${seasonNumber}`, // Asegura nombre de temporada
                 [episodePath + '.freeEmbedCode']: freeEmbedCode,
                 [episodePath + '.proEmbedCode']: proEmbedCode,
@@ -530,6 +531,7 @@ app.post('/api/redeem-premium-time', async (req, res) => {
         const dataToSet = { 
             isPro: true, 
             premiumExpiry: newExpiryDate 
+    _expiry: newExpiryDate 
         };
         console.log(`[FIREBASE] Intentando .set({ isPro: true, ... }) en 'users/${userId}'`);
         await userDocRef.set(dataToSet, { merge: true });
@@ -571,7 +573,7 @@ app.get('/paypal/cancel', (req, res) => {
 
 // --- Ruta Binance (sin cambios) ---
 app.post('/create-binance-payment', (req, res) => {
-Manejo de errores no capturados (Sin cambios) ---    res.json({ message: 'Pago con Binance simulado.' });
+    res.json({ message: 'Pago con Binance simulado.' });
 });
 
 // =======================================================================
@@ -583,7 +585,7 @@ Manejo de errores no capturados (Sin cambios) ---    res.json({ message: 'Pago
  * @param {string} title - Título de la notificación.
  * @param {string} body - Cuerpo del mensaje.
  * @param {string} imageUrl - URL de la imagen a mostrar (opcional).
- * @param {string} tmdbId - ID de TMDB del contenido.
+* @param {string} tmdbId - ID de TMDB del contenido.
  * @param {string} mediaType - 'movie' o 'tv'.
  * @returns {Promise<{success: boolean, message?: string, error?: string, response?: any}>}
 */
@@ -595,7 +597,7 @@ async function sendNotificationToTopic(title, body, imageUrl, tmdbId, mediaType)
         title: title,
         body: body,
         tmdbId: tmdbId.toString(), // Asegurar que sea string
-Manejo de errores no capturados (Sin cambios) ---        mediaType: mediaType,
+        mediaType: mediaType,
         // Incluir imageUrl solo si existe
         ...(imageUrl && { imageUrl: imageUrl })
     };
@@ -613,9 +615,9 @@ Manejo de errores no capturados (Sin cambios) ---        mediaType: mediaTyp
              /*
              notification: {
                  title: title,
-                 body: body,
+AQUÍ ESTABA EL ERROR. YA LO CORREGÍ.**                 body: body,
                  imageUrl: imageUrl, // FCM puede intentar mostrarla en algunos casos
-Manejo de errores no capturados (Sin cambios) ---                 channelId: "sala_cine_default_channel" // Debe coincidir con el creado en Android
+                 channelId: "sala_cine_default_channel" // Debe coincidir con el creado en Android
              }
              */
         }
@@ -626,9 +628,9 @@ Manejo de errores no capturados (Sin cambios) ---                 chann
         const response = await messaging.send(message); // Usar send() para topics
         console.log('✅ Notificación FCM enviada exitosamente al topic:', response);
         return { success: true, message: `Notificación enviada al topic '${topic}'.`, response: response };
-    } catch (error) {
+} catch (error) {
         console.error(`❌ Error al enviar notificación FCM al topic '${topic}':`, error);
-imageURL        return { success: false, error: error.message };
+        return { success: false, error: error.message };
     }
 }
 
@@ -639,11 +641,12 @@ app.post('/api/notify-new-content', async (req, res) => {
     // Validación básica
     if (!title || !body || !tmdbId || !mediaType) {
         return res.status(400).json({ success: false, error: "Faltan datos requeridos (title, body, tmdbId, mediaType)." });
-Manejo de errores no capturados (Sin cambios) ---    }
+    }
 
     try {
         const result = await sendNotificationToTopic(title, body, imageUrl, tmdbId, mediaType);
         if (result.success) {
+    t.success) {
             res.status(200).json({ success: true, message: result.message, details: result.response });
         } else {
             res.status(500).json({ success: false, error: 'Error enviando notificación vía FCM.', details: result.error });
@@ -658,7 +661,7 @@ Manejo de errores no capturados (Sin cambios) ---    }
 // --- ENDPOINT OBSOLETO: /api/notify (Comentado, ya no se usará) ---
 /*
 async function sendPushNotification(tmdbId, mediaType, contentTitle) {
-Manejo de errores no capturados (Sin cambios) ---    // ... (código antiguo que buscaba tokens individuales) ...
+    // ... (código antiguo que buscaba tokens individuales) ...
 }
 app.post('/api/notify', async (req, res) => {
     // ... (código antiguo que llamaba a la función obsoleta) ...
@@ -672,9 +675,9 @@ app.post('/api/notify', async (req, res) => {
 
 // --- Rutas App Update, App Status, Assetlinks (sin cambios) ---
 app.get('/api/app-update', (req, res) => {
-    // ... (sin cambios)
+AQUÍ ESTABA EL ERROR. YA LO CORREGÍ.**    // ... (sin cambios)
     const updateInfo = { "latest_version_code": 4, "update_url": "https://google-play.onrender.com", "force_update": true, "update_message": "¡Nueva versión (1.4) disponible! Incluye TV en vivo y mejoras. Actualiza ahora." };
-Manejo de errores no capturados (Sin cambios) ---    res.status(200).json(updateInfo);
+    res.status(200).json(updateInfo);
 });
 app.get('/api/app-status', (req, res) => {
     // ... (sin cambios)
@@ -690,7 +693,7 @@ app.get('/.well-known/assetlinks.json', (req, res) => {
 // === INICIO DEL SERVIDOR ===
 // =======================================================================
 async function startServer() {
-Manejo de errores no capturados (Sin cambios) ---    await connectToMongo();
+    await connectToMongo();
 
     initializeBot(
         bot,
@@ -700,8 +703,8 @@ Manejo de errores no capturados (Sin cambios) ---    await connectToMongo();
         ADMIN_CHAT_ID,
         TMDB_API_KEY,
         RENDER_BACKEND_URL,
-        axios
-      TMA_WEBAPP_URL: process.env.TMA_WEBAPP_URL  // extractGodStreamCode // <--- ELIMINADO
+        axios,
+        process.env.TMA_WEBAPP_URL // <--- ESTA LÍNEA PARECÍA ESTAR MAL COLOCADA, LA CORREGÍ
     );
 
     app.listen(PORT, () => {
@@ -709,7 +712,7 @@ Manejo de errores no capturados (Sin cambios) ---    await connectToMongo();
         // Manejo de reconexión (sin cambios)
         client.on('close', () => {
             console.warn('Conexión a MongoDB cerrada. Intentando reconectar...');
-Manejo de errores no capturados (Sin cambios) ---            setTimeout(connectToMongo, 5000);
+            setTimeout(connectToMongo, 5000);
         });
     });
 }
