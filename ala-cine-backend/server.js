@@ -7,6 +7,7 @@ const axios = require('axios');
 const dotenv = require('dotenv');
 const url = require('url');
 const { MongoClient, ServerApiVersion } = require('mongodb');
+const { extractM3U8FromEmbed } = require('./m3u8Extractor.js'); // <-- ¡NUEVA IMPORTACIÓN!
 // const godstreamService = require('./GoodStreamServers.js'); // <--- ELIMINADO
 const initializeBot = require('./bot.js');
 
@@ -828,22 +829,26 @@ app.get('/api/get-movie-data', async (req, res) => {
 
 
 // =======================================================================
-// === RUTA /api/get-embed-code MODIFICADA CON CACHÉ ===
+// === RUTA /api/get-embed-code MODIFICADA CON CACHÉ Y EXTRACCIÓN M3U8 ===
 // =======================================================================
 app.get('/api/get-embed-code', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
     const { id, season, episode, isPro } = req.query;
     if (!id) return res.status(400).json({ error: "ID no proporcionado" });
 
+    // Definimos si buscamos la versión PRO o FREE
+    const embedType = isPro === 'true' ? 'pro' : 'free';
+    
     // +++ INICIO DE LÓGICA DE CACHÉ (1 HORA) +++
-    const cacheKey = `embed-${id}-${season || 'movie'}-${episode || '1'}-${isPro === 'true' ? 'pro' : 'free'}`;
+    // La clave de caché ahora usa 'm3u8-' y almacenará la URL M3U8 y los HEADERS
+    const cacheKey = `m3u8-${id}-${season || 'movie'}-${episode || '1'}-${embedType}`;
 
     try {
-        // Usamos embedCache (el de 1 hora)
         const cachedData = embedCache.get(cacheKey);
         if (cachedData) {
-            console.log(`[Cache HIT] Sirviendo embed desde caché para: ${cacheKey}`);
-            return res.json({ embedCode: cachedData });
+            console.log(`[Cache HIT] Sirviendo M3U8 desde caché para: ${cacheKey}`);
+            // Devolvemos el objeto completo (URL y Headers)
+            return res.json(cachedData); 
         }
     } catch (err) {
         console.error("Error al leer del caché de embeds:", err);
@@ -851,29 +856,66 @@ app.get('/api/get-embed-code', async (req, res) => {
 
     console.log(`[Cache MISS] Buscando embed en MongoDB para: ${cacheKey}`);
     try {
+        // --- 1. OBTENER LA URL DEL EMBDED DESDE MONGODB ---
         const mediaType = season && episode ? 'series' : 'movies';
         const collectionName = (mediaType === 'movies') ? 'media_catalog' : 'series_catalog';
-        const doc = await mongoDb.collection(collectionName).findOne({ tmdbId: id.toString() }); // Buscar por String
+        const doc = await mongoDb.collection(collectionName).findOne({ tmdbId: id.toString() }); 
         if (!doc) return res.status(404).json({ error: `${mediaType} no encontrada.` });
 
-        let embedCode;
+        let embedCode; // Esta es la URL del player, no el m3u8
+        
+        // Lógica para obtener el enlace PRO
         if (mediaType === 'movies') {
-            embedCode = isPro === 'true' ? doc.proEmbedCode : doc.freeEmbedCode;
+            embedCode = doc.proEmbedCode;
         } else {
             const episodeData = doc.seasons?.[season]?.episodes?.[episode];
-            embedCode = isPro === 'true' ? episodeData?.proEmbedCode : episodeData?.freeEmbedCode;
+            embedCode = episodeData?.proEmbedCode;
         }
-
+        
+        // Si no se encuentra PRO o se pide explícitamente el FREE, se intenta con el FREE
+        if (!embedCode || embedType === 'free') {
+             if (mediaType === 'movies') {
+                 embedCode = doc.freeEmbedCode;
+             } else {
+                 const episodeData = doc.seasons?.[season]?.episodes?.[episode];
+                 embedCode = episodeData?.freeEmbedCode;
+             }
+        }
+        
         if (!embedCode) {
             console.log(`[Embed Code] No se encontró código para ${id} (isPro: ${isPro})`);
             return res.status(404).json({ error: `No se encontró código de reproductor.` });
         }
         
-        // Guardamos en embedCache (el de 1 hora)
-        embedCache.set(cacheKey, embedCode);
+        // -----------------------------------------------------------
+        // 2. EXTRACCIÓN DEL M3U8 (USANDO EL NUEVO ARCHIVO)
+        // -----------------------------------------------------------
+        console.log(`[Extractor] Iniciando extracción M3U8 para URL: ${embedCode}`);
+        
+        // LLAMADA CLAVE: Esto inicia Playwright y simula el navegador
+        const extractionResult = await extractM3U8FromEmbed(embedCode); 
+        
+        if (!extractionResult) {
+            console.log(`[Extractor] No se pudo obtener la URL m3u8.`);
+            return res.status(404).json({ error: `El extractor no pudo obtener el enlace de streaming.` });
+        }
+        
+        // Creamos el objeto de respuesta final con el nuevo formato
+        const responseData = { 
+            m3u8Url: extractionResult.m3u8Url,
+            headers: extractionResult.headers
+        };
+        
+        // -----------------------------------------------------------
+        // 3. CACHÉ Y RESPUESTA FINAL
+        // -----------------------------------------------------------
+        
+        // Guardamos en embedCache (el de 1 hora) el objeto con URL y Headers
+        embedCache.set(cacheKey, responseData);
 
-        console.log(`[MongoDB] Sirviendo embed directo y guardando en caché para ${id} (isPro: ${isPro})`);
-        return res.json({ embedCode: embedCode });
+        console.log(`[Extractor] M3U8 encontrado, guardado en caché y servido. Referer: ${responseData.headers.Referer}`);
+        // Devolvemos el m3u8 y los headers
+        return res.json(responseData);
         
     } catch (error) {
         console.error("Error crítico get-embed-code:", error);
@@ -986,8 +1028,9 @@ app.post('/add-movie', async (req, res) => {
         await mongoDb.collection('media_catalog').updateOne({ tmdbId: tmdbId.toString() }, updateQuery, { upsert: true });
         
         // Invalidar cachés existentes para este ID
-        embedCache.del(`embed-${tmdbId}-movie-1-pro`);
-        embedCache.del(`embed-${tmdbId}-movie-1-free`);
+        // Ahora invalida la clave de m3u8
+        embedCache.del(`m3u8-${tmdbId}-movie-1-pro`);
+        embedCache.del(`m3u8-${tmdbId}-movie-1-free`);
         countsCache.del(`counts-data-${tmdbId}`);
 
         res.status(200).json({ message: 'Película agregada/actualizada.' });
@@ -1014,8 +1057,9 @@ app.post('/add-series-episode', async (req, res) => {
         await mongoDb.collection('series_catalog').updateOne({ tmdbId: tmdbId.toString() }, updateData, { upsert: true });
 
         // Invalidar cachés existentes para este episodio
-        embedCache.del(`embed-${tmdbId}-${seasonNumber}-${episodeNumber}-pro`);
-        embedCache.del(`embed-${tmdbId}-${seasonNumber}-${episodeNumber}-free`);
+        // Ahora invalida la clave de m3u8
+        embedCache.del(`m3u8-${tmdbId}-${seasonNumber}-${episodeNumber}-pro`);
+        embedCache.del(`m3u8-${tmdbId}-${seasonNumber}-${episodeNumber}-free`);
         countsCache.del(`counts-data-${tmdbId}`);
 
         res.status(200).json({ message: `Episodio S${seasonNumber}E${episodeNumber} agregado/actualizado.` });
