@@ -4,9 +4,8 @@
   "description": "Servidor y bot administrador unificados para Sala Cine",
   "main": "server.js",
   "scripts": {
-  "start": "node server.js",
-  "postinstall": "npx playwright install chromium"
-},
+    "start": "node server.js",
+    "postinstall": "npx playwright install chromium"
   },
   "keywords": [],
   "author": "",
