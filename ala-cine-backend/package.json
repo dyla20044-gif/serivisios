@@ -4,7 +4,7 @@
   "description": "Servidor y bot administrador unificados para Sala Cine",
   "main": "server.js",
   "scripts": {
-    "start": "node servidor.js"
+    "start": "server.js"
   },
   "keywords": [],
   "author": "",
