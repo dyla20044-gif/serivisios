@@ -8,7 +8,6 @@ const dotenv = require('dotenv');
 const url = require('url');
 const { MongoClient, ServerApiVersion } = require('mongodb');
 const { extractM3U8FromEmbed } = require('./m3u8Extractor.js'); // <-- ¡NUEVA IMPORTACIÓN!
-// const godstreamService = require('./GoodStreamServers.js'); // <--- ELIMINADO
 const initializeBot = require('./bot.js');
 
 // +++ INICIO DE CAMBIOS PARA CACHÉ +++
