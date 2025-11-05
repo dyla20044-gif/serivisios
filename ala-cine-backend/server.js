@@ -50,7 +50,7 @@ const bot = new TelegramBot(token);
 const ADMIN_CHAT_ID = parseInt(process.env.ADMIN_CHAT_ID, 10);
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
 
-let GLOBAL_STREAMING_ACTIVE = false;
+let GLOBAL_STREAMING_ACTIVE = true;
 
 // === CONFIGURACIÓN DE MONGODB ATLAS === (Sin cambios)
 const MONGO_URI = process.env.MONGO_URI;
