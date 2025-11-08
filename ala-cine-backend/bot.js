@@ -41,9 +41,59 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_ID, TMDB_API_KEY
     });
 
     bot.on('message', async (msg) => {
+
+        // ================================================================
+        // --- (INICIO) NUEVA LÓGICA DE MODERACIÓN (BORRAR ENLACES) ---
+        // ================================================================
+
+        // 1. Verificamos si el mensaje tiene 'entidades' (como links, @menciones, etc.)
+        const hasLinks = msg.entities && msg.entities.some(
+            e => e.type === 'url' || e.type === 'text_link' || e.type === 'mention'
+        );
+
+        // 2. Verificamos si el remitente NO es el Administrador
+        //    (Usamos msg.from.id en lugar de chatId, ya que chatId es el ID del GRUPO)
+        const isNotAdmin = msg.from.id !== ADMIN_CHAT_ID;
+
+        // 3. Si tiene enlaces Y NO es el admin, borramos el mensaje
+        if (hasLinks && isNotAdmin) {
+            try {
+                // Borramos el mensaje que contiene el enlace
+                await bot.deleteMessage(msg.chat.id, msg.message_id);
+                
+                // (Opcional) Enviamos un aviso temporal al usuario que se auto-borra
+                const warningMessage = await bot.sendMessage(
+                    msg.chat.id, 
+                    `@${msg.from.username || msg.from.first_name}, no se permite enviar enlaces en este grupo.`
+                );
+                
+                // Borramos nuestro propio aviso después de 5 segundos
+                setTimeout(() => {
+                    bot.deleteMessage(warningMessage.chat.id, warningMessage.message_id).catch(e => console.warn("No se pudo borrar el aviso de moderación."));
+                }, 5000);
+
+            } catch (error) {
+                // Esto puede fallar si el bot no tiene permisos de admin en el grupo
+                console.warn(`[Moderación] No se pudo borrar el enlace del usuario ${msg.from.id} en el chat ${msg.chat.id}. ¿El bot es admin con permisos?`);
+            }
+            
+            // IMPORTANTE: Detenemos la ejecución aquí.
+            // No queremos que la lógica de admin (buscar películas, etc.)
+            // intente procesar este mensaje.
+            return;
+        }
+        
+        // --- (FIN) DE LA LÓGICA DE MODERACIÓN ---
+        // ================================================================
+
+
+        // --- LÓGICA DE ADMIN (Tu código original, sin cambios) ---
+        // Esta parte solo se ejecutará si el mensaje NO fue borrado arriba.
+        
         const chatId = msg.chat.id;
         const userText = msg.text;
         
+        // Tu chequeo original que protege el bot de admin
         if (chatId !== ADMIN_CHAT_ID || !userText || userText.startsWith('/')) {
             return;
         }
@@ -276,7 +326,16 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_ID, TMDB_API_KEY
         const msg = callbackQuery.message;
         const data = callbackQuery.data;
         const chatId = msg.chat.id;
-        if (chatId !== ADMIN_CHAT_ID) return;
+        
+        // --- (MODIFICADO) CHEQUEO DE ADMIN PARA CALLBACKS ---
+        // Esta línea es importante: solo permite que el ADMIN_CHAT_ID use los botones.
+        if (chatId !== ADMIN_CHAT_ID) {
+            // (Opcional) Avisar al usuario no admin que intenta presionar un botón
+            bot.answerCallbackQuery(callbackQuery.id, { text: 'No tienes permiso.', show_alert: true });
+            return;
+        }
+        // --- FIN DE LA MODIFICACIÓN ---
+
 
         try {
             bot.answerCallbackQuery(callbackQuery.id);
