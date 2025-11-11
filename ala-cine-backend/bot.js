@@ -1,10 +1,12 @@
-// Contenido completo y CORREGIDO de bot.js
+// Contenido completo y MODIFICADO de bot.js
+// He añadido la lógica pública sin afectar tu lógica de admin.
 
-function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_ID, TMDB_API_KEY, RENDER_BACKEND_URL, axios) { // <--- ELIMINADO extractGodStreamCode
+function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_ID, TMDB_API_KEY, RENDER_BACKEND_URL, axios) {
 
     console.log("🤖 Lógica del Bot inicializada y escuchando...");
 
-    // === CONFIGURACIÓN DE ATAJOS DEL BOT ===
+    // === CONFIGURACIÓN DE ATAJOS DEL BOT (Tu lógica original) ===
+    // (Estos comandos solo funcionarán para ti, el ADMIN_CHAT_ID)
     bot.setMyCommands([
         { command: 'start', description: 'Reiniciar el bot y ver el menú principal' },
         { command: 'subir', description: 'Subir una película o serie a la base de datos' },
@@ -12,93 +14,140 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_ID, TMDB_API_KEY
         { command: 'pedidos', description: 'Ver la lista de películas solicitadas por los usuarios' }
     ]);
 
-    // === LÓGICA DEL BOT DE TELEGRAM ===
+    // === LÓGICA DE ADMIN: /start y /subir (Modificado para ser silencioso con públicos) ===
     bot.onText(/\/start|\/subir/, (msg) => {
         const chatId = msg.chat.id;
+        
+        // --- FILTRO DE ADMIN ---
         if (chatId !== ADMIN_CHAT_ID) {
-            bot.sendMessage(chatId, 'Lo siento, no tienes permiso para usar este bot.');
-            return;
+            // Ya no respondemos "no tienes permiso".
+            // El bot.on('message') manejará la respuesta pública.
+            return; 
         }
+        // --- FIN DEL FILTRO ---
+
+        // (Tu lógica de admin original, sin cambios)
         adminState[chatId] = { step: 'menu' };
         const options = {
             reply_markup: {
                 inline_keyboard: [
-                    // --- Botones de Sala Cine (Sin cambios) ---
                     [{ text: 'Agregar películas', callback_data: 'add_movie' }],
                     [{ text: 'Agregar series', callback_data: 'add_series' }],
                     [{ text: 'Eventos', callback_data: 'eventos' }],
                     [{ text: 'Gestionar películas', callback_data: 'manage_movies' }], 
                     [{ text: 'Eliminar película', callback_data: 'delete_movie' }],
-                    
-                    // ==========================================================
-                    // --- (AÑADIDO) Botón para la nueva app VIVIBOX ---
                     [{ text: '📲 VIVIBOX: Subir M3U8', callback_data: 'vivibox_add_m3u8' }]
-                    // ==========================================================
                 ]
             }
         };
         bot.sendMessage(chatId, '¡Hola! ¿Qué quieres hacer hoy?', options);
     });
 
+    // === MANEJADOR PRINCIPAL DE MENSAJES (Modificado para lógica pública + admin) ===
     bot.on('message', async (msg) => {
 
         // ================================================================
-        // --- (INICIO) NUEVA LÓGICA DE MODERACIÓN (BORRAR ENLACES) ---
+        // --- (INICIO) LÓGICA DE MODERACIÓN (Tu código original, sin cambios) ---
         // ================================================================
 
-        // 1. Verificamos si el mensaje tiene 'entidades' (como links, @menciones, etc.)
         const hasLinks = msg.entities && msg.entities.some(
             e => e.type === 'url' || e.type === 'text_link' || e.type === 'mention'
         );
-
-        // 2. Verificamos si el remitente NO es el Administrador
-        //    (Usamos msg.from.id en lugar de chatId, ya que chatId es el ID del GRUPO)
         const isNotAdmin = msg.from.id !== ADMIN_CHAT_ID;
 
-        // 3. Si tiene enlaces Y NO es el admin, borramos el mensaje
         if (hasLinks && isNotAdmin) {
             try {
-                // Borramos el mensaje que contiene el enlace
                 await bot.deleteMessage(msg.chat.id, msg.message_id);
-                
-                // (Opcional) Enviamos un aviso temporal al usuario que se auto-borra
                 const warningMessage = await bot.sendMessage(
                     msg.chat.id, 
                     `@${msg.from.username || msg.from.first_name}, no se permite enviar enlaces en este grupo.`
                 );
-                
-                // Borramos nuestro propio aviso después de 5 segundos
                 setTimeout(() => {
                     bot.deleteMessage(warningMessage.chat.id, warningMessage.message_id).catch(e => console.warn("No se pudo borrar el aviso de moderación."));
                 }, 5000);
-
             } catch (error) {
-                // Esto puede fallar si el bot no tiene permisos de admin en el grupo
-                console.warn(`[Moderación] No se pudo borrar el enlace del usuario ${msg.from.id} en el chat ${msg.chat.id}. ¿El bot es admin con permisos?`);
+                console.warn(`[Moderación] No se pudo borrar el enlace del usuario ${msg.from.id} en el chat ${msg.chat.id}.`);
             }
-            
-            // IMPORTANTE: Detenemos la ejecución aquí.
-            // No queremos que la lógica de admin (buscar películas, etc.)
-            // intente procesar este mensaje.
-            return;
+            return; // Detenemos la ejecución aquí
         }
-        
         // --- (FIN) DE LA LÓGICA DE MODERACIÓN ---
         // ================================================================
 
-
-        // --- LÓGICA DE ADMIN (Tu código original, sin cambios) ---
-        // Esta parte solo se ejecutará si el mensaje NO fue borrado arriba.
-        
         const chatId = msg.chat.id;
         const userText = msg.text;
-        
-        // Tu chequeo original que protege el bot de admin
-        if (chatId !== ADMIN_CHAT_ID || !userText || userText.startsWith('/')) {
+
+        // Si no hay texto, no procesar nada
+        if (!userText) {
             return;
         }
 
-        // --- Lógica de Búsqueda (movie, series, delete) (SIN CAMBIOS) ---
+        // ================================================================
+        // --- (INICIO) NUEVA LÓGICA PÚBLICA (Comandos públicos) ---
+        // ================================================================
+
+        if (userText.startsWith('/')) {
+            const command = userText.split(' ')[0];
+
+            // Verificamos que NO sea el admin, para no interferir con su /start
+            if (chatId !== ADMIN_CHAT_ID) {
+                if (command === '/start' || command === '/ayuda') {
+                    const helpMessage = `👋 ¡Hola! Soy un Bot de Auto-Aceptación de Solicitudes.
+                    
+**Función Principal:**
+Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu canal o grupo privado.
+
+**¿Cómo configurarme?**
+1. Añádeme como administrador a tu canal o grupo.
+2. Otórgame el permiso: "**Administrar solicitudes de ingreso**". 3. ¡Listo! Aceptaré a los nuevos miembros y les enviaré un DM de bienvenida.
+
+*Comandos disponibles:*
+/ayuda - Muestra esta información.
+/contacto - Contactar con el desarrollador.
+`;
+                    bot.sendMessage(chatId, helpMessage, { parse_mode: 'Markdown' });
+                    return; // Detenemos la ejecución aquí
+                }
+                
+                if (command === '/contacto') {
+                    // !!! IMPORTANTE: Cambia @TuUsuarioDeTelegram por tu user real !!!
+                    bot.sendMessage(chatId, 'Para soporte o dudas, puedes contactar al desarrollador en: @TuUsuarioDeTelegram');
+                    return; // Detenemos la ejecución aquí
+                }
+            }
+            // Si es el admin, o si es un comando no público (ej /subir),
+            // la ejecución continúa hacia el filtro de seguridad de admin.
+        }
+        
+        // --- (FIN) LÓGICA PÚBLICA ---
+        // ================================================================
+
+
+        // ================================================================
+        // --- (INICIO) LÓGICA DE ADMIN (Tu código original, protegido) ---
+        // ================================================================
+        
+        // Tu chequeo original que protege el bot de admin
+        // (Ahora solo se ejecuta si NO es un comando público)
+        if (chatId !== ADMIN_CHAT_ID) {
+             // Si es un comando (ej /subir) pero no es el admin,
+             // y no fue un comando público, le decimos que no tiene permiso.
+             if (userText.startsWith('/')) {
+                 bot.sendMessage(chatId, 'Lo siento, no tienes permiso para usar este comando.');
+             }
+            return;
+        }
+
+        // Si es el admin, y el comando no fue público
+        // (ej. /start o /subir), el onText lo manejará.
+        // Si es texto normal (sin /), tu lógica de estados lo manejará.
+        if (userText.startsWith('/')) {
+            // Los comandos /start y /subir se manejan en bot.onText
+            // Los ignoramos aquí para que no entren en la lógica de estados.
+            return; 
+        }
+
+        // --- (INICIO DE TU LÓGICA DE ESTADOS - SIN CAMBIOS) ---
+        
         if (adminState[chatId] && adminState[chatId].step === 'search_movie') {
            // ... (Tu código original sin cambios)
            try {
@@ -278,69 +327,99 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_ID, TMDB_API_KEY
             }
         }
         
-        // ==========================================================
-        // --- (AÑADIDO) Nueva lógica para VIVIBOX ---
-        // ==========================================================
+        // --- Lógica de VIVIBOX (SIN CAMBIOS) ---
         else if (adminState[chatId] && adminState[chatId].step === 'awaiting_vivibox_m3u8') {
+            // ... (Tu código original sin cambios)
             const m3u8Link = userText.trim();
-
-            // Validación simple del enlace
             if (!m3u8Link.startsWith('http') || !m3u8Link.endsWith('.m3u8')) {
                 bot.sendMessage(chatId, '❌ Enlace inválido. Debe ser una URL completa que termine en .m3u8. Intenta de nuevo.');
-                return; // Mantenemos el estado para que pueda reintentar
+                return; 
             }
-
             bot.sendMessage(chatId, 'Procesando enlace M3U8, por favor espera...');
-
             try {
-                // Llamamos a un endpoint en *nuestro mismo servidor* (server.js)
-                // que AÚN NO HEMOS CREADO, pero que crearemos en el siguiente paso.
                 const response = await axios.post(`${RENDER_BACKEND_URL}/api/vivibox/add-link`, {
                     m3u8Url: m3u8Link
                 });
-
-                // El servidor nos devolverá el ID corto (ej. "abc123")
                 const shortId = response.data.id;
-                
-                // ¡¡IMPORTANTE!! Cambia "tuservidor.com" por tu dominio real
-                // (Usaré "serivisios.onrender.com" por ahora, como en tu AndroidManifest de la app 1)
                 const shareableLink = `https://serivisios.onrender.com/ver/${shortId}`;
-
                 bot.sendMessage(chatId, `✅ ¡Enlace M3U8 guardado!\n\nTu ID corto es: \`${shortId}\`\n\nTu enlace para compartir (el que abre la app) es:\n${shareableLink}`, { parse_mode: 'Markdown' });
-
             } catch (error) {
                 console.error("Error al guardar el enlace M3U8 de Vivibox:", error.response ? error.response.data : error.message);
                 bot.sendMessage(chatId, '❌ Error al guardar el enlace en el servidor. Revisa los logs.');
             } finally {
-                adminState[chatId] = { step: 'menu' }; // Volver al menú
+                adminState[chatId] = { step: 'menu' }; 
             }
         }
         // --- FIN DE LA LÓGICA DE VIVIBOX ---
-
+        
+        // --- (FIN DE TU LÓGICA DE ESTADOS) ---
     });
 
     // =======================================================================
-    // === MANEJADOR DE BOTONES (CALLBACK_QUERY) - CORREGIDO ===
+    // === MANEJADOR DE BOTONES (CALLBACK_QUERY) - (Modificado para lógica pública + admin) ===
     // =======================================================================
     bot.on('callback_query', async (callbackQuery) => {
         const msg = callbackQuery.message;
         const data = callbackQuery.data;
         const chatId = msg.chat.id;
-        
-        // --- (MODIFICADO) CHEQUEO DE ADMIN PARA CALLBACKS ---
-        // Esta línea es importante: solo permite que el ADMIN_CHAT_ID use los botones.
-        if (chatId !== ADMIN_CHAT_ID) {
-            // (Opcional) Avisar al usuario no admin que intenta presionar un botón
-            bot.answerCallbackQuery(callbackQuery.id, { text: 'No tienes permiso.', show_alert: true });
-            return;
-        }
-        // --- FIN DE LA MODIFICACIÓN ---
-
 
         try {
+            
+            // ================================================================
+            // --- (INICIO) NUEVA LÓGICA PÚBLICA (Callbacks públicos) ---
+            // ================================================================
+            // (Estos son para los botones que enviamos al admin del canal)
+
+            if (data === 'public_help') {
+                bot.answerCallbackQuery(callbackQuery.id);
+                const helpMessage = `👋 ¡Hola! Soy un Bot de Auto-Aceptación de Solicitudes.
+                    
+**Función Principal:**
+Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu canal o grupo privado.
+
+**¿Cómo configurarme?**
+1. Añádeme como administrador a tu canal o grupo.
+2. Otórgame el permiso: "**Administrar solicitudes de ingreso**".
+3. ¡Listo! Aceptaré a los nuevos miembros y les enviaré un DM de bienvenida.
+
+*Comandos disponibles:*
+/ayuda - Muestra esta información.
+/contacto - Contactar con el desarrollador.
+`;
+                bot.sendMessage(chatId, helpMessage, { parse_mode: 'Markdown' });
+                return; // Detenemos la ejecución aquí
+            }
+            
+            if (data === 'public_contact') {
+                bot.answerCallbackQuery(callbackQuery.id);
+                 // !!! IMPORTANTE: Cambia @TuUsuarioDeTelegram por tu user real !!!
+                bot.sendMessage(chatId, 'Para soporte o dudas, puedes contactar al desarrollador en: @TuUsuarioDeTelegram');
+                return; // Detenemos la ejecución aquí
+            }
+            
+            // --- (FIN) LÓGICA PÚBLICA ---
+            // ================================================================
+
+
+            // ================================================================
+            // --- (INICIO) LÓGICA DE ADMIN (Tu código original, protegido) ---
+            // ================================================================
+            
+            // --- (MODIFICADO) CHEQUEO DE ADMIN PARA CALLBACKS ---
+            // Esta línea es importante: solo permite que el ADMIN_CHAT_ID use los botones.
+            if (chatId !== ADMIN_CHAT_ID) {
+                // (Opcional) Avisar al usuario no admin que intenta presionar un botón
+                bot.answerCallbackQuery(callbackQuery.id, { text: 'No tienes permiso.', show_alert: true });
+                return;
+            }
+            // --- FIN DE LA MODIFICACIÓN ---
+
+
+            // Respondemos al callback (Solo para el ADMIN, ya que los públicos respondieron arriba)
             bot.answerCallbackQuery(callbackQuery.id);
 
-            // --- Callbacks de Menú y Selección (SIN CAMBIOS) ---
+            // --- (INICIO DE TU LÓGICA DE CALLBACKS - SIN CAMBIOS) ---
+
             if (data === 'add_movie') { 
                 adminState[chatId] = { step: 'search_movie' }; 
                 bot.sendMessage(chatId, 'Escribe el nombre de la película a agregar.'); 
@@ -353,14 +432,12 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_ID, TMDB_API_KEY
                 adminState[chatId] = { step: 'awaiting_event_image' }; 
                 bot.sendMessage(chatId, 'Envía el ENLACE (URL) de la imagen para el evento.'); 
             }
-            
-            // --- (AÑADIDO) Callback para VIVIBOX ---
             else if (data === 'vivibox_add_m3u8') { 
                 adminState[chatId] = { step: 'awaiting_vivibox_m3u8' }; 
                 bot.sendMessage(chatId, 'OK (Vivibox). Envíame el enlace M3U8 directo que quieres añadir.'); 
             }
             
-            // ... (Todo el resto de tu lógica de callbacks 'add_new_movie_', 'manage_movie_', etc., sin cambios) ...
+            // ... (Resto de tus callbacks: 'add_new_movie_', 'manage_movie_', 'save_only_', etc.) ...
             
             else if (data.startsWith('add_new_movie_')) {
                 // ... (Tu código original sin cambios)
@@ -626,14 +703,106 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_ID, TMDB_API_KEY
                 adminState[chatId] = { step: 'menu' };
             }
 
+            // --- (FIN DE TU LÓGICA DE CALLBACKS) ---
+
         } catch (error) {
             console.error("Error en callback_query:", error);
             bot.sendMessage(chatId, '❌ Ocurrió un error procesando tu solicitud.');
         }
     });
 
+    
+    // =======================================================================
+    // === (NUEVO) LÓGICA PÚBLICA DE EVENTOS (Auto-aceptación y DM a Admin) ===
+    // =======================================================================
 
-    // --- Función de ayuda interna para mostrar temporadas (SIN CAMBIOS) ---
+    /**
+     * Evento: El bot detecta un cambio en su estatus en un chat.
+     * (Ej: Lo hacen administrador en un canal nuevo).
+     * Le enviaremos un DM al admin que lo promovió.
+     */
+    bot.on('my_chat_member', async (update) => {
+        try {
+            const newStatus = update.new_chat_member.status;
+            const oldStatus = update.old_chat_member.status;
+            const chatId = update.chat.id;
+            const adminUserId = update.from.id; // El ID del admin que hizo el cambio
+
+            // Si el bot fue promovido a 'administrator'
+            if (oldStatus !== 'administrator' && newStatus === 'administrator') {
+                console.log(`[Auto-Aceptar] Bot promovido a ADMIN en chat ${chatId} (${update.chat.title}) por ${adminUserId}`);
+                
+                // Verificar si tiene el permiso clave
+                const canManageJoins = update.new_chat_member.can_manage_chat_join_requests;
+                
+                let adminMessage = `¡Gracias por hacerme administrador en **${update.chat.title}**! 👋\n\n`;
+                
+                if (canManageJoins) {
+                    adminMessage += "He detectado que tengo permisos para **Administrar solicitudes de ingreso**. ¡La función de auto-aceptación está **ACTIVA** para este chat!\n\n";
+                } else {
+                    adminMessage += "⚠️ **Acción requerida:** Para que la auto-aceptación funcione, por favor edita mis permisos y activa la opción '**Administrar solicitudes de ingreso**'.\n\n";
+                }
+                
+                adminMessage += "Puedes usar /ayuda en este chat privado (aquí conmigo) si necesitas ver los comandos de asistencia.";
+                
+                // Enviar DM al administrador que hizo la promoción
+                bot.sendMessage(adminUserId, adminMessage, {
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: 'ℹ️ Ver Comandos Públicos', callback_data: 'public_help' }],
+                            [{ text: '📞 Contactar Soporte', callback_data: 'public_contact' }]
+                        ]
+                    }
+                }).catch(e => {
+                    console.warn(`[Auto-Aceptar] No se pudo enviar DM al admin ${adminUserId}. (Quizás el admin tiene los DMs bloqueados)`);
+                });
+            }
+        } catch (error) {
+             console.error("Error en 'my_chat_member':", error.message);
+        }
+    });
+
+    /**
+     * Evento: Un usuario solicita unirse a un chat donde el bot es admin.
+     * (Esta es la función principal de auto-aceptación).
+     * Aceptaremos al usuario y le enviaremos un DM de bienvenida.
+     */
+    bot.on('chat_join_request', async (joinRequest) => {
+        const chatId = joinRequest.chat.id;
+        const userId = joinRequest.from.id;
+        const chatTitle = joinRequest.chat.title;
+        const userFirstName = joinRequest.from.first_name;
+
+        console.log(`[Auto-Aceptar] Solicitud de ingreso recibida para el chat ${chatTitle} (${chatId}) de parte de: ${userFirstName} (${userId})`);
+
+        try {
+            // 1. Aceptar la solicitud de ingreso
+            await bot.approveChatJoinRequest(chatId, userId);
+            console.log(`[Auto-Aceptar] ✅ Solicitud de ${userFirstName} ACEPTADA en chat ${chatTitle}.`);
+
+            // 2. Enviar DM de bienvenida al usuario que fue aceptado
+            let welcomeMessage = `¡Hola ${userFirstName}! 👋\n\nTu solicitud para unirte a **${chatTitle}** ha sido aceptada.`;
+            
+            // Adjuntamos el enlace de invitación que usó, para que pueda entrar.
+            if (joinRequest.invite_link && joinRequest.invite_link.invite_link) {
+                welcomeMessage += `\n\nPuedes acceder usando este enlace:\n${joinRequest.invite_link.invite_link}`;
+            }
+
+            bot.sendMessage(userId, welcomeMessage, { parse_mode: 'Markdown' }).catch(e => {
+                console.warn(`[Auto-Aceptar] No se pudo enviar DM de bienvenida a ${userId}. (El usuario puede tener DMs bloqueados)`);
+            });
+
+        } catch (error) {
+            // Esto puede fallar si el bot no tiene permisos de admin.
+            console.error(`[Auto-Aceptar] Error al procesar solicitud de ${userFirstName} en ${chatId}:`, error.message);
+        }
+    });
+
+
+    // =======================================================================
+    // --- (INICIO) Tu Función de ayuda interna (SIN CAMBIOS) ---
+    // =======================================================================
     async function handleManageSeries(chatId, tmdbId) {
         // ... (Tu código original sin cambios)
         try {
@@ -679,6 +848,7 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_ID, TMDB_API_KEY
             bot.sendMessage(chatId, 'Error al obtener los detalles de la serie desde TMDB.');
         }
     }
+    // --- (FIN) Tu Función de ayuda interna ---
 
 } // Fin de initializeBot
 
