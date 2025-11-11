@@ -1,12 +1,6 @@
-// Contenido completo y MODIFICADO de bot.js
-// He añadido la lógica pública sin afectar tu lógica de admin.
-
 function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_ID, TMDB_API_KEY, RENDER_BACKEND_URL, axios) {
 
     console.log("🤖 Lógica del Bot inicializada y escuchando...");
-
-    // === CONFIGURACIÓN DE ATAJOS DEL BOT (Tu lógica original) ===
-    // (Estos comandos solo funcionarán para ti, el ADMIN_CHAT_ID)
     bot.setMyCommands([
         { command: 'start', description: 'Reiniciar el bot y ver el menú principal' },
         { command: 'subir', description: 'Subir una película o serie a la base de datos' },
@@ -98,7 +92,8 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
 
 **¿Cómo configurarme?**
 1. Añádeme como administrador a tu canal o grupo.
-2. Otórgame el permiso: "**Administrar solicitudes de ingreso**". 3. ¡Listo! Aceptaré a los nuevos miembros y les enviaré un DM de bienvenida.
+2. Otórgame el permiso: "**Administrar solicitudes de ingreso**". 
+3. ¡Listo! Aceptaré a los nuevos miembros y les enviaré un DM de bienvenida.
 
 *Comandos disponibles:*
 /ayuda - Muestra esta información.
@@ -720,6 +715,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
      * Evento: El bot detecta un cambio en su estatus en un chat.
      * (Ej: Lo hacen administrador en un canal nuevo).
      * Le enviaremos un DM al admin que lo promovió.
+     * (SIN CAMBIOS RESPECTO AL CÓDIGO ANTERIOR)
      */
     bot.on('my_chat_member', async (update) => {
         try {
@@ -766,7 +762,11 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
     /**
      * Evento: Un usuario solicita unirse a un chat donde el bot es admin.
      * (Esta es la función principal de auto-aceptación).
-     * Aceptaremos al usuario y le enviaremos un DM de bienvenida.
+     *
+     * (MODIFICADO): Ahora exporta el enlace principal del chat y lo pone
+     * en un botón, ya que 'joinRequest.invite_link' puede venir
+     * truncado ("...") si el bot no creó ese enlace.
+     * También intentará enviar el logo del canal.
      */
     bot.on('chat_join_request', async (joinRequest) => {
         const chatId = joinRequest.chat.id;
@@ -777,24 +777,58 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
         console.log(`[Auto-Aceptar] Solicitud de ingreso recibida para el chat ${chatTitle} (${chatId}) de parte de: ${userFirstName} (${userId})`);
 
         try {
-            // 1. Aceptar la solicitud de ingreso
+            // 1. Aceptar la solicitud de ingreso (IMPORTANTE: Hacer esto primero)
             await bot.approveChatJoinRequest(chatId, userId);
             console.log(`[Auto-Aceptar] ✅ Solicitud de ${userFirstName} ACEPTADA en chat ${chatTitle}.`);
 
-            // 2. Enviar DM de bienvenida al usuario que fue aceptado
-            let welcomeMessage = `¡Hola ${userFirstName}! 👋\n\nTu solicitud para unirte a **${chatTitle}** ha sido aceptada.`;
+            // 2. Generar un enlace de invitación VÁLIDO y COMPLETO.
+            //    Usamos exportChatInviteLink ya que el bot es admin y puede hacerlo.
+            //    Esto soluciona el problema del enlace truncado ("...").
+            const inviteLink = await bot.exportChatInviteLink(chatId);
+
+            // 3. Preparar el mensaje y el botón
+            const welcomeMessage = `¡Hola ${userFirstName}! 👋\n\nTu solicitud para unirte a **${chatTitle}** ha sido aceptada.\n\nPuedes acceder usando el botón de abajo:`;
             
-            // Adjuntamos el enlace de invitación que usó, para que pueda entrar.
-            if (joinRequest.invite_link && joinRequest.invite_link.invite_link) {
-                welcomeMessage += `\n\nPuedes acceder usando este enlace:\n${joinRequest.invite_link.invite_link}`;
+            const options = {
+                caption: welcomeMessage, // Usamos 'caption' por si enviamos foto
+                parse_mode: 'Markdown',
+                reply_markup: {
+                    inline_keyboard: [
+                        // Aquí va el botón con el enlace completo
+                        [{ text: `Acceder a ${chatTitle}`, url: inviteLink }]
+                    ]
+                }
+            };
+
+            // 4. (Opcional) Intentar enviar el logo del canal
+            let chatPhotoId = null;
+            try {
+                const chatDetails = await bot.getChat(chatId);
+                if (chatDetails.photo && chatDetails.photo.big_file_id) {
+                    chatPhotoId = chatDetails.photo.big_file_id;
+                }
+            } catch (photoError) {
+                console.warn(`[Auto-Aceptar] No se pudo obtener el logo del chat ${chatId}. Enviando solo texto.`);
             }
 
-            bot.sendMessage(userId, welcomeMessage, { parse_mode: 'Markdown' }).catch(e => {
-                console.warn(`[Auto-Aceptar] No se pudo enviar DM de bienvenida a ${userId}. (El usuario puede tener DMs bloqueados)`);
-            });
+            // 5. Enviar el DM de bienvenida
+            if (chatPhotoId) {
+                // Si tenemos logo, enviamos sendPhoto con el caption y el botón
+                bot.sendPhoto(userId, chatPhotoId, options).catch(e => {
+                    console.warn(`[Auto-Aceptar] No se pudo enviar DM con foto a ${userId}. (El usuario puede tener DMs bloqueados)`);
+                });
+            } else {
+                // Si no hay logo, enviamos sendMessage normal con el botón
+                bot.sendMessage(userId, welcomeMessage, { 
+                    parse_mode: 'Markdown',
+                    reply_markup: options.reply_markup 
+                }).catch(e => {
+                    console.warn(`[Auto-Aceptar] No se pudo enviar DM de bienvenida a ${userId}. (El usuario puede tener DMs bloqueados)`);
+                });
+            }
 
         } catch (error) {
-            // Esto puede fallar si el bot no tiene permisos de admin.
+            // Esto puede fallar si el bot no tiene permisos de admin o para exportar enlace.
             console.error(`[Auto-Aceptar] Error al procesar solicitud de ${userFirstName} en ${chatId}:`, error.message);
         }
     });
