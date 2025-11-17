@@ -976,7 +976,7 @@ app.get('/.well-known/assetlinks.json', (req, res) => {
 });
 
 // =======================================================================
-// === (AÑADIDO) NUEVAS RUTAS PARA LA APP "VIVIBOX" === (Sin cambios)
+// === (AÑADIDO) NUEVAS RUTAS PARA LA APP "VIVIBOX" ===
 // =======================================================================
 
 /**
@@ -1025,7 +1025,9 @@ app.post('/api/vivibox/add-link', async (req, res) => {
              return res.status(500).json({ error: "Colisión de ID, por favor reintenta." });
         }
         console.error("Error en /api/vivibox/add-link:", error);
-        res.status(5Z00).json({ error: "Error interno al guardar el enlace." });
+        // --- INICIO DE LA CORRECCIÓN ---
+        res.status(500).json({ error: "Error interno al guardar el enlace." }); // Era 5Z00
+        // --- FIN DE LA CORRECCIÓN ---
     }
 });
 
