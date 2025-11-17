@@ -8,7 +8,6 @@ const dotenv = require('dotenv');
 const url = require('url');
 const { MongoClient, ServerApiVersion } = require('mongodb');
 const initializeBot = require('./bot.js');
-const { extractWithYtDlp } = require('./m3u8Extractor.js'); // <-- MODIFICACIÓN 1: Importamos el extractor
 
 // (AÑADIDO) Herramienta para generar IDs aleatorios
 const crypto = require('crypto');
@@ -657,85 +656,46 @@ app.get('/api/get-movie-data', async (req, res) => {
         res.status(500).json({ error: "Error interno del servidor al obtener los datos." });
     }
 });
-
-// =======================================================================
-// === MODIFICACIÓN 2: RUTA DE EXTRACCIÓN DE EMBEDS (get-embed-code) ===
-// =======================================================================
 app.get('/api/get-embed-code', async (req, res) => {
+    // ... (Tu código original sin cambios)
     if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
-    
     const { id, season, episode, isPro } = req.query;
     if (!id) return res.status(400).json({ error: "ID no proporcionado" });
-
-    // La clave de caché es la misma. Si un M3U8 fresco ya está en caché, se sirve.
     const cacheKey = `embed-${id}-${season || 'movie'}-${episode || '1'}-${isPro === 'true' ? 'pro' : 'free'}`;
-    
     try {
         const cachedData = embedCache.get(cacheKey);
         if (cachedData) {
-            console.log(`[Cache HIT] Sirviendo M3U8 fresco desde caché para: ${cacheKey}`);
+            console.log(`[Cache HIT] Sirviendo embed desde caché para: ${cacheKey}`);
             return res.json({ embedCode: cachedData });
         }
     } catch (err) {
         console.error("Error al leer del caché de embeds:", err);
     }
-
-    console.log(`[Cache MISS] Buscando URL embed en MongoDB para: ${cacheKey}`);
-    
+    console.log(`[Cache MISS] Buscando embed en MongoDB para: ${cacheKey}`);
     try {
-        // 1. Buscar la URL EMBED (ej. vimeos.net/...) en la base de datos
         const mediaType = season && episode ? 'series' : 'movies';
         const collectionName = (mediaType === 'movies') ? 'media_catalog' : 'series_catalog';
         const doc = await mongoDb.collection(collectionName).findOne({ tmdbId: id.toString() });
-
         if (!doc) return res.status(404).json({ error: `${mediaType} no encontrada.` });
-
-        let embedPageUrl; // Esta es la URL de la página (ej. vimeos.net/...)
+        let embedCode;
         if (mediaType === 'movies') {
-            embedPageUrl = isPro === 'true' ? doc.proEmbedCode : doc.freeEmbedCode;
+            embedCode = isPro === 'true' ? doc.proEmbedCode : doc.freeEmbedCode;
         } else {
             const episodeData = doc.seasons?.[season]?.episodes?.[episode];
-            embedPageUrl = isPro === 'true' ? episodeData?.proEmbedCode : episodeData?.freeEmbedCode;
+            embedCode = isPro === 'true' ? episodeData?.proEmbedCode : episodeData?.freeEmbedCode;
         }
-
-        if (!embedPageUrl) {
-            console.log(`[Embed Code] No se encontró URL embed para ${id} (isPro: ${isPro})`);
+        if (!embedCode) {
+            console.log(`[Embed Code] No se encontró código para ${id} (isPro: ${isPro})`);
             return res.status(404).json({ error: `No se encontró código de reproductor.` });
         }
-
-        // 2. Comprobar si la URL es una página (necesita extracción) o un enlace directo (compatible)
-        if (embedPageUrl.endsWith('.m3u8') || embedPageUrl.endsWith('.mp4')) {
-            console.log(`[Embed Code] Sirviendo enlace directo (sin extracción) para ${id}`);
-            embedCache.set(cacheKey, embedPageUrl); // Guardamos el enlace directo en caché
-            return res.json({ embedCode: embedPageUrl }); // Devolvemos el enlace
-        }
-
-        // 3. ¡Es una página! Necesita extracción con yt-dlp.
-        console.log(`[yt-dlp] Iniciando extracción para: ${embedPageUrl}`);
-        const finalM3u8 = await extractWithYtDlp(embedPageUrl);
-        
-        if (!finalM3u8) {
-             throw new Error("yt-dlp no devolvió ningún enlace.");
-        }
-
-        // 4. ¡Éxito! Guardamos el M3U8 FRESCO en el caché por 1 hora
-        embedCache.set(cacheKey, finalM3u8); 
-        console.log(`[yt-dlp] Extracción exitosa. Sirviendo y guardando en caché para ${cacheKey}`);
-        
-        // 5. Devolvemos el enlace M3U8 fresco
-        return res.json({ embedCode: finalM3u8 });
-
+        embedCache.set(cacheKey, embedCode);
+        console.log(`[MongoDB] Sirviendo embed directo y guardando en caché para ${id} (isPro: ${isPro})`);
+        return res.json({ embedCode: embedCode });
     } catch (error) {
-        // Manejar errores tanto de MongoDB como de yt-dlp
-        console.error(`Error crítico en get-embed-code (ID: ${id}):`, error.message);
-        res.status(500).json({ error: "Error interno al procesar el enlace." });
+        console.error("Error crítico get-embed-code:", error);
+        res.status(500).json({ error: "Error interno" });
     }
 });
-// =======================================================================
-// === FIN DE LA MODIFICACIÓN ===
-// =======================================================================
-
-
 app.get('/api/check-season-availability', async (req, res) => {
     // ... (Tu código original sin cambios)
      if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
@@ -1025,9 +985,7 @@ app.post('/api/vivibox/add-link', async (req, res) => {
              return res.status(500).json({ error: "Colisión de ID, por favor reintenta." });
         }
         console.error("Error en /api/vivibox/add-link:", error);
-        // --- INICIO DE LA CORRECCIÓN ---
-        res.status(500).json({ error: "Error interno al guardar el enlace." }); // Era 5Z00
-        // --- FIN DE LA CORRECCIÓN ---
+        res.status(500).json({ error: "Error interno al guardar el enlace." });
     }
 });
 
