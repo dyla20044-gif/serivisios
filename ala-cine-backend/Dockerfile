@@ -2,12 +2,27 @@
 # Esta imagen ya incluye Node.js, Chromium, y todas las dependencias de sistema necesarias.
 FROM mcr.microsoft.com/playwright:v1.45.3-jammy
 
-# === MODIFICACIÓN ===
-# 1.A. Actualizamos e instalamos yt-dlp (y Python, por si acaso)
+# === INICIO DE MODIFICACIÓN V2 (Método Oficial) ===
+# 1.A. Cambiamos a usuario ROOT para poder instalar paquetes
+USER root
+
+# 1.B. Instalamos 'curl' (para descargar) y 'ca-certificates' (para HTTPS)
+#      (La imagen de Playwright ya los debería tener, pero esto asegura)
 RUN apt-get update && \
-    apt-get install -y python3-pip yt-dlp && \
+    apt-get install -y curl ca-certificates && \
     rm -rf /var/lib/apt/lists/*
-# === FIN DE MODIFICACIÓN ===
+
+# 1.C. Descargamos el binario de yt-dlp directamente a /usr/local/bin
+#      Esta es la forma recomendada por yt-dlp para sistemas Linux
+RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
+
+# 1.D. Le damos permisos de ejecución para que el servidor pueda usarlo
+RUN chmod a+rx /usr/local/bin/yt-dlp
+
+# 1.E. Volvemos al usuario no-root 'pwuser' que usa la imagen de Playwright por defecto
+USER pwuser
+# === FIN DE MODIFICACIÓN V2 ===
+
 
 # 2. Configura el directorio de trabajo dentro del contenedor (el equivalente a tu Root Directory)
 WORKDIR /usr/src/app/ala-cine-backend
