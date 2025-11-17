@@ -1,4 +1,4 @@
-// Este es m3u8Extractor.js (Revertido a V1)
+// Este es m3u8Extractor.js (V3 - El Definitivo)
 const { exec } = require('child_process');
 
 /**
@@ -9,24 +9,19 @@ const { exec } = require('child_process');
 function extractWithYtDlp(targetUrl) {
     console.log(`[yt-dlp] Extrayendo de: ${targetUrl}`);
     
-    // Comando:
-    // -g: "get-url" (obtener solo el enlace)
-    // --no-warnings: No imprimir advertencias
-    // --socket-timeout 10: Rendirse si la conexión tarda más de 10 seg.
-    // -f "best[ext=mp4]/best": Pedir el mejor MP4 o, en su defecto, el mejor stream (que será M3U8)
-    
-    // --- REVERSIÓN ---
-    // Volvemos a llamar a 'yt-dlp' directamente,
-    // porque el Dockerfile V5 SÍ lo instalará en el PATH.
-    const comando = `yt-dlp -g --no-warnings --socket-timeout 10 -f "best[ext=mp4]/best" "${targetUrl}"`;
-    // --- FIN REVERSIÓN ---
+    // --- MODIFICACIÓN V3 ---
+    // Llamamos a yt-dlp como un MÓDULO de Python.
+    // Esto evita CUALQUIER problema con el PATH del sistema.
+    // El comando 'python3 -m yt_dlp' es el equivalente a 'yt-dlp'.
+    const comando = `python3 -m yt_dlp -g --no-warnings --socket-timeout 10 -f "best[ext=mp4]/best" "${targetUrl}"`;
+    // --- FIN MODIFICACIÓN V3 ---
 
     return new Promise((resolve, reject) => {
-        // exec ejecuta el comando en la terminal del servidor
         exec(comando, (error, stdout, stderr) => {
             if (error) {
-                // Si esto falla ahora, será un error de extracción, no un "not found"
-                console.error(`[yt-dlp] Error al ejecutar: ${stderr}`);
+                // Si esto falla, ya no será "not found".
+                // Será un error real de Python o de yt-dlp.
+                console.error(`[yt-dlp] Error al ejecutar (python3 -m yt_dlp): ${stderr}`);
                 reject(new Error(stderr || 'Error desconocido de yt-dlp'));
                 return;
             }
