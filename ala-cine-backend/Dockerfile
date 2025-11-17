@@ -1,7 +1,8 @@
-# === INICIO DE MODIFICACIÓN V5 (Imagen Estándar) ===
+# === INICIO DE MODIFICACIÓN V6 (Imagen Completa + Python) ===
 
-# 1. Usar una imagen oficial de Node.js v18 (LTS - Estable)
-FROM node:18-bullseye-slim
+# 1. Usar una imagen oficial de Node.js v18 (Completa, no 'slim')
+#    Esto nos da un entorno Debian "Bullseye" completo y predecible.
+FROM node:18-bullseye
 
 # 2. Cambiar a usuario ROOT para instalar paquetes del sistema
 USER root
@@ -12,7 +13,7 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # 4. Instalar yt-dlp usando PIP
-#    Esta es la forma más fiable y lo instala en el PATH del sistema.
+#    Esta es la forma más fiable.
 RUN pip3 install --no-cache-dir yt-dlp
 
 # 5. Configura el directorio de trabajo
@@ -35,4 +36,4 @@ EXPOSE 3000
 # 10. Comando para iniciar la aplicación
 CMD [ "npm", "start" ]
 
-# === FIN DE MODIFICACIÓN V5 ===
+# === FIN DE MODIFICACIÓN V6 ===
