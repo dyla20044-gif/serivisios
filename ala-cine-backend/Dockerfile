@@ -1,24 +1,27 @@
 # 1. Usamos una imagen base oficial de Playwright.
 FROM mcr.microsoft.com/playwright:v1.45.3-jammy
 
-# === INICIO DE MODIFICACIÓN V3 (Método Python/pip) ===
+# === INICIO DE MODIFICACIÓN V4 (Doble Instalación) ===
 # 1.A. Cambiamos a usuario ROOT para poder instalar paquetes
 USER root
 
-# 1.B. Actualizar e instalar el gestor de paquetes de Python (pip)
-#      La imagen ya trae python3, pero no siempre trae pip3.
+# 1.B. Instalar 'python3-pip' (para el método 1) y 'curl' (para el método 2)
 RUN apt-get update && \
-    apt-get install -y python3-pip && \
+    apt-get install -y python3-pip curl ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
-# 1.C. Instalar yt-dlp usando pip
-#    Esta es la forma más fiable y pondrá 'yt-dlp' en el PATH del sistema.
+# 1.C. MÉTODO 1: Instalar con pip3
+#    Esto debería ponerlo en el PATH correcto.
 RUN pip3 install --no-cache-dir yt-dlp
 
-# 1.D. Volvemos al usuario no-root 'pwuser' que usa la imagen por defecto
-USER pwuser
-# === FIN DE MODIFICACIÓN V3 ===
+# 1.D. MÉTODO 2: Descarga directa (Por si pip falla)
+#    Esto FUERZA el archivo a estar en /usr/local/bin/yt-dlp
+RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp && \
+    chmod a+rx /usr/local/bin/yt-dlp
 
+# 1.E. Volvemos al usuario no-root 'pwuser'
+USER pwuser
+# === FIN DE MODIFICACIÓN V4 ===
 
 # 2. Configura el directorio de trabajo
 WORKDIR /usr/src/app/ala-cine-backend
