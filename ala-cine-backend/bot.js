@@ -251,23 +251,30 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
             }
             finally { adminState[chatId] = { step: 'menu' }; }
         }
-        // --- Lógica de Añadir Links (PRO y GRATIS) (SIN CAMBIOS) ---
+        
+        // --- MODIFICACIÓN 1: Lógica de Añadir Links (Películas) ---
         else if (adminState[chatId] && adminState[chatId].step === 'awaiting_pro_link_movie') {
-            // ... (Tu código original sin cambios)
             const { selectedMedia } = adminState[chatId];
+            // Guardamos la URL EMBED (ej. vimeos.net/...)
             adminState[chatId].proEmbedCode = userText.toLowerCase() === 'no' ? null : userText;
             adminState[chatId].step = 'awaiting_free_link_movie';
-            bot.sendMessage(chatId, `PRO recibido (${adminState[chatId].proEmbedCode ? 'Embed completo' : 'Ninguno'}). Ahora envía el GRATIS para "${selectedMedia.title}". Escribe "no" si no hay.`);
+            // Cambiamos el mensaje
+            bot.sendMessage(chatId, `✅ Enlace EMBED PRO guardado. Ahora envía el enlace **EMBED GRATIS** para "${selectedMedia.title}". Escribe "no" si no hay.`);
 
         } else if (adminState[chatId] && adminState[chatId].step === 'awaiting_free_link_movie') {
-            // ... (Tu código original sin cambios)
             const { selectedMedia, proEmbedCode } = adminState[chatId];
             if (!selectedMedia?.id) { bot.sendMessage(chatId, 'Error: Se perdieron los datos de la película.'); adminState[chatId] = { step: 'menu' }; return; }
+            // Guardamos la URL EMBED (ej. vimeos.net/...)
             const freeEmbedCode = userText.toLowerCase() === 'no' ? null : userText;
+            
+            // Verificamos que al menos uno de los dos enlaces (que ahora son EMBEDS) exista
             if (!proEmbedCode && !freeEmbedCode) { bot.sendMessage(chatId, 'Error: Debes proporcionar al menos un enlace (PRO o GRATIS).'); return; }
+            
             adminState[chatId].movieDataToSave = {
                 tmdbId: selectedMedia.id.toString(), title: selectedMedia.title, overview: selectedMedia.overview, poster_path: selectedMedia.poster_path,
-                proEmbedCode: proEmbedCode, freeEmbedCode: freeEmbedCode, isPremium: !!proEmbedCode && !freeEmbedCode
+                proEmbedCode: proEmbedCode, // Esta es la URL EMBED PRO
+                freeEmbedCode: freeEmbedCode, // Esta es la URL EMBED GRATIS
+                isPremium: !!proEmbedCode && !freeEmbedCode
             };
             adminState[chatId].step = 'awaiting_publish_choice';
             const options = {
@@ -278,28 +285,36 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                     ]
                 }
             };
-            bot.sendMessage(chatId, `GRATIS recibido (${freeEmbedCode ? 'Embed completo' : 'Ninguno'}). ¿Qué hacer ahora?`, options);
+            // Cambiamos el mensaje
+            bot.sendMessage(chatId, `✅ Enlace EMBED GRATIS guardado. ¿Qué hacer ahora?`, options);
 
+        // --- MODIFICACIÓN 2: Lógica de Añadir Links (Series) ---
         } else if (adminState[chatId] && adminState[chatId].step === 'awaiting_pro_link_series') {
-            // ... (Tu código original sin cambios)
             const { selectedSeries, season, episode } = adminState[chatId];
             if (!selectedSeries) { bot.sendMessage(chatId, 'Error: Se perdieron los datos de la serie.'); adminState[chatId] = { step: 'menu' }; return; }
+            // Guardamos la URL EMBED (ej. vimeos.net/...)
             adminState[chatId].proEmbedCode = userText.toLowerCase() === 'no' ? null : userText;
             adminState[chatId].step = 'awaiting_free_link_series';
-            bot.sendMessage(chatId, `PRO recibido (${adminState[chatId].proEmbedCode ? 'Embed completo' : 'Ninguno'}). Envía el GRATIS para S${season}E${episode}. Escribe "no" si no hay.`);
+            // Cambiamos el mensaje
+            bot.sendMessage(chatId, `✅ Enlace EMBED PRO (S${season}E${episode}) guardado. Ahora envía el enlace **EMBED GRATIS**. Escribe "no" si no hay.`);
 
         } else if (adminState[chatId] && adminState[chatId].step === 'awaiting_free_link_series') {
-            // ... (Tu código original sin cambios)
             const { selectedSeries, season, episode, proEmbedCode } = adminState[chatId];
              if (!selectedSeries) { bot.sendMessage(chatId, 'Error: Se perdieron los datos de la serie.'); adminState[chatId] = { step: 'menu' }; return; }
+            // Guardamos la URL EMBED (ej. vimeos.net/...)
             const freeEmbedCode = userText.toLowerCase() === 'no' ? null : userText;
+            
             if (!proEmbedCode && !freeEmbedCode) { bot.sendMessage(chatId, 'Error: Debes proporcionar al menos un enlace (PRO o GRATIS).'); return; }
+            
             const seriesDataToSave = {
                 tmdbId: (selectedSeries.tmdbId || selectedSeries.id).toString(), title: selectedSeries.title || selectedSeries.name, poster_path: selectedSeries.poster_path,
                 seasonNumber: season, episodeNumber: episode, overview: selectedSeries.overview,
-                proEmbedCode: proEmbedCode, freeEmbedCode: freeEmbedCode, isPremium: !!proEmbedCode && !freeEmbedCode
+                proEmbedCode: proEmbedCode, // Esta es la URL EMBED PRO
+                freeEmbedCode: freeEmbedCode, // Esta es la URL EMBED GRATIS
+                isPremium: !!proEmbedCode && !freeEmbedCode
             };
             try {
+                // Esta lógica de guardado está perfecta, no se toca
                 await axios.post(`${RENDER_BACKEND_URL}/add-series-episode`, seriesDataToSave);
                 bot.sendMessage(chatId, `✅ Episodio S${season}E${episode} guardado.`);
                 const nextEpisodeNumber = episode + 1;
@@ -323,6 +338,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
         }
         
         // --- Lógica de VIVIBOX (SIN CAMBIOS) ---
+        // (Esta lógica sigue pidiendo un M3U8 directo, lo cual está bien para VIVIBOX)
         else if (adminState[chatId] && adminState[chatId].step === 'awaiting_vivibox_m3u8') {
             // ... (Tu código original sin cambios)
             const m3u8Link = userText.trim();
@@ -413,7 +429,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
             // Respondemos al callback (Solo para el ADMIN, ya que los públicos respondieron arriba)
             bot.answerCallbackQuery(callbackQuery.id);
 
-            // --- (INICIO DE TU LÓGICA DE CALLBACKS - SIN CAMBIOS) ---
+            // --- (INICIO DE TU LÓGICA DE CALLBACKS) ---
 
             if (data === 'add_movie') { 
                 adminState[chatId] = { step: 'search_movie' }; 
@@ -434,8 +450,8 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
             
             // ... (Resto de tus callbacks: 'add_new_movie_', 'manage_movie_', 'save_only_', etc.) ...
             
+            // --- MODIFICACIÓN 3: Cambiar mensaje de 'add_new_movie_' ---
             else if (data.startsWith('add_new_movie_')) {
-                // ... (Tu código original sin cambios)
                 const tmdbId = data.split('_')[3];
                 if (!tmdbId) { bot.sendMessage(chatId, 'Error: No se pudo obtener el ID de la película.'); return; }
                 try {
@@ -454,7 +470,8 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                         }
                     };
                     bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id }).catch(() => {});
-                    bot.sendMessage(chatId, `🎬 Película seleccionada: *${movieData.title}*\n\nAhora envía el enlace PRO. Escribe "no" si no hay enlace PRO.`, { parse_mode: 'Markdown' });
+                    // Cambiamos el mensaje
+                    bot.sendMessage(chatId, `🎬 Película seleccionada: *${movieData.title}*\n\nAhora envía la **PÁGINA EMBED** PRO (ej: vimeos.net/...). Escribe "no" si no hay.`, { parse_mode: 'Markdown' });
                 } catch (error) {
                     console.error("Error al obtener detalles de TMDB en add_new_movie_:", error.message);
                     bot.sendMessage(chatId, 'Error al obtener los detalles de la película desde TMDB.');
@@ -500,25 +517,30 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id }).catch(() => {});
                 await handleManageSeries(chatId, tmdbId);
             }
+            
+            // --- MODIFICACIÓN 4: Cambiar mensaje de 'add_pro_movie_' ---
             else if (data.startsWith('add_pro_movie_')) {
-                // ... (Tu código original sin cambios)
                 const { selectedMedia } = adminState[chatId];
                 if (!selectedMedia) { bot.sendMessage(chatId, 'Error: Datos perdidos. Vuelve a buscar la película.'); return; }
                 adminState[chatId].step = 'awaiting_pro_link_movie';
-                bot.sendMessage(chatId, `Editando PRO para *${selectedMedia.title}*. Envía el nuevo enlace PRO (o "no").`, { parse_mode: 'Markdown' });
+                // Cambiamos el mensaje
+                bot.sendMessage(chatId, `Editando PRO para *${selectedMedia.title}*. Envía la nueva **PÁGINA EMBED** PRO (o "no").`, { parse_mode: 'Markdown' });
             } 
+            
+            // --- MODIFICACIÓN 5: Cambiar mensaje de 'add_free_movie_' ---
             else if (data.startsWith('add_free_movie_')) {
-                 // ... (Tu código original sin cambios)
                 const { selectedMedia } = adminState[chatId];
                 if (!selectedMedia) { bot.sendMessage(chatId, 'Error: Datos perdidos. Vuelve a buscar la película.'); return; }
                 adminState[chatId].step = 'awaiting_free_link_movie';
                 const existingMovie = await mongoDb.collection('media_catalog').findOne({ tmdbId: selectedMedia.id.toString() });
                 adminState[chatId].proEmbedCode = existingMovie?.proEmbedCode || null; 
-                bot.sendMessage(chatId, `Editando GRATIS para *${selectedMedia.title}*. Envía el nuevo enlace GRATIS (o "no").`, { parse_mode: 'Markdown' });
+                // Cambiamos el mensaje
+                bot.sendMessage(chatId, `Editando GRATIS para *${selectedMedia.title}*. Envía la nueva **PÁGINA EMBED** GRATIS (o "no").`, { parse_mode: 'Markdown' });
             }
             else if (data.startsWith('select_season_')) { /* ... (Lógica no implementada) ... */ }
+            
+            // --- MODIFICACIÓN 6: Cambiar mensaje de 'manage_season_' ---
             else if (data.startsWith('manage_season_')) {
-                // ... (Tu código original sin cambios)
                 const [_, __, tmdbId, seasonNumber] = data.split('_');
                 const { selectedSeries } = adminState[chatId];
                 if (!selectedSeries || selectedSeries.id.toString() !== tmdbId) {
@@ -540,11 +562,13 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                     episode: nextEpisode
                 };
                 bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id }).catch(() => {});
-                bot.sendMessage(chatId, `Gestionando *S${seasonNumber}* de *${selectedSeries.name}*.\n\nVamos a agregar el episodio *E${nextEpisode}*.\n\nEnvía el enlace PRO (o "no").`, { parse_mode: 'Markdown' });
+                // Cambiamos el mensaje
+                bot.sendMessage(chatId, `Gestionando *S${seasonNumber}* de *${selectedSeries.name}*.\n\nVamos a agregar el episodio *E${nextEpisode}*.\n\nEnvía la **PÁGINA EMBED** PRO (o "no").`, { parse_mode: 'Markdown' });
             }
             else if (data.startsWith('add_new_season_')) { /* ... (Lógica no implementada) ... */ }
+            
+            // --- MODIFICACIÓN 7: Cambiar mensaje de 'solicitud_' ---
             else if (data.startsWith('solicitud_')) {
-                // ... (Tu código original sin cambios)
                 const tmdbId = data.split('_')[1];
                 if (!tmdbId) { bot.sendMessage(chatId, 'Error: No se pudo obtener el ID de la solicitud.'); return; }
                 bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id }).catch(() => {});
@@ -562,7 +586,8 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                             poster_path: movieData.poster_path
                         }
                     };
-                    bot.sendMessage(chatId, `🎬 Solicitud seleccionada: *${movieData.title}*\n\nAhora envía el enlace PRO. Escribe "no" si no hay enlace PRO.`, { parse_mode: 'Markdown' });
+                    // Cambiamos el mensaje
+                    bot.sendMessage(chatId, `🎬 Solicitud seleccionada: *${movieData.title}*\n\nAhora envía la **PÁGINA EMBED** PRO (ej: vimeos.net/...). Escribe "no" si no hay.`, { parse_mode: 'Markdown' });
                 } catch (error) {
                     console.error("Error al obtener detalles de TMDB en 'solicitud_':", error.message);
                     bot.sendMessage(chatId, 'Error al obtener los detalles de la película desde TMDB.');
@@ -607,6 +632,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
             }
 
             // --- Callbacks de Guardado/Publicación (SIN CAMBIOS) ---
+            // (Esta lógica no se toca, ya que solo recibe los datos de 'movieDataToSave')
             else if (data.startsWith('save_only_')) {
                 // ... (Tu código original sin cambios)
                 const { movieDataToSave } = adminState[chatId];
@@ -639,8 +665,9 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                     adminState[chatId] = { step: 'menu' };
                 }
             }
+            
+            // --- MODIFICACIÓN 8: Cambiar mensaje de 'add_next_episode_' ---
             else if (data.startsWith('add_next_episode_')) {
-                // ... (Tu código original sin cambios)
                 const [_, __, ___, tmdbId, seasonNumber] = data.split('_');
                 const { selectedSeries } = adminState[chatId];
                 if (!selectedSeries || selectedSeries.id.toString() !== tmdbId) { 
@@ -663,7 +690,8 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                     episode: nextEpisode 
                 };
                 bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id });
-                bot.sendMessage(chatId, `Siguiente: Envía link PRO para S${seasonNumber}E${nextEpisode} (o "no").`);
+                // Cambiamos el mensaje
+                bot.sendMessage(chatId, `Siguiente: Envía la **PÁGINA EMBED** PRO para S${seasonNumber}E${nextEpisode} (o "no").`);
             }
             else if (data.startsWith('publish_push_this_episode_')) {
                 // ... (Tu código original sin cambios)
