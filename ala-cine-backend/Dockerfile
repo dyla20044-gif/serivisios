@@ -20,15 +20,16 @@ RUN pip3 install --no-cache-dir yt-dlp
 WORKDIR /usr/src/app
 
 # 6. Copia los archivos de configuración
-#    (Ajustado a la nueva estructura de WORKDIR)
-COPY ala-cine-backend/package.json .
-COPY ala-cine-backend/package-lock.json .
+#    (CORREGIDO: Se quitó 'ala-cine-backend/')
+COPY package.json .
+COPY package-lock.json .
 
 # 7. Instala las dependencias de Node
 RUN npm install
 
 # 8. Copia el resto de tu código de aplicación
-COPY ala-cine-backend/ .
+#    (CORREGIDO: Se quitó 'ala-cine-backend/')
+COPY . .
 
 # 9. Expone el puerto
 EXPOSE 3000
