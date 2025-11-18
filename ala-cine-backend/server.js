@@ -3,7 +3,7 @@ const bodyParser = require('body-parser');
 const paypal = require('paypal-rest-sdk');
 const TelegramBot = require('node-telegram-bot-api');
 const admin = require('firebase-admin');
-const axios = require('axios');
+const axios = require('axios'); // Ya lo usas, perfecto
 const dotenv = require('dotenv');
 const url = require('url');
 const { MongoClient, ServerApiVersion } = require('mongodb');
@@ -11,9 +11,6 @@ const initializeBot = require('./bot.js');
 
 // (AÑADIDO) Herramienta para generar IDs aleatorios
 const crypto = require('crypto');
-
-// +++ NUEVO: Importamos tu extractor (yt-dlp) +++
-const { extractWithYtDlp } = require('./m3u8Extractor.js');
 
 // +++ INICIO DE CAMBIOS PARA CACHÉ +++
 const NodeCache = require('node-cache');
@@ -689,7 +686,7 @@ app.get('/api/get-embed-code', async (req, res) => {
         }
         if (!embedCode) {
             console.log(`[Embed Code] No se encontró código para ${id} (isPro: ${isPro})`);
-            return res.status(4404).json({ error: `No se encontró código de reproductor.` });
+            return res.status(404).json({ error: `No se encontró código de reproductor.` });
         }
         embedCache.set(cacheKey, embedCode);
         console.log(`[MongoDB] Sirviendo embed directo y guardando en caché para ${id} (isPro: ${isPro})`);
@@ -1030,40 +1027,74 @@ app.get('/api/obtener-enlace', async (req, res) => {
 
 
 // =======================================================================
-// === (+++ NUEVO +++) RUTA DEL EXTRACTOR M3U8 (yt-dlp) ===
+// === (+++ NUEVO +++) RUTA DEL EXTRACTOR M3U8 (Llama al API de Python) ===
 // =======================================================================
 
 /**
  * [NUEVA RUTA] (Llamada por ti o tu bot)
- * Recibe una URL de una página (ej. vimeos.net) y devuelve
- * el enlace M3U8/MP4 directo usando yt-dlp.
+ * Recibe una URL de una página (ej. vimeos.net), la envía a tu
+ * API de Python (m3u8-extractor-api) y devuelve el resultado.
  */
 app.get('/api/extract-link', async (req, res) => {
     const targetUrl = req.query.url;
+    
+    // URL de tu API de Python
+    const EXTRACTOR_API_URL = 'https://m3u8-extractor-api-1.onrender.com/extract';
 
     if (!targetUrl) {
         return res.status(400).json({ success: false, error: "Se requiere un parámetro 'url' en la consulta." });
     }
 
+    console.log(`[Extractor] Solicitud recibida para: ${targetUrl}`);
+    
     try {
-        // Llamamos a la función de tu archivo m3u8Extractor.js
-        console.log(`[Extractor] Solicitud recibida para: ${targetUrl}`);
-        const extractedLink = await extractWithYtDlp(targetUrl);
-        
-        // Devolvemos el enlace encontrado
-        res.status(200).json({
-            success: true,
-            requested_url: targetUrl,
-            extracted_link: extractedLink
+        // Hacemos una llamada POST a tu API de Python usando axios
+        // Tu API de Python espera un JSON en el body
+        console.log(`[Extractor] Llamando a la API de Python en: ${EXTRACTOR_API_URL}`);
+        const response = await axios.post(EXTRACTOR_API_URL, {
+            url: targetUrl 
+        }, {
+            // Añadimos un timeout generoso, ya que Playwright puede tardar
+            timeout: 25000 // 25 segundos
         });
 
+        // La API de Python respondió correctamente
+        const pythonResponse = response.data;
+
+        if (pythonResponse.status === 'success' && pythonResponse.m3u8_url) {
+            console.log(`[Extractor] Éxito. Enlace encontrado por Python: ${pythonResponse.m3u8_url}`);
+            // Devolvemos el enlace en un formato JSON unificado
+            res.status(200).json({
+                success: true,
+                requested_url: targetUrl,
+                extracted_link: pythonResponse.m3u8_url
+            });
+        } else {
+            // Tu API de Python funcionó pero no encontró el enlace
+             console.error(`[Extractor] La API de Python no pudo encontrar el enlace. Mensaje: ${pythonResponse.message}`);
+             res.status(404).json({
+                success: false,
+                error: "El extractor de Python no pudo encontrar un enlace M3U8.",
+                details: pythonResponse.message || "Sin detalles."
+            });
+        }
+
     } catch (error) {
-        // Si yt-dlp falla (ej. sitio no soportado, video eliminado)
-        console.error(`[Extractor] Error al extraer de ${targetUrl}:`, error.message);
+        // Error de red (ej. tu API de Python está caída, tardó demasiado (timeout) o dio un error 500)
+        console.error(`[Extractor] Error al llamar a la API de Python: ${error.message}`);
+        
+        let errorDetails = error.message;
+        if (error.response) {
+            // El servidor de Python respondió con un error (ej. 500)
+            errorDetails = error.response.data || error.message;
+        } else if (error.code === 'ECONNABORTED') {
+            errorDetails = 'Timeout: El extractor de Python tardó más de 25 segundos en responder.';
+        }
+
         res.status(500).json({ 
             success: false, 
-            error: "No se pudo extraer el enlace.",
-            details: error.message 
+            error: "El servicio extractor (Python) falló o tardó demasiado.",
+            details: errorDetails
         });
     }
 });
