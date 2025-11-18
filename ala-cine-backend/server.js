@@ -12,6 +12,9 @@ const initializeBot = require('./bot.js');
 // (AÑADIDO) Herramienta para generar IDs aleatorios
 const crypto = require('crypto');
 
+// +++ (NUEVO) LIBRERÍA PARA TAREAS AUTOMÁTICAS +++
+const cron = require('node-cron');
+
 // +++ INICIO DE CAMBIOS PARA CACHÉ +++
 const NodeCache = require('node-cache');
 // Caché para enlaces (1 hora TTL - 3600 segundos)
@@ -657,7 +660,157 @@ app.get('/api/get-movie-data', async (req, res) => {
     }
 });
 
-// +++ RUTA MODIFICADA +++
+// =======================================================================
+// === (+++ NUEVO +++) FUNCIÓN Y RUTA DEL EXTRACTOR M3U8 (Llama al API de Python) ===
+// =======================================================================
+
+// URL de tu API de Python
+const EXTRACTOR_API_URL = 'https://m3u8-extractor-api-1.onrender.com/extract';
+
+/**
+ * +++ NUEVA FUNCIÓN DE AYUDA +++
+ * Llama a tu API de Python para extraer un enlace M3U8.
+ * @param {string} targetUrl - La URL de la página (ej. vimeos.net/embed-...)
+ * @returns {Promise<string>} - Una promesa que resuelve al enlace M3U8/MP4 directo.
+ * @throws {Error} - Lanza un error si la extracción falla.
+ */
+async function llamarAlExtractor(targetUrl) {
+    
+    if (!targetUrl || !targetUrl.startsWith('http')) {
+        throw new Error("URL objetivo inválida para el extractor.");
+    }
+    
+    // Si ya es un M3U8, no necesitamos llamar al extractor
+    if (targetUrl.includes('.m3u8')) {
+        return targetUrl;
+    }
+    
+    console.log(`[Extractor] Llamando a la API de Python en: ${EXTRACTOR_API_URL}`);
+    
+    try {
+        // Hacemos una llamada POST a tu API de Python usando axios
+        const response = await axios.post(EXTRACTOR_API_URL, {
+            url: targetUrl 
+        }, {
+            // Añadimos un timeout generoso
+            timeout: 30000 // 30 segundos (aumentado un poco por seguridad)
+        });
+
+        // La API de Python respondió correctamente
+        const pythonResponse = response.data;
+
+        if (pythonResponse.status === 'success' && pythonResponse.m3u8_url) {
+            console.log(`[Extractor] Éxito. Enlace encontrado por Python: ${pythonResponse.m3u8_url}`);
+            // Devolvemos SOLAMENTE el enlace m3u8
+            return pythonResponse.m3u8_url;
+        } else {
+            // Tu API de Python funcionó pero no encontró el enlace
+             const errorMsg = (pythonResponse.message || "Sin detalles.")
+             console.error(`[Extractor] La API de Python no pudo encontrar el enlace. Mensaje: ${errorMsg}`);
+             throw new Error(`El extractor de Python no pudo encontrar un enlace M3U8. (Detalles: ${errorMsg})`);
+        }
+
+    } catch (error) {
+        // Error de red (ej. tu API de Python está caída, tardó demasiado (timeout) o dio un error 500)
+        console.error(`[Extractor] Error al llamar a la API de Python: ${error.message}`);
+        
+        let errorDetails = error.message;
+        if (error.response) {
+            // El servidor de Python respondió con un error (ej. 500)
+            errorDetails = error.response.data?.error || error.response.data || error.message;
+        } else if (error.code === 'ECONNABORTED') {
+            errorDetails = 'Timeout: El extractor de Python tardó más de 30 segundos en responder.';
+        }
+        // Lanzamos el error para que la ruta que llamó lo maneje
+        throw new Error(`El servicio extractor (Python) falló: ${errorDetails}`);
+    }
+}
+
+// =======================================================================
+// === (NUEVO) SISTEMA DE CACHÉ AUTOMÁTICA (CRON JOBS) ===
+// =======================================================================
+
+// Función auxiliar para esperar (para no saturar el servidor)
+const delay = ms => new Promise(res => setTimeout(res, ms));
+
+// 1. Actualizar Película
+async function refrescarPelicula(movie) {
+    // Solo actualizamos si hay un enlace PRO y NO es ya un m3u8 directo
+    if (movie.proEmbedCode && !movie.proEmbedCode.includes('.m3u8')) {
+        try {
+            console.log(`🔄 [Auto-Movie] Actualizando: ${movie.title}...`);
+            const nuevoM3U8 = await llamarAlExtractor(movie.proEmbedCode);
+            if (nuevoM3U8) {
+                await mongoDb.collection('media_catalog').updateOne(
+                    { _id: movie._id },
+                    { $set: { cachedProM3U8: nuevoM3U8, lastCacheUpdate: new Date() } }
+                );
+                console.log(`✅ [Auto-Movie] Guardado M3U8 para: ${movie.title}`);
+            }
+        } catch (e) { console.error(`❌ [Auto-Movie] Error en ${movie.title}: ${e.message}`); }
+    }
+}
+
+// 2. Actualizar Episodio de Serie
+async function refrescarEpisodio(seriesId, seasonKey, episodeKey, episodeData) {
+    if (episodeData.proEmbedCode && !episodeData.proEmbedCode.includes('.m3u8')) {
+        try {
+            console.log(`🔄 [Auto-Series] Actualizando S${seasonKey}E${episodeKey} (ID: ${seriesId})...`);
+            const nuevoM3U8 = await llamarAlExtractor(episodeData.proEmbedCode);
+            if (nuevoM3U8) {
+                const updatePath = `seasons.${seasonKey}.episodes.${episodeKey}.cachedProM3U8`;
+                const timePath = `seasons.${seasonKey}.episodes.${episodeKey}.lastCacheUpdate`;
+                
+                const updateQuery = { $set: {} };
+                updateQuery.$set[updatePath] = nuevoM3U8;
+                updateQuery.$set[timePath] = new Date();
+
+                await mongoDb.collection('series_catalog').updateOne(
+                    { tmdbId: seriesId },
+                    updateQuery
+                );
+                console.log(`✅ [Auto-Series] Guardado S${seasonKey}E${episodeKey}`);
+            }
+        } catch (e) { console.error(`❌ [Auto-Series] Error en S${seasonKey}E${episodeKey}: ${e.message}`); }
+    }
+}
+
+// 3. Función Maestra del Cron
+async function ejecutarActualizacionMasiva() {
+    if (!mongoDb) return;
+    console.log('🚀 INICIANDO CICLO DE ACTUALIZACIÓN DE ENLACES...');
+
+    // --- FASE 1: PELÍCULAS ---
+    const movies = await mongoDb.collection('media_catalog').find({}).toArray();
+    for (const movie of movies) {
+        await refrescarPelicula(movie);
+        await delay(5000); // Pausa de 5 segundos entre películas para no bloquear
+    }
+
+    // --- FASE 2: SERIES ---
+    const seriesList = await mongoDb.collection('series_catalog').find({}).toArray();
+    for (const series of seriesList) {
+        if (series.seasons) {
+            for (const [sKey, season] of Object.entries(series.seasons)) {
+                if (season && season.episodes) {
+                    for (const [eKey, episode] of Object.entries(season.episodes)) {
+                        await refrescarEpisodio(series.tmdbId, sKey, eKey, episode);
+                        await delay(5000); // Pausa de 5 segundos entre episodios
+                    }
+                }
+            }
+        }
+    }
+    console.log('🏁 CICLO DE ACTUALIZACIÓN FINALIZADO.');
+}
+
+// PROGRAMACIÓN: Ejecutar cada 6 horas
+// "0 */6 * * *" significa: Minuto 0, cada 6 horas (ej: 00:00, 06:00, 12:00, 18:00)
+cron.schedule('0 */6 * * *', () => {
+    ejecutarActualizacionMasiva();
+});
+
+// +++ RUTA MODIFICADA (AHORA INTELIGENTE) +++
 app.get('/api/get-embed-code', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
     
@@ -667,7 +820,7 @@ app.get('/api/get-embed-code', async (req, res) => {
     // La caché ahora guarda el M3U8 final, no el enlace de la BD
     const cacheKey = `embed-${id}-${season || 'movie'}-${episode || '1'}-${isPro === 'true' ? 'pro' : 'free'}`;
     
-    // 1. Revisar caché (sin cambios)
+    // 1. Revisar caché RAM (sin cambios)
     try {
         const cachedData = embedCache.get(cacheKey);
         if (cachedData) {
@@ -688,44 +841,74 @@ app.get('/api/get-embed-code', async (req, res) => {
 
         if (!doc) return res.status(404).json({ error: `${mediaType} no encontrada.` });
 
-        // 3. Obtener el enlace guardado en Mongo (sin cambios)
-        let enlaceDeMongo; // Renombrado de 'embedCode' a 'enlaceDeMongo' para claridad
+        // --- LÓGICA NUEVA DE PREFETCHING ---
+        let enlaceFinal = null;
+        let enlaceFuente = null;
+
         if (mediaType === 'movies') {
-            enlaceDeMongo = isPro === 'true' ? doc.proEmbedCode : doc.freeEmbedCode;
+            // Películas
+            if (isPro === 'true') {
+                // a) Intentamos usar el M3U8 ya guardado por el Cron (Si existe)
+                if (doc.cachedProM3U8) {
+                    console.log(`⚡ [Speed] Sirviendo M3U8 precargado para película ${id}`);
+                    enlaceFinal = doc.cachedProM3U8;
+                }
+                // b) Si no, nos preparamos para extraer del original
+                enlaceFuente = doc.proEmbedCode;
+            } else {
+                enlaceFinal = doc.freeEmbedCode; 
+            }
         } else {
-            const episodeData = doc.seasons?.[season]?.episodes?.[episode];
-            enlaceDeMongo = isPro === 'true' ? episodeData?.proEmbedCode : episodeData?.freeEmbedCode;
+            // Series
+            const epData = doc.seasons?.[season]?.episodes?.[episode];
+            if (epData) {
+                if (isPro === 'true') {
+                     // a) Intentamos usar el M3U8 ya guardado por el Cron
+                    if (epData.cachedProM3U8) {
+                        console.log(`⚡ [Speed] Sirviendo M3U8 precargado para S${season}E${episode}`);
+                        enlaceFinal = epData.cachedProM3U8;
+                    }
+                    // b) Si no, nos preparamos para extraer del original
+                    enlaceFuente = epData.proEmbedCode;
+                } else {
+                    enlaceFinal = epData.freeEmbedCode;
+                }
+            }
         }
 
-        // Si no hay enlace EN MONGO, fallamos
-        if (!enlaceDeMongo) {
-            console.log(`[Embed Code] No se encontró código para ${id} (isPro: ${isPro})`);
-            return res.status(404).json({ error: `No se encontró código de reproductor.` });
+        // CASO 1: ¡Tenemos enlace rápido! (De Mongo o es Free)
+        if (enlaceFinal && enlaceFinal.startsWith('http')) {
+            embedCache.set(cacheKey, enlaceFinal);
+            return res.json({ embedCode: enlaceFinal });
         }
 
-        // +++ 4. INICIO DEL CAMBIO: LLAMAR AL EXTRACTOR +++
-        
-        console.log(`[Extractor] Iniciando extracción para: ${enlaceDeMongo}`);
-        try {
-            // Llamamos a la función que creamos (ver más abajo)
-            const enlaceM3U8_Directo = await llamarAlExtractor(enlaceDeMongo);
+        // CASO 2: No hay caché fresca, toca extraer en vivo (Lento pero necesario si falló el cron o es nuevo)
+        if (enlaceFuente) {
+            console.log(`🐢 [Speed] Caché vacía, extrayendo en vivo para ${id}...`);
             
-            // Guardamos el M3U8 (el resultado) en caché
-            embedCache.set(cacheKey, enlaceM3U8_Directo);
-            
-            // Lo devolvemos a la app
-            console.log(`[Extractor] Sirviendo M3U8 extraído para ${id} (isPro: ${isPro})`);
-            return res.json({ embedCode: enlaceM3U8_Directo });
-
-        } catch (extractionError) {
-            // Si el extractor falla (ej. enlace caído o no encontró nada)
-            console.error(`[Extractor] Falló la extracción para ${id} (enlace: ${enlaceDeMongo}):`, extractionError.message);
-            return res.status(500).json({ 
-                error: "El enlace existe en la base de datos, pero el extractor no pudo obtener el video.",
-                details: extractionError.message 
-            });
+            try {
+                // Llamamos a la función de ayuda
+                const enlaceM3U8_Directo = await llamarAlExtractor(enlaceFuente);
+                
+                // Guardamos el M3U8 (el resultado) en caché RAM
+                embedCache.set(cacheKey, enlaceM3U8_Directo);
+                
+                // Lo devolvemos a la app
+                console.log(`[Extractor] Sirviendo M3U8 extraído para ${id} (isPro: ${isPro})`);
+                return res.json({ embedCode: enlaceM3U8_Directo });
+    
+            } catch (extractionError) {
+                console.error(`[Extractor] Falló la extracción para ${id}:`, extractionError.message);
+                return res.status(500).json({ 
+                    error: "El enlace existe en la base de datos, pero el extractor no pudo obtener el video.",
+                    details: extractionError.message 
+                });
+            }
         }
-        // +++ FIN DEL CAMBIO +++
+
+        // Si llegamos aquí, no había ni cached, ni fuente
+        console.log(`[Embed Code] No se encontró código para ${id} (isPro: ${isPro})`);
+        return res.status(404).json({ error: `No se encontró código de reproductor.` });
 
     } catch (error) {
         console.error("Error crítico get-embed-code:", error);
@@ -973,158 +1156,6 @@ app.get('/.well-known/assetlinks.json', (req, res) => {
     // ... (Tu código original sin cambios)
     res.sendFile('assetlinks.json', { root: __dirname });
 });
-
-// =======================================================================
-// === (AÑADIDO) NUEVAS RUTAS PARA LA APP "VIVIBOX" === (Sin cambios)
-// =======================================================================
-
-/**
- * Función de ayuda para generar un ID corto y aleatorio.
- * @param {number} length - La longitud del ID deseado.
- * @returns {string} Un ID aleatorio (ej. "aB3xZ9")
- */
-function generateShortId(length) {
-    return crypto.randomBytes(Math.ceil(length / 2))
-        .toString('hex') // Convertir a hexadecimal
-        .slice(0, length); // Cortar a la longitud deseada
-}
-
-/**
- * [VIVIBOX - Ruta 1] (Llamada por el Bot)
- * Guarda un nuevo enlace .m3u8 en la colección 'vivibox_links'
- * y devuelve un ID corto.
- */
-app.post('/api/vivibox/add-link', async (req, res) => {
-    if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
-
-    const { m3u8Url } = req.body;
-    if (!m3u8Url || !m3u8Url.startsWith('http') || !m3u8Url.endsWith('.m3u8')) {
-        return res.status(400).json({ error: "Se requiere un 'm3u8Url' válido." });
-    }
-
-    try {
-        const collection = mongoDb.collection('vivibox_links'); // Nueva colección
-        const shortId = generateShortId(6); // Genera un ID de 6 caracteres (ej. "f4a1b2")
-
-        // Guardamos el enlace en la nueva colección usando el ID corto como _id
-        await collection.insertOne({
-            _id: shortId,
-            m3u8Url: m3u8Url,
-            createdAt: new Date()
-        });
-
-        console.log(`[Vivibox] Enlace guardado con ID: ${shortId}`);
-        // Devolvemos el ID al bot
-        res.status(201).json({ message: 'Enlace guardado', id: shortId });
-
-    } catch (error) {
-        // Manejo de error en caso de que el ID aleatorio ya exista (muy improbable)
-        if (error.code === 11000) { // Error de clave duplicada
-             console.warn("[Vivibox] Colisión de ID corto, reintentando...");
-             return res.status(500).json({ error: "Colisión de ID, por favor reintenta." });
-        }
-        console.error("Error en /api/vivibox/add-link:", error);
-        res.status(500).json({ error: "Error interno al guardar el enlace." });
-    }
-});
-
-/**
- * [VIVIBOX - Ruta 2] (Llamada por la App Android)
- * Busca un ID corto en 'vivibox_links' y devuelve el enlace .m3u8 real.
- * Esta es la ruta que tu PlayerActivity ya está programada para llamar.
- */
-app.get('/api/obtener-enlace', async (req, res) => {
-    if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
-
-    const { id } = req.query; // El ID corto (ej. "f4a1b2")
-    if (!id) {
-        return res.status(400).json({ error: "Se requiere un 'id'." });
-    }
-
-    try {
-        const collection = mongoDb.collection('vivibox_links');
-        
-        // Buscamos el documento por su _id
-        const doc = await collection.findOne({ _id: id });
-
-        if (!doc) {
-            console.warn(`[Vivibox] Enlace no encontrado para ID: ${id}`);
-            return res.status(404).json({ error: "Enlace no encontrado o expirado." });
-        }
-
-        // ¡Encontrado! Devolvemos el JSON que la app espera
-        console.log(`[Vivibox] Sirviendo enlace M3U8 para ID: ${id}`);
-        res.status(200).json({
-            url_real: doc.m3u8Url 
-        });
-
-    } catch (error) {
-        console.error("Error en /api/obtener-enlace:", error);
-        res.status(500).json({ error: "Error interno al buscar el enlace." });
-    }
-});
-
-
-// =======================================================================
-// === (+++ NUEVO +++) FUNCIÓN Y RUTA DEL EXTRACTOR M3U8 (Llama al API de Python) ===
-// =======================================================================
-
-// URL de tu API de Python
-const EXTRACTOR_API_URL = 'https://m3u8-extractor-api-1.onrender.com/extract';
-
-/**
- * +++ NUEVA FUNCIÓN DE AYUDA +++
- * Llama a tu API de Python para extraer un enlace M3U8.
- * @param {string} targetUrl - La URL de la página (ej. vimeos.net/embed-...)
- * @returns {Promise<string>} - Una promesa que resuelve al enlace M3U8/MP4 directo.
- * @throws {Error} - Lanza un error si la extracción falla.
- */
-async function llamarAlExtractor(targetUrl) {
-    
-    if (!targetUrl || !targetUrl.startsWith('http')) {
-        throw new Error("URL objetivo inválida para el extractor.");
-    }
-    
-    console.log(`[Extractor] Llamando a la API de Python en: ${EXTRACTOR_API_URL}`);
-    
-    try {
-        // Hacemos una llamada POST a tu API de Python usando axios
-        const response = await axios.post(EXTRACTOR_API_URL, {
-            url: targetUrl 
-        }, {
-            // Añadimos un timeout generoso
-            timeout: 25000 // 25 segundos
-        });
-
-        // La API de Python respondió correctamente
-        const pythonResponse = response.data;
-
-        if (pythonResponse.status === 'success' && pythonResponse.m3u8_url) {
-            console.log(`[Extractor] Éxito. Enlace encontrado por Python: ${pythonResponse.m3u8_url}`);
-            // Devolvemos SOLAMENTE el enlace m3u8
-            return pythonResponse.m3u8_url;
-        } else {
-            // Tu API de Python funcionó pero no encontró el enlace
-             const errorMsg = (pythonResponse.message || "Sin detalles.")
-             console.error(`[Extractor] La API de Python no pudo encontrar el enlace. Mensaje: ${errorMsg}`);
-             throw new Error(`El extractor de Python no pudo encontrar un enlace M3U8. (Detalles: ${errorMsg})`);
-        }
-
-    } catch (error) {
-        // Error de red (ej. tu API de Python está caída, tardó demasiado (timeout) o dio un error 500)
-        console.error(`[Extractor] Error al llamar a la API de Python: ${error.message}`);
-        
-        let errorDetails = error.message;
-        if (error.response) {
-            // El servidor de Python respondió con un error (ej. 500)
-            errorDetails = error.response.data?.error || error.response.data || error.message;
-        } else if (error.code === 'ECONNABORTED') {
-            errorDetails = 'Timeout: El extractor de Python tardó más de 25 segundos en responder.';
-        }
-        // Lanzamos el error para que la ruta que llamó lo maneje
-        throw new Error(`El servicio extractor (Python) falló: ${errorDetails}`);
-    }
-}
 
 
 /**
