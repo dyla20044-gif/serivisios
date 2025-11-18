@@ -604,7 +604,7 @@ app.get('/api/streaming-status', (req, res) => {
 
 
 // =======================================================================
-// === RUTAS DE SALA CINE (MongoDB) === (Sin cambios)
+// === RUTAS DE SALA CINE (MongoDB) === (Sección modificada)
 // =======================================================================
 app.get('/api/get-movie-data', async (req, res) => {
     // ... (Tu código original sin cambios)
@@ -656,46 +656,85 @@ app.get('/api/get-movie-data', async (req, res) => {
         res.status(500).json({ error: "Error interno del servidor al obtener los datos." });
     }
 });
+
+// +++ RUTA MODIFICADA +++
 app.get('/api/get-embed-code', async (req, res) => {
-    // ... (Tu código original sin cambios)
     if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
+    
     const { id, season, episode, isPro } = req.query;
     if (!id) return res.status(400).json({ error: "ID no proporcionado" });
+
+    // La caché ahora guarda el M3U8 final, no el enlace de la BD
     const cacheKey = `embed-${id}-${season || 'movie'}-${episode || '1'}-${isPro === 'true' ? 'pro' : 'free'}`;
+    
+    // 1. Revisar caché (sin cambios)
     try {
         const cachedData = embedCache.get(cacheKey);
         if (cachedData) {
-            console.log(`[Cache HIT] Sirviendo embed desde caché para: ${cacheKey}`);
+            console.log(`[Cache HIT] Sirviendo embed (M3U8) desde caché para: ${cacheKey}`);
             return res.json({ embedCode: cachedData });
         }
     } catch (err) {
         console.error("Error al leer del caché de embeds:", err);
     }
+    
     console.log(`[Cache MISS] Buscando embed en MongoDB para: ${cacheKey}`);
+
     try {
+        // 2. Buscar el documento en Mongo (sin cambios)
         const mediaType = season && episode ? 'series' : 'movies';
         const collectionName = (mediaType === 'movies') ? 'media_catalog' : 'series_catalog';
         const doc = await mongoDb.collection(collectionName).findOne({ tmdbId: id.toString() });
+
         if (!doc) return res.status(404).json({ error: `${mediaType} no encontrada.` });
-        let embedCode;
+
+        // 3. Obtener el enlace guardado en Mongo (sin cambios)
+        let enlaceDeMongo; // Renombrado de 'embedCode' a 'enlaceDeMongo' para claridad
         if (mediaType === 'movies') {
-            embedCode = isPro === 'true' ? doc.proEmbedCode : doc.freeEmbedCode;
+            enlaceDeMongo = isPro === 'true' ? doc.proEmbedCode : doc.freeEmbedCode;
         } else {
             const episodeData = doc.seasons?.[season]?.episodes?.[episode];
-            embedCode = isPro === 'true' ? episodeData?.proEmbedCode : episodeData?.freeEmbedCode;
+            enlaceDeMongo = isPro === 'true' ? episodeData?.proEmbedCode : episodeData?.freeEmbedCode;
         }
-        if (!embedCode) {
+
+        // Si no hay enlace EN MONGO, fallamos
+        if (!enlaceDeMongo) {
             console.log(`[Embed Code] No se encontró código para ${id} (isPro: ${isPro})`);
             return res.status(404).json({ error: `No se encontró código de reproductor.` });
         }
-        embedCache.set(cacheKey, embedCode);
-        console.log(`[MongoDB] Sirviendo embed directo y guardando en caché para ${id} (isPro: ${isPro})`);
-        return res.json({ embedCode: embedCode });
+
+        // +++ 4. INICIO DEL CAMBIO: LLAMAR AL EXTRACTOR +++
+        
+        console.log(`[Extractor] Iniciando extracción para: ${enlaceDeMongo}`);
+        try {
+            // Llamamos a la función que creamos (ver más abajo)
+            const enlaceM3U8_Directo = await llamarAlExtractor(enlaceDeMongo);
+            
+            // Guardamos el M3U8 (el resultado) en caché
+            embedCache.set(cacheKey, enlaceM3U8_Directo);
+            
+            // Lo devolvemos a la app
+            console.log(`[Extractor] Sirviendo M3U8 extraído para ${id} (isPro: ${isPro})`);
+            return res.json({ embedCode: enlaceM3U8_Directo });
+
+        } catch (extractionError) {
+            // Si el extractor falla (ej. enlace caído o no encontró nada)
+            console.error(`[Extractor] Falló la extracción para ${id} (enlace: ${enlaceDeMongo}):`, extractionError.message);
+            return res.status(500).json({ 
+                error: "El enlace existe en la base de datos, pero el extractor no pudo obtener el video.",
+                details: extractionError.message 
+            });
+        }
+        // +++ FIN DEL CAMBIO +++
+
     } catch (error) {
         console.error("Error crítico get-embed-code:", error);
         res.status(500).json({ error: "Error interno" });
     }
 });
+// +++ FIN DE RUTA MODIFICADA +++
+
+
 app.get('/api/check-season-availability', async (req, res) => {
     // ... (Tu código original sin cambios)
      if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
@@ -936,7 +975,7 @@ app.get('/.well-known/assetlinks.json', (req, res) => {
 });
 
 // =======================================================================
-// === (AÑADIDO) NUEVAS RUTAS PARA LA APP "VIVIBOX" ===
+// === (AÑADIDO) NUEVAS RUTAS PARA LA APP "VIVIBOX" === (Sin cambios)
 // =======================================================================
 
 /**
@@ -1027,34 +1066,33 @@ app.get('/api/obtener-enlace', async (req, res) => {
 
 
 // =======================================================================
-// === (+++ NUEVO +++) RUTA DEL EXTRACTOR M3U8 (Llama al API de Python) ===
+// === (+++ NUEVO +++) FUNCIÓN Y RUTA DEL EXTRACTOR M3U8 (Llama al API de Python) ===
 // =======================================================================
 
+// URL de tu API de Python
+const EXTRACTOR_API_URL = 'https://m3u8-extractor-api-1.onrender.com/extract';
+
 /**
- * [NUEVA RUTA] (Llamada por ti o tu bot)
- * Recibe una URL de una página (ej. vimeos.net), la envía a tu
- * API de Python (m3u8-extractor-api) y devuelve el resultado.
+ * +++ NUEVA FUNCIÓN DE AYUDA +++
+ * Llama a tu API de Python para extraer un enlace M3U8.
+ * @param {string} targetUrl - La URL de la página (ej. vimeos.net/embed-...)
+ * @returns {Promise<string>} - Una promesa que resuelve al enlace M3U8/MP4 directo.
+ * @throws {Error} - Lanza un error si la extracción falla.
  */
-app.get('/api/extract-link', async (req, res) => {
-    const targetUrl = req.query.url;
+async function llamarAlExtractor(targetUrl) {
     
-    // URL de tu API de Python
-    const EXTRACTOR_API_URL = 'https://m3u8-extractor-api-1.onrender.com/extract';
-
-    if (!targetUrl) {
-        return res.status(400).json({ success: false, error: "Se requiere un parámetro 'url' en la consulta." });
+    if (!targetUrl || !targetUrl.startsWith('http')) {
+        throw new Error("URL objetivo inválida para el extractor.");
     }
-
-    console.log(`[Extractor] Solicitud recibida para: ${targetUrl}`);
+    
+    console.log(`[Extractor] Llamando a la API de Python en: ${EXTRACTOR_API_URL}`);
     
     try {
         // Hacemos una llamada POST a tu API de Python usando axios
-        // Tu API de Python espera un JSON en el body
-        console.log(`[Extractor] Llamando a la API de Python en: ${EXTRACTOR_API_URL}`);
         const response = await axios.post(EXTRACTOR_API_URL, {
             url: targetUrl 
         }, {
-            // Añadimos un timeout generoso, ya que Playwright puede tardar
+            // Añadimos un timeout generoso
             timeout: 25000 // 25 segundos
         });
 
@@ -1063,20 +1101,13 @@ app.get('/api/extract-link', async (req, res) => {
 
         if (pythonResponse.status === 'success' && pythonResponse.m3u8_url) {
             console.log(`[Extractor] Éxito. Enlace encontrado por Python: ${pythonResponse.m3u8_url}`);
-            // Devolvemos el enlace en un formato JSON unificado
-            res.status(200).json({
-                success: true,
-                requested_url: targetUrl,
-                extracted_link: pythonResponse.m3u8_url
-            });
+            // Devolvemos SOLAMENTE el enlace m3u8
+            return pythonResponse.m3u8_url;
         } else {
             // Tu API de Python funcionó pero no encontró el enlace
-             console.error(`[Extractor] La API de Python no pudo encontrar el enlace. Mensaje: ${pythonResponse.message}`);
-             res.status(404).json({
-                success: false,
-                error: "El extractor de Python no pudo encontrar un enlace M3U8.",
-                details: pythonResponse.message || "Sin detalles."
-            });
+             const errorMsg = (pythonResponse.message || "Sin detalles.")
+             console.error(`[Extractor] La API de Python no pudo encontrar el enlace. Mensaje: ${errorMsg}`);
+             throw new Error(`El extractor de Python no pudo encontrar un enlace M3U8. (Detalles: ${errorMsg})`);
         }
 
     } catch (error) {
@@ -1086,15 +1117,47 @@ app.get('/api/extract-link', async (req, res) => {
         let errorDetails = error.message;
         if (error.response) {
             // El servidor de Python respondió con un error (ej. 500)
-            errorDetails = error.response.data || error.message;
+            errorDetails = error.response.data?.error || error.response.data || error.message;
         } else if (error.code === 'ECONNABORTED') {
             errorDetails = 'Timeout: El extractor de Python tardó más de 25 segundos en responder.';
         }
+        // Lanzamos el error para que la ruta que llamó lo maneje
+        throw new Error(`El servicio extractor (Python) falló: ${errorDetails}`);
+    }
+}
 
+
+/**
+ * [RUTA SIMPLIFICADA] (Llamada por ti o tu bot)
+ * Ahora solo llama a la función de ayuda.
+ */
+app.get('/api/extract-link', async (req, res) => {
+    const targetUrl = req.query.url;
+    
+    if (!targetUrl) {
+        return res.status(400).json({ success: false, error: "Se requiere un parámetro 'url' en la consulta." });
+    }
+
+    console.log(`[Extractor] Solicitud recibida para: ${targetUrl}`);
+    
+    try {
+        // 1. Llamar a la función
+        const extracted_link = await llamarAlExtractor(targetUrl);
+        
+        // 2. Devolver éxito
+        res.status(200).json({
+            success: true,
+            requested_url: targetUrl,
+            extracted_link: extracted_link
+        });
+
+    } catch (error) {
+        // 3. Devolver fracaso
+        console.error(`[Extractor] Falla en ruta /api/extract-link: ${error.message}`);
         res.status(500).json({ 
             success: false, 
             error: "El servicio extractor (Python) falló o tardó demasiado.",
-            details: errorDetails
+            details: error.message // El mensaje de error viene de la función
         });
     }
 });
