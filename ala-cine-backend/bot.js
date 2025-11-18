@@ -273,8 +273,8 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
             const options = {
                 reply_markup: {
                     inline_keyboard: [
-                        [{ text: '💾 Guardar solo en App', callback_data: `save_only_${selectedMedia.id}` }],
-                        [{ text: '📲 Guardar en App + PUSH', callback_data: `save_publish_and_push_${selectedMedia.id}` }]
+                        [{ text: '💾 Guardar solo en App', callback_data: 'save_only_' + selectedMedia.id }],
+                        [{ text: '📲 Guardar en App + PUSH', callback_data: 'save_publish_and_push_' + selectedMedia.id }]
                     ]
                 }
             };
@@ -322,22 +322,26 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
             }
         }
         
-        // --- Lógica de VIVIBOX (SIN CAMBIOS) ---
+        // --- Lógica de VIVIBOX (MODIFICADA AQUI PARA ACEPTAR MP4 Y TOKENS) ---
         else if (adminState[chatId] && adminState[chatId].step === 'awaiting_vivibox_m3u8') {
-            // ... (Tu código original sin cambios)
             const m3u8Link = userText.trim();
-            if (!m3u8Link.startsWith('http') || !m3u8Link.endsWith('.m3u8')) {
-                bot.sendMessage(chatId, '❌ Enlace inválido. Debe ser una URL completa que termine en .m3u8. Intenta de nuevo.');
+            // Convertimos a minúsculas para la verificación (para aceptar .MP4, .M3U8, etc.)
+            const lowerLink = m3u8Link.toLowerCase();
+            
+            // NUEVA VERIFICACIÓN: Debe empezar con http Y (contener .m3u8 O contener .mp4)
+            // Ya no verificamos que termine con endsWith, permitiendo tokens al final.
+            if (!m3u8Link.startsWith('http') || (!lowerLink.includes('.m3u8') && !lowerLink.includes('.mp4'))) {
+                bot.sendMessage(chatId, '❌ Enlace inválido. Debe ser una URL completa que contenga .m3u8 o .mp4. Intenta de nuevo.');
                 return; 
             }
-            bot.sendMessage(chatId, 'Procesando enlace M3U8, por favor espera...');
+            bot.sendMessage(chatId, 'Procesando enlace, por favor espera...');
             try {
                 const response = await axios.post(`${RENDER_BACKEND_URL}/api/vivibox/add-link`, {
                     m3u8Url: m3u8Link
                 });
                 const shortId = response.data.id;
                 const shareableLink = `https://serivisios.onrender.com/ver/${shortId}`;
-                bot.sendMessage(chatId, `✅ ¡Enlace M3U8 guardado!\n\nTu ID corto es: \`${shortId}\`\n\nTu enlace para compartir (el que abre la app) es:\n${shareableLink}`, { parse_mode: 'Markdown' });
+                bot.sendMessage(chatId, `✅ ¡Enlace guardado!\n\nTu ID corto es: \`${shortId}\`\n\nTu enlace para compartir (el que abre la app) es:\n${shareableLink}`, { parse_mode: 'Markdown' });
             } catch (error) {
                 console.error("Error al guardar el enlace M3U8 de Vivibox:", error.response ? error.response.data : error.message);
                 bot.sendMessage(chatId, '❌ Error al guardar el enlace en el servidor. Revisa los logs.');
@@ -429,7 +433,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
             }
             else if (data === 'vivibox_add_m3u8') { 
                 adminState[chatId] = { step: 'awaiting_vivibox_m3u8' }; 
-                bot.sendMessage(chatId, 'OK (Vivibox). Envíame el enlace M3U8 directo que quieres añadir.'); 
+                bot.sendMessage(chatId, 'OK (Vivibox). Envíame el enlace (M3U8 o MP4) directo que quieres añadir.'); 
             }
             
             // ... (Resto de tus callbacks: 'add_new_movie_', 'manage_movie_', 'save_only_', etc.) ...
