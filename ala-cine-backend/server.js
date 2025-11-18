@@ -12,6 +12,9 @@ const initializeBot = require('./bot.js');
 // (AÑADIDO) Herramienta para generar IDs aleatorios
 const crypto = require('crypto');
 
+// +++ NUEVO: Importamos tu extractor (yt-dlp) +++
+const { extractWithYtDlp } = require('./m3u8Extractor.js');
+
 // +++ INICIO DE CAMBIOS PARA CACHÉ +++
 const NodeCache = require('node-cache');
 // Caché para enlaces (1 hora TTL - 3600 segundos)
@@ -686,7 +689,7 @@ app.get('/api/get-embed-code', async (req, res) => {
         }
         if (!embedCode) {
             console.log(`[Embed Code] No se encontró código para ${id} (isPro: ${isPro})`);
-            return res.status(404).json({ error: `No se encontró código de reproductor.` });
+            return res.status(4404).json({ error: `No se encontró código de reproductor.` });
         }
         embedCache.set(cacheKey, embedCode);
         console.log(`[MongoDB] Sirviendo embed directo y guardando en caché para ${id} (isPro: ${isPro})`);
@@ -1022,6 +1025,46 @@ app.get('/api/obtener-enlace', async (req, res) => {
     } catch (error) {
         console.error("Error en /api/obtener-enlace:", error);
         res.status(500).json({ error: "Error interno al buscar el enlace." });
+    }
+});
+
+
+// =======================================================================
+// === (+++ NUEVO +++) RUTA DEL EXTRACTOR M3U8 (yt-dlp) ===
+// =======================================================================
+
+/**
+ * [NUEVA RUTA] (Llamada por ti o tu bot)
+ * Recibe una URL de una página (ej. vimeos.net) y devuelve
+ * el enlace M3U8/MP4 directo usando yt-dlp.
+ */
+app.get('/api/extract-link', async (req, res) => {
+    const targetUrl = req.query.url;
+
+    if (!targetUrl) {
+        return res.status(400).json({ success: false, error: "Se requiere un parámetro 'url' en la consulta." });
+    }
+
+    try {
+        // Llamamos a la función de tu archivo m3u8Extractor.js
+        console.log(`[Extractor] Solicitud recibida para: ${targetUrl}`);
+        const extractedLink = await extractWithYtDlp(targetUrl);
+        
+        // Devolvemos el enlace encontrado
+        res.status(200).json({
+            success: true,
+            requested_url: targetUrl,
+            extracted_link: extractedLink
+        });
+
+    } catch (error) {
+        // Si yt-dlp falla (ej. sitio no soportado, video eliminado)
+        console.error(`[Extractor] Error al extraer de ${targetUrl}:`, error.message);
+        res.status(500).json({ 
+            success: false, 
+            error: "No se pudo extraer el enlace.",
+            details: error.message 
+        });
     }
 });
 
