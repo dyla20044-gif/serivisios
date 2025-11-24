@@ -274,7 +274,8 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 reply_markup: {
                     inline_keyboard: [
                         [{ text: '💾 Guardar solo en App', callback_data: 'save_only_' + selectedMedia.id }],
-                        [{ text: '📲 Guardar en App + PUSH', callback_data: 'save_publish_and_push_' + selectedMedia.id }]
+                        [{ text: '📲 Guardar en App + PUSH', callback_data: 'save_publish_and_push_' + selectedMedia.id }],
+                        [{ text: '🚀 Publicar en Canal + PUSH', callback_data: 'save_publish_push_channel_' + selectedMedia.id }] // AÑADIDO
                     ]
                 }
             };
@@ -310,6 +311,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                         inline_keyboard: [
                             [{ text: `➡️ Agregar S${season}E${nextEpisodeNumber}`, callback_data: `add_next_episode_${seriesDataToSave.tmdbId}_${season}` }],
                             [{ text: `📲 Publicar S${season}E${episode} + PUSH`, callback_data: `publish_push_this_episode_${seriesDataToSave.tmdbId}_${season}_${episode}` }],
+                            [{ text: `📢 Publicar S${season}E${episode} + Canal + PUSH`, callback_data: `publish_push_channel_this_episode_${seriesDataToSave.tmdbId}_${season}_${episode}` }], // AÑADIDO
                             [{ text: '⏹️ Finalizar', callback_data: `finish_series_${seriesDataToSave.tmdbId}` }]
                         ]
                     }
@@ -637,7 +639,37 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                         mediaType: 'movie'
                     });
 
-                    // +++ NUEVA LÓGICA: MENSAJE A CANAL CON DEEP LINK +++
+                    // *** Lógica anterior de Telegram CHANNEL fue movida a 'save_publish_push_channel_' ***
+                    
+                    bot.sendMessage(chatId, `📲 Notificación PUSH y Publicación completadas.`);
+                } catch (error) {
+                    console.error("Error en save_publish_and_push:", error.response ? error.response.data : error.message);
+                    bot.sendMessage(chatId, '❌ Error al guardar o enviar notificación.');
+                } finally {
+                    adminState[chatId] = { step: 'menu' };
+                }
+            }
+            // +++ NUEVO CALLBACK: GUARDAR + PUSH + CANAL (PELÍCULAS) +++
+            else if (data.startsWith('save_publish_push_channel_')) {
+                const tmdbId = data.split('_')[3];
+                const { movieDataToSave } = adminState[chatId];
+                if (!movieDataToSave?.tmdbId || movieDataToSave.tmdbId !== tmdbId) { bot.sendMessage(chatId, 'Error: Datos perdidos.'); adminState[chatId] = { step: 'menu' }; return; }
+                
+                try {
+                    await axios.post(`${RENDER_BACKEND_URL}/add-movie`, movieDataToSave);
+                    bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id });
+                    bot.sendMessage(chatId, `✅ "${movieDataToSave.title}" guardada. Enviando notificación PUSH y al CANAL...`);
+                    
+                    // LÓGICA DE NOTIFICACIÓN PUSH
+                    await axios.post(`${RENDER_BACKEND_URL}/api/notify-new-content`, {
+                        title: "¡Nuevo Estreno!",
+                        body: `Ya puedes ver: ${movieDataToSave.title}`,
+                        imageUrl: movieDataToSave.poster_path ? `https://image.tmdb.org/t/p/w500${movieDataToSave.poster_path}` : null,
+                        tmdbId: movieDataToSave.tmdbId,
+                        mediaType: 'movie'
+                    });
+
+                    // LÓGICA DE MENSAJE A CANAL CON DEEP LINK
                     const DEEPLINK_URL = `${RENDER_BACKEND_URL}/app/details/${movieDataToSave.tmdbId}`;
                     const CHANNEL_ID = process.env.PUBLIC_TELEGRAM_CHANNEL_ID; 
                     
@@ -657,16 +689,17 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                         });
                         bot.sendMessage(chatId, `📢 Mensaje enviado al canal público.`);
                     }
-                    // +++ FIN DE LA NUEVA LÓGICA +++
                     
-                    bot.sendMessage(chatId, `📲 Notificación PUSH y Publicación completadas.`);
+                    bot.sendMessage(chatId, `📲 Publicación PUSH y en Canal completadas.`);
                 } catch (error) {
-                    console.error("Error en save_publish_and_push:", error.response ? error.response.data : error.message);
+                    console.error("Error en save_publish_push_channel_:", error.response ? error.response.data : error.message);
                     bot.sendMessage(chatId, '❌ Error al guardar o enviar notificación.');
                 } finally {
                     adminState[chatId] = { step: 'menu' };
                 }
             }
+            // --- FIN NUEVO CALLBACK: GUARDAR + PUSH + CANAL (PELÍCULAS) ---
+            
             else if (data.startsWith('add_next_episode_')) {
                 // ... (Tu código original sin cambios)
                 const [_, __, ___, tmdbId, seasonNumber] = data.split('_');
@@ -712,7 +745,37 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                         mediaType: 'tv'
                     });
 
-                    // +++ NUEVA LÓGICA: MENSAJE A CANAL CON DEEP LINK (SERIES) +++
+                    // *** Lógica anterior de Telegram CHANNEL fue movida a 'publish_push_channel_this_episode_' ***
+                    
+                    bot.sendMessage(chatId, `📲 Notificación PUSH y Publicación completadas.`);
+                } catch (error) {
+                    console.error("Error en publish_push_this_episode:", error.response ? error.response.data : error.message);
+                    bot.sendMessage(chatId, '❌ Error al enviar notificación.');
+                } finally {
+                    adminState[chatId] = { step: 'menu' };
+                }
+            }
+            // +++ NUEVO CALLBACK: GUARDAR + PUSH + CANAL (SERIES) +++
+            else if (data.startsWith('publish_push_channel_this_episode_')) {
+                const [_, __, ___, tmdbId, season, episode] = data.split('_');
+                const state = adminState[chatId];
+                const episodeData = state?.lastSavedEpisodeData;
+                if (!episodeData || episodeData.tmdbId !== tmdbId || episodeData.seasonNumber.toString() !== season || episodeData.episodeNumber.toString() !== episode) {
+                    bot.sendMessage(chatId, 'Error: Datos del episodio no coinciden o se perdieron. Finalizando.'); adminState[chatId] = { step: 'menu' }; return;
+                }
+                bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id });
+                bot.sendMessage(chatId, `✅ Episodio S${season}E${episode} listo. Enviando notificación PUSH y al CANAL...`);
+                try {
+                    // LÓGICA DE NOTIFICACIÓN PUSH
+                    await axios.post(`${RENDER_BACKEND_URL}/api/notify-new-content`, {
+                        title: `¡Nuevo Episodio! ${episodeData.title}`,
+                        body: `Ya disponible: S${episodeData.seasonNumber}E${episodeData.episodeNumber}`,
+                        imageUrl: episodeData.poster_path ? `https://image.tmdb.org/t/p/w500${episodeData.poster_path}` : null,
+                        tmdbId: episodeData.tmdbId,
+                        mediaType: 'tv'
+                    });
+
+                    // LÓGICA DE MENSAJE A CANAL CON DEEP LINK (SERIES)
                     const DEEPLINK_URL = `${RENDER_BACKEND_URL}/app/details/${episodeData.tmdbId}`; // Usamos el ID de la serie
                     const CHANNEL_ID = process.env.PUBLIC_TELEGRAM_CHANNEL_ID; // Variable de entorno requerida
                     
@@ -733,16 +796,17 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                         });
                         bot.sendMessage(chatId, `📢 Mensaje enviado al canal público.`);
                     }
-                    // +++ FIN DE LA NUEVA LÓGICA +++
 
-                    bot.sendMessage(chatId, `📲 Notificación PUSH y Publicación completadas.`);
+                    bot.sendMessage(chatId, `📲 Notificación PUSH y Publicación en Canal completadas.`);
                 } catch (error) {
-                    console.error("Error en publish_push_this_episode:", error.response ? error.response.data : error.message);
+                    console.error("Error en publish_push_channel_this_episode:", error.response ? error.response.data : error.message);
                     bot.sendMessage(chatId, '❌ Error al enviar notificación.');
                 } finally {
                     adminState[chatId] = { step: 'menu' };
                 }
             }
+            // --- FIN NUEVO CALLBACK: GUARDAR + PUSH + CANAL (SERIES) ---
+            
             else if (data.startsWith('finish_series_')) {
                 // ... (Tu código original sin cambios)
                 bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id }).catch(() => { });
