@@ -701,20 +701,38 @@ if (process.env.NODE_ENV === 'production' && token) {
     console.warn("⚠️  Webhook de Telegram no configurado porque TELEGRAM_BOT_TOKEN no está definido.");
 }
 
+// +++ RUTA MODIFICADA PARA DEEP LINK +++
 app.get('/app/details/:tmdbId', (req, res) => {
     const tmdbId = req.params.tmdbId;
-    if (process.env.APP_DOWNLOAD_URL) {
-        console.log(`Deep Link no manejado por app nativa. Redirigiendo a URL de descarga: ${process.env.APP_DOWNLOAD_URL}`);
-        return res.redirect(302, process.env.APP_DOWNLOAD_URL);
-    }
-    if (process.env.TELEGRAM_MINIAPP_URL) {
-        const tmaLink = process.env.TELEGRAM_MINIAPP_URL + (process.env.TELEGRAM_MINIAPP_URL.includes('?') ? '&' : '?') + 'startapp=' + tmdbId;
-        console.log('APP_DOWNLOAD_URL no definida. Redirigiendo al fallback de la TMA.');
-        return res.redirect(302, tmaLink);
-    }
-    console.error('Ni APP_DOWNLOAD_URL ni TELEGRAM_MINIAPP_URL están definidas en las variables de entorno.');
-    res.status(404).send('No se encontró la aplicación de destino ni un enlace de descarga o fallback.');
+    // La URL de esquema profundo de la app nativa (debe estar configurada en AndroidManifest.xml)
+    const APP_SCHEME_URL = `salacine://details?id=${tmdbId}`;
+    // URL de la Play Store para la descarga (Fallback)
+    const PLAY_STORE_URL = `https://play.google.com/store/apps/details?id=com.salacine.app`;
+
+    // Servimos un HTML que intenta abrir la app primero
+    const htmlResponse = `
+        <!DOCTYPE html>
+        <html>
+            <head>
+                <meta http-equiv="refresh" content="0; url=${APP_SCHEME_URL}">
+                <title>Abriendo Sala Cine...</title>
+                <script>
+                    window.onload = function() {
+                        // Espera medio segundo (500ms). Si la app no abre, redirige a la tienda.
+                        setTimeout(function() {
+                            window.location.replace('${PLAY_STORE_URL}');
+                        }, 500); 
+                    };
+                </script>
+            </head>
+            <body>
+                Redirigiendo a Sala Cine...
+            </body>
+        </html>
+    `;
+    res.send(htmlResponse);
 });
+// +++ FIN DE RUTA MODIFICADA +++
 
 app.post('/request-movie', async (req, res) => {
     const { title, poster_path, tmdbId, priority } = req.body;
@@ -1168,7 +1186,8 @@ app.post('/api/notify-new-content', async (req, res) => {
 
 // --- Rutas App Update, App Status, Assetlinks ---
 app.get('/api/app-update', (req, res) => {
-    const updateInfo = { "latest_version_code": 8, "update_url": "https://play.google.com/store/apps/details?id=com.salacine.app&pcampaignid=web_share", "force_update": true, "update_message": "¡Nueva versión (1.4) disponible! Incluye TV en vivo y mejoras. Actualiza ahora." };
+    // ACTUALIZADO: latest_version_code a 8 y force_update a false.
+    const updateInfo = { "latest_version_code": 8, "update_url": "https://play.google.com/store/apps/details?id=com.salacine.app&pcampaignid=web_share", "force_update": false, "update_message": "¡Nueva versión (1.5.2) de Sala Cine disponible! Incluye mejoras de rendimiento. Actualiza ahora." };
     res.status(200).json(updateInfo);
 });
 
