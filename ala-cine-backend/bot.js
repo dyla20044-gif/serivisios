@@ -651,9 +651,13 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
             }
             // +++ NUEVO CALLBACK: GUARDAR + PUSH + CANAL (PELÍCULAS) +++
             else if (data.startsWith('save_publish_push_channel_')) {
-                const tmdbId = data.split('_')[3];
+                const tmdbIdFromCallback = data.split('_').pop(); // CORREGIDO: Toma el ID del final del string
                 const { movieDataToSave } = adminState[chatId];
-                if (!movieDataToSave?.tmdbId || movieDataToSave.tmdbId !== tmdbId) { bot.sendMessage(chatId, 'Error: Datos perdidos.'); adminState[chatId] = { step: 'menu' }; return; }
+                if (!movieDataToSave?.tmdbId || movieDataToSave.tmdbId !== tmdbIdFromCallback) { // Verifica que el ID coincida con el estado
+                    bot.sendMessage(chatId, 'Error: Datos perdidos. Intenta de nuevo desde la búsqueda.'); 
+                    adminState[chatId] = { step: 'menu' }; 
+                    return; 
+                }
                 
                 try {
                     await axios.post(`${RENDER_BACKEND_URL}/add-movie`, movieDataToSave);
@@ -671,7 +675,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
 
                     // LÓGICA DE MENSAJE A CANAL CON DEEP LINK
                     const DEEPLINK_URL = `${RENDER_BACKEND_URL}/app/details/${movieDataToSave.tmdbId}`;
-                    const CHANNEL_ID = process.env.PUBLIC_TELEGRAM_CHANNEL_ID; 
+                    const CHANNEL_ID = process.env.TELEGRAM_CHANNEL_A_ID; // USANDO A_ID (PÚBLICO)
                     
                     if (CHANNEL_ID) {
                         const messageToChannel = `🎬 *¡NUEVO ESTRENO EN SALA CINE!* 🎬\n\n` +
@@ -731,7 +735,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 const state = adminState[chatId];
                 const episodeData = state?.lastSavedEpisodeData;
                 if (!episodeData || episodeData.tmdbId !== tmdbId || episodeData.seasonNumber.toString() !== season || episodeData.episodeNumber.toString() !== episode) {
-                    bot.sendMessage(chatId, 'Error: Datos del episodio no coinciden o se perdieron. Finalizando.'); adminState[chatId] = { step: 'menu' }; return;
+                    bot.sendMessage(chatId, 'Error: Datos perdidos.'); adminState[chatId] = { step: 'menu' }; return;
                 }
                 bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id });
                 bot.sendMessage(chatId, `✅ Episodio S${season}E${episode} listo. Enviando notificación PUSH...`);
@@ -757,11 +761,17 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
             }
             // +++ NUEVO CALLBACK: GUARDAR + PUSH + CANAL (SERIES) +++
             else if (data.startsWith('publish_push_channel_this_episode_')) {
-                const [_, __, ___, tmdbId, season, episode] = data.split('_');
+                const parts = data.split('_'); // El string tiene 8 partes. ID=parts[5], S=parts[6], E=parts[7]
+                const tmdbId = parts[5]; // CORREGIDO
+                const season = parts[6]; // CORREGIDO
+                const episode = parts[7]; // CORREGIDO
+
                 const state = adminState[chatId];
                 const episodeData = state?.lastSavedEpisodeData;
                 if (!episodeData || episodeData.tmdbId !== tmdbId || episodeData.seasonNumber.toString() !== season || episodeData.episodeNumber.toString() !== episode) {
-                    bot.sendMessage(chatId, 'Error: Datos del episodio no coinciden o se perdieron. Finalizando.'); adminState[chatId] = { step: 'menu' }; return;
+                    bot.sendMessage(chatId, 'Error: Datos perdidos. Intenta de nuevo desde el episodio anterior.'); 
+                    adminState[chatId] = { step: 'menu' }; 
+                    return;
                 }
                 bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id });
                 bot.sendMessage(chatId, `✅ Episodio S${season}E${episode} listo. Enviando notificación PUSH y al CANAL...`);
@@ -777,7 +787,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
 
                     // LÓGICA DE MENSAJE A CANAL CON DEEP LINK (SERIES)
                     const DEEPLINK_URL = `${RENDER_BACKEND_URL}/app/details/${episodeData.tmdbId}`; // Usamos el ID de la serie
-                    const CHANNEL_ID = process.env.PUBLIC_TELEGRAM_CHANNEL_ID; // Variable de entorno requerida
+                    const CHANNEL_ID = process.env.TELEGRAM_CHANNEL_A_ID; // USANDO A_ID (PÚBLICO)
                     
                     if (CHANNEL_ID) {
                         const messageToChannel = `📺 *¡NUEVO EPISODIO EN SALA CINE!* 📺\n\n` +
