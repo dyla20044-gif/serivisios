@@ -21,6 +21,10 @@ const NodeCache = require('node-cache');
 const embedCache = new NodeCache({ stdTTL: 3600, checkperiod: 120 });
 // Caché para contadores y datos de usuario (5 minutos TTL - 300 segundos)
 const countsCache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
+
+// === NUEVA CACHÉ PARA EL PROXY DE TMDB ===
+// Guardamos las respuestas de TMDB por 6 horas (21600 segundos) para ahorrar peticiones
+const tmdbCache = new NodeCache({ stdTTL: 21600, checkperiod: 600 });
 // +++ FIN DE CAMBIOS PARA CACHÉ +++
 
 const app = express();
@@ -275,6 +279,68 @@ async function ejecutarActualizacionMasiva() {
 // "0 */6 * * *" significa: Minuto 0, cada 6 horas
 cron.schedule('0 */6 * * *', () => {
     ejecutarActualizacionMasiva();
+});
+
+
+// =======================================================================
+// === PROXY TMDB CON CACHÉ (NUEVA FUNCIONALIDAD) ===
+// =======================================================================
+app.get('/api/tmdb-proxy', async (req, res) => {
+    const { endpoint, query } = req.query;
+
+    // Validación básica
+    if (!endpoint) {
+        return res.status(400).json({ error: 'Endpoint de TMDB requerido.' });
+    }
+
+    // 1. Generar clave única para la caché (endpoint + query)
+    const cacheKey = `tmdb:${endpoint}:${query || ''}`;
+
+    // 2. Verificar si ya tenemos la respuesta en caché
+    const cachedResponse = tmdbCache.get(cacheKey);
+    if (cachedResponse) {
+        console.log(`[TMDB Cache HIT] Sirviendo desde caché: ${endpoint}`);
+        return res.status(200).json(cachedResponse);
+    }
+
+    console.log(`[TMDB Cache MISS] Solicitando a TMDB API: ${endpoint}`);
+
+    try {
+        const tmdbBaseUrl = 'https://api.themoviedb.org/3/';
+        // Limpiar endpoint por seguridad (quitar slash inicial si lo tiene)
+        const cleanEndpoint = endpoint.startsWith('/') ? endpoint.slice(1) : endpoint;
+        
+        // Verificar si el endpoint ya trae parámetros (ej: ?with_genres=28)
+        const hasQueryChar = cleanEndpoint.includes('?');
+        const separator = hasQueryChar ? '&' : '?';
+
+        // Construir la URL final hacia TMDB
+        // Usamos process.env.TMDB_API_KEY para la seguridad
+        let finalUrl = `${tmdbBaseUrl}${cleanEndpoint}${separator}api_key=${process.env.TMDB_API_KEY}&language=es-ES`;
+        
+        // Si hay query de búsqueda (ej: search/multi?query=Batman), lo añadimos
+        if (query) {
+            finalUrl += `&query=${encodeURIComponent(query)}`;
+        }
+
+        // 3. Hacer la petición a TMDB
+        const response = await axios.get(finalUrl);
+        const data = response.data;
+
+        // 4. Guardar en caché para futuras peticiones (durante 6 horas)
+        tmdbCache.set(cacheKey, data);
+
+        // 5. Devolver la respuesta al frontend
+        res.status(200).json(data);
+
+    } catch (error) {
+        console.error(`❌ Error en Proxy TMDB (${endpoint}):`, error.message);
+        if (error.response) {
+            // Si TMDB responde con error (404, 401, etc), lo pasamos al cliente
+            return res.status(error.response.status).json(error.response.data);
+        }
+        res.status(500).json({ error: 'Error interno al conectar con TMDB.' });
+    }
 });
 
 
