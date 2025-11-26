@@ -17,10 +17,21 @@ const cron = require('node-cron');
 
 // +++ INICIO DE CAMBIOS PARA CACHÉ +++
 const NodeCache = require('node-cache');
-// Caché para enlaces en RAM (1 hora TTL - 3600 segundos)
+
+// 1. Caché para enlaces en RAM (1 hora TTL - 3600 segundos) - EXISTENTE
 const embedCache = new NodeCache({ stdTTL: 3600, checkperiod: 120 });
-// Caché para contadores y datos de usuario (5 minutos TTL - 300 segundos)
+
+// 2. Caché para contadores y datos de usuario (5 minutos TTL - 300 segundos) - EXISTENTE
 const countsCache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
+
+// 3. (NUEVO) Caché para Proxy TMDB (6 horas TTL - 21600 segundos)
+// Objetivo: Ahorrar peticiones a la API externa
+const tmdbCache = new NodeCache({ stdTTL: 21600, checkperiod: 600 });
+
+// 4. (NUEVO) Caché para "Recién Agregadas" (1 hora TTL - 3600 segundos)
+// Objetivo: No saturar MongoDB con la misma consulta repetitiva
+const recentCache = new NodeCache({ stdTTL: 3600, checkperiod: 120 });
+const RECENT_CACHE_KEY = 'recent_content_main'; // Llave única para la lista de recientes
 // +++ FIN DE CAMBIOS PARA CACHÉ +++
 
 const app = express();
@@ -279,7 +290,7 @@ cron.schedule('0 */6 * * *', () => {
 
 
 // =======================================================================
-// === (CRUCIAL) TMDB PROXY - ESTO FALTABA ===
+// === (OPTIMIZADO) TMDB PROXY CON CACHÉ DE 6 HORAS ===
 // =======================================================================
 app.get('/api/tmdb-proxy', async (req, res) => {
     const endpoint = req.query.endpoint;
@@ -288,6 +299,21 @@ app.get('/api/tmdb-proxy', async (req, res) => {
     if (!endpoint) {
         return res.status(400).json({ error: 'Endpoint is required' });
     }
+
+    // --- LÓGICA DE CACHÉ ---
+    // Creamos una clave única basada en todos los parámetros de la solicitud
+    // Ejemplo de clave: '{"endpoint":"movie/popular","page":"1","language":"es-MX"}'
+    const cacheKey = JSON.stringify(req.query);
+
+    // 1. Verificar si tenemos la respuesta en RAM
+    const cachedResponse = tmdbCache.get(cacheKey);
+    if (cachedResponse) {
+        // console.log(`[TMDB Cache HIT] Sirviendo desde RAM: ${endpoint}`); // Opcional: comentar para menos ruido
+        return res.json(cachedResponse);
+    }
+
+    // 2. Si no hay caché, pedir a la API
+    // console.log(`[TMDB Cache MISS] Pidiendo a API externa: ${endpoint}`); // Opcional
 
     try {
         const url = `https://api.themoviedb.org/3/${endpoint}`;
@@ -309,6 +335,10 @@ app.get('/api/tmdb-proxy', async (req, res) => {
         if (req.query.sort_by) params.sort_by = req.query.sort_by;
 
         const response = await axios.get(url, { params });
+        
+        // 3. Guardar en Caché antes de responder (6 horas)
+        tmdbCache.set(cacheKey, response.data);
+
         res.json(response.data);
 
     } catch (error) {
@@ -321,10 +351,19 @@ app.get('/api/tmdb-proxy', async (req, res) => {
 });
 
 // =======================================================================
-// === (NUEVO) RUTA DE RECIÉN AGREGADAS ===
+// === (OPTIMIZADO) RUTA DE RECIÉN AGREGADAS CON CACHÉ ===
 // =======================================================================
 app.get('/api/content/recent', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
+
+    // --- LÓGICA DE CACHÉ (LECTURA) ---
+    const cachedRecent = recentCache.get(RECENT_CACHE_KEY);
+    if (cachedRecent) {
+        console.log(`[Recent Cache HIT] Sirviendo lista de recientes desde RAM.`);
+        return res.status(200).json(cachedRecent);
+    }
+
+    console.log(`[Recent Cache MISS] Consultando MongoDB para recientes...`);
 
     try {
         // Consultamos a Firebase: Colección 'media_catalog', ordenamos por 'addedAt'
@@ -343,6 +382,10 @@ app.get('/api/content/recent', async (req, res) => {
             backdrop_path: movie.backdrop_path,
             media_type: 'movie' // Asumimos película
         }));
+
+        // --- LÓGICA DE CACHÉ (ESCRITURA) ---
+        // Guardamos por 1 hora
+        recentCache.set(RECENT_CACHE_KEY, results);
 
         res.status(200).json(results);
     } catch (error) {
@@ -1067,7 +1110,7 @@ app.post('/api/increment-likes', async (req, res) => {
     } catch (error) { console.error("Error increment-likes:", error); res.status(500).json({ error: "Error interno." }); }
 });
 
-// +++ RUTA MODIFICADA (CON TRIGGER DE ACTUALIZACIÓN INMEDIATA) +++
+// +++ RUTA MODIFICADA (CON INVALIDACIÓN DE CACHÉ) +++
 app.post('/add-movie', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "BD no disponible." });
     try {
@@ -1077,10 +1120,16 @@ app.post('/add-movie', async (req, res) => {
         const updateQuery = { $set: { title, poster_path, overview, freeEmbedCode, proEmbedCode, isPremium }, $setOnInsert: { tmdbId: tmdbId.toString(), views: 0, likes: 0, addedAt: new Date() } };
         await mongoDb.collection('media_catalog').updateOne({ tmdbId: tmdbId.toString() }, updateQuery, { upsert: true });
         
+        // Invalidaciones clásicas
         embedCache.del(`embed-${tmdbId}-movie-1-pro`);
         embedCache.del(`embed-${tmdbId}-movie-1-free`);
         countsCache.del(`counts-data-${tmdbId}`);
         
+        // === (CRÍTICO) INVALIDACIÓN DE CACHÉ DE RECIENTES ===
+        // Al borrar esta llave, obligamos a la ruta /api/content/recent a leer MongoDB de nuevo
+        recentCache.del(RECENT_CACHE_KEY);
+        console.log(`[Cache] Lista de recientes invalidada por subida de película: ${title}`);
+
         // --- RESPUESTA RÁPIDA AL BOT ---
         res.status(200).json({ message: 'Película agregada/actualizada. Procesando video en segundo plano...' });
         
@@ -1102,7 +1151,7 @@ app.post('/add-movie', async (req, res) => {
     } catch (error) { console.error("Error add-movie:", error); res.status(500).json({ error: 'Error interno.' }); }
 });
 
-// +++ RUTA MODIFICADA (CON TRIGGER DE ACTUALIZACIÓN INMEDIATA) +++
+// +++ RUTA MODIFICADA (CON INVALIDACIÓN DE CACHÉ) +++
 app.post('/add-series-episode', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "BD no disponible." });
     try {
@@ -1122,9 +1171,15 @@ app.post('/add-series-episode', async (req, res) => {
         };
         await mongoDb.collection('series_catalog').updateOne({ tmdbId: tmdbId.toString() }, updateData, { upsert: true });
         
+        // Invalidaciones clásicas
         embedCache.del(`embed-${tmdbId}-${seasonNumber}-${episodeNumber}-pro`);
         embedCache.del(`embed-${tmdbId}-${seasonNumber}-${episodeNumber}-free`);
         countsCache.del(`counts-data-${tmdbId}`);
+
+        // === (CRÍTICO) INVALIDACIÓN DE CACHÉ DE RECIENTES ===
+        // Borramos la caché para que el episodio nuevo aparezca si la lógica lo requiere (o si actualiza la fecha de la serie)
+        recentCache.del(RECENT_CACHE_KEY);
+        console.log(`[Cache] Lista de recientes invalidada por subida de episodio: S${seasonNumber}E${episodeNumber}`);
 
         // --- RESPUESTA RÁPIDA AL BOT ---
         res.status(200).json({ message: `Episodio S${seasonNumber}E${episodeNumber} agregado. Procesando video...` });
