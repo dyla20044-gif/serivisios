@@ -31,8 +31,7 @@ const tmdbCache = new NodeCache({ stdTTL: 21600, checkperiod: 600 });
 const recentCache = new NodeCache({ stdTTL: 3600, checkperiod: 120 });
 const RECENT_CACHE_KEY = 'recent_content_main'; 
 
-// 5. (NUEVO) Caché para HISTORIAL DE USUARIO (10 minutos TTL - 600 segundos)
-// Objetivo: Evitar leer Firestore cada vez que el usuario entra al perfil
+// 5. Caché para HISTORIAL DE USUARIO (10 minutos TTL - 600 segundos)
 const historyCache = new NodeCache({ stdTTL: 600, checkperiod: 120 });
 
 // +++ FIN DE CAMBIOS PARA CACHÉ +++
@@ -466,7 +465,7 @@ app.post('/api/user/coins', verifyIdToken, async (req, res) => {
 });
 
 // =======================================================================
-// === (OPTIMIZADO) HISTORIAL CON CACHÉ Y MANEJO DE UNDEFINED ===
+// === (OPTIMIZADO) HISTORIAL CON CACHÉ Y SOLUCIÓN DE DUPLICADOS ===
 // =======================================================================
 
 // GET: Obtener historial (con Caché)
@@ -508,40 +507,75 @@ app.get('/api/user/history', verifyIdToken, async (req, res) => {
     }
 });
 
-// POST: Guardar en historial (con Fix de Undefined e Invalidación)
+// POST: Guardar en historial (SOLUCIÓN DUPLICADOS + AUTO-REPARACIÓN)
 app.post('/api/user/history', verifyIdToken, async (req, res) => {
     const { uid } = req;
-    const { tmdbId, title, poster_path, backdrop_path, type } = req.body;
+    let { tmdbId, title, poster_path, backdrop_path, type } = req.body;
     
     if (!tmdbId || !type) {
         return res.status(400).json({ error: 'tmdbId y type requeridos.' });
     }
 
+    // 💡 SOLUCIÓN CRÍTICA: Estandarización de IDs
+    // Creamos una lista de posibles IDs (String y Number) para buscar cualquier versión existente
+    const idAsString = String(tmdbId);
+    const idAsNumber = Number(tmdbId);
+    const possibleIds = [idAsString];
+    if (!isNaN(idAsNumber)) {
+        possibleIds.push(idAsNumber);
+    }
+
+    // +++ MAGIA DE AUTO-REPARACIÓN DE IMAGEN +++
+    if (!backdrop_path && mongoDb) {
+        try {
+            let mediaDoc = null;
+            if (type === 'movie') {
+                mediaDoc = await mongoDb.collection('media_catalog').findOne({ tmdbId: idAsString });
+            } else {
+                mediaDoc = await mongoDb.collection('series_catalog').findOne({ tmdbId: idAsString });
+            }
+
+            if (mediaDoc && mediaDoc.backdrop_path) {
+                backdrop_path = mediaDoc.backdrop_path;
+                if (!poster_path) poster_path = mediaDoc.poster_path;
+                console.log(`[History Fix] Imagen recuperada de Mongo para ${tmdbId}`);
+            }
+        } catch (err) {
+            console.warn(`[History Fix] Falló recuperación de imagen: ${err.message}`);
+        }
+    }
+    // +++ FIN MAGIA +++
+
     try {
         const historyRef = db.collection('history');
-        const q = historyRef.where('userId', '==', uid).where('tmdbId', '==', tmdbId);
+        
+        // 💡 QUERY INTELIGENTE: Busca si existe el ID como texto O como número
+        // El operador 'in' nos permite buscar múltiples valores en el mismo campo
+        const q = historyRef.where('userId', '==', uid).where('tmdbId', 'in', possibleIds);
+        
         const existingDocs = await q.limit(1).get();
         const now = admin.firestore.FieldValue.serverTimestamp();
 
-        // 💡 SOLUCIÓN DEL ERROR: Asegurar que nada sea undefined
-        // Usamos || null para que Firestore reciba un valor válido
+        // Datos limpios para guardar (siempre guardamos tmdbId como String para estandarizar a futuro)
         const safeData = {
             userId: uid,
-            tmdbId: tmdbId,
+            tmdbId: idAsString, // Forzamos String al guardar
             title: title || "Título desconocido",
-            poster_path: poster_path || null,   // Evita undefined
-            backdrop_path: backdrop_path || null, // Evita undefined
+            poster_path: poster_path || null,
+            backdrop_path: backdrop_path || null,
             type: type,
             timestamp: now
         };
 
         if (existingDocs.empty) {
+            // Si no existe ninguno (ni texto ni número), creamos nuevo
             await historyRef.add(safeData);
         } else {
+            // Si existe (ya sea texto o número), actualizamos ese mismo documento
             const docId = existingDocs.docs[0].id;
-            // Para el update, también sanitizamos
             await historyRef.doc(docId).update({
                 timestamp: now,
+                tmdbId: idAsString, // Actualizamos a String por si era Number
                 title: title || "Título desconocido",
                 poster_path: poster_path || null,
                 backdrop_path: backdrop_path || null,
@@ -549,7 +583,7 @@ app.post('/api/user/history', verifyIdToken, async (req, res) => {
             });
         }
 
-        // 💡 INVALIDACIÓN: Borramos la caché para que el usuario vea su cambio
+        // Invalidación de caché
         historyCache.del(`history-${uid}`);
         
         res.status(200).json({ message: 'Historial actualizado.' });
