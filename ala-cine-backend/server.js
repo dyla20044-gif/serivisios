@@ -507,7 +507,7 @@ app.get('/api/user/history', verifyIdToken, async (req, res) => {
     }
 });
 
-// POST: Guardar en historial (SOLUCIÓN DUPLICADOS + AUTO-REPARACIÓN)
+// POST: Guardar en historial (SOLUCIÓN DUPLICADOS + AUTO-REPARACIÓN MEJORADA)
 app.post('/api/user/history', verifyIdToken, async (req, res) => {
     const { uid } = req;
     let { tmdbId, title, poster_path, backdrop_path, type } = req.body;
@@ -516,16 +516,19 @@ app.post('/api/user/history', verifyIdToken, async (req, res) => {
         return res.status(400).json({ error: 'tmdbId y type requeridos.' });
     }
 
-    // 💡 SOLUCIÓN CRÍTICA: Estandarización de IDs
-    // Creamos una lista de posibles IDs (String y Number) para buscar cualquier versión existente
-    const idAsString = String(tmdbId);
-    const idAsNumber = Number(tmdbId);
+    // 1. LIMPIEZA PROFUNDA DEL ID (Trim quita espacios adelante y atrás)
+    const rawId = String(tmdbId).trim(); 
+    const idAsString = rawId;
+    const idAsNumber = Number(rawId);
+
+    // 2. BUSCAR TODAS LAS VARIANTES POSIBLES
+    // Buscamos: "123", 123, " 123 ", etc.
     const possibleIds = [idAsString];
     if (!isNaN(idAsNumber)) {
         possibleIds.push(idAsNumber);
     }
 
-    // +++ MAGIA DE AUTO-REPARACIÓN DE IMAGEN +++
+    // +++ MAGIA DE AUTO-REPARACIÓN DE IMAGEN (Se mantiene igual) +++
     if (!backdrop_path && mongoDb) {
         try {
             let mediaDoc = null;
@@ -534,32 +537,25 @@ app.post('/api/user/history', verifyIdToken, async (req, res) => {
             } else {
                 mediaDoc = await mongoDb.collection('series_catalog').findOne({ tmdbId: idAsString });
             }
-
             if (mediaDoc && mediaDoc.backdrop_path) {
                 backdrop_path = mediaDoc.backdrop_path;
                 if (!poster_path) poster_path = mediaDoc.poster_path;
-                console.log(`[History Fix] Imagen recuperada de Mongo para ${tmdbId}`);
             }
-        } catch (err) {
-            console.warn(`[History Fix] Falló recuperación de imagen: ${err.message}`);
-        }
+        } catch (err) { console.warn(`[History Fix] Warn: ${err.message}`); }
     }
-    // +++ FIN MAGIA +++
 
     try {
         const historyRef = db.collection('history');
         
-        // 💡 QUERY INTELIGENTE: Busca si existe el ID como texto O como número
-        // El operador 'in' nos permite buscar múltiples valores en el mismo campo
+        // QUERY: Busca cualquier coincidencia (texto o número)
+        // Eliminamos el limit(1) para poder ver si hay duplicados y borrarlos
         const q = historyRef.where('userId', '==', uid).where('tmdbId', 'in', possibleIds);
-        
-        const existingDocs = await q.limit(1).get();
+        const existingDocs = await q.get(); 
         const now = admin.firestore.FieldValue.serverTimestamp();
 
-        // Datos limpios para guardar (siempre guardamos tmdbId como String para estandarizar a futuro)
         const safeData = {
             userId: uid,
-            tmdbId: idAsString, // Forzamos String al guardar
+            tmdbId: idAsString, // SIEMPRE guardamos como String limpio
             title: title || "Título desconocido",
             poster_path: poster_path || null,
             backdrop_path: backdrop_path || null,
@@ -568,25 +564,31 @@ app.post('/api/user/history', verifyIdToken, async (req, res) => {
         };
 
         if (existingDocs.empty) {
-            // Si no existe ninguno (ni texto ni número), creamos nuevo
+            // No existe, creamos uno nuevo
             await historyRef.add(safeData);
         } else {
-            // Si existe (ya sea texto o número), actualizamos ese mismo documento
-            const docId = existingDocs.docs[0].id;
-            await historyRef.doc(docId).update({
-                timestamp: now,
-                tmdbId: idAsString, // Actualizamos a String por si era Number
-                title: title || "Título desconocido",
-                poster_path: poster_path || null,
-                backdrop_path: backdrop_path || null,
-                type: type 
-            });
+            // YA EXISTE.
+            // Si hay más de 1 documento (duplicados viejos), borramos los extras y dejamos solo uno.
+            if (existingDocs.size > 1) {
+                console.log(`[History] Reparando duplicados para usuario ${uid} item ${idAsString}`);
+                const docs = existingDocs.docs;
+                // Actualizamos el primero
+                await historyRef.doc(docs[0].id).update(safeData);
+                // Borramos el resto
+                for (let i = 1; i < docs.length; i++) {
+                    await historyRef.doc(docs[i].id).delete();
+                }
+            } else {
+                // Solo hay uno, actualizamos normal
+                const docId = existingDocs.docs[0].id;
+                await historyRef.doc(docId).update(safeData); // Actualizará tmdbId a string limpio si era número
+            }
         }
 
         // Invalidación de caché
         historyCache.del(`history-${uid}`);
         
-        res.status(200).json({ message: 'Historial actualizado.' });
+        res.status(200).json({ message: 'Historial actualizado y reparado.' });
 
     } catch (error) {
         console.error("Error en /api/user/history (POST):", error);
@@ -1126,23 +1128,27 @@ app.post('/api/increment-likes', async (req, res) => {
     } catch (error) { console.error("Error increment-likes:", error); res.status(500).json({ error: "Error interno." }); }
 });
 
-// +++ RUTA MODIFICADA (CON INVALIDACIÓN DE CACHÉ) +++
+// +++ RUTA MODIFICADA (CON INVALIDACIÓN DE CACHÉ Y LIMPIEZA DE ID) +++
 app.post('/add-movie', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "BD no disponible." });
     try {
         const { tmdbId, title, poster_path, freeEmbedCode, proEmbedCode, isPremium, overview } = req.body;
         if (!tmdbId) return res.status(400).json({ error: 'tmdbId requerido.' });
         
-        const updateQuery = { $set: { title, poster_path, overview, freeEmbedCode, proEmbedCode, isPremium }, $setOnInsert: { tmdbId: tmdbId.toString(), views: 0, likes: 0, addedAt: new Date() } };
-        await mongoDb.collection('media_catalog').updateOne({ tmdbId: tmdbId.toString() }, updateQuery, { upsert: true });
+        // --- CORRECCIÓN: Limpiar ID antes de guardar ---
+        const cleanTmdbId = String(tmdbId).trim();
+
+        const updateQuery = { $set: { title, poster_path, overview, freeEmbedCode, proEmbedCode, isPremium }, $setOnInsert: { tmdbId: cleanTmdbId, views: 0, likes: 0, addedAt: new Date() } };
         
-        // Invalidaciones clásicas
-        embedCache.del(`embed-${tmdbId}-movie-1-pro`);
-        embedCache.del(`embed-${tmdbId}-movie-1-free`);
-        countsCache.del(`counts-data-${tmdbId}`);
+        // Usamos el ID limpio para guardar en MongoDB
+        await mongoDb.collection('media_catalog').updateOne({ tmdbId: cleanTmdbId }, updateQuery, { upsert: true });
+        
+        // Invalidaciones clásicas (Usando el ID limpio)
+        embedCache.del(`embed-${cleanTmdbId}-movie-1-pro`);
+        embedCache.del(`embed-${cleanTmdbId}-movie-1-free`);
+        countsCache.del(`counts-data-${cleanTmdbId}`);
         
         // === (CRÍTICO) INVALIDACIÓN DE CACHÉ DE RECIENTES ===
-        // Al borrar esta llave, obligamos a la ruta /api/content/recent a leer MongoDB de nuevo
         recentCache.del(RECENT_CACHE_KEY);
         console.log(`[Cache] Lista de recientes invalidada por subida de película: ${title}`);
 
@@ -1153,7 +1159,7 @@ app.post('/add-movie', async (req, res) => {
         setImmediate(async () => {
             try {
                 // Volvemos a leer para tener el objeto completo
-                const movieDoc = await mongoDb.collection('media_catalog').findOne({ tmdbId: tmdbId.toString() });
+                const movieDoc = await mongoDb.collection('media_catalog').findOne({ tmdbId: cleanTmdbId });
                 if (movieDoc) {
                     console.log(`🚀 [Instant Trigger] Iniciando extracción inmediata para: ${title}`);
                     // true = Forzar actualización ignorando tiempo
@@ -1167,13 +1173,16 @@ app.post('/add-movie', async (req, res) => {
     } catch (error) { console.error("Error add-movie:", error); res.status(500).json({ error: 'Error interno.' }); }
 });
 
-// +++ RUTA MODIFICADA (CON INVALIDACIÓN DE CACHÉ) +++
+// +++ RUTA MODIFICADA (CON INVALIDACIÓN DE CACHÉ Y LIMPIEZA DE ID) +++
 app.post('/add-series-episode', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "BD no disponible." });
     try {
         const { tmdbId, title, poster_path, overview, seasonNumber, episodeNumber, freeEmbedCode, proEmbedCode, isPremium } = req.body;
         if (!tmdbId || !seasonNumber || !episodeNumber) return res.status(400).json({ error: 'tmdbId, seasonNumber y episodeNumber requeridos.' });
         
+        // --- CORRECCIÓN: Limpiar ID antes de guardar ---
+        const cleanTmdbId = String(tmdbId).trim();
+
         const episodePath = `seasons.${seasonNumber}.episodes.${episodeNumber}`;
         const updateData = {
             $set: {
@@ -1183,17 +1192,17 @@ app.post('/add-series-episode', async (req, res) => {
                 [episodePath + '.proEmbedCode']: proEmbedCode,
                  [episodePath + '.addedAt']: new Date()
             },
-            $setOnInsert: { tmdbId: tmdbId.toString(), views: 0, likes: 0, addedAt: new Date() }
+            $setOnInsert: { tmdbId: cleanTmdbId, views: 0, likes: 0, addedAt: new Date() }
         };
-        await mongoDb.collection('series_catalog').updateOne({ tmdbId: tmdbId.toString() }, updateData, { upsert: true });
+        // Usamos el ID limpio para guardar en MongoDB
+        await mongoDb.collection('series_catalog').updateOne({ tmdbId: cleanTmdbId }, updateData, { upsert: true });
         
-        // Invalidaciones clásicas
-        embedCache.del(`embed-${tmdbId}-${seasonNumber}-${episodeNumber}-pro`);
-        embedCache.del(`embed-${tmdbId}-${seasonNumber}-${episodeNumber}-free`);
-        countsCache.del(`counts-data-${tmdbId}`);
+        // Invalidaciones clásicas (Usando el ID limpio)
+        embedCache.del(`embed-${cleanTmdbId}-${seasonNumber}-${episodeNumber}-pro`);
+        embedCache.del(`embed-${cleanTmdbId}-${seasonNumber}-${episodeNumber}-free`);
+        countsCache.del(`counts-data-${cleanTmdbId}`);
 
         // === (CRÍTICO) INVALIDACIÓN DE CACHÉ DE RECIENTES ===
-        // Borramos la caché para que el episodio nuevo aparezca si la lógica lo requiere (o si actualiza la fecha de la serie)
         recentCache.del(RECENT_CACHE_KEY);
         console.log(`[Cache] Lista de recientes invalidada por subida de episodio: S${seasonNumber}E${episodeNumber}`);
 
@@ -1203,12 +1212,12 @@ app.post('/add-series-episode', async (req, res) => {
         // --- PROCESAMIENTO EN SEGUNDO PLANO (SIN ESPERAR) ---
         setImmediate(async () => {
             try {
-                const seriesDoc = await mongoDb.collection('series_catalog').findOne({ tmdbId: tmdbId.toString() });
+                const seriesDoc = await mongoDb.collection('series_catalog').findOne({ tmdbId: cleanTmdbId });
                 const epData = seriesDoc?.seasons?.[seasonNumber]?.episodes?.[episodeNumber];
                 if (epData) {
                     console.log(`🚀 [Instant Trigger] Extracción inmediata para S${seasonNumber}E${episodeNumber}`);
                     // true = Forzar actualización
-                    await refrescarEpisodio(tmdbId.toString(), seasonNumber, episodeNumber, epData, true);
+                    await refrescarEpisodio(cleanTmdbId, seasonNumber, episodeNumber, epData, true);
                 }
             } catch (err) { console.error(`⚠️ [Instant Trigger Series] Error: ${err.message}`); }
         });
