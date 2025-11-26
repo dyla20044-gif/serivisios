@@ -769,37 +769,6 @@ app.get('/api/streaming-status', (req, res) => {
 // === RUTAS DE SALA CINE (MongoDB) ===
 // =======================================================================
 
-// +++ RUTA NUEVA: RECIÉN AGREGADAS +++
-// Esta ruta es la que permite que la sección "Recién Agregadas" del Home NO esté vacía.
-app.get('/api/content/recent', async (req, res) => {
-    if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
-
-    try {
-        // Buscamos en la colección 'media_catalog' (películas)
-        // Ordenamos por 'addedAt' descendente (más nuevo primero)
-        const movies = await mongoDb.collection('media_catalog')
-            .find({})
-            .sort({ addedAt: -1 }) 
-            .limit(15) // Traemos 15 elementos para asegurar
-            .toArray();
-
-        // Mapeamos los datos para que el frontend los entienda
-        const results = movies.map(movie => ({
-            id: movie.tmdbId,
-            tmdbId: movie.tmdbId,
-            title: movie.title,
-            poster_path: movie.poster_path,
-            backdrop_path: movie.backdrop_path,
-            media_type: 'movie' // Asumimos película
-        }));
-
-        res.status(200).json(results);
-    } catch (error) {
-        console.error("Error en /api/content/recent:", error);
-        res.status(500).json({ error: "Error interno al obtener contenido reciente." });
-    }
-});
-
 app.get('/api/get-movie-data', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
     const { id } = req.query;
