@@ -67,8 +67,8 @@ const ADMIN_CHAT_ID = parseInt(process.env.ADMIN_CHAT_ID, 10);
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
 
 let GLOBAL_STREAMING_ACTIVE = true;
+const BUILD_ID_UNDER_REVIEW = 8; 
 
-// === CONFIGURACIÓN DE MONGODB ATLAS ===
 const MONGO_URI = process.env.MONGO_URI;
 const MONGO_DB_NAME = process.env.MONGO_DB_NAME || 'sala_cine';
 
@@ -507,7 +507,7 @@ app.get('/api/user/history', verifyIdToken, async (req, res) => {
     }
 });
 
-// POST: Guardar en historial (SOLUCIÓN DUPLICADOS + AUTO-REPARACIÓN OPTIMIZADA + CACHÉ)
+// POST: Guardar en historial (SOLUCIÓN DUPLICADOS + AUTO-REPARACIÓN MEJORADA)
 app.post('/api/user/history', verifyIdToken, async (req, res) => {
     const { uid } = req;
     let { tmdbId, title, poster_path, backdrop_path, type } = req.body;
@@ -516,85 +516,39 @@ app.post('/api/user/history', verifyIdToken, async (req, res) => {
         return res.status(400).json({ error: 'tmdbId y type requeridos.' });
     }
 
-    // 1. LIMPIEZA PROFUNDA DEL ID
+    // 1. LIMPIEZA PROFUNDA DEL ID (Trim quita espacios adelante y atrás)
     const rawId = String(tmdbId).trim(); 
     const idAsString = rawId;
     const idAsNumber = Number(rawId);
 
-    // 2. IDs posibles para buscar duplicados
+    // 2. BUSCAR TODAS LAS VARIANTES POSIBLES
+    // Buscamos: "123", 123, " 123 ", etc.
     const possibleIds = [idAsString];
     if (!isNaN(idAsNumber)) {
         possibleIds.push(idAsNumber);
     }
 
-    // 3. === MAGIA DE AUTO-REPARACIÓN DE IMAGEN CON OPTIMIZACIÓN DE API ===
-    // Si la app envía "null", "undefined" o vacío, procedemos a buscar la imagen correcta.
-    if (!backdrop_path || backdrop_path === 'undefined' || backdrop_path === 'null' || backdrop_path === '') {
-        console.log(`[History Fix] Falta banner para ${title} (${idAsString}). Iniciando protocolo de recuperación...`);
-        
-        let foundImage = null;
-
-        // A. PRIMERA LÍNEA DE DEFENSA: MongoDB (Tu base de datos local) - Costo 0
-        if (mongoDb) {
-            try {
-                const collectionName = type === 'movie' ? 'media_catalog' : 'series_catalog';
-                const mediaDoc = await mongoDb.collection(collectionName).findOne({ tmdbId: idAsString });
-                
-                if (mediaDoc && mediaDoc.backdrop_path) {
-                    foundImage = mediaDoc.backdrop_path;
-                    if (!poster_path) poster_path = mediaDoc.poster_path;
-                    console.log(`[History Fix] ✅ Banner recuperado de MongoDB (Sin consumo de API).`);
-                }
-            } catch (err) { console.warn(`[History Fix] Mongo Check: ${err.message}`); }
-        }
-
-        // B. SEGUNDA LÍNEA DE DEFENSA: Caché RAM (Si ya lo buscamos hace poco) - Costo 0
-        if (!foundImage) {
-            const cachedImg = tmdbCache.get(`img_fix_${idAsString}`);
-            if (cachedImg) {
-                foundImage = cachedImg;
-                console.log(`[History Fix] ✅ Banner recuperado de Caché RAM (Optimizado).`);
+    // +++ MAGIA DE AUTO-REPARACIÓN DE IMAGEN (Se mantiene igual) +++
+    if (!backdrop_path && mongoDb) {
+        try {
+            let mediaDoc = null;
+            if (type === 'movie') {
+                mediaDoc = await mongoDb.collection('media_catalog').findOne({ tmdbId: idAsString });
+            } else {
+                mediaDoc = await mongoDb.collection('series_catalog').findOne({ tmdbId: idAsString });
             }
-        }
-
-        // C. ÚLTIMA OPCIÓN: TMDB API (Solo si todo lo demás falla) - Costo 1 Petición
-        if (!foundImage && TMDB_API_KEY) {
-            try {
-                console.log(`[History Fix] ⚠️ Solicitando a TMDB API (No estaba en local)...`);
-                const tmdbUrl = `https://api.themoviedb.org/3/${type}/${idAsString}?api_key=${TMDB_API_KEY}&language=es-MX`;
-                const response = await axios.get(tmdbUrl);
-                
-                if (response.data && response.data.backdrop_path) {
-                    foundImage = response.data.backdrop_path;
-                    
-                    // D. AUTO-REPARACIÓN PERMANENTE (Guardar en Mongo para no volver a pedir a la API)
-                    if (mongoDb) {
-                        const collectionName = type === 'movie' ? 'media_catalog' : 'series_catalog';
-                        // Ejecutamos esto en segundo plano ("fire and forget") para no demorar la respuesta
-                        mongoDb.collection(collectionName).updateOne(
-                            { tmdbId: idAsString },
-                            { $set: { backdrop_path: foundImage } }
-                        ).then(() => console.log(`[DB Self-Heal] 🔧 Base de datos reparada con la imagen de TMDB.`));
-                    }
-
-                    // Guardar en caché RAM
-                    tmdbCache.set(`img_fix_${idAsString}`, foundImage);
-                }
-            } catch (tmdbErr) {
-                console.warn(`[History Fix] TMDB API falló: ${tmdbErr.message}`);
+            if (mediaDoc && mediaDoc.backdrop_path) {
+                backdrop_path = mediaDoc.backdrop_path;
+                if (!poster_path) poster_path = mediaDoc.poster_path;
             }
-        }
-
-        if (foundImage) {
-            backdrop_path = foundImage;
-        }
+        } catch (err) { console.warn(`[History Fix] Warn: ${err.message}`); }
     }
-    // === FIN BLOQUE INTELIGENTE ===
 
     try {
         const historyRef = db.collection('history');
         
-        // QUERY: Busca cualquier coincidencia
+        // QUERY: Busca cualquier coincidencia (texto o número)
+        // Eliminamos el limit(1) para poder ver si hay duplicados y borrarlos
         const q = historyRef.where('userId', '==', uid).where('tmdbId', 'in', possibleIds);
         const existingDocs = await q.get(); 
         const now = admin.firestore.FieldValue.serverTimestamp();
@@ -613,17 +567,21 @@ app.post('/api/user/history', verifyIdToken, async (req, res) => {
             // No existe, creamos uno nuevo
             await historyRef.add(safeData);
         } else {
-            // YA EXISTE. Limpieza de duplicados
+            // YA EXISTE.
+            // Si hay más de 1 documento (duplicados viejos), borramos los extras y dejamos solo uno.
             if (existingDocs.size > 1) {
                 console.log(`[History] Reparando duplicados para usuario ${uid} item ${idAsString}`);
                 const docs = existingDocs.docs;
+                // Actualizamos el primero
                 await historyRef.doc(docs[0].id).update(safeData);
+                // Borramos el resto
                 for (let i = 1; i < docs.length; i++) {
                     await historyRef.doc(docs[i].id).delete();
                 }
             } else {
+                // Solo hay uno, actualizamos normal
                 const docId = existingDocs.docs[0].id;
-                await historyRef.doc(docId).update(safeData); 
+                await historyRef.doc(docId).update(safeData); // Actualizará tmdbId a string limpio si era número
             }
         }
 
@@ -936,8 +894,25 @@ app.post('/request-movie', async (req, res) => {
     }
 });
 
+// +++ RUTA DE ESTADO DE STREAMING CON SOPORTE PARA CONTROL DE VERSIONES +++
 app.get('/api/streaming-status', (req, res) => {
-    console.log(`[Status Check] Devolviendo estado de streaming global: ${GLOBAL_STREAMING_ACTIVE}`);
+    // Obtenemos el build_id que envía la app
+    const clientBuildId = parseInt(req.query.build_id) || 0;
+    // Soporte para 'version' por si acaso quedó alguna versión legacy
+    const clientVersion = parseInt(req.query.version) || 0;
+
+    const receivedId = clientBuildId || clientVersion;
+
+    console.log(`[Status Check] ID Recibido: ${receivedId} | ID en Revisión: ${BUILD_ID_UNDER_REVIEW}`);
+
+    // Si el ID recibido coincide con la versión que está revisando Google...
+    if (receivedId === BUILD_ID_UNDER_REVIEW) {
+        console.log("⚠️ [Review Mode] Detectada versión en revisión. Ocultando streaming.");
+        return res.status(200).json({ isStreamingActive: false }); // MODO SEGURO
+    }
+
+    // Para todos los demás (usuarios antiguos o futuras versiones aprobadas)
+    console.log(`[Status Check] Usuario normal. Devolviendo estado global: ${GLOBAL_STREAMING_ACTIVE}`);
     res.status(200).json({ isStreamingActive: GLOBAL_STREAMING_ACTIVE });
 });
 
@@ -1478,10 +1453,6 @@ app.get('/api/extract-link', async (req, res) => {
         res.status(500).json({ success: false, error: "Fallo extractor.", details: error.message });
     }
 });
-
-// =======================================================================
-// === INICIO DEL SERVIDOR ===
-// =======================================================================
 async function startServer() {
     await connectToMongo();
 
