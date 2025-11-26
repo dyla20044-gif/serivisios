@@ -18,20 +18,23 @@ const cron = require('node-cron');
 // +++ INICIO DE CAMBIOS PARA CACHÉ +++
 const NodeCache = require('node-cache');
 
-// 1. Caché para enlaces en RAM (1 hora TTL - 3600 segundos) - EXISTENTE
+// 1. Caché para enlaces en RAM (1 hora TTL - 3600 segundos)
 const embedCache = new NodeCache({ stdTTL: 3600, checkperiod: 120 });
 
-// 2. Caché para contadores y datos de usuario (5 minutos TTL - 300 segundos) - EXISTENTE
+// 2. Caché para contadores y datos de usuario (5 minutos TTL - 300 segundos)
 const countsCache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
 
-// 3. (NUEVO) Caché para Proxy TMDB (6 horas TTL - 21600 segundos)
-// Objetivo: Ahorrar peticiones a la API externa
+// 3. Caché para Proxy TMDB (6 horas TTL - 21600 segundos)
 const tmdbCache = new NodeCache({ stdTTL: 21600, checkperiod: 600 });
 
-// 4. (NUEVO) Caché para "Recién Agregadas" (1 hora TTL - 3600 segundos)
-// Objetivo: No saturar MongoDB con la misma consulta repetitiva
+// 4. Caché para "Recién Agregadas" (1 hora TTL - 3600 segundos)
 const recentCache = new NodeCache({ stdTTL: 3600, checkperiod: 120 });
-const RECENT_CACHE_KEY = 'recent_content_main'; // Llave única para la lista de recientes
+const RECENT_CACHE_KEY = 'recent_content_main'; 
+
+// 5. (NUEVO) Caché para HISTORIAL DE USUARIO (10 minutos TTL - 600 segundos)
+// Objetivo: Evitar leer Firestore cada vez que el usuario entra al perfil
+const historyCache = new NodeCache({ stdTTL: 600, checkperiod: 120 });
+
 // +++ FIN DE CAMBIOS PARA CACHÉ +++
 
 const app = express();
@@ -149,28 +152,19 @@ function countsCacheMiddleware(req, res, next) {
 const EXTRACTOR_API_URL = 'https://m3u8-extractor-api-1.onrender.com/extract';
 const delay = ms => new Promise(res => setTimeout(res, ms));
 
-/**
- * +++ FUNCIÓN DE AYUDA +++
- * Llama a tu API de Python para extraer un enlace M3U8.
- */
 async function llamarAlExtractor(targetUrl) {
     if (!targetUrl || !targetUrl.startsWith('http')) {
         throw new Error("URL objetivo inválida para el extractor.");
     }
-    // Si ya es un M3U8, no necesitamos llamar al extractor
     if (targetUrl.includes('.m3u8')) {
         return targetUrl;
     }
     
     console.log(`[Extractor] Llamando a la API de Python en: ${EXTRACTOR_API_URL}`);
     try {
-        // Hacemos una llamada POST a tu API de Python usando axios
         const response = await axios.post(EXTRACTOR_API_URL, {
             url: targetUrl 
-        }, {
-            // Timeout de 30 segundos
-            timeout: 30000 
-        });
+        }, { timeout: 30000 });
 
         const pythonResponse = response.data;
 
@@ -193,21 +187,12 @@ async function llamarAlExtractor(targetUrl) {
 }
 
 // --- FUNCIONES DE ACTUALIZACIÓN (CRON Y TRIGGER) ---
-
-// 1. Actualizar Película
 async function refrescarPelicula(movie, forceUpdate = false) {
-    // Solo actualizamos si hay un enlace PRO y NO es ya un m3u8 directo
     if (movie.proEmbedCode && !movie.proEmbedCode.includes('.m3u8')) {
-        
-        // Verificación de tiempo (Solo si NO es forceUpdate)
         if (!forceUpdate && movie.lastCacheUpdate) {
             const horasDesdeUpdate = (new Date() - new Date(movie.lastCacheUpdate)) / (1000 * 60 * 60);
-            if (horasDesdeUpdate < 5) {
-                 // Menos de 5 horas, saltamos para no saturar
-                 return;
-            }
+            if (horasDesdeUpdate < 5) return;
         }
-
         try {
             console.log(`🔄 [Auto-Movie] Actualizando: ${movie.title}...`);
             const nuevoM3U8 = await llamarAlExtractor(movie.proEmbedCode);
@@ -222,27 +207,21 @@ async function refrescarPelicula(movie, forceUpdate = false) {
     }
 }
 
-// 2. Actualizar Episodio de Serie
 async function refrescarEpisodio(seriesId, seasonKey, episodeKey, episodeData, forceUpdate = false) {
     if (episodeData.proEmbedCode && !episodeData.proEmbedCode.includes('.m3u8')) {
-        
-        // Verificación de tiempo
         if (!forceUpdate && episodeData.lastCacheUpdate) {
             const horasDesdeUpdate = (new Date() - new Date(episodeData.lastCacheUpdate)) / (1000 * 60 * 60);
             if (horasDesdeUpdate < 5) return;
         }
-
         try {
             console.log(`🔄 [Auto-Series] Actualizando S${seasonKey}E${episodeKey} (ID: ${seriesId})...`);
             const nuevoM3U8 = await llamarAlExtractor(episodeData.proEmbedCode);
             if (nuevoM3U8) {
                 const updatePath = `seasons.${seasonKey}.episodes.${episodeKey}.cachedProM3U8`;
                 const timePath = `seasons.${seasonKey}.episodes.${episodeKey}.lastCacheUpdate`;
-                
                 const updateQuery = { $set: {} };
                 updateQuery.$set[updatePath] = nuevoM3U8;
                 updateQuery.$set[timePath] = new Date();
-
                 await mongoDb.collection('series_catalog').updateOne(
                     { tmdbId: seriesId },
                     updateQuery
@@ -253,27 +232,22 @@ async function refrescarEpisodio(seriesId, seasonKey, episodeKey, episodeData, f
     }
 }
 
-// 3. Función Maestra del Cron
 async function ejecutarActualizacionMasiva() {
     if (!mongoDb) return;
     console.log('🚀 INICIANDO CICLO DE ACTUALIZACIÓN DE ENLACES...');
-
-    // --- FASE 1: PELÍCULAS ---
     const movies = await mongoDb.collection('media_catalog').find({}).toArray();
     for (const movie of movies) {
-        await refrescarPelicula(movie, false); // false = respetar tiempos
-        await delay(5000); // Pausa de 5 segundos entre películas para no bloquear
+        await refrescarPelicula(movie, false); 
+        await delay(5000); 
     }
-
-    // --- FASE 2: SERIES ---
     const seriesList = await mongoDb.collection('series_catalog').find({}).toArray();
     for (const series of seriesList) {
         if (series.seasons) {
             for (const [sKey, season] of Object.entries(series.seasons)) {
                 if (season && season.episodes) {
                     for (const [eKey, episode] of Object.entries(season.episodes)) {
-                        await refrescarEpisodio(series.tmdbId, sKey, eKey, episode, false); // false = respetar tiempos
-                        await delay(5000); // Pausa de 5 segundos entre episodios
+                        await refrescarEpisodio(series.tmdbId, sKey, eKey, episode, false);
+                        await delay(5000); 
                     }
                 }
             }
@@ -282,12 +256,9 @@ async function ejecutarActualizacionMasiva() {
     console.log('🏁 CICLO DE ACTUALIZACIÓN FINALIZADO.');
 }
 
-// PROGRAMACIÓN: Ejecutar cada 6 horas
-// "0 */6 * * *" significa: Minuto 0, cada 6 horas
 cron.schedule('0 */6 * * *', () => {
     ejecutarActualizacionMasiva();
 });
-
 
 // =======================================================================
 // === (OPTIMIZADO) TMDB PROXY CON CACHÉ DE 6 HORAS ===
@@ -300,20 +271,12 @@ app.get('/api/tmdb-proxy', async (req, res) => {
         return res.status(400).json({ error: 'Endpoint is required' });
     }
 
-    // --- LÓGICA DE CACHÉ ---
-    // Creamos una clave única basada en todos los parámetros de la solicitud
-    // Ejemplo de clave: '{"endpoint":"movie/popular","page":"1","language":"es-MX"}'
     const cacheKey = JSON.stringify(req.query);
 
-    // 1. Verificar si tenemos la respuesta en RAM
     const cachedResponse = tmdbCache.get(cacheKey);
     if (cachedResponse) {
-        // console.log(`[TMDB Cache HIT] Sirviendo desde RAM: ${endpoint}`); // Opcional: comentar para menos ruido
         return res.json(cachedResponse);
     }
-
-    // 2. Si no hay caché, pedir a la API
-    // console.log(`[TMDB Cache MISS] Pidiendo a API externa: ${endpoint}`); // Opcional
 
     try {
         const url = `https://api.themoviedb.org/3/${endpoint}`;
@@ -323,22 +286,14 @@ app.get('/api/tmdb-proxy', async (req, res) => {
             include_adult: false
         };
         
-        // Agregar query si existe (búsqueda)
-        if (query) {
-            params.query = query;
-        }
-
-        // Pasar parámetros de paginación y filtros si existen
+        if (query) params.query = query;
         if (req.query.page) params.page = req.query.page;
         if (req.query.with_genres) params.with_genres = req.query.with_genres;
         if (req.query.with_keywords) params.with_keywords = req.query.with_keywords;
         if (req.query.sort_by) params.sort_by = req.query.sort_by;
 
         const response = await axios.get(url, { params });
-        
-        // 3. Guardar en Caché antes de responder (6 horas)
         tmdbCache.set(cacheKey, response.data);
-
         res.json(response.data);
 
     } catch (error) {
@@ -356,7 +311,6 @@ app.get('/api/tmdb-proxy', async (req, res) => {
 app.get('/api/content/recent', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
 
-    // --- LÓGICA DE CACHÉ (LECTURA) ---
     const cachedRecent = recentCache.get(RECENT_CACHE_KEY);
     if (cachedRecent) {
         console.log(`[Recent Cache HIT] Sirviendo lista de recientes desde RAM.`);
@@ -366,27 +320,22 @@ app.get('/api/content/recent', async (req, res) => {
     console.log(`[Recent Cache MISS] Consultando MongoDB para recientes...`);
 
     try {
-        // Consultamos a Firebase: Colección 'media_catalog', ordenamos por 'addedAt'
         const movies = await mongoDb.collection('media_catalog')
             .find({})
             .sort({ addedAt: -1 }) 
-            .limit(15) // Traemos 15 elementos
+            .limit(15) 
             .toArray();
 
-        // Mapeamos los datos para que el frontend los entienda
         const results = movies.map(movie => ({
             id: movie.tmdbId,
             tmdbId: movie.tmdbId,
             title: movie.title,
             poster_path: movie.poster_path,
             backdrop_path: movie.backdrop_path,
-            media_type: 'movie' // Asumimos película
+            media_type: 'movie'
         }));
 
-        // --- LÓGICA DE CACHÉ (ESCRITURA) ---
-        // Guardamos por 1 hora
         recentCache.set(RECENT_CACHE_KEY, results);
-
         res.status(200).json(results);
     } catch (error) {
         console.error("Error en /api/content/recent:", error);
@@ -516,8 +465,22 @@ app.post('/api/user/coins', verifyIdToken, async (req, res) => {
     }
 });
 
+// =======================================================================
+// === (OPTIMIZADO) HISTORIAL CON CACHÉ Y MANEJO DE UNDEFINED ===
+// =======================================================================
+
+// GET: Obtener historial (con Caché)
 app.get('/api/user/history', verifyIdToken, async (req, res) => {
     const { uid } = req;
+    const cacheKey = `history-${uid}`;
+
+    // 1. Revisar Caché
+    const cachedHistory = historyCache.get(cacheKey);
+    if (cachedHistory) {
+        // console.log(`[History Cache HIT] Usuario: ${uid}`); // Opcional
+        return res.status(200).json(cachedHistory);
+    }
+
     try {
         const historyRef = db.collection('history');
         const snapshot = await historyRef
@@ -525,6 +488,7 @@ app.get('/api/user/history', verifyIdToken, async (req, res) => {
             .orderBy('timestamp', 'desc')
             .limit(10)
             .get();
+
         const historyItems = snapshot.docs.map(doc => ({
             tmdbId: doc.data().tmdbId,
             title: doc.data().title,
@@ -533,6 +497,10 @@ app.get('/api/user/history', verifyIdToken, async (req, res) => {
             type: doc.data().type,
             timestamp: doc.data().timestamp.toDate().toISOString()
         }));
+
+        // 2. Guardar en Caché
+        historyCache.set(cacheKey, historyItems);
+
         res.status(200).json(historyItems);
     } catch (error) {
         console.error("Error en /api/user/history (GET):", error);
@@ -540,38 +508,52 @@ app.get('/api/user/history', verifyIdToken, async (req, res) => {
     }
 });
 
+// POST: Guardar en historial (con Fix de Undefined e Invalidación)
 app.post('/api/user/history', verifyIdToken, async (req, res) => {
     const { uid } = req;
     const { tmdbId, title, poster_path, backdrop_path, type } = req.body;
+    
     if (!tmdbId || !type) {
         return res.status(400).json({ error: 'tmdbId y type requeridos.' });
     }
+
     try {
         const historyRef = db.collection('history');
         const q = historyRef.where('userId', '==', uid).where('tmdbId', '==', tmdbId);
         const existingDocs = await q.limit(1).get();
         const now = admin.firestore.FieldValue.serverTimestamp();
+
+        // 💡 SOLUCIÓN DEL ERROR: Asegurar que nada sea undefined
+        // Usamos || null para que Firestore reciba un valor válido
+        const safeData = {
+            userId: uid,
+            tmdbId: tmdbId,
+            title: title || "Título desconocido",
+            poster_path: poster_path || null,   // Evita undefined
+            backdrop_path: backdrop_path || null, // Evita undefined
+            type: type,
+            timestamp: now
+        };
+
         if (existingDocs.empty) {
-            await historyRef.add({
-                userId: uid,
-                tmdbId: tmdbId,
-                title: title,
-                poster_path: poster_path,
-                backdrop_path: backdrop_path,
-                type: type,
-                timestamp: now
-            });
+            await historyRef.add(safeData);
         } else {
             const docId = existingDocs.docs[0].id;
+            // Para el update, también sanitizamos
             await historyRef.doc(docId).update({
                 timestamp: now,
-                title: title,
-                poster_path: poster_path,
-                backdrop_path: backdrop_path,
+                title: title || "Título desconocido",
+                poster_path: poster_path || null,
+                backdrop_path: backdrop_path || null,
                 type: type 
             });
         }
+
+        // 💡 INVALIDACIÓN: Borramos la caché para que el usuario vea su cambio
+        historyCache.del(`history-${uid}`);
+        
         res.status(200).json({ message: 'Historial actualizado.' });
+
     } catch (error) {
         console.error("Error en /api/user/history (POST):", error);
         res.status(500).json({ error: 'Error al actualizar el historial.' });
