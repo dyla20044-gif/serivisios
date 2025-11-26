@@ -279,6 +279,80 @@ cron.schedule('0 */6 * * *', () => {
 
 
 // =======================================================================
+// === (CRUCIAL) TMDB PROXY - ESTO FALTABA ===
+// =======================================================================
+app.get('/api/tmdb-proxy', async (req, res) => {
+    const endpoint = req.query.endpoint;
+    const query = req.query.query;
+    
+    if (!endpoint) {
+        return res.status(400).json({ error: 'Endpoint is required' });
+    }
+
+    try {
+        const url = `https://api.themoviedb.org/3/${endpoint}`;
+        const params = {
+            api_key: TMDB_API_KEY,
+            language: 'es-MX', // Idioma latino
+            include_adult: false
+        };
+        
+        // Agregar query si existe (búsqueda)
+        if (query) {
+            params.query = query;
+        }
+
+        // Pasar parámetros de paginación y filtros si existen
+        if (req.query.page) params.page = req.query.page;
+        if (req.query.with_genres) params.with_genres = req.query.with_genres;
+        if (req.query.with_keywords) params.with_keywords = req.query.with_keywords;
+        if (req.query.sort_by) params.sort_by = req.query.sort_by;
+
+        const response = await axios.get(url, { params });
+        res.json(response.data);
+
+    } catch (error) {
+        console.error(`Error en Proxy TMDB (${endpoint}):`, error.message);
+        if (error.response) {
+            return res.status(error.response.status).json(error.response.data);
+        }
+        res.status(500).json({ error: 'Error al conectar con TMDB' });
+    }
+});
+
+// =======================================================================
+// === (NUEVO) RUTA DE RECIÉN AGREGADAS ===
+// =======================================================================
+app.get('/api/content/recent', async (req, res) => {
+    if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
+
+    try {
+        // Consultamos a Firebase: Colección 'media_catalog', ordenamos por 'addedAt'
+        const movies = await mongoDb.collection('media_catalog')
+            .find({})
+            .sort({ addedAt: -1 }) 
+            .limit(15) // Traemos 15 elementos
+            .toArray();
+
+        // Mapeamos los datos para que el frontend los entienda
+        const results = movies.map(movie => ({
+            id: movie.tmdbId,
+            tmdbId: movie.tmdbId,
+            title: movie.title,
+            poster_path: movie.poster_path,
+            backdrop_path: movie.backdrop_path,
+            media_type: 'movie' // Asumimos película
+        }));
+
+        res.status(200).json(results);
+    } catch (error) {
+        console.error("Error en /api/content/recent:", error);
+        res.status(500).json({ error: "Error interno al obtener contenido reciente." });
+    }
+});
+
+
+// =======================================================================
 // === RUTAS CENTRALIZADAS DE USUARIO (FIRESTORE) ===
 // =======================================================================
 
