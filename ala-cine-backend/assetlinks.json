@@ -4,8 +4,10 @@
     "target": {
       "namespace": "android_app",
       "package_name": "com.salacine.app",
-      "sha256_cert_fingerprints":
-      ["35:36:CB:12:4F:09:5A:E2:33:35:67:44:86:C0:95:C9:F3:E1:B9:F3:83:C3:A0:1D:81:55:8E:21:18:CC:D6:04"]
+      "sha256_cert_fingerprints": [
+        "1E:A3:31:FB:84:44:AB:9D:6A:4D:99:82:FA:2A:99:9B:EE:2E:84:D0:D8:AC:60:37:F2:0E:A0:36:A3:83:CA:73",
+        "35:36:CB:12:4F:09:5A:E2:33:35:67:44:86:C0:95:C9:F3:E1:B9:F3:83:C3:A0:1D:81:55:8E:21:18:CC:D6:04"
+      ]
     }
   },
   {
@@ -13,8 +15,9 @@
     "target": {
       "namespace": "android_app",
       "package_name": "com.salacine.vivibox",
-      "sha256_cert_fingerprints":
-      ["1E:A3:31:FB:84:44:AB:9D:6A:4D:99:82:FA:2A:99:9B:EE:2E:84:D0:D8:AC:60:37:F2:0E:A0:36:A3:83:CA:73"]
+      "sha256_cert_fingerprints": [
+        "1E:A3:31:FB:84:44:AB:9D:6A:4D:99:82:FA:2A:99:9B:EE:2E:84:D0:D8:AC:60:37:F2:0E:A0:36:A3:83:CA:73"
+      ]
     }
   }
 ]
