@@ -67,7 +67,7 @@ const ADMIN_CHAT_ID = parseInt(process.env.ADMIN_CHAT_ID, 10);
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
 
 let GLOBAL_STREAMING_ACTIVE = true;
-const BUILD_ID_UNDER_REVIEW = 9; 
+const BUILD_ID_UNDER_REVIEW = 8; 
 
 const MONGO_URI = process.env.MONGO_URI;
 const MONGO_DB_NAME = process.env.MONGO_DB_NAME || 'sala_cine';
@@ -819,10 +819,6 @@ app.post('/api/rewards/request-diamond', verifyIdToken, async (req, res) => {
         res.status(500).json({ error: 'Error al enviar la notificación de diamantes.' });
     }
 });
-
-// =======================================================================
-// === RUTAS DEL SERVIDOR WEB ===
-// =======================================================================
 app.get('/', (req, res) => {
   res.send('¡El bot y el servidor de Sala Cine están activos!');
 });
