@@ -1354,7 +1354,7 @@ app.post('/api/notify-new-content', async (req, res) => {
 // --- Rutas App Update, App Status, Assetlinks ---
 app.get('/api/app-update', (req, res) => {
     // ACTUALIZADO: latest_version_code a 8 y force_update a false.
-    const updateInfo = { "latest_version_code": 8, "update_url": "https://play.google.com/store/apps/details?id=com.salacine.app&pcampaignid=web_share", "force_update": false, "update_message": "¡Nueva versión (1.5.2) de Sala Cine disponible! Incluye mejoras de rendimiento. Actualiza ahora." };
+    const updateInfo = { "latest_version_code": 9, "update_url": "https://play.google.com/store/apps/details?id=com.salacine.app&pcampaignid=web_share", "force_update": false, "update_message": "¡Nueva versión (1.5.2) de Sala Cine disponible! Incluye mejoras de rendimiento. Actualiza ahora." };
     res.status(200).json(updateInfo);
 });
 
