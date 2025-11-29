@@ -12,29 +12,27 @@ const initializeBot = require('./bot.js');
 // Herramienta para generar IDs aleatorios
 const crypto = require('crypto');
 
-// +++ LIBRERÍA PARA TAREAS AUTOMÁTICAS +++
-// (Se mantiene la importación, pero desactivaremos la tarea pesada abajo)
+// Librería para tareas (Desactivada para modo manual, pero se deja la importación)
 const cron = require('node-cron');
 
-// +++ INICIO DE CONFIGURACIÓN DE CACHÉ +++
+// +++ INICIO DE CONFIGURACIÓN DE CACHÉ REFORZADA +++
 const NodeCache = require('node-cache');
 
-// 1. Caché para enlaces en RAM (1 hora TTL - 3600 segundos)
-const embedCache = new NodeCache({ stdTTL: 3600, checkperiod: 120 });
+// 1. Caché para enlaces en RAM (24 HORAS - Enlaces fijos manuales)
+const embedCache = new NodeCache({ stdTTL: 86400, checkperiod: 600 });
 
-// 2. Caché para contadores y datos de usuario (5 minutos TTL - 300 segundos)
-const countsCache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
+// 2. Caché para contadores y datos de usuario (15 minutos - Reduce carga DB)
+const countsCache = new NodeCache({ stdTTL: 900, checkperiod: 120 });
 
-// 3. Caché para Proxy TMDB (6 horas TTL - 21600 segundos)
-const tmdbCache = new NodeCache({ stdTTL: 21600, checkperiod: 600 });
+// 3. Caché para Proxy TMDB (24 HORAS - Ahorra peticiones a la API externa)
+const tmdbCache = new NodeCache({ stdTTL: 86400, checkperiod: 3600 });
 
-// 4. Caché para "Recién Agregadas" (MODIFICADO: 12 HORAS TTL)
-// Se mantiene 12 horas (43200 segundos). Se borra automáticamente si subes algo nuevo.
-const recentCache = new NodeCache({ stdTTL: 43200, checkperiod: 120 });
+// 4. Caché para "Recién Agregadas" (24 HORAS - Se borra al subir contenido nuevo)
+const recentCache = new NodeCache({ stdTTL: 86400, checkperiod: 600 });
 const RECENT_CACHE_KEY = 'recent_content_main'; 
 
-// 5. Caché para HISTORIAL DE USUARIO (10 minutos TTL - 600 segundos)
-const historyCache = new NodeCache({ stdTTL: 600, checkperiod: 120 });
+// 5. Caché para HISTORIAL DE USUARIO (15 minutos)
+const historyCache = new NodeCache({ stdTTL: 900, checkperiod: 120 });
 
 // +++ FIN DE CAMBIOS PARA CACHÉ +++
 
@@ -147,31 +145,26 @@ function countsCacheMiddleware(req, res, next) {
 }
 
 // =======================================================================
-// === (LÓGICA CENTRAL) EXTRACTOR Y AUTOMATIZACIÓN (OPTIMIZADO) ===
+// === (OPTIMIZADO) EXTRACTOR DESACTIVADO (MODO MANUAL) ===
 // =======================================================================
 
-// MODIFICACIÓN VITAL: Desactivamos la llamada externa para evitar timeouts en Render.
-// Ahora confiamos en que el Admin (tú) envía el enlace directo (M3U8/MP4).
+// Ya no llamamos a Python. Simplemente devolvemos el enlace que nos llega.
+// Esto evita errores de timeout y permite usar tus M3U8 directos.
 async function llamarAlExtractor(targetUrl) {
-    if (!targetUrl || !targetUrl.startsWith('http')) {
-        throw new Error("URL objetivo inválida.");
-    }
-    
-    // Pasamos el enlace directamente sin procesar en Python.
-    // Esto hace que el servidor responda AL INSTANTE.
+    if (!targetUrl) return null;
+    // Devolvemos el enlace tal cual (confiamos en que es un M3U8 o MP4 válido)
     return targetUrl;
 }
 
-// --- FUNCIONES DE ACTUALIZACIÓN (CRON) ---
-// Comentamos el CRON para ahorrar CPU ya que ahora usamos enlaces directos manuales.
-/*
-cron.schedule('0 * /6 * * *', () => {
-    ejecutarActualizacionMasiva();
-});
+// --- TAREAS AUTOMÁTICAS (CRON) DESACTIVADAS ---
+/* Como estás subiendo enlaces manuales, desactivamos el CRON para que 
+   el bot no intente "actualizar" tus enlaces y los rompa o gaste recursos.
 */
+// cron.schedule('0 */6 * * *', () => { ejecutarActualizacionMasiva(); });
+
 
 // =======================================================================
-// === (OPTIMIZADO) TMDB PROXY CON CACHÉ DE 6 HORAS ===
+// === (OPTIMIZADO) TMDB PROXY CON CACHÉ DE 24 HORAS ===
 // =======================================================================
 app.get('/api/tmdb-proxy', async (req, res) => {
     const endpoint = req.query.endpoint;
@@ -216,13 +209,12 @@ app.get('/api/tmdb-proxy', async (req, res) => {
 });
 
 // =======================================================================
-// === (MODIFICADO Y UNIFICADO) RUTA DE RECIÉN AGREGADAS ===
+// === (NUEVO) RUTA DE RECIÉN AGREGADAS UNIFICADA (PELIS + SERIES) ===
 // =======================================================================
-// Ahora devuelve tanto PELÍCULAS como SERIES, ordenadas por fecha.
 app.get('/api/content/recent', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
 
-    // 1. Revisar Caché (12 Horas de duración si no hay cambios)
+    // 1. Revisar Caché (24 Horas)
     const cachedRecent = recentCache.get(RECENT_CACHE_KEY);
     if (cachedRecent) {
         // console.log(`[Recent Cache HIT] Sirviendo lista unificada desde RAM.`);
@@ -232,27 +224,26 @@ app.get('/api/content/recent', async (req, res) => {
     console.log(`[Recent Cache MISS] Generando lista unificada (Películas + Series)...`);
 
     try {
-        // 2. Buscar las últimas películas (Limitamos a 15 para eficiencia)
+        // 2. Buscar las últimas 20 películas
         const moviesPromise = mongoDb.collection('media_catalog')
             .find({})
             .project({ tmdbId: 1, title: 1, poster_path: 1, backdrop_path: 1, addedAt: 1 })
             .sort({ addedAt: -1 })
-            .limit(15)
+            .limit(20)
             .toArray();
 
-        // 3. Buscar las últimas series (Limitamos a 15)
+        // 3. Buscar las últimas 20 series
         const seriesPromise = mongoDb.collection('series_catalog')
             .find({})
-            .project({ tmdbId: 1, name: 1, poster_path: 1, backdrop_path: 1, addedAt: 1 }) // 'name' es el título en series
+            .project({ tmdbId: 1, name: 1, poster_path: 1, backdrop_path: 1, addedAt: 1 }) 
             .sort({ addedAt: -1 })
-            .limit(15)
+            .limit(20)
             .toArray();
 
-        // Ejecutar ambas consultas en paralelo
+        // Ejecutar en paralelo
         const [movies, series] = await Promise.all([moviesPromise, seriesPromise]);
 
         // 4. Formatear y Unificar
-        // Mapeamos películas
         const formattedMovies = movies.map(movie => ({
             id: movie.tmdbId,
             tmdbId: movie.tmdbId,
@@ -260,10 +251,9 @@ app.get('/api/content/recent', async (req, res) => {
             poster_path: movie.poster_path,
             backdrop_path: movie.backdrop_path,
             media_type: 'movie',
-            addedAt: movie.addedAt ? new Date(movie.addedAt) : new Date(0) // Fecha segura
+            addedAt: movie.addedAt ? new Date(movie.addedAt) : new Date(0)
         }));
 
-        // Mapeamos series (cambiando 'name' a 'title' para que la App no se rompa)
         const formattedSeries = series.map(serie => ({
             id: serie.tmdbId,
             tmdbId: serie.tmdbId,
@@ -271,17 +261,17 @@ app.get('/api/content/recent', async (req, res) => {
             poster_path: serie.poster_path,
             backdrop_path: serie.backdrop_path,
             media_type: 'tv',
-            addedAt: serie.addedAt ? new Date(serie.addedAt) : new Date(0) // Fecha segura
+            addedAt: serie.addedAt ? new Date(serie.addedAt) : new Date(0)
         }));
 
-        // 5. Combinar y Ordenar por fecha real descendente (lo más nuevo arriba)
+        // 5. Combinar y Ordenar por fecha real (lo más nuevo arriba)
         const combinedResults = [...formattedMovies, ...formattedSeries];
         combinedResults.sort((a, b) => b.addedAt - a.addedAt);
 
         // 6. Tomar los 20 más recientes en total
         const finalResults = combinedResults.slice(0, 20);
 
-        // 7. Guardar en Caché (Dura 12h, a menos que subas algo nuevo)
+        // 7. Guardar en Caché (Dura 24h, a menos que subas algo nuevo)
         recentCache.set(RECENT_CACHE_KEY, finalResults);
         
         res.status(200).json(finalResults);
@@ -782,7 +772,7 @@ if (process.env.NODE_ENV === 'production' && token) {
     console.warn("⚠️  Webhook de Telegram no configurado porque TELEGRAM_BOT_TOKEN no está definido.");
 }
 
-// +++ RUTA DEEP LINK +++
+// +++ RUTA MODIFICADA PARA DEEP LINK +++
 app.get('/app/details/:tmdbId', (req, res) => {
     const tmdbId = req.params.tmdbId;
     // La URL de esquema profundo de la app nativa (debe estar configurada en AndroidManifest.xml)
@@ -813,6 +803,7 @@ app.get('/app/details/:tmdbId', (req, res) => {
     `;
     res.send(htmlResponse);
 });
+// +++ FIN DE RUTA MODIFICADA +++
 
 app.post('/request-movie', async (req, res) => {
     const { title, poster_path, tmdbId, priority } = req.body;
@@ -916,7 +907,7 @@ app.get('/api/get-movie-data', async (req, res) => {
     }
 });
 
-// +++ RUTA DE REPRODUCCIÓN (SIMPLIFICADA) +++
+// +++ RUTA MODIFICADA (AHORA MANUAL Y ROBUSTA) +++
 app.get('/api/get-embed-code', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
     
@@ -925,11 +916,11 @@ app.get('/api/get-embed-code', async (req, res) => {
 
     const cacheKey = `embed-${id}-${season || 'movie'}-${episode || '1'}-${isPro === 'true' ? 'pro' : 'free'}`;
     
-    // 1. Revisar caché RAM (sin cambios)
+    // 1. Revisar caché RAM (24 Horas de duración)
     try {
         const cachedData = embedCache.get(cacheKey);
         if (cachedData) {
-            console.log(`[Cache HIT] Sirviendo embed (M3U8) desde caché para: ${cacheKey}`);
+            console.log(`[Cache HIT] Sirviendo embed manual desde caché para: ${cacheKey}`);
             return res.json({ embedCode: cachedData });
         }
     } catch (err) {
@@ -939,35 +930,29 @@ app.get('/api/get-embed-code', async (req, res) => {
     console.log(`[Cache MISS] Buscando embed en MongoDB para: ${cacheKey}`);
 
     try {
-        // 2. Buscar el documento en Mongo
         const mediaType = season && episode ? 'series' : 'movies';
         const collectionName = (mediaType === 'movies') ? 'media_catalog' : 'series_catalog';
         const doc = await mongoDb.collection(collectionName).findOne({ tmdbId: id.toString() });
 
         if (!doc) return res.status(404).json({ error: `${mediaType} no encontrada.` });
 
-        // --- LÓGICA DE OBTENCIÓN (SIMPLIFICADA PARA ENLACES DIRECTOS) ---
         let enlaceFinal = null;
 
         if (mediaType === 'movies') {
-            // Películas: Si es Pro, usamos proEmbedCode, si no, freeEmbedCode.
-            // (En tu nueva lógica de Single Link, ambos campos suelen tener el mismo valor)
-            enlaceFinal = (isPro === 'true') ? doc.proEmbedCode : doc.freeEmbedCode;
+            enlaceFinal = (isPro === 'true') ? doc.proEmbedCode : doc.freeEmbedCode; 
         } else {
-            // Series
             const epData = doc.seasons?.[season]?.episodes?.[episode];
             if (epData) {
                 enlaceFinal = (isPro === 'true') ? epData.proEmbedCode : epData.freeEmbedCode;
             }
         }
 
-        // Si encontramos el enlace, lo guardamos en caché y lo devolvemos
+        // Si existe el enlace (que tú subiste manualmente), lo guardamos y devolvemos.
         if (enlaceFinal) {
             embedCache.set(cacheKey, enlaceFinal);
             return res.json({ embedCode: enlaceFinal });
         }
 
-        // Si llegamos aquí, no hay enlace
         console.log(`[Embed Code] No se encontró código para ${id} (isPro: ${isPro})`);
         return res.status(404).json({ error: `No se encontró código de reproductor.` });
 
@@ -1046,7 +1031,7 @@ app.post('/api/increment-likes', async (req, res) => {
     } catch (error) { console.error("Error increment-likes:", error); res.status(500).json({ error: "Error interno." }); }
 });
 
-// +++ RUTA DE SUBIDA OPTIMIZADA (CON INVALIDACIÓN DE CACHÉ DE RECIENTES) +++
+// +++ RUTA DE SUBIDA OPTIMIZADA (INVALIDACIÓN DE CACHÉ + SIN EXTRACTOR) +++
 app.post('/add-movie', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "BD no disponible." });
     try {
@@ -1058,28 +1043,26 @@ app.post('/add-movie', async (req, res) => {
 
         const updateQuery = { $set: { title, poster_path, overview, freeEmbedCode, proEmbedCode, isPremium }, $setOnInsert: { tmdbId: cleanTmdbId, views: 0, likes: 0, addedAt: new Date() } };
         
-        // Usamos el ID limpio para guardar en MongoDB
         await mongoDb.collection('media_catalog').updateOne({ tmdbId: cleanTmdbId }, updateQuery, { upsert: true });
         
-        // Invalidaciones de caché específicas
+        // Invalidaciones
         embedCache.del(`embed-${cleanTmdbId}-movie-1-pro`);
         embedCache.del(`embed-${cleanTmdbId}-movie-1-free`);
         countsCache.del(`counts-data-${cleanTmdbId}`);
         
         // === (CRÍTICO) INVALIDACIÓN DE CACHÉ DE RECIENTES ===
-        // Esto hace que la nueva película aparezca inmediatamente arriba.
         recentCache.del(RECENT_CACHE_KEY);
         console.log(`[Cache] Lista de recientes invalidada por subida de película: ${title}`);
 
         // --- RESPUESTA RÁPIDA AL BOT ---
-        res.status(200).json({ message: 'Película agregada/actualizada. (Extractor Desactivado)' });
+        res.status(200).json({ message: 'Película agregada y publicada.' });
         
-        // (Ya no ejecutamos setImmediate para llamar al extractor, optimización aplicada)
+        // Ya NO ejecutamos extractor en segundo plano.
 
     } catch (error) { console.error("Error add-movie:", error); res.status(500).json({ error: 'Error interno.' }); }
 });
 
-// +++ RUTA DE SUBIDA SERIES OPTIMIZADA (CON INVALIDACIÓN DE CACHÉ DE RECIENTES) +++
+// +++ RUTA DE SUBIDA SERIES OPTIMIZADA (INVALIDACIÓN DE CACHÉ + SIN EXTRACTOR) +++
 app.post('/add-series-episode', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "BD no disponible." });
     try {
@@ -1100,7 +1083,6 @@ app.post('/add-series-episode', async (req, res) => {
             },
             $setOnInsert: { tmdbId: cleanTmdbId, views: 0, likes: 0, addedAt: new Date() }
         };
-        // Usamos el ID limpio para guardar en MongoDB
         await mongoDb.collection('series_catalog').updateOne({ tmdbId: cleanTmdbId }, updateData, { upsert: true });
         
         // Invalidaciones
@@ -1109,16 +1091,128 @@ app.post('/add-series-episode', async (req, res) => {
         countsCache.del(`counts-data-${cleanTmdbId}`);
 
         // === (CRÍTICO) INVALIDACIÓN DE CACHÉ DE RECIENTES ===
-        // Esto hace que la serie actualizada suba al primer lugar inmediatamente.
         recentCache.del(RECENT_CACHE_KEY);
         console.log(`[Cache] Lista de recientes invalidada por subida de episodio: S${seasonNumber}E${episodeNumber}`);
 
         // --- RESPUESTA RÁPIDA AL BOT ---
-        res.status(200).json({ message: `Episodio S${seasonNumber}E${episodeNumber} agregado. (Extractor Desactivado)` });
+        res.status(200).json({ message: `Episodio S${seasonNumber}E${episodeNumber} agregado y publicado.` });
 
-        // (Ya no ejecutamos setImmediate para llamar al extractor, optimización aplicada)
+        // Ya NO ejecutamos extractor en segundo plano.
 
     } catch (error) { console.error("Error add-series-episode:", error); res.status(500).json({ error: 'Error interno.' }); }
+});
+
+// --- Rutas PayPal (sin cambios) ---
+app.post('/create-paypal-payment', (req, res) => {
+    const plan = req.body.plan; const amount = (plan === 'annual') ? '19.99' : '1.99'; const userId = req.body.userId; if (!userId) return res.status(400).json({ error: "userId es requerido." });
+    const create_payment_json = { 
+        "intent": "sale", "payer": { "payment_method": "paypal" },
+        "redirect_urls": { "return_url": `${RENDER_BACKEND_URL}/paypal/success?userId=${userId}&plan=${plan}`, "cancel_url": `${RENDER_BACKEND_URL}/paypal/cancel?userId=${userId}&plan=${plan}` },
+        "transactions": [{"item_list": { "items": [{ "name": `Plan Premium ${plan}`, "sku": `PLAN-${plan.toUpperCase()}`, "price": amount, "currency": "USD", "quantity": "1" }] }, "amount": { "currency": "USD", "total": amount }, "description": `Suscripción Premium ${plan} Sala Cine` }]
+    };
+    paypal.payment.create(create_payment_json, (error, payment) => {
+        if (error) {
+            console.error("Error al crear el pago de PayPal:", error);
+            res.status(500).json({ error: 'Error al crear el pago de PayPal.', details: error.response });
+        } else {
+            for (let i = 0; i < payment.links.length; i++) {
+                if (payment.links[i].rel === 'approval_url') {
+                    res.json({ approval_url: payment.links[i].href });
+                    return;
+                }
+            }
+            res.status(500).json({ error: 'No se encontró URL de aprobación en la respuesta de PayPal.' });
+        }
+    });
+});
+
+app.get('/paypal/success', async (req, res) => {
+    const payerId = req.query.PayerID; const paymentId = req.query.paymentId; const userId = req.query.userId; const plan = req.query.plan;
+    const amount = (plan === 'annual') ? '19.99' : '1.99';
+    if (!payerId || !paymentId || !userId || !plan) {
+        return res.status(400).send('Faltan parámetros requeridos.');
+    }
+    const execute_payment_json = { "payer_id": payerId, "transactions": [{"amount": { "currency": "USD", "total": amount }}] };
+    try {
+        const payment = await new Promise((resolve, reject) => {
+            paypal.payment.execute(paymentId, execute_payment_json, (error, payment) => {
+                if (error) return reject(error);
+                resolve(payment);
+            });
+        });
+        const daysToAdd = (plan === 'annual') ? 365 : 30;
+        const now = new Date();
+        const userDocRef = db.collection('users').doc(userId);
+        const docSnap = await userDocRef.get();
+        let newExpiryDate;
+        if (docSnap.exists && docSnap.data().premiumExpiry) {
+            let currentExpiry = docSnap.data().premiumExpiry.toDate();
+            if (currentExpiry > now) {
+                newExpiryDate = new Date(currentExpiry.getTime() + daysToAdd * 24 * 60 * 60 * 1000);
+            } else {
+                newExpiryDate = new Date(now.getTime() + daysToAdd * 24 * 60 * 60 * 1000);
+            }
+        } else {
+            newExpiryDate = new Date(now.getTime() + daysToAdd * 24 * 60 * 60 * 1000);
+        }
+        await userDocRef.set({ 
+            isPro: true, premiumExpiry: newExpiryDate, lastPayment: paymentId, paymentMethod: 'PayPal'
+        }, { merge: true });
+        countsCache.del(`${userId}:/api/user/me`);
+        bot.sendMessage(ADMIN_CHAT_ID, `💰 *PAGO RECIBIDO (PayPal):* $${amount} USD\n*Usuario:* \`${userId}\`\n*Plan:* ${plan.toUpperCase()}`, { parse_mode: 'Markdown' });
+        res.send('<html><body><h1>✅ Pago Exitoso</h1><p>Tu cuenta Premium ha sido activada/extendida. Puedes cerrar esta ventana.</p></body></html>');
+    } catch (error) {
+        console.error("Error al ejecutar o guardar el pago de PayPal:", error);
+        res.status(500).send('<html><body><h1>❌ Error</h1><p>Hubo un error al procesar tu pago. Contacta a soporte con el ID de Pago si lo tienes.</p></body></html>');
+    }
+});
+
+app.get('/paypal/cancel', (req, res) => {
+    res.send('<html><body><h1>❌ Pago Cancelado</h1><p>Has cancelado el pago. Vuelve a la aplicación para intentarlo de nuevo.</p></body></html>');
+});
+
+app.post('/create-binance-payment', (req, res) => {
+    res.json({ message: 'Pago con Binance simulado.' });
+});
+
+// === LÓGICA DE NOTIFICACIONES PUSH (Mantenida intacta) ===
+async function sendNotificationToTopic(title, body, imageUrl, tmdbId, mediaType) {
+    const topic = 'new_content';
+    const dataPayload = {
+        title: title, body: body, tmdbId: tmdbId.toString(), mediaType: mediaType,
+        ...(imageUrl && { imageUrl: imageUrl })
+    };
+    const message = {
+        topic: topic, data: dataPayload,
+        android: { priority: 'high' }
+    };
+    try {
+        console.log(`🚀 Intentando enviar notificación al topic '${topic}'... Payload:`, JSON.stringify(dataPayload));
+        const response = await messaging.send(message);
+        console.log('✅ Notificación FCM enviada exitosamente al topic:', response);
+        return { success: true, message: `Notificación enviada al topic '${topic}'.`, response: response };
+    } catch (error) {
+        console.error(`❌ Error al enviar notificación FCM al topic '${topic}':`, error);
+        return { success: false, error: error.message };
+    }
+}
+
+app.post('/api/notify-new-content', async (req, res) => {
+    const { title, body, imageUrl, tmdbId, mediaType } = req.body;
+    if (!title || !body || !tmdbId || !mediaType) {
+        return res.status(400).json({ success: false, error: "Faltan datos requeridos (title, body, tmdbId, mediaType)." });
+    }
+    try {
+        const result = await sendNotificationToTopic(title, body, imageUrl, tmdbId, mediaType);
+        if (result.success) {
+            res.status(200).json({ success: true, message: result.message, details: result.response });
+        } else {
+            res.status(500).json({ success: false, error: 'Error enviando notificación vía FCM.', details: result.error });
+        }
+    } catch (error) {
+        console.error("Error crítico en /api/notify-new-content:", error);
+        res.status(500).json({ success: false, error: "Error interno del servidor al procesar la notificación." });
+    }
 });
 
 // --- Rutas App Update, App Status, Assetlinks ---
@@ -1138,7 +1232,7 @@ app.get('/.well-known/assetlinks.json', (req, res) => {
 });
 
 // =======================================================================
-// === RUTAS VIVIBOX (Se mantienen intactas) ===
+// === RUTAS VIVIBOX ===
 // =======================================================================
 
 function generateShortId(length) {
@@ -1151,7 +1245,7 @@ app.post('/api/vivibox/add-link', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
 
     const { m3u8Url } = req.body;
-    if (!m3u8Url || !m3u8Url.startsWith('http')) {
+    if (!m3u8Url || !m3u8Url.startsWith('http') || !m3u8Url.endsWith('.m3u8')) {
         return res.status(400).json({ error: "Se requiere un 'm3u8Url' válido." });
     }
 
@@ -1165,7 +1259,7 @@ app.post('/api/vivibox/add-link', async (req, res) => {
             createdAt: new Date()
         });
 
-        // console.log(`[Vivibox] Enlace guardado con ID: ${shortId}`);
+        console.log(`[Vivibox] Enlace guardado con ID: ${shortId}`);
         res.status(201).json({ message: 'Enlace guardado', id: shortId });
 
     } catch (error) {
