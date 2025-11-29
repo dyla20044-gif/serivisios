@@ -12,28 +12,31 @@ const initializeBot = require('./bot.js');
 // Herramienta para generar IDs aleatorios
 const crypto = require('crypto');
 
-// +++ LIBRERÍA PARA TAREAS AUTOMÁTICAS (DESACTIVADA POR OPTIMIZACIÓN) +++
+// +++ LIBRERÍA PARA TAREAS AUTOMÁTICAS +++
+// (Se mantiene la importación, pero desactivaremos la tarea pesada abajo)
 const cron = require('node-cron');
 
 // +++ INICIO DE CONFIGURACIÓN DE CACHÉ +++
 const NodeCache = require('node-cache');
 
-// 1. Caché para enlaces en RAM (1 hora TTL)
+// 1. Caché para enlaces en RAM (1 hora TTL - 3600 segundos)
 const embedCache = new NodeCache({ stdTTL: 3600, checkperiod: 120 });
 
-// 2. Caché para contadores y datos de usuario (5 minutos TTL)
+// 2. Caché para contadores y datos de usuario (5 minutos TTL - 300 segundos)
 const countsCache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
 
-// 3. Caché para Proxy TMDB (6 horas TTL)
+// 3. Caché para Proxy TMDB (6 horas TTL - 21600 segundos)
 const tmdbCache = new NodeCache({ stdTTL: 21600, checkperiod: 600 });
 
-// 4. Caché para "Recién Agregadas" (1 hora TTL)
-const recentCache = new NodeCache({ stdTTL: 3600, checkperiod: 120 });
+// 4. Caché para "Recién Agregadas" (MODIFICADO: 12 HORAS TTL)
+// Se mantiene 12 horas (43200 segundos). Se borra automáticamente si subes algo nuevo.
+const recentCache = new NodeCache({ stdTTL: 43200, checkperiod: 120 });
 const RECENT_CACHE_KEY = 'recent_content_main'; 
 
-// 5. Caché para HISTORIAL DE USUARIO (10 minutos TTL)
+// 5. Caché para HISTORIAL DE USUARIO (10 minutos TTL - 600 segundos)
 const historyCache = new NodeCache({ stdTTL: 600, checkperiod: 120 });
-// +++ FIN DE CONFIGURACIÓN DE CACHÉ +++
+
+// +++ FIN DE CAMBIOS PARA CACHÉ +++
 
 const app = express();
 dotenv.config();
@@ -144,29 +147,28 @@ function countsCacheMiddleware(req, res, next) {
 }
 
 // =======================================================================
-// === (OPTIMIZACIÓN) EXTRACTOR DESACTIVADO ===
+// === (LÓGICA CENTRAL) EXTRACTOR Y AUTOMATIZACIÓN (OPTIMIZADO) ===
 // =======================================================================
 
-// Se mantiene la función pero ya NO llama a Python ni a APIs externas.
-// Simplemente valida que sea una URL y la devuelve.
+// MODIFICACIÓN VITAL: Desactivamos la llamada externa para evitar timeouts en Render.
+// Ahora confiamos en que el Admin (tú) envía el enlace directo (M3U8/MP4).
 async function llamarAlExtractor(targetUrl) {
     if (!targetUrl || !targetUrl.startsWith('http')) {
-        throw new Error("URL inválida.");
+        throw new Error("URL objetivo inválida.");
     }
-    // En el modo "Link Único Manual", confiamos en que el admin envía el link directo.
-    // Simplemente lo devolvemos tal cual.
+    
+    // Pasamos el enlace directamente sin procesar en Python.
+    // Esto hace que el servidor responda AL INSTANTE.
     return targetUrl;
 }
 
-// --- TAREAS AUTOMÁTICAS (CRON) DESACTIVADAS ---
-/* Se comenta el Cron para ahorrar CPU. 
-   Ya no buscamos actualizaciones automáticas de enlaces.
+// --- FUNCIONES DE ACTUALIZACIÓN (CRON) ---
+// Comentamos el CRON para ahorrar CPU ya que ahora usamos enlaces directos manuales.
+/*
+cron.schedule('0 * /6 * * *', () => {
+    ejecutarActualizacionMasiva();
+});
 */
-
-// cron.schedule('0 */6 * * *', () => {
-//     ejecutarActualizacionMasiva();
-// });
-
 
 // =======================================================================
 // === (OPTIMIZADO) TMDB PROXY CON CACHÉ DE 6 HORAS ===
@@ -214,37 +216,76 @@ app.get('/api/tmdb-proxy', async (req, res) => {
 });
 
 // =======================================================================
-// === (OPTIMIZADO) RUTA DE RECIÉN AGREGADAS CON CACHÉ ===
+// === (MODIFICADO Y UNIFICADO) RUTA DE RECIÉN AGREGADAS ===
 // =======================================================================
+// Ahora devuelve tanto PELÍCULAS como SERIES, ordenadas por fecha.
 app.get('/api/content/recent', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
 
+    // 1. Revisar Caché (12 Horas de duración si no hay cambios)
     const cachedRecent = recentCache.get(RECENT_CACHE_KEY);
     if (cachedRecent) {
-        // console.log(`[Recent Cache HIT] Sirviendo lista de recientes desde RAM.`);
+        // console.log(`[Recent Cache HIT] Sirviendo lista unificada desde RAM.`);
         return res.status(200).json(cachedRecent);
     }
 
-    // console.log(`[Recent Cache MISS] Consultando MongoDB para recientes...`);
+    console.log(`[Recent Cache MISS] Generando lista unificada (Películas + Series)...`);
 
     try {
-        const movies = await mongoDb.collection('media_catalog')
+        // 2. Buscar las últimas películas (Limitamos a 15 para eficiencia)
+        const moviesPromise = mongoDb.collection('media_catalog')
             .find({})
-            .sort({ addedAt: -1 }) 
-            .limit(15) 
+            .project({ tmdbId: 1, title: 1, poster_path: 1, backdrop_path: 1, addedAt: 1 })
+            .sort({ addedAt: -1 })
+            .limit(15)
             .toArray();
 
-        const results = movies.map(movie => ({
+        // 3. Buscar las últimas series (Limitamos a 15)
+        const seriesPromise = mongoDb.collection('series_catalog')
+            .find({})
+            .project({ tmdbId: 1, name: 1, poster_path: 1, backdrop_path: 1, addedAt: 1 }) // 'name' es el título en series
+            .sort({ addedAt: -1 })
+            .limit(15)
+            .toArray();
+
+        // Ejecutar ambas consultas en paralelo
+        const [movies, series] = await Promise.all([moviesPromise, seriesPromise]);
+
+        // 4. Formatear y Unificar
+        // Mapeamos películas
+        const formattedMovies = movies.map(movie => ({
             id: movie.tmdbId,
             tmdbId: movie.tmdbId,
             title: movie.title,
             poster_path: movie.poster_path,
             backdrop_path: movie.backdrop_path,
-            media_type: 'movie'
+            media_type: 'movie',
+            addedAt: movie.addedAt ? new Date(movie.addedAt) : new Date(0) // Fecha segura
         }));
 
-        recentCache.set(RECENT_CACHE_KEY, results);
-        res.status(200).json(results);
+        // Mapeamos series (cambiando 'name' a 'title' para que la App no se rompa)
+        const formattedSeries = series.map(serie => ({
+            id: serie.tmdbId,
+            tmdbId: serie.tmdbId,
+            title: serie.name, 
+            poster_path: serie.poster_path,
+            backdrop_path: serie.backdrop_path,
+            media_type: 'tv',
+            addedAt: serie.addedAt ? new Date(serie.addedAt) : new Date(0) // Fecha segura
+        }));
+
+        // 5. Combinar y Ordenar por fecha real descendente (lo más nuevo arriba)
+        const combinedResults = [...formattedMovies, ...formattedSeries];
+        combinedResults.sort((a, b) => b.addedAt - a.addedAt);
+
+        // 6. Tomar los 20 más recientes en total
+        const finalResults = combinedResults.slice(0, 20);
+
+        // 7. Guardar en Caché (Dura 12h, a menos que subas algo nuevo)
+        recentCache.set(RECENT_CACHE_KEY, finalResults);
+        
+        res.status(200).json(finalResults);
+
     } catch (error) {
         console.error("Error en /api/content/recent:", error);
         res.status(500).json({ error: "Error interno al obtener contenido reciente." });
@@ -385,6 +426,7 @@ app.get('/api/user/history', verifyIdToken, async (req, res) => {
     // 1. Revisar Caché
     const cachedHistory = historyCache.get(cacheKey);
     if (cachedHistory) {
+        // console.log(`[History Cache HIT] Usuario: ${uid}`); // Opcional
         return res.status(200).json(cachedHistory);
     }
 
@@ -430,12 +472,13 @@ app.post('/api/user/history', verifyIdToken, async (req, res) => {
     const idAsNumber = Number(rawId);
 
     // 2. BUSCAR TODAS LAS VARIANTES POSIBLES
+    // Buscamos: "123", 123, " 123 ", etc.
     const possibleIds = [idAsString];
     if (!isNaN(idAsNumber)) {
         possibleIds.push(idAsNumber);
     }
 
-    // +++ MAGIA DE AUTO-REPARACIÓN DE IMAGEN +++
+    // +++ MAGIA DE AUTO-REPARACIÓN DE IMAGEN (Se mantiene igual) +++
     if (!backdrop_path && mongoDb) {
         try {
             let mediaDoc = null;
@@ -455,6 +498,7 @@ app.post('/api/user/history', verifyIdToken, async (req, res) => {
         const historyRef = db.collection('history');
         
         // QUERY: Busca cualquier coincidencia (texto o número)
+        // Eliminamos el limit(1) para poder ver si hay duplicados y borrarlos
         const q = historyRef.where('userId', '==', uid).where('tmdbId', 'in', possibleIds);
         const existingDocs = await q.get(); 
         const now = admin.firestore.FieldValue.serverTimestamp();
@@ -470,11 +514,13 @@ app.post('/api/user/history', verifyIdToken, async (req, res) => {
         };
 
         if (existingDocs.empty) {
+            // No existe, creamos uno nuevo
             await historyRef.add(safeData);
         } else {
             // YA EXISTE.
+            // Si hay más de 1 documento (duplicados viejos), borramos los extras y dejamos solo uno.
             if (existingDocs.size > 1) {
-                // console.log(`[History] Reparando duplicados para usuario ${uid} item ${idAsString}`);
+                console.log(`[History] Reparando duplicados para usuario ${uid} item ${idAsString}`);
                 const docs = existingDocs.docs;
                 // Actualizamos el primero
                 await historyRef.doc(docs[0].id).update(safeData);
@@ -483,8 +529,9 @@ app.post('/api/user/history', verifyIdToken, async (req, res) => {
                     await historyRef.doc(docs[i].id).delete();
                 }
             } else {
+                // Solo hay uno, actualizamos normal
                 const docId = existingDocs.docs[0].id;
-                await historyRef.doc(docId).update(safeData); 
+                await historyRef.doc(docId).update(safeData); // Actualizará tmdbId a string limpio si era número
             }
         }
 
@@ -639,17 +686,28 @@ app.post('/api/user/likes', verifyIdToken, async (req, res) => {
 // === RUTAS DE RECOMPENSAS (REDEEM) ===
 // =======================================================================
 app.post('/api/rewards/redeem/premium', verifyIdToken, async (req, res) => {
+    console.log("=============================================");
+    console.log("INICIO DEPURACIÓN: /api/rewards/redeem/premium");
     const { uid } = req;
     const { daysToAdd } = req.body; 
+    console.log(`Datos recibidos: UserID=${uid}, DaysToAdd=${daysToAdd}`);
     if (!daysToAdd) { 
+        console.log("Error: Faltan datos en la solicitud (daysToAdd).");
+        console.log("FIN DEPURACIÓN");
+        console.log("=============================================");
         return res.status(400).json({ success: false, error: 'daysToAdd es requerido.' }); 
     }
     const days = parseInt(daysToAdd, 10); 
     if (isNaN(days) || days <= 0) { 
+        console.log(`Error: 'daysToAdd' no es un número válido (${daysToAdd}).`);
+        console.log("FIN DEPURACIÓN");
+        console.log("=============================================");
         return res.status(400).json({ success: false, error: 'daysToAdd debe ser un número positivo.' }); 
     }
     try {
+        console.log(`Referencia de documento: db.collection('users').doc('${uid}')`);
         const userDocRef = db.collection('users').doc(uid); 
+        console.log("Intentando leer documento (get)...");
         const newExpiryDate = await db.runTransaction(async (transaction) => {
             const docSnap = await transaction.get(userDocRef);
             let currentExpiry; 
@@ -669,10 +727,15 @@ app.post('/api/rewards/redeem/premium', verifyIdToken, async (req, res) => {
                 return new Date(now.getTime() + days * 24 * 60 * 60 * 1000); 
             }
         });
+        console.log(`Nueva fecha de expiración calculada: ${newExpiryDate.toISOString()}`);
         await userDocRef.set({ isPro: true, premiumExpiry: newExpiryDate }, { merge: true });
         countsCache.del(`${uid}:/api/user/me`);
+        console.log("✅ ESCRITURA EXITOSA en Firestore.");
+        console.log("FIN DEPURACIÓN");
+        console.log("=============================================");
         res.status(200).json({ success: true, message: `Premium activado por ${days} días.`, expiryDate: newExpiryDate.toISOString() });
     } catch (error) { 
+        console.error(`❌ ERROR FATAL en /api/rewards/redeem/premium:`, error);
         console.error(`❌ Error al activar Premium:`, error); 
         res.status(500).json({ success: false, error: 'Error interno del servidor al actualizar el estado Premium.' }); 
     }
@@ -722,9 +785,12 @@ if (process.env.NODE_ENV === 'production' && token) {
 // +++ RUTA DEEP LINK +++
 app.get('/app/details/:tmdbId', (req, res) => {
     const tmdbId = req.params.tmdbId;
+    // La URL de esquema profundo de la app nativa (debe estar configurada en AndroidManifest.xml)
     const APP_SCHEME_URL = `salacine://details?id=${tmdbId}`;
+    // URL de la Play Store para la descarga (Fallback)
     const PLAY_STORE_URL = `https://play.google.com/store/apps/details?id=com.salacine.app`;
 
+    // Servimos un HTML que intenta abrir la app primero
     const htmlResponse = `
         <!DOCTYPE html>
         <html>
@@ -733,6 +799,7 @@ app.get('/app/details/:tmdbId', (req, res) => {
                 <title>Abriendo Sala Cine...</title>
                 <script>
                     window.onload = function() {
+                        // Espera medio segundo (500ms). Si la app no abre, redirige a la tienda.
                         setTimeout(function() {
                             window.location.replace('${PLAY_STORE_URL}');
                         }, 500); 
@@ -772,17 +839,25 @@ app.post('/request-movie', async (req, res) => {
     }
 });
 
-// +++ RUTA DE ESTADO DE STREAMING +++
+// +++ RUTA DE ESTADO DE STREAMING CON SOPORTE PARA CONTROL DE VERSIONES +++
 app.get('/api/streaming-status', (req, res) => {
+    // Obtenemos el build_id que envía la app
     const clientBuildId = parseInt(req.query.build_id) || 0;
+    // Soporte para 'version' por si acaso quedó alguna versión legacy
     const clientVersion = parseInt(req.query.version) || 0;
+
     const receivedId = clientBuildId || clientVersion;
 
-    // console.log(`[Status Check] ID Recibido: ${receivedId} | ID en Revisión: ${BUILD_ID_UNDER_REVIEW}`);
+    console.log(`[Status Check] ID Recibido: ${receivedId} | ID en Revisión: ${BUILD_ID_UNDER_REVIEW}`);
 
+    // Si el ID recibido coincide con la versión que está revisando Google...
     if (receivedId === BUILD_ID_UNDER_REVIEW) {
+        console.log("⚠️ [Review Mode] Detectada versión en revisión. Ocultando streaming.");
         return res.status(200).json({ isStreamingActive: false }); // MODO SEGURO
     }
+
+    // Para todos los demás (usuarios antiguos o futuras versiones aprobadas)
+    console.log(`[Status Check] Usuario normal. Devolviendo estado global: ${GLOBAL_STREAMING_ACTIVE}`);
     res.status(200).json({ isStreamingActive: GLOBAL_STREAMING_ACTIVE });
 });
 
@@ -799,11 +874,13 @@ app.get('/api/get-movie-data', async (req, res) => {
     try {
         const cachedData = countsCache.get(cacheKey);
         if (cachedData) {
+            console.log(`[Cache HIT] Sirviendo contadores desde caché para: ${cacheKey}`);
             return res.status(200).json(cachedData);
         }
     } catch (err) {
         console.error("Error al leer del caché de contadores:", err);
     }
+    console.log(`[Cache MISS] Buscando contadores en MongoDB para: ${cacheKey}`);
     try {
         const movieCollection = mongoDb.collection('media_catalog');
         const seriesCollection = mongoDb.collection('series_catalog');
@@ -848,16 +925,19 @@ app.get('/api/get-embed-code', async (req, res) => {
 
     const cacheKey = `embed-${id}-${season || 'movie'}-${episode || '1'}-${isPro === 'true' ? 'pro' : 'free'}`;
     
-    // 1. Revisar caché RAM
+    // 1. Revisar caché RAM (sin cambios)
     try {
         const cachedData = embedCache.get(cacheKey);
         if (cachedData) {
+            console.log(`[Cache HIT] Sirviendo embed (M3U8) desde caché para: ${cacheKey}`);
             return res.json({ embedCode: cachedData });
         }
     } catch (err) {
         console.error("Error al leer del caché de embeds:", err);
     }
     
+    console.log(`[Cache MISS] Buscando embed en MongoDB para: ${cacheKey}`);
+
     try {
         // 2. Buscar el documento en Mongo
         const mediaType = season && episode ? 'series' : 'movies';
@@ -866,24 +946,29 @@ app.get('/api/get-embed-code', async (req, res) => {
 
         if (!doc) return res.status(404).json({ error: `${mediaType} no encontrada.` });
 
-        // En el modo Link Único, ambos campos suelen tener el mismo valor.
-        // Pero mantenemos la lógica por si acaso difieren.
+        // --- LÓGICA DE OBTENCIÓN (SIMPLIFICADA PARA ENLACES DIRECTOS) ---
         let enlaceFinal = null;
 
         if (mediaType === 'movies') {
+            // Películas: Si es Pro, usamos proEmbedCode, si no, freeEmbedCode.
+            // (En tu nueva lógica de Single Link, ambos campos suelen tener el mismo valor)
             enlaceFinal = (isPro === 'true') ? doc.proEmbedCode : doc.freeEmbedCode;
         } else {
+            // Series
             const epData = doc.seasons?.[season]?.episodes?.[episode];
             if (epData) {
                 enlaceFinal = (isPro === 'true') ? epData.proEmbedCode : epData.freeEmbedCode;
             }
         }
 
+        // Si encontramos el enlace, lo guardamos en caché y lo devolvemos
         if (enlaceFinal) {
             embedCache.set(cacheKey, enlaceFinal);
             return res.json({ embedCode: enlaceFinal });
         }
 
+        // Si llegamos aquí, no hay enlace
+        console.log(`[Embed Code] No se encontró código para ${id} (isPro: ${isPro})`);
         return res.status(404).json({ error: `No se encontró código de reproductor.` });
 
     } catch (error) {
@@ -915,11 +1000,13 @@ app.get('/api/get-metrics', async (req, res) => {
     try {
         const cachedData = countsCache.get(cacheKey);
         if (cachedData) {
+            console.log(`[Cache HIT] Sirviendo métrica desde caché para: ${cacheKey}`);
             return res.status(200).json(cachedData);
         }
     } catch (err) {
         console.error("Error al leer del caché de métricas:", err);
     }
+    console.log(`[Cache MISS] Buscando métrica en MongoDB para: ${cacheKey}`);
     try {
         let doc = await mongoDb.collection('media_catalog').findOne({ tmdbId: id.toString() }, { projection: { [field]: 1 } });
         if (!doc) doc = await mongoDb.collection('series_catalog').findOne({ tmdbId: id.toString() }, { projection: { [field]: 1 } });
@@ -959,38 +1046,47 @@ app.post('/api/increment-likes', async (req, res) => {
     } catch (error) { console.error("Error increment-likes:", error); res.status(500).json({ error: "Error interno." }); }
 });
 
-// +++ RUTA DE SUBIDA OPTIMIZADA (SIN EXTRACTOR) +++
+// +++ RUTA DE SUBIDA OPTIMIZADA (CON INVALIDACIÓN DE CACHÉ DE RECIENTES) +++
 app.post('/add-movie', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "BD no disponible." });
     try {
         const { tmdbId, title, poster_path, freeEmbedCode, proEmbedCode, isPremium, overview } = req.body;
         if (!tmdbId) return res.status(400).json({ error: 'tmdbId requerido.' });
         
+        // --- Limpiar ID antes de guardar ---
         const cleanTmdbId = String(tmdbId).trim();
 
         const updateQuery = { $set: { title, poster_path, overview, freeEmbedCode, proEmbedCode, isPremium }, $setOnInsert: { tmdbId: cleanTmdbId, views: 0, likes: 0, addedAt: new Date() } };
         
+        // Usamos el ID limpio para guardar en MongoDB
         await mongoDb.collection('media_catalog').updateOne({ tmdbId: cleanTmdbId }, updateQuery, { upsert: true });
         
-        // Invalidaciones
+        // Invalidaciones de caché específicas
         embedCache.del(`embed-${cleanTmdbId}-movie-1-pro`);
         embedCache.del(`embed-${cleanTmdbId}-movie-1-free`);
         countsCache.del(`counts-data-${cleanTmdbId}`);
+        
+        // === (CRÍTICO) INVALIDACIÓN DE CACHÉ DE RECIENTES ===
+        // Esto hace que la nueva película aparezca inmediatamente arriba.
         recentCache.del(RECENT_CACHE_KEY);
+        console.log(`[Cache] Lista de recientes invalidada por subida de película: ${title}`);
 
-        res.status(200).json({ message: 'Película agregada correctamente.' });
-        // Se eliminó setImmediate para no llamar al extractor
+        // --- RESPUESTA RÁPIDA AL BOT ---
+        res.status(200).json({ message: 'Película agregada/actualizada. (Extractor Desactivado)' });
+        
+        // (Ya no ejecutamos setImmediate para llamar al extractor, optimización aplicada)
 
     } catch (error) { console.error("Error add-movie:", error); res.status(500).json({ error: 'Error interno.' }); }
 });
 
-// +++ RUTA DE SUBIDA SERIES OPTIMIZADA (SIN EXTRACTOR) +++
+// +++ RUTA DE SUBIDA SERIES OPTIMIZADA (CON INVALIDACIÓN DE CACHÉ DE RECIENTES) +++
 app.post('/add-series-episode', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "BD no disponible." });
     try {
         const { tmdbId, title, poster_path, overview, seasonNumber, episodeNumber, freeEmbedCode, proEmbedCode, isPremium } = req.body;
         if (!tmdbId || !seasonNumber || !episodeNumber) return res.status(400).json({ error: 'tmdbId, seasonNumber y episodeNumber requeridos.' });
         
+        // --- Limpiar ID antes de guardar ---
         const cleanTmdbId = String(tmdbId).trim();
 
         const episodePath = `seasons.${seasonNumber}.episodes.${episodeNumber}`;
@@ -1004,131 +1100,25 @@ app.post('/add-series-episode', async (req, res) => {
             },
             $setOnInsert: { tmdbId: cleanTmdbId, views: 0, likes: 0, addedAt: new Date() }
         };
+        // Usamos el ID limpio para guardar en MongoDB
         await mongoDb.collection('series_catalog').updateOne({ tmdbId: cleanTmdbId }, updateData, { upsert: true });
         
         // Invalidaciones
         embedCache.del(`embed-${cleanTmdbId}-${seasonNumber}-${episodeNumber}-pro`);
         embedCache.del(`embed-${cleanTmdbId}-${seasonNumber}-${episodeNumber}-free`);
         countsCache.del(`counts-data-${cleanTmdbId}`);
-        recentCache.del(RECENT_CACHE_KEY);
 
-        res.status(200).json({ message: `Episodio S${seasonNumber}E${episodeNumber} agregado.` });
-        // Se eliminó setImmediate para no llamar al extractor
+        // === (CRÍTICO) INVALIDACIÓN DE CACHÉ DE RECIENTES ===
+        // Esto hace que la serie actualizada suba al primer lugar inmediatamente.
+        recentCache.del(RECENT_CACHE_KEY);
+        console.log(`[Cache] Lista de recientes invalidada por subida de episodio: S${seasonNumber}E${episodeNumber}`);
+
+        // --- RESPUESTA RÁPIDA AL BOT ---
+        res.status(200).json({ message: `Episodio S${seasonNumber}E${episodeNumber} agregado. (Extractor Desactivado)` });
+
+        // (Ya no ejecutamos setImmediate para llamar al extractor, optimización aplicada)
 
     } catch (error) { console.error("Error add-series-episode:", error); res.status(500).json({ error: 'Error interno.' }); }
-});
-
-// --- Rutas PayPal (sin cambios) ---
-app.post('/create-paypal-payment', (req, res) => {
-    const plan = req.body.plan; const amount = (plan === 'annual') ? '19.99' : '1.99'; const userId = req.body.userId; if (!userId) return res.status(400).json({ error: "userId es requerido." });
-    const create_payment_json = { 
-        "intent": "sale", "payer": { "payment_method": "paypal" },
-        "redirect_urls": { "return_url": `${RENDER_BACKEND_URL}/paypal/success?userId=${userId}&plan=${plan}`, "cancel_url": `${RENDER_BACKEND_URL}/paypal/cancel?userId=${userId}&plan=${plan}` },
-        "transactions": [{"item_list": { "items": [{ "name": `Plan Premium ${plan}`, "sku": `PLAN-${plan.toUpperCase()}`, "price": amount, "currency": "USD", "quantity": "1" }] }, "amount": { "currency": "USD", "total": amount }, "description": `Suscripción Premium ${plan} Sala Cine` }]
-    };
-    paypal.payment.create(create_payment_json, (error, payment) => {
-        if (error) {
-            console.error("Error al crear el pago de PayPal:", error);
-            res.status(500).json({ error: 'Error al crear el pago de PayPal.', details: error.response });
-        } else {
-            for (let i = 0; i < payment.links.length; i++) {
-                if (payment.links[i].rel === 'approval_url') {
-                    res.json({ approval_url: payment.links[i].href });
-                    return;
-                }
-            }
-            res.status(500).json({ error: 'No se encontró URL de aprobación en la respuesta de PayPal.' });
-        }
-    });
-});
-
-app.get('/paypal/success', async (req, res) => {
-    const payerId = req.query.PayerID; const paymentId = req.query.paymentId; const userId = req.query.userId; const plan = req.query.plan;
-    const amount = (plan === 'annual') ? '19.99' : '1.99';
-    if (!payerId || !paymentId || !userId || !plan) {
-        return res.status(400).send('Faltan parámetros requeridos.');
-    }
-    const execute_payment_json = { "payer_id": payerId, "transactions": [{"amount": { "currency": "USD", "total": amount }}] };
-    try {
-        const payment = await new Promise((resolve, reject) => {
-            paypal.payment.execute(paymentId, execute_payment_json, (error, payment) => {
-                if (error) return reject(error);
-                resolve(payment);
-            });
-        });
-        const daysToAdd = (plan === 'annual') ? 365 : 30;
-        const now = new Date();
-        const userDocRef = db.collection('users').doc(userId);
-        const docSnap = await userDocRef.get();
-        let newExpiryDate;
-        if (docSnap.exists && docSnap.data().premiumExpiry) {
-            let currentExpiry = docSnap.data().premiumExpiry.toDate();
-            if (currentExpiry > now) {
-                newExpiryDate = new Date(currentExpiry.getTime() + daysToAdd * 24 * 60 * 60 * 1000);
-            } else {
-                newExpiryDate = new Date(now.getTime() + daysToAdd * 24 * 60 * 60 * 1000);
-            }
-        } else {
-            newExpiryDate = new Date(now.getTime() + daysToAdd * 24 * 60 * 60 * 1000);
-        }
-        await userDocRef.set({ 
-            isPro: true, premiumExpiry: newExpiryDate, lastPayment: paymentId, paymentMethod: 'PayPal'
-        }, { merge: true });
-        countsCache.del(`${userId}:/api/user/me`);
-        bot.sendMessage(ADMIN_CHAT_ID, `💰 *PAGO RECIBIDO (PayPal):* $${amount} USD\n*Usuario:* \`${userId}\`\n*Plan:* ${plan.toUpperCase()}`, { parse_mode: 'Markdown' });
-        res.send('<html><body><h1>✅ Pago Exitoso</h1><p>Tu cuenta Premium ha sido activada/extendida. Puedes cerrar esta ventana.</p></body></html>');
-    } catch (error) {
-        console.error("Error al ejecutar o guardar el pago de PayPal:", error);
-        res.status(500).send('<html><body><h1>❌ Error</h1><p>Hubo un error al procesar tu pago. Contacta a soporte con el ID de Pago si lo tienes.</p></body></html>');
-    }
-});
-
-app.get('/paypal/cancel', (req, res) => {
-    res.send('<html><body><h1>❌ Pago Cancelado</h1><p>Has cancelado el pago. Vuelve a la aplicación para intentarlo de nuevo.</p></body></html>');
-});
-
-app.post('/create-binance-payment', (req, res) => {
-    res.json({ message: 'Pago con Binance simulado.' });
-});
-
-// === LÓGICA DE NOTIFICACIONES PUSH ===
-async function sendNotificationToTopic(title, body, imageUrl, tmdbId, mediaType) {
-    const topic = 'new_content';
-    const dataPayload = {
-        title: title, body: body, tmdbId: tmdbId.toString(), mediaType: mediaType,
-        ...(imageUrl && { imageUrl: imageUrl })
-    };
-    const message = {
-        topic: topic, data: dataPayload,
-        android: { priority: 'high' }
-    };
-    try {
-        // console.log(`🚀 Intentando enviar notificación al topic '${topic}'...`);
-        const response = await messaging.send(message);
-        // console.log('✅ Notificación FCM enviada exitosamente al topic:', response);
-        return { success: true, message: `Notificación enviada al topic '${topic}'.`, response: response };
-    } catch (error) {
-        console.error(`❌ Error al enviar notificación FCM al topic '${topic}':`, error);
-        return { success: false, error: error.message };
-    }
-}
-
-app.post('/api/notify-new-content', async (req, res) => {
-    const { title, body, imageUrl, tmdbId, mediaType } = req.body;
-    if (!title || !body || !tmdbId || !mediaType) {
-        return res.status(400).json({ success: false, error: "Faltan datos requeridos (title, body, tmdbId, mediaType)." });
-    }
-    try {
-        const result = await sendNotificationToTopic(title, body, imageUrl, tmdbId, mediaType);
-        if (result.success) {
-            res.status(200).json({ success: true, message: result.message, details: result.response });
-        } else {
-            res.status(500).json({ success: false, error: 'Error enviando notificación vía FCM.', details: result.error });
-        }
-    } catch (error) {
-        console.error("Error crítico en /api/notify-new-content:", error);
-        res.status(500).json({ success: false, error: "Error interno del servidor al procesar la notificación." });
-    }
 });
 
 // --- Rutas App Update, App Status, Assetlinks ---
@@ -1215,12 +1205,20 @@ app.get('/api/obtener-enlace', async (req, res) => {
     }
 });
 
-// Ruta para probar el extractor manualmente (Simplificada)
+// Ruta para probar el extractor manualmente
 app.get('/api/extract-link', async (req, res) => {
     const targetUrl = req.query.url;
-    res.json({ success: true, message: "Extractor desactivado. URL recibida:", url: targetUrl });
+    if (!targetUrl) return res.status(400).json({ success: false, error: "Se requiere parámetro 'url'." });
+    
+    console.log(`[Extractor] Solicitud manual recibida para: ${targetUrl}`);
+    try {
+        const extracted_link = await llamarAlExtractor(targetUrl);
+        res.status(200).json({ success: true, requested_url: targetUrl, extracted_link: extracted_link });
+    } catch (error) {
+        console.error(`[Extractor] Falla en ruta /api/extract-link: ${error.message}`);
+        res.status(500).json({ success: false, error: "Fallo extractor.", details: error.message });
+    }
 });
-
 async function startServer() {
     await connectToMongo();
 
