@@ -251,7 +251,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
             }
             finally { adminState[chatId] = { step: 'menu' }; }
         }
-        // --- Lógica de Añadir Links (PRO y GRATIS) (SIN CAMBIOS) ---
+        // --- Lógica de Añadir Links (PRO y GRATIS) ---
         else if (adminState[chatId] && adminState[chatId].step === 'awaiting_pro_link_movie') {
             // ... (Tu código original sin cambios)
             const { selectedMedia } = adminState[chatId];
@@ -260,7 +260,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
             bot.sendMessage(chatId, `PRO recibido (${adminState[chatId].proEmbedCode ? 'Embed completo' : 'Ninguno'}). Ahora envía el GRATIS para "${selectedMedia.title}". Escribe "no" si no hay.`);
 
         } else if (adminState[chatId] && adminState[chatId].step === 'awaiting_free_link_movie') {
-            // ... (Tu código original sin cambios)
+            // ... (AQUÍ ESTÁ EL CAMBIO PARA AGREGAR EL BOTÓN NUEVO DE PELÍCULAS)
             const { selectedMedia, proEmbedCode } = adminState[chatId];
             if (!selectedMedia?.id) { bot.sendMessage(chatId, 'Error: Se perdieron los datos de la película.'); adminState[chatId] = { step: 'menu' }; return; }
             const freeEmbedCode = userText.toLowerCase() === 'no' ? null : userText;
@@ -275,7 +275,9 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                     inline_keyboard: [
                         [{ text: '💾 Guardar solo en App', callback_data: 'save_only_' + selectedMedia.id }],
                         [{ text: '📲 Guardar en App + PUSH', callback_data: 'save_publish_and_push_' + selectedMedia.id }],
-                        [{ text: '🚀 Publicar en Canal + PUSH', callback_data: 'save_publish_push_channel_' + selectedMedia.id }] // AÑADIDO
+                        [{ text: '🚀 Publicar en Canal + PUSH', callback_data: 'save_publish_push_channel_' + selectedMedia.id }],
+                        // +++ NUEVO BOTÓN AGREGADO (PELÍCULAS) +++
+                        [{ text: '📢 Solo Canal (Sin Push)', callback_data: 'save_publish_channel_no_push_' + selectedMedia.id }] 
                     ]
                 }
             };
@@ -290,7 +292,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
             bot.sendMessage(chatId, `PRO recibido (${adminState[chatId].proEmbedCode ? 'Embed completo' : 'Ninguno'}). Envía el GRATIS para S${season}E${episode}. Escribe "no" si no hay.`);
 
         } else if (adminState[chatId] && adminState[chatId].step === 'awaiting_free_link_series') {
-            // ... (Tu código original sin cambios)
+            // ... (AQUÍ ESTÁ EL CAMBIO PARA AGREGAR EL BOTÓN NUEVO DE SERIES)
             const { selectedSeries, season, episode, proEmbedCode } = adminState[chatId];
              if (!selectedSeries) { bot.sendMessage(chatId, 'Error: Se perdieron los datos de la serie.'); adminState[chatId] = { step: 'menu' }; return; }
             const freeEmbedCode = userText.toLowerCase() === 'no' ? null : userText;
@@ -311,7 +313,9 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                         inline_keyboard: [
                             [{ text: `➡️ Agregar S${season}E${nextEpisodeNumber}`, callback_data: `add_next_episode_${seriesDataToSave.tmdbId}_${season}` }],
                             [{ text: `📲 Publicar S${season}E${episode} + PUSH`, callback_data: `publish_push_this_episode_${seriesDataToSave.tmdbId}_${season}_${episode}` }],
-                            [{ text: `📢 Publicar S${season}E${episode} + Canal + PUSH`, callback_data: `publish_push_channel_this_episode_${seriesDataToSave.tmdbId}_${season}_${episode}` }], // AÑADIDO
+                            [{ text: `📢 Publicar S${season}E${episode} + Canal + PUSH`, callback_data: `publish_push_channel_this_episode_${seriesDataToSave.tmdbId}_${season}_${episode}` }],
+                            // +++ NUEVO BOTÓN AGREGADO (SERIES) +++
+                            [{ text: `🤫 Solo Canal S${season}E${episode} (Sin Push)`, callback_data: `publish_channel_no_push_this_episode_${seriesDataToSave.tmdbId}_${season}_${episode}` }],
                             [{ text: '⏹️ Finalizar', callback_data: `finish_series_${seriesDataToSave.tmdbId}` }]
                         ]
                     }
@@ -324,14 +328,11 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
             }
         }
         
-        // --- Lógica de VIVIBOX (MODIFICADA AQUI PARA ACEPTAR MP4 Y TOKENS) ---
+        // --- Lógica de VIVIBOX (SIN CAMBIOS) ---
         else if (adminState[chatId] && adminState[chatId].step === 'awaiting_vivibox_m3u8') {
             const m3u8Link = userText.trim();
-            // Convertimos a minúsculas para la verificación (para aceptar .MP4, .M3U8, etc.)
             const lowerLink = m3u8Link.toLowerCase();
             
-            // NUEVA VERIFICACIÓN: Debe empezar con http Y (contener .m3u8 O contener .mp4)
-            // Ya no verificamos que termine con endsWith, permitiendo tokens al final.
             if (!m3u8Link.startsWith('http') || (!lowerLink.includes('.m3u8') && !lowerLink.includes('.mp4'))) {
                 bot.sendMessage(chatId, '❌ Enlace inválido. Debe ser una URL completa que contenga .m3u8 o .mp4. Intenta de nuevo.');
                 return; 
@@ -649,11 +650,11 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                     adminState[chatId] = { step: 'menu' };
                 }
             }
-            // +++ NUEVO CALLBACK: GUARDAR + PUSH + CANAL (PELÍCULAS) +++
+            // +++ CALLBACK: GUARDAR + PUSH + CANAL (PELÍCULAS) - (EXISTENTE) +++
             else if (data.startsWith('save_publish_push_channel_')) {
-                const tmdbIdFromCallback = data.split('_').pop(); // CORREGIDO: Toma el ID del final del string
+                const tmdbIdFromCallback = data.split('_').pop(); 
                 const { movieDataToSave } = adminState[chatId];
-                if (!movieDataToSave?.tmdbId || movieDataToSave.tmdbId !== tmdbIdFromCallback) { // Verifica que el ID coincida con el estado
+                if (!movieDataToSave?.tmdbId || movieDataToSave.tmdbId !== tmdbIdFromCallback) { 
                     bot.sendMessage(chatId, 'Error: Datos perdidos. Intenta de nuevo desde la búsqueda.'); 
                     adminState[chatId] = { step: 'menu' }; 
                     return; 
@@ -675,7 +676,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
 
                     // LÓGICA DE MENSAJE A CANAL CON DEEP LINK
                     const DEEPLINK_URL = `${RENDER_BACKEND_URL}/app/details/${movieDataToSave.tmdbId}`;
-                    const CHANNEL_ID = process.env.TELEGRAM_CHANNEL_A_ID; // USANDO A_ID (PÚBLICO)
+                    const CHANNEL_ID = process.env.TELEGRAM_CHANNEL_A_ID; 
                     
                     if (CHANNEL_ID) {
                         const messageToChannel = `🎬 *¡NUEVO ESTRENO EN SALA CINE!* 🎬\n\n` +
@@ -702,7 +703,56 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                     adminState[chatId] = { step: 'menu' };
                 }
             }
-            // --- FIN NUEVO CALLBACK: GUARDAR + PUSH + CANAL (PELÍCULAS) ---
+
+            // +++ NUEVA LÓGICA: GUARDAR + CANAL (SIN PUSH) PARA PELÍCULAS +++
+            else if (data.startsWith('save_publish_channel_no_push_')) {
+                const tmdbIdFromCallback = data.split('_').pop();
+                const { movieDataToSave } = adminState[chatId];
+                
+                // Verificación de seguridad
+                if (!movieDataToSave?.tmdbId || movieDataToSave.tmdbId !== tmdbIdFromCallback) { 
+                    bot.sendMessage(chatId, 'Error: Datos perdidos. Intenta de nuevo.'); 
+                    adminState[chatId] = { step: 'menu' }; 
+                    return; 
+                }
+                
+                try {
+                    // 1. GUARDAR EN LA BASE DE DATOS (Servidor)
+                    await axios.post(`${RENDER_BACKEND_URL}/add-movie`, movieDataToSave);
+                    
+                    bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id });
+                    bot.sendMessage(chatId, `✅ "${movieDataToSave.title}" guardada. Publicando en CANAL (Silencioso)...`);
+
+                    // 2. (AQUÍ QUITAMOS EL ENVÍO DE NOTIFICACIÓN PUSH)
+
+                    // 3. PUBLICAR EN TELEGRAM (Esto se mantiene igual)
+                    const DEEPLINK_URL = `${RENDER_BACKEND_URL}/app/details/${movieDataToSave.tmdbId}`;
+                    const CHANNEL_ID = process.env.TELEGRAM_CHANNEL_A_ID; 
+                    
+                    if (CHANNEL_ID) {
+                        const messageToChannel = `🎬 *¡NUEVO ESTRENO EN SALA CINE!* 🎬\n\n` +
+                                                `**${movieDataToSave.title}** ya está disponible en la app.\n\n` +
+                                                `_Entra para verla ahora:_`;
+
+                        await bot.sendPhoto(CHANNEL_ID, movieDataToSave.poster_path ? `https://image.tmdb.org/t/p/w500${movieDataToSave.poster_path}` : 'https://placehold.co/500x750?text=SALA+CINE', {
+                            caption: messageToChannel,
+                            parse_mode: 'Markdown',
+                            reply_markup: {
+                                inline_keyboard: [
+                                    [{ text: '▶️ Ver Ahora en la App', url: DEEPLINK_URL }]
+                                ]
+                            }
+                        });
+                        bot.sendMessage(chatId, `📢 Mensaje enviado al canal público (Sin molestar a usuarios).`);
+                    }
+                    
+                } catch (error) {
+                    console.error("Error en save_publish_channel_no_push_:", error.response ? error.response.data : error.message);
+                    bot.sendMessage(chatId, '❌ Error al guardar o publicar.');
+                } finally {
+                    adminState[chatId] = { step: 'menu' };
+                }
+            }
             
             else if (data.startsWith('add_next_episode_')) {
                 // ... (Tu código original sin cambios)
@@ -759,12 +809,12 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                     adminState[chatId] = { step: 'menu' };
                 }
             }
-            // +++ NUEVO CALLBACK: GUARDAR + PUSH + CANAL (SERIES) +++
+            // +++ CALLBACK: GUARDAR + PUSH + CANAL (SERIES) - (EXISTENTE) +++
             else if (data.startsWith('publish_push_channel_this_episode_')) {
-                const parts = data.split('_'); // El string tiene 8 partes. ID=parts[5], S=parts[6], E=parts[7]
-                const tmdbId = parts[5]; // CORREGIDO
-                const season = parts[6]; // CORREGIDO
-                const episode = parts[7]; // CORREGIDO
+                const parts = data.split('_'); 
+                const tmdbId = parts[5]; 
+                const season = parts[6]; 
+                const episode = parts[7]; 
 
                 const state = adminState[chatId];
                 const episodeData = state?.lastSavedEpisodeData;
@@ -786,8 +836,8 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                     });
 
                     // LÓGICA DE MENSAJE A CANAL CON DEEP LINK (SERIES)
-                    const DEEPLINK_URL = `${RENDER_BACKEND_URL}/app/details/${episodeData.tmdbId}`; // Usamos el ID de la serie
-                    const CHANNEL_ID = process.env.TELEGRAM_CHANNEL_A_ID; // USANDO A_ID (PÚBLICO)
+                    const DEEPLINK_URL = `${RENDER_BACKEND_URL}/app/details/${episodeData.tmdbId}`; 
+                    const CHANNEL_ID = process.env.TELEGRAM_CHANNEL_A_ID; 
                     
                     if (CHANNEL_ID) {
                         const messageToChannel = `📺 *¡NUEVO EPISODIO EN SALA CINE!* 📺\n\n` +
@@ -815,8 +865,63 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                     adminState[chatId] = { step: 'menu' };
                 }
             }
-            // --- FIN NUEVO CALLBACK: GUARDAR + PUSH + CANAL (SERIES) ---
-            
+
+            // +++ NUEVA LÓGICA: SERIES -> CANAL (SIN PUSH) +++
+            else if (data.startsWith('publish_channel_no_push_this_episode_')) {
+                const parts = data.split('_'); 
+                // NOTA: Ajustamos los índices porque el nombre del comando es más largo o distinto
+                // El string es: publish_channel_no_push_this_episode_ID_S_E
+                // parts[0]=publish, [1]=channel, [2]=no, [3]=push, [4]=this, [5]=episode, [6]=ID, [7]=S, [8]=E
+                const tmdbId = parts[6]; 
+                const season = parts[7]; 
+                const episode = parts[8]; 
+
+                const state = adminState[chatId];
+                const episodeData = state?.lastSavedEpisodeData;
+                
+                if (!episodeData || episodeData.tmdbId !== tmdbId || episodeData.seasonNumber.toString() !== season || episodeData.episodeNumber.toString() !== episode) {
+                    bot.sendMessage(chatId, 'Error: Datos perdidos. Intenta de nuevo.'); 
+                    adminState[chatId] = { step: 'menu' }; 
+                    return;
+                }
+
+                bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id });
+                bot.sendMessage(chatId, `✅ Episodio S${season}E${episode}. Publicando en CANAL (Silencioso)...`);
+
+                try {
+                    // AQUÍ NO HAY QUE GUARDAR (Ya se guardó antes de mostrar los botones en Series)
+                    // Y TAMPOCO enviamos PUSH.
+
+                    // LÓGICA DE MENSAJE A CANAL CON DEEP LINK (SERIES)
+                    const DEEPLINK_URL = `${RENDER_BACKEND_URL}/app/details/${episodeData.tmdbId}`;
+                    const CHANNEL_ID = process.env.TELEGRAM_CHANNEL_A_ID; 
+                    
+                    if (CHANNEL_ID) {
+                        const messageToChannel = `📺 *¡NUEVO EPISODIO EN SALA CINE!* 📺\n\n` +
+                                                `**${episodeData.title}**\n` +
+                                                `Temporada ${episodeData.seasonNumber} - Episodio ${episodeData.episodeNumber} ya disponible.\n\n` +
+                                                `_Entra para verla ahora:_`;
+
+                        await bot.sendPhoto(CHANNEL_ID, episodeData.poster_path ? `https://image.tmdb.org/t/p/w500${episodeData.poster_path}` : 'https://placehold.co/500x750?text=SALA+CINE', {
+                            caption: messageToChannel,
+                            parse_mode: 'Markdown',
+                            reply_markup: {
+                                inline_keyboard: [
+                                    [{ text: '▶️ Ver Ahora en la App', url: DEEPLINK_URL }]
+                                ]
+                            }
+                        });
+                        bot.sendMessage(chatId, `📢 Mensaje enviado al canal público.`);
+                    }
+                    
+                } catch (error) {
+                    console.error("Error en publish_channel_no_push_series:", error.response ? error.response.data : error.message);
+                    bot.sendMessage(chatId, '❌ Error al publicar.');
+                } finally {
+                    adminState[chatId] = { step: 'menu' };
+                }
+            }
+
             else if (data.startsWith('finish_series_')) {
                 // ... (Tu código original sin cambios)
                 bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id }).catch(() => { });
