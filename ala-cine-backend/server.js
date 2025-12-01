@@ -11,20 +11,15 @@ const initializeBot = require('./bot.js');
 const crypto = require('crypto');
 const cron = require('node-cron');
 const NodeCache = require('node-cache');
-
-// Inicialización de Cachés
 const embedCache = new NodeCache({ stdTTL: 86400, checkperiod: 600 });
 const countsCache = new NodeCache({ stdTTL: 900, checkperiod: 120 });
 const tmdbCache = new NodeCache({ stdTTL: 86400, checkperiod: 3600 });
 const recentCache = new NodeCache({ stdTTL: 86400, checkperiod: 600 });
 const RECENT_CACHE_KEY = 'recent_content_main'; 
 const historyCache = new NodeCache({ stdTTL: 900, checkperiod: 120 });
-
 const app = express();
 dotenv.config();
 const PORT = process.env.PORT || 3000;
-
-// Inicialización de Firebase
 try {
     const serviceAccount = JSON.parse(process.env.FIREBASE_ADMIN_SDK);
     admin.initializeApp({
@@ -37,14 +32,12 @@ try {
 const db = admin.firestore();
 const messaging = admin.messaging();
 
-// Configuración PayPal
 paypal.configure({
     'mode': process.env.PAYPAL_MODE || 'sandbox',
     'client_id': process.env.PAYPAL_CLIENT_ID,
     'client_secret': process.env.PAYPAL_CLIENT_SECRET
 });
 
-// Configuración Bot y Variables de Entorno
 const token = process.env.TELEGRAM_BOT_TOKEN;
 const RENDER_BACKEND_URL = process.env.RENDER_EXTERNAL_URL || 'https://serivisios.onrender.com';
 const bot = new TelegramBot(token);
@@ -88,8 +81,6 @@ app.use((req, res, next) => {
     if (req.method === 'OPTIONS') { return res.sendStatus(200); }
     next();
 });
-
-// Middleware de Autenticación Firebase
 async function verifyIdToken(req, res, next) {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -123,15 +114,10 @@ function countsCacheMiddleware(req, res, next) {
     req.cacheKey = cacheKey;
     next();
 }
-
 async function llamarAlExtractor(targetUrl) {
     if (!targetUrl) return null;
     return targetUrl;
 }
-
-// =======================================================================
-// === RUTAS TMDB PROXY ===
-// =======================================================================
 app.get('/api/tmdb-proxy', async (req, res) => {
     const endpoint = req.query.endpoint;
     const query = req.query.query;
@@ -173,10 +159,6 @@ app.get('/api/tmdb-proxy', async (req, res) => {
         res.status(500).json({ error: 'Error al conectar con TMDB' });
     }
 });
-
-// =======================================================================
-// === RUTAS DE CONTENIDO (HOME, RECENT, ETC) ===
-// =======================================================================
 app.get('/api/content/recent', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
     const cachedRecent = recentCache.get(RECENT_CACHE_KEY);
@@ -231,10 +213,6 @@ app.get('/api/content/recent', async (req, res) => {
         res.status(500).json({ error: "Error interno al obtener contenido reciente." });
     }
 });
-
-// =======================================================================
-// === RUTAS DE USUARIO ===
-// =======================================================================
 app.get('/api/user/me', verifyIdToken, countsCacheMiddleware, async (req, res) => {
     const { uid, email, cacheKey, query } = req;
     const usernameFromQuery = req.query.username;    
@@ -351,7 +329,6 @@ app.post('/api/user/coins', verifyIdToken, async (req, res) => {
         res.status(500).json({ error: 'Error en la transacción de monedas.' });
     }
 });
-
 app.get('/api/user/history', verifyIdToken, async (req, res) => {
     const { uid } = req;
     const cacheKey = `history-${uid}`;
@@ -384,7 +361,6 @@ app.get('/api/user/history', verifyIdToken, async (req, res) => {
         res.status(500).json({ error: 'Error al obtener el historial.' });
     }
 });
-
 app.post('/api/user/history', verifyIdToken, async (req, res) => {
     const { uid } = req;
     let { tmdbId, title, poster_path, backdrop_path, type } = req.body;
@@ -431,22 +407,28 @@ app.post('/api/user/history', verifyIdToken, async (req, res) => {
         };
 
         if (existingDocs.empty) {
+            // No existe, creamos uno nuevo
             await historyRef.add(safeData);
         } else {
             if (existingDocs.size > 1) {
                 console.log(`[History] Reparando duplicados para usuario ${uid} item ${idAsString}`);
                 const docs = existingDocs.docs;
+                // Actualizamos el primero
                 await historyRef.doc(docs[0].id).update(safeData);
+                // Borramos el resto
                 for (let i = 1; i < docs.length; i++) {
                     await historyRef.doc(docs[i].id).delete();
                 }
             } else {
+                // Solo hay uno, actualizamos normal
                 const docId = existingDocs.docs[0].id;
-                await historyRef.doc(docId).update(safeData); 
+                await historyRef.doc(docId).update(safeData); // Actualizará tmdbId a string limpio si era número
             }
         }
 
+        // Invalidación de caché
         historyCache.del(`history-${uid}`);
+        
         res.status(200).json({ message: 'Historial actualizado y reparado.' });
 
     } catch (error) {
@@ -590,19 +572,29 @@ app.post('/api/user/likes', verifyIdToken, async (req, res) => {
         res.status(500).json({ error: 'Error al registrar el like.' });
     }
 });
-
 app.post('/api/rewards/redeem/premium', verifyIdToken, async (req, res) => {
+    console.log("=============================================");
+    console.log("INICIO DEPURACIÓN: /api/rewards/redeem/premium");
     const { uid } = req;
     const { daysToAdd } = req.body; 
+    console.log(`Datos recibidos: UserID=${uid}, DaysToAdd=${daysToAdd}`);
     if (!daysToAdd) { 
+        console.log("Error: Faltan datos en la solicitud (daysToAdd).");
+        console.log("FIN DEPURACIÓN");
+        console.log("=============================================");
         return res.status(400).json({ success: false, error: 'daysToAdd es requerido.' }); 
     }
     const days = parseInt(daysToAdd, 10); 
     if (isNaN(days) || days <= 0) { 
+        console.log(`Error: 'daysToAdd' no es un número válido (${daysToAdd}).`);
+        console.log("FIN DEPURACIÓN");
+        console.log("=============================================");
         return res.status(400).json({ success: false, error: 'daysToAdd debe ser un número positivo.' }); 
     }
     try {
+        console.log(`Referencia de documento: db.collection('users').doc('${uid}')`);
         const userDocRef = db.collection('users').doc(uid); 
+        console.log("Intentando leer documento (get)...");
         const newExpiryDate = await db.runTransaction(async (transaction) => {
             const docSnap = await transaction.get(userDocRef);
             let currentExpiry; 
@@ -622,10 +614,15 @@ app.post('/api/rewards/redeem/premium', verifyIdToken, async (req, res) => {
                 return new Date(now.getTime() + days * 24 * 60 * 60 * 1000); 
             }
         });
+        console.log(`Nueva fecha de expiración calculada: ${newExpiryDate.toISOString()}`);
         await userDocRef.set({ isPro: true, premiumExpiry: newExpiryDate }, { merge: true });
         countsCache.del(`${uid}:/api/user/me`);
+        console.log("✅ ESCRITURA EXITOSA en Firestore.");
+        console.log("FIN DEPURACIÓN");
+        console.log("=============================================");
         res.status(200).json({ success: true, message: `Premium activado por ${days} días.`, expiryDate: newExpiryDate.toISOString() });
     } catch (error) { 
+        console.error(`❌ ERROR FATAL en /api/rewards/redeem/premium:`, error);
         console.error(`❌ Error al activar Premium:`, error); 
         res.status(500).json({ success: false, error: 'Error interno del servidor al actualizar el estado Premium.' }); 
     }
@@ -659,7 +656,6 @@ app.post('/api/rewards/request-diamond', verifyIdToken, async (req, res) => {
         res.status(500).json({ error: 'Error al enviar la notificación de diamantes.' });
     }
 });
-
 app.get('/', (req, res) => {
   res.send('¡El bot y el servidor de Sala Cine están activos!');
 });
@@ -673,12 +669,15 @@ if (process.env.NODE_ENV === 'production' && token) {
     console.warn("⚠️  Webhook de Telegram no configurado porque TELEGRAM_BOT_TOKEN no está definido.");
 }
 
-// +++ RUTA DEEP LINK +++
+// +++ RUTA MODIFICADA PARA DEEP LINK +++
 app.get('/app/details/:tmdbId', (req, res) => {
     const tmdbId = req.params.tmdbId;
+    // La URL de esquema profundo de la app nativa (debe estar configurada en AndroidManifest.xml)
     const APP_SCHEME_URL = `salacine://details?id=${tmdbId}`;
+    // URL de la Play Store para la descarga (Fallback)
     const PLAY_STORE_URL = `https://play.google.com/store/apps/details?id=com.salacine.app`;
 
+    // Servimos un HTML que intenta abrir la app primero
     const htmlResponse = `
         <!DOCTYPE html>
         <html>
@@ -687,6 +686,7 @@ app.get('/app/details/:tmdbId', (req, res) => {
                 <title>Abriendo Sala Cine...</title>
                 <script>
                     window.onload = function() {
+                        // Espera medio segundo (500ms). Si la app no abre, redirige a la tienda.
                         setTimeout(function() {
                             window.location.replace('${PLAY_STORE_URL}');
                         }, 500); 
@@ -700,81 +700,88 @@ app.get('/app/details/:tmdbId', (req, res) => {
     `;
     res.send(htmlResponse);
 });
+// +++ FIN DE RUTA MODIFICADA +++
 
 // =======================================================================
-// === NUEVA LÓGICA DE SOLICITUDES (MEJORADA - UPSERT) ===
+// === NUEVA LÓGICA DE SOLICITUDES (CON MONGODB Y FILTRO DE SILENCIO) ===
 // =======================================================================
 app.post('/request-movie', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
 
     const { title, poster_path, tmdbId, priority } = req.body;
-
+    
     if (!tmdbId || !title) {
-        return res.status(400).json({ error: "Datos incompletos." });
+        return res.status(400).json({ error: 'tmdbId y title requeridos.' });
     }
 
     try {
-        const cleanTmdbId = String(tmdbId).trim();
-        const collection = mongoDb.collection('movie_requests');
-
-        // 1. UPSERT en MongoDB (Crear o Actualizar Contador)
-        await collection.updateOne(
-            { tmdbId: cleanTmdbId },
-            { 
-                $inc: { requestCount: 1 },
+        // 1. GUARDAR EN MONGODB (Upsert: Crear o Actualizar Votos)
+        const requestCollection = mongoDb.collection('movie_requests');
+        const cleanId = String(tmdbId).trim();
+        
+        await requestCollection.updateOne(
+            { tmdbId: cleanId },
+            {
                 $set: { 
                     title: title, 
                     poster_path: poster_path, 
-                    lastRequestedAt: new Date()
+                    latestPriority: priority || 'regular',
+                    updatedAt: new Date()
                 },
-                $setOnInsert: { firstRequestedAt: new Date() }
+                $inc: { votes: 1 }
             },
             { upsert: true }
         );
 
-        // 2. Notificación INTELIGENTE a Telegram
-        // Solo notificamos si es PREMIUM o IMMEDIATE. Si es "fast" o "regular", solo guardamos en BD.
-        if (priority === 'premium' || priority === 'immediate') {
+        // 2. LÓGICA DE NOTIFICACIÓN (FILTRO DE SILENCIO)
+        // Solo enviamos mensaje al admin si NO es 'regular'
+        if (priority && priority !== 'regular') {
             const posterUrl = poster_path ? `https://image.tmdb.org/t/p/w500${poster_path}` : 'https://placehold.co/500x750?text=No+Poster';
             
             let priorityText = '';
-            if (priority === 'immediate') priorityText = '🚀 Inmediato (~1h)';
-            else if (priority === 'premium') priorityText = '👑 PREMIUM (Prioridad)';
+            switch (priority) {
+                case 'fast': priorityText = '⚡ Rápido (~24h)'; break;
+                case 'immediate': priorityText = '🚀 Inmediato (~1h)'; break;
+                case 'premium': priorityText = '👑 PREMIUM (Prioridad)'; break;
+                default: priorityText = '⏳ Regular (1-2 semanas)'; // Fallback por seguridad
+            }
 
-            const message = `🔔 *Nueva Solicitud URGENTE*\n` +
-                            `🎬 *${title}*\n` +
-                            `*Prioridad:* ${priorityText}\n\n` +
-                            `Ya se ha guardado en la base de datos de "Pedidos".`;
+            const message = `🔔 *Solicitud PRIORITARIA:* ${title}\n` +
+                            `*Nivel:* ${priorityText}\n\n` +
+                            `Se ha registrado/actualizado en la base de datos de pedidos.`;
             
-            // Enviamos el mensaje al admin
             await bot.sendPhoto(ADMIN_CHAT_ID, posterUrl, {
                 caption: message, parse_mode: 'Markdown',
-                reply_markup: { inline_keyboard: [[{ text: '✅ Gestionar ahora', callback_data: `solicitud_${cleanTmdbId}` }]] }
+                reply_markup: { inline_keyboard: [[{ text: '✅ Gestionar (Subir ahora)', callback_data: `solicitud_${tmdbId}` }]] }
             });
         }
+        // Si es 'regular', NO enviamos nada a Telegram para no hacer spam.
 
-        res.status(200).json({ message: 'Solicitud registrada exitosamente.' });
+        res.status(200).json({ message: 'Solicitud guardada correctamente.' });
+
     } catch (error) {
-        console.error("Error al procesar la solicitud mejorada:", error);
-        res.status(500).json({ error: 'Error al guardar la solicitud.' });
+        console.error("Error al procesar la solicitud /request-movie:", error);
+        res.status(500).json({ error: 'Error al procesar solicitud.' });
     }
 });
+// =======================================================================
 
-// =======================================================================
-// === RUTAS DE STREAMING Y EMBEDS ===
-// =======================================================================
 app.get('/api/streaming-status', (req, res) => {
+    // Obtenemos el build_id que envía la app
     const clientBuildId = parseInt(req.query.build_id) || 0;
+    // Soporte para 'version' por si acaso quedó alguna versión legacy
     const clientVersion = parseInt(req.query.version) || 0;
+
     const receivedId = clientBuildId || clientVersion;
 
     console.log(`[Status Check] ID Recibido: ${receivedId} | ID en Revisión: ${BUILD_ID_UNDER_REVIEW}`);
     if (receivedId === BUILD_ID_UNDER_REVIEW) {
+        console.log("⚠️ [Review Mode] Detectada versión en revisión. Ocultando streaming.");
         return res.status(200).json({ isStreamingActive: false }); // MODO SEGURO
     }
+    console.log(`[Status Check] Usuario normal. Devolviendo estado global: ${GLOBAL_STREAMING_ACTIVE}`);
     res.status(200).json({ isStreamingActive: GLOBAL_STREAMING_ACTIVE });
 });
-
 app.get('/api/get-movie-data', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
     const { id } = req.query;
@@ -783,11 +790,13 @@ app.get('/api/get-movie-data', async (req, res) => {
     try {
         const cachedData = countsCache.get(cacheKey);
         if (cachedData) {
+            console.log(`[Cache HIT] Sirviendo contadores desde caché para: ${cacheKey}`);
             return res.status(200).json(cachedData);
         }
     } catch (err) {
         console.error("Error al leer del caché de contadores:", err);
     }
+    console.log(`[Cache MISS] Buscando contadores en MongoDB para: ${cacheKey}`);
     try {
         const movieCollection = mongoDb.collection('media_catalog');
         const seriesCollection = mongoDb.collection('series_catalog');
@@ -823,6 +832,7 @@ app.get('/api/get-movie-data', async (req, res) => {
     }
 });
 
+// +++ RUTA MODIFICADA (AHORA MANUAL Y ROBUSTA) +++
 app.get('/api/get-embed-code', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
     
@@ -831,13 +841,19 @@ app.get('/api/get-embed-code', async (req, res) => {
 
     const cacheKey = `embed-${id}-${season || 'movie'}-${episode || '1'}-${isPro === 'true' ? 'pro' : 'free'}`;
     
+    // 1. Revisar caché RAM (24 Horas de duración)
     try {
         const cachedData = embedCache.get(cacheKey);
         if (cachedData) {
+            console.log(`[Cache HIT] Sirviendo embed manual desde caché para: ${cacheKey}`);
             return res.json({ embedCode: cachedData });
         }
-    } catch (err) { console.error("Error caché embeds:", err); }
+    } catch (err) {
+        console.error("Error al leer del caché de embeds:", err);
+    }
     
+    console.log(`[Cache MISS] Buscando embed en MongoDB para: ${cacheKey}`);
+
     try {
         const mediaType = season && episode ? 'series' : 'movies';
         const collectionName = (mediaType === 'movies') ? 'media_catalog' : 'series_catalog';
@@ -856,10 +872,13 @@ app.get('/api/get-embed-code', async (req, res) => {
             }
         }
 
+        // Si existe el enlace (que tú subiste manualmente), lo guardamos y devolvemos.
         if (enlaceFinal) {
             embedCache.set(cacheKey, enlaceFinal);
             return res.json({ embedCode: enlaceFinal });
         }
+
+        console.log(`[Embed Code] No se encontró código para ${id} (isPro: ${isPro})`);
         return res.status(404).json({ error: `No se encontró código de reproductor.` });
 
     } catch (error) {
@@ -891,10 +910,13 @@ app.get('/api/get-metrics', async (req, res) => {
     try {
         const cachedData = countsCache.get(cacheKey);
         if (cachedData) {
+            console.log(`[Cache HIT] Sirviendo métrica desde caché para: ${cacheKey}`);
             return res.status(200).json(cachedData);
         }
-    } catch (err) { console.error("Error caché métricas:", err); }
-
+    } catch (err) {
+        console.error("Error al leer del caché de métricas:", err);
+    }
+    console.log(`[Cache MISS] Buscando métrica en MongoDB para: ${cacheKey}`);
     try {
         let doc = await mongoDb.collection('media_catalog').findOne({ tmdbId: id.toString() }, { projection: { [field]: 1 } });
         if (!doc) doc = await mongoDb.collection('series_catalog').findOne({ tmdbId: id.toString() }, { projection: { [field]: 1 } });
@@ -934,39 +956,52 @@ app.post('/api/increment-likes', async (req, res) => {
     } catch (error) { console.error("Error increment-likes:", error); res.status(500).json({ error: "Error interno." }); }
 });
 
-// =======================================================================
-// === RUTAS DE ADMINISTRACIÓN Y SUBIDA DE CONTENIDO ===
-// =======================================================================
+// +++ RUTA DE SUBIDA OPTIMIZADA (INVALIDACIÓN + AUTO-LIMPIEZA DE PEDIDOS) +++
 app.post('/add-movie', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "BD no disponible." });
     try {
         const { tmdbId, title, poster_path, freeEmbedCode, proEmbedCode, isPremium, overview } = req.body;
         if (!tmdbId) return res.status(400).json({ error: 'tmdbId requerido.' });
         
+        // --- Limpiar ID antes de guardar ---
         const cleanTmdbId = String(tmdbId).trim();
 
         const updateQuery = { $set: { title, poster_path, overview, freeEmbedCode, proEmbedCode, isPremium }, $setOnInsert: { tmdbId: cleanTmdbId, views: 0, likes: 0, addedAt: new Date() } };
         
         await mongoDb.collection('media_catalog').updateOne({ tmdbId: cleanTmdbId }, updateQuery, { upsert: true });
+
+        // === AUTO-LIMPIEZA (AUTO-DESTRUCCIÓN DEL PEDIDO) ===
+        // Si esta película estaba pedida, la borramos de la lista de pendientes.
+        try {
+            await mongoDb.collection('movie_requests').deleteOne({ tmdbId: cleanTmdbId });
+            console.log(`[Auto-Clean] Pedido eliminado tras subida: ${title} (${cleanTmdbId})`);
+        } catch (cleanupError) {
+            console.warn(`[Auto-Clean Warning] No se pudo limpiar el pedido: ${cleanupError.message}`);
+        }
         
+        // Invalidaciones
         embedCache.del(`embed-${cleanTmdbId}-movie-1-pro`);
         embedCache.del(`embed-${cleanTmdbId}-movie-1-free`);
         countsCache.del(`counts-data-${cleanTmdbId}`);
         
+        // === (CRÍTICO) INVALIDACIÓN DE CACHÉ DE RECIENTES ===
         recentCache.del(RECENT_CACHE_KEY);
         console.log(`[Cache] Lista de recientes invalidada por subida de película: ${title}`);
 
+        // --- RESPUESTA RÁPIDA AL BOT ---
         res.status(200).json({ message: 'Película agregada y publicada.' });
         
     } catch (error) { console.error("Error add-movie:", error); res.status(500).json({ error: 'Error interno.' }); }
 });
 
+// +++ RUTA DE SUBIDA SERIES OPTIMIZADA (INVALIDACIÓN + AUTO-LIMPIEZA DE PEDIDOS) +++
 app.post('/add-series-episode', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "BD no disponible." });
     try {
         const { tmdbId, title, poster_path, overview, seasonNumber, episodeNumber, freeEmbedCode, proEmbedCode, isPremium } = req.body;
         if (!tmdbId || !seasonNumber || !episodeNumber) return res.status(400).json({ error: 'tmdbId, seasonNumber y episodeNumber requeridos.' });
         
+        // --- Limpiar ID antes de guardar ---
         const cleanTmdbId = String(tmdbId).trim();
 
         const episodePath = `seasons.${seasonNumber}.episodes.${episodeNumber}`;
@@ -982,19 +1017,31 @@ app.post('/add-series-episode', async (req, res) => {
         };
         await mongoDb.collection('series_catalog').updateOne({ tmdbId: cleanTmdbId }, updateData, { upsert: true });
         
+        // === AUTO-LIMPIEZA (AUTO-DESTRUCCIÓN DEL PEDIDO) ===
+        // Si esta serie estaba pedida, la borramos de la lista de pendientes.
+        try {
+            await mongoDb.collection('movie_requests').deleteOne({ tmdbId: cleanTmdbId });
+            console.log(`[Auto-Clean] Pedido eliminado tras subida episodio: ${title} (${cleanTmdbId})`);
+        } catch (cleanupError) {
+            console.warn(`[Auto-Clean Warning] No se pudo limpiar el pedido: ${cleanupError.message}`);
+        }
+
+        // Invalidaciones
         embedCache.del(`embed-${cleanTmdbId}-${seasonNumber}-${episodeNumber}-pro`);
         embedCache.del(`embed-${cleanTmdbId}-${seasonNumber}-${episodeNumber}-free`);
         countsCache.del(`counts-data-${cleanTmdbId}`);
 
+        // === (CRÍTICO) INVALIDACIÓN DE CACHÉ DE RECIENTES ===
         recentCache.del(RECENT_CACHE_KEY);
         console.log(`[Cache] Lista de recientes invalidada por subida de episodio: S${seasonNumber}E${episodeNumber}`);
 
+        // --- RESPUESTA RÁPIDA AL BOT ---
         res.status(200).json({ message: `Episodio S${seasonNumber}E${episodeNumber} agregado y publicado.` });
 
     } catch (error) { console.error("Error add-series-episode:", error); res.status(500).json({ error: 'Error interno.' }); }
 });
 
-// --- Rutas PayPal ---
+// --- Rutas PayPal (sin cambios) ---
 app.post('/create-paypal-payment', (req, res) => {
     const plan = req.body.plan; const amount = (plan === 'annual') ? '19.99' : '1.99'; const userId = req.body.userId; if (!userId) return res.status(400).json({ error: "userId es requerido." });
     const create_payment_json = { 
@@ -1067,7 +1114,7 @@ app.post('/create-binance-payment', (req, res) => {
     res.json({ message: 'Pago con Binance simulado.' });
 });
 
-// === LÓGICA DE NOTIFICACIONES PUSH ===
+// === LÓGICA DE NOTIFICACIONES PUSH (Mantenida intacta) ===
 async function sendNotificationToTopic(title, body, imageUrl, tmdbId, mediaType) {
     const topic = 'new_content';
     const dataPayload = {
@@ -1109,6 +1156,7 @@ app.post('/api/notify-new-content', async (req, res) => {
 
 // --- Rutas App Update, App Status, Assetlinks ---
 app.get('/api/app-update', (req, res) => {
+    // ACTUALIZADO: latest_version_code a 10 y force_update a false.
     const updateInfo = { "latest_version_code": 12, "update_url": "https://play.google.com/store/apps/details?id=com.salacine.app&pcampaignid=web_share", "force_update": false, "update_message": "¡Nueva versión (1.5.2) de Sala Cine disponible! Incluye mejoras de rendimiento. Actualiza ahora." };
     res.status(200).json(updateInfo);
 });
@@ -1120,74 +1168,6 @@ app.get('/api/app-status', (req, res) => {
 
 app.get('/.well-known/assetlinks.json', (req, res) => {
     res.sendFile('assetlinks.json', { root: __dirname });
-});
-
-// =======================================================================
-// === RUTAS VIVIBOX ===
-// =======================================================================
-
-function generateShortId(length) {
-    return crypto.randomBytes(Math.ceil(length / 2))
-        .toString('hex') 
-        .slice(0, length); 
-}
-
-app.post('/api/vivibox/add-link', async (req, res) => {
-    if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
-
-    const { m3u8Url } = req.body;
-    if (!m3u8Url || !m3u8Url.startsWith('http') || !m3u8Url.endsWith('.m3u8')) {
-        return res.status(400).json({ error: "Se requiere un 'm3u8Url' válido." });
-    }
-
-    try {
-        const collection = mongoDb.collection('vivibox_links'); 
-        const shortId = generateShortId(6); 
-
-        await collection.insertOne({
-            _id: shortId,
-            m3u8Url: m3u8Url,
-            createdAt: new Date()
-        });
-
-        console.log(`[Vivibox] Enlace guardado con ID: ${shortId}`);
-        res.status(201).json({ message: 'Enlace guardado', id: shortId });
-
-    } catch (error) {
-        if (error.code === 11000) { 
-             console.warn("[Vivibox] Colisión de ID corto, reintentando...");
-             return res.status(500).json({ error: "Colisión de ID, por favor reintenta." });
-        }
-        console.error("Error en /api/vivibox/add-link:", error);
-        res.status(500).json({ error: "Error interno al guardar el enlace." });
-    }
-});
-
-app.get('/api/obtener-enlace', async (req, res) => {
-    if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
-
-    const { id } = req.query; 
-    if (!id) {
-        return res.status(400).json({ error: "Se requiere un 'id'." });
-    }
-
-    try {
-        const collection = mongoDb.collection('vivibox_links');
-        const doc = await collection.findOne({ _id: id });
-
-        if (!doc) {
-            console.warn(`[Vivibox] Enlace no encontrado para ID: ${id}`);
-            return res.status(404).json({ error: "Enlace no encontrado o expirado." });
-        }
-        console.log(`[Vivibox] Sirviendo enlace M3U8 para ID: ${id}`);
-        res.status(200).json({
-            url_real: doc.m3u8Url 
-        });
-
-    } catch (error) {
-        console.error("Error en /api/obtener-enlace:", error);
-        res.status(500).json({ error: "Error interno al buscar el enlace." });
-    }
 });
 
 // Ruta para probar el extractor manualmente
@@ -1204,7 +1184,6 @@ app.get('/api/extract-link', async (req, res) => {
         res.status(500).json({ success: false, error: "Fallo extractor.", details: error.message });
     }
 });
-
 async function startServer() {
     await connectToMongo();
 
