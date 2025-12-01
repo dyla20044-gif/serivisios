@@ -8,40 +8,18 @@ const dotenv = require('dotenv');
 const url = require('url');
 const { MongoClient, ServerApiVersion } = require('mongodb');
 const initializeBot = require('./bot.js');
-
-// Herramienta para generar IDs aleatorios
 const crypto = require('crypto');
-
-// Librería para tareas (Desactivada para modo manual, pero se deja la importación)
 const cron = require('node-cron');
-
-// +++ INICIO DE CONFIGURACIÓN DE CACHÉ REFORZADA +++
 const NodeCache = require('node-cache');
-
-// 1. Caché para enlaces en RAM (24 HORAS - Enlaces fijos manuales)
 const embedCache = new NodeCache({ stdTTL: 86400, checkperiod: 600 });
-
-// 2. Caché para contadores y datos de usuario (15 minutos - Reduce carga DB)
 const countsCache = new NodeCache({ stdTTL: 900, checkperiod: 120 });
-
-// 3. Caché para Proxy TMDB (24 HORAS - Ahorra peticiones a la API externa)
 const tmdbCache = new NodeCache({ stdTTL: 86400, checkperiod: 3600 });
-
-// 4. Caché para "Recién Agregadas" (24 HORAS - Se borra al subir contenido nuevo)
 const recentCache = new NodeCache({ stdTTL: 86400, checkperiod: 600 });
 const RECENT_CACHE_KEY = 'recent_content_main'; 
-
-// 5. Caché para HISTORIAL DE USUARIO (15 minutos)
 const historyCache = new NodeCache({ stdTTL: 900, checkperiod: 120 });
-
-// +++ FIN DE CAMBIOS PARA CACHÉ +++
-
 const app = express();
 dotenv.config();
-
 const PORT = process.env.PORT || 3000;
-
-// === CONFIGURACIONES ===
 try {
     const serviceAccount = JSON.parse(process.env.FIREBASE_ADMIN_SDK);
     admin.initializeApp({
@@ -67,7 +45,7 @@ const ADMIN_CHAT_ID = parseInt(process.env.ADMIN_CHAT_ID, 10);
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
 
 let GLOBAL_STREAMING_ACTIVE = true;
-const BUILD_ID_UNDER_REVIEW = 8; 
+const BUILD_ID_UNDER_REVIEW = 10; 
 
 const MONGO_URI = process.env.MONGO_URI;
 const MONGO_DB_NAME = process.env.MONGO_DB_NAME || 'sala_cine';
@@ -93,11 +71,7 @@ async function connectToMongo() {
         process.exit(1);
     }
 }
-
-// === ESTADO DEL BOT ===
 const adminState = {};
-
-// === MIDDLEWARE ===
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use((req, res, next) => {
@@ -107,8 +81,6 @@ app.use((req, res, next) => {
     if (req.method === 'OPTIONS') { return res.sendStatus(200); }
     next();
 });
-
-// === MIDDLEWARE DE AUTENTICACIÓN Y CACHÉ ===
 async function verifyIdToken(req, res, next) {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -140,32 +112,12 @@ function countsCacheMiddleware(req, res, next) {
         console.error("Error al leer del caché de usuario:", err);
     }
     req.cacheKey = cacheKey;
-    // console.log(`[Cache MISS] Buscando datos de usuario en Firestore para: ${cacheKey}`);
     next();
 }
-
-// =======================================================================
-// === (OPTIMIZADO) EXTRACTOR DESACTIVADO (MODO MANUAL) ===
-// =======================================================================
-
-// Ya no llamamos a Python. Simplemente devolvemos el enlace que nos llega.
-// Esto evita errores de timeout y permite usar tus M3U8 directos.
 async function llamarAlExtractor(targetUrl) {
     if (!targetUrl) return null;
-    // Devolvemos el enlace tal cual (confiamos en que es un M3U8 o MP4 válido)
     return targetUrl;
 }
-
-// --- TAREAS AUTOMÁTICAS (CRON) DESACTIVADAS ---
-/* Como estás subiendo enlaces manuales, desactivamos el CRON para que 
-   el bot no intente "actualizar" tus enlaces y los rompa o gaste recursos.
-*/
-// cron.schedule('0 */6 * * *', () => { ejecutarActualizacionMasiva(); });
-
-
-// =======================================================================
-// === (OPTIMIZADO) TMDB PROXY CON CACHÉ DE 24 HORAS ===
-// =======================================================================
 app.get('/api/tmdb-proxy', async (req, res) => {
     const endpoint = req.query.endpoint;
     const query = req.query.query;
@@ -185,7 +137,7 @@ app.get('/api/tmdb-proxy', async (req, res) => {
         const url = `https://api.themoviedb.org/3/${endpoint}`;
         const params = {
             api_key: TMDB_API_KEY,
-            language: 'es-MX', // Idioma latino
+            language: 'es-MX', 
             include_adult: false
         };
         
@@ -207,43 +159,29 @@ app.get('/api/tmdb-proxy', async (req, res) => {
         res.status(500).json({ error: 'Error al conectar con TMDB' });
     }
 });
-
-// =======================================================================
-// === (NUEVO) RUTA DE RECIÉN AGREGADAS UNIFICADA (PELIS + SERIES) ===
-// =======================================================================
 app.get('/api/content/recent', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
-
-    // 1. Revisar Caché (24 Horas)
     const cachedRecent = recentCache.get(RECENT_CACHE_KEY);
     if (cachedRecent) {
-        // console.log(`[Recent Cache HIT] Sirviendo lista unificada desde RAM.`);
         return res.status(200).json(cachedRecent);
     }
 
     console.log(`[Recent Cache MISS] Generando lista unificada (Películas + Series)...`);
 
     try {
-        // 2. Buscar las últimas 20 películas
         const moviesPromise = mongoDb.collection('media_catalog')
             .find({})
             .project({ tmdbId: 1, title: 1, poster_path: 1, backdrop_path: 1, addedAt: 1 })
             .sort({ addedAt: -1 })
             .limit(20)
             .toArray();
-
-        // 3. Buscar las últimas 20 series
         const seriesPromise = mongoDb.collection('series_catalog')
             .find({})
             .project({ tmdbId: 1, name: 1, poster_path: 1, backdrop_path: 1, addedAt: 1 }) 
             .sort({ addedAt: -1 })
             .limit(20)
             .toArray();
-
-        // Ejecutar en paralelo
         const [movies, series] = await Promise.all([moviesPromise, seriesPromise]);
-
-        // 4. Formatear y Unificar
         const formattedMovies = movies.map(movie => ({
             id: movie.tmdbId,
             tmdbId: movie.tmdbId,
@@ -263,15 +201,9 @@ app.get('/api/content/recent', async (req, res) => {
             media_type: 'tv',
             addedAt: serie.addedAt ? new Date(serie.addedAt) : new Date(0)
         }));
-
-        // 5. Combinar y Ordenar por fecha real (lo más nuevo arriba)
         const combinedResults = [...formattedMovies, ...formattedSeries];
         combinedResults.sort((a, b) => b.addedAt - a.addedAt);
-
-        // 6. Tomar los 20 más recientes en total
         const finalResults = combinedResults.slice(0, 20);
-
-        // 7. Guardar en Caché (Dura 24h, a menos que subas algo nuevo)
         recentCache.set(RECENT_CACHE_KEY, finalResults);
         
         res.status(200).json(finalResults);
@@ -281,12 +213,6 @@ app.get('/api/content/recent', async (req, res) => {
         res.status(500).json({ error: "Error interno al obtener contenido reciente." });
     }
 });
-
-
-// =======================================================================
-// === RUTAS CENTRALIZADAS DE USUARIO (FIRESTORE) ===
-// =======================================================================
-
 app.get('/api/user/me', verifyIdToken, countsCacheMiddleware, async (req, res) => {
     const { uid, email, cacheKey, query } = req;
     const usernameFromQuery = req.query.username;    
@@ -403,20 +329,11 @@ app.post('/api/user/coins', verifyIdToken, async (req, res) => {
         res.status(500).json({ error: 'Error en la transacción de monedas.' });
     }
 });
-
-// =======================================================================
-// === (OPTIMIZADO) HISTORIAL CON CACHÉ Y SOLUCIÓN DE DUPLICADOS ===
-// =======================================================================
-
-// GET: Obtener historial (con Caché)
 app.get('/api/user/history', verifyIdToken, async (req, res) => {
     const { uid } = req;
     const cacheKey = `history-${uid}`;
-
-    // 1. Revisar Caché
     const cachedHistory = historyCache.get(cacheKey);
     if (cachedHistory) {
-        // console.log(`[History Cache HIT] Usuario: ${uid}`); // Opcional
         return res.status(200).json(cachedHistory);
     }
 
@@ -436,8 +353,6 @@ app.get('/api/user/history', verifyIdToken, async (req, res) => {
             type: doc.data().type,
             timestamp: doc.data().timestamp.toDate().toISOString()
         }));
-
-        // 2. Guardar en Caché
         historyCache.set(cacheKey, historyItems);
 
         res.status(200).json(historyItems);
@@ -446,8 +361,6 @@ app.get('/api/user/history', verifyIdToken, async (req, res) => {
         res.status(500).json({ error: 'Error al obtener el historial.' });
     }
 });
-
-// POST: Guardar en historial (SOLUCIÓN DUPLICADOS + AUTO-REPARACIÓN MEJORADA)
 app.post('/api/user/history', verifyIdToken, async (req, res) => {
     const { uid } = req;
     let { tmdbId, title, poster_path, backdrop_path, type } = req.body;
@@ -455,20 +368,13 @@ app.post('/api/user/history', verifyIdToken, async (req, res) => {
     if (!tmdbId || !type) {
         return res.status(400).json({ error: 'tmdbId y type requeridos.' });
     }
-
-    // 1. LIMPIEZA PROFUNDA DEL ID (Trim quita espacios adelante y atrás)
     const rawId = String(tmdbId).trim(); 
     const idAsString = rawId;
     const idAsNumber = Number(rawId);
-
-    // 2. BUSCAR TODAS LAS VARIANTES POSIBLES
-    // Buscamos: "123", 123, " 123 ", etc.
     const possibleIds = [idAsString];
     if (!isNaN(idAsNumber)) {
         possibleIds.push(idAsNumber);
     }
-
-    // +++ MAGIA DE AUTO-REPARACIÓN DE IMAGEN (Se mantiene igual) +++
     if (!backdrop_path && mongoDb) {
         try {
             let mediaDoc = null;
@@ -486,16 +392,13 @@ app.post('/api/user/history', verifyIdToken, async (req, res) => {
 
     try {
         const historyRef = db.collection('history');
-        
-        // QUERY: Busca cualquier coincidencia (texto o número)
-        // Eliminamos el limit(1) para poder ver si hay duplicados y borrarlos
         const q = historyRef.where('userId', '==', uid).where('tmdbId', 'in', possibleIds);
         const existingDocs = await q.get(); 
         const now = admin.firestore.FieldValue.serverTimestamp();
 
         const safeData = {
             userId: uid,
-            tmdbId: idAsString, // SIEMPRE guardamos como String limpio
+            tmdbId: idAsString,
             title: title || "Título desconocido",
             poster_path: poster_path || null,
             backdrop_path: backdrop_path || null,
@@ -507,8 +410,6 @@ app.post('/api/user/history', verifyIdToken, async (req, res) => {
             // No existe, creamos uno nuevo
             await historyRef.add(safeData);
         } else {
-            // YA EXISTE.
-            // Si hay más de 1 documento (duplicados viejos), borramos los extras y dejamos solo uno.
             if (existingDocs.size > 1) {
                 console.log(`[History] Reparando duplicados para usuario ${uid} item ${idAsString}`);
                 const docs = existingDocs.docs;
@@ -671,10 +572,6 @@ app.post('/api/user/likes', verifyIdToken, async (req, res) => {
         res.status(500).json({ error: 'Error al registrar el like.' });
     }
 });
-
-// =======================================================================
-// === RUTAS DE RECOMPENSAS (REDEEM) ===
-// =======================================================================
 app.post('/api/rewards/redeem/premium', verifyIdToken, async (req, res) => {
     console.log("=============================================");
     console.log("INICIO DEPURACIÓN: /api/rewards/redeem/premium");
@@ -829,8 +726,6 @@ app.post('/request-movie', async (req, res) => {
         res.status(500).json({ error: 'Error al enviar la notificación o guardar la solicitud.' });
     }
 });
-
-// +++ RUTA DE ESTADO DE STREAMING CON SOPORTE PARA CONTROL DE VERSIONES +++
 app.get('/api/streaming-status', (req, res) => {
     // Obtenemos el build_id que envía la app
     const clientBuildId = parseInt(req.query.build_id) || 0;
@@ -840,23 +735,13 @@ app.get('/api/streaming-status', (req, res) => {
     const receivedId = clientBuildId || clientVersion;
 
     console.log(`[Status Check] ID Recibido: ${receivedId} | ID en Revisión: ${BUILD_ID_UNDER_REVIEW}`);
-
-    // Si el ID recibido coincide con la versión que está revisando Google...
     if (receivedId === BUILD_ID_UNDER_REVIEW) {
         console.log("⚠️ [Review Mode] Detectada versión en revisión. Ocultando streaming.");
         return res.status(200).json({ isStreamingActive: false }); // MODO SEGURO
     }
-
-    // Para todos los demás (usuarios antiguos o futuras versiones aprobadas)
     console.log(`[Status Check] Usuario normal. Devolviendo estado global: ${GLOBAL_STREAMING_ACTIVE}`);
     res.status(200).json({ isStreamingActive: GLOBAL_STREAMING_ACTIVE });
 });
-
-
-// =======================================================================
-// === RUTAS DE SALA CINE (MongoDB) ===
-// =======================================================================
-
 app.get('/api/get-movie-data', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
     const { id } = req.query;
