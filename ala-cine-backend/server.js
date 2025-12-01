@@ -45,7 +45,7 @@ const ADMIN_CHAT_ID = parseInt(process.env.ADMIN_CHAT_ID, 10);
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
 
 let GLOBAL_STREAMING_ACTIVE = true;
-const BUILD_ID_UNDER_REVIEW = 12; 
+const BUILD_ID_UNDER_REVIEW = 11; 
 
 const MONGO_URI = process.env.MONGO_URI;
 const MONGO_DB_NAME = process.env.MONGO_DB_NAME || 'sala_cine';
@@ -1103,7 +1103,7 @@ app.post('/api/notify-new-content', async (req, res) => {
 // --- Rutas App Update, App Status, Assetlinks ---
 app.get('/api/app-update', (req, res) => {
     // ACTUALIZADO: latest_version_code a 10 y force_update a false.
-    const updateInfo = { "latest_version_code": 10, "update_url": "https://play.google.com/store/apps/details?id=com.salacine.app&pcampaignid=web_share", "force_update": false, "update_message": "¡Nueva versión (1.5.2) de Sala Cine disponible! Incluye mejoras de rendimiento. Actualiza ahora." };
+    const updateInfo = { "latest_version_code": 12, "update_url": "https://play.google.com/store/apps/details?id=com.salacine.app&pcampaignid=web_share", "force_update": false, "update_message": "¡Nueva versión (1.5.2) de Sala Cine disponible! Incluye mejoras de rendimiento. Actualiza ahora." };
     res.status(200).json(updateInfo);
 });
 
