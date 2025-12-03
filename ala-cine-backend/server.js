@@ -1041,6 +1041,37 @@ app.post('/add-series-episode', async (req, res) => {
     } catch (error) { console.error("Error add-series-episode:", error); res.status(500).json({ error: 'Error interno.' }); }
 });
 
+// --- NUEVA RUTA: ELIMINAR EPISODIO ESPECÍFICO ---
+app.post('/delete-series-episode', async (req, res) => {
+    if (!mongoDb) return res.status(503).json({ error: "BD no disponible." });
+    try {
+        const { tmdbId, seasonNumber, episodeNumber } = req.body;
+        if (!tmdbId || !seasonNumber || !episodeNumber) {
+            return res.status(400).json({ error: 'Faltan datos.' });
+        }
+
+        const cleanTmdbId = String(tmdbId).trim();
+        const episodePath = `seasons.${seasonNumber}.episodes.${episodeNumber}`;
+
+        // Usamos $unset para borrar el campo del episodio específico
+        const updateData = {
+            $unset: { [episodePath]: "" }
+        };
+
+        await mongoDb.collection('series_catalog').updateOne({ tmdbId: cleanTmdbId }, updateData);
+
+        // Limpieza de caché
+        embedCache.del(`embed-${cleanTmdbId}-${seasonNumber}-${episodeNumber}-pro`);
+        embedCache.del(`embed-${cleanTmdbId}-${seasonNumber}-${episodeNumber}-free`);
+        console.log(`[Delete] Episodio S${seasonNumber}E${episodeNumber} eliminado de ${cleanTmdbId}`);
+
+        res.status(200).json({ message: 'Episodio eliminado.' });
+    } catch (error) {
+        console.error("Error delete-series-episode:", error);
+        res.status(500).json({ error: 'Error interno.' });
+    }
+});
+
 // --- Rutas PayPal (sin cambios) ---
 app.post('/create-paypal-payment', (req, res) => {
     const plan = req.body.plan; const amount = (plan === 'annual') ? '19.99' : '1.99'; const userId = req.body.userId; if (!userId) return res.status(400).json({ error: "userId es requerido." });
