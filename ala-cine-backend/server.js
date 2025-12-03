@@ -169,8 +169,9 @@ app.get('/api/content/recent', async (req, res) => {
     console.log(`[Recent Cache MISS] Generando lista unificada (Películas + Series)...`);
 
     try {
+        // === MODIFICACIÓN AQUÍ: Filtro hideFromRecent ===
         const moviesPromise = mongoDb.collection('media_catalog')
-            .find({})
+            .find({ hideFromRecent: { $ne: true } }) 
             .project({ tmdbId: 1, title: 1, poster_path: 1, backdrop_path: 1, addedAt: 1 })
             .sort({ addedAt: -1 })
             .limit(20)
@@ -806,7 +807,7 @@ app.get('/api/get-movie-data', async (req, res) => {
         if (docSeries) {
             views = docSeries.views || 0; likes = docSeries.likes || 0;
             if (docSeries.seasons) {
-                isAvailable = Object.values(docSeries.seasons).some(season => season && season.episodes && Object.values(season.episodes).some(ep => (ep.freeEmbedCode && ep.freeEmbedCode !== '') || (ep.proEmbedCode && ep.proEmbedCode !== '')));
+                isAvailable = Object.values(docSeries.seasons).some(season => season && season && season.episodes && Object.values(season.episodes).some(ep => (ep.freeEmbedCode && ep.freeEmbedCode !== '') || (ep.proEmbedCode && ep.proEmbedCode !== '')));
             }
             if (isAvailable) {
                 const responseData = { views: views, likes: likes, isAvailable: true };
@@ -960,13 +961,26 @@ app.post('/api/increment-likes', async (req, res) => {
 app.post('/add-movie', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "BD no disponible." });
     try {
-        const { tmdbId, title, poster_path, freeEmbedCode, proEmbedCode, isPremium, overview } = req.body;
+        // === MODIFICACIÓN AQUÍ: Desestructuración de hideFromRecent ===
+        const { tmdbId, title, poster_path, freeEmbedCode, proEmbedCode, isPremium, overview, hideFromRecent } = req.body;
         if (!tmdbId) return res.status(400).json({ error: 'tmdbId requerido.' });
         
         // --- Limpiar ID antes de guardar ---
         const cleanTmdbId = String(tmdbId).trim();
 
-        const updateQuery = { $set: { title, poster_path, overview, freeEmbedCode, proEmbedCode, isPremium }, $setOnInsert: { tmdbId: cleanTmdbId, views: 0, likes: 0, addedAt: new Date() } };
+        // === MODIFICACIÓN AQUÍ: Guardar hideFromRecent en MongoDB ===
+        const updateQuery = { 
+            $set: { 
+                title, 
+                poster_path, 
+                overview, 
+                freeEmbedCode, 
+                proEmbedCode, 
+                isPremium,
+                hideFromRecent: hideFromRecent === true || hideFromRecent === 'true' // Guardar la bandera
+            }, 
+            $setOnInsert: { tmdbId: cleanTmdbId, views: 0, likes: 0, addedAt: new Date() } 
+        };
         
         await mongoDb.collection('media_catalog').updateOne({ tmdbId: cleanTmdbId }, updateQuery, { upsert: true });
 
