@@ -238,16 +238,20 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
             };
 
             adminState[chatId].step = 'awaiting_publish_choice';
+            
+            // --- MENÚ ACTUALIZADO CON BOTÓN OCULTO ---
             const options = {
                 reply_markup: {
                     inline_keyboard: [
                         [
-                            { text: '💾 Solo App', callback_data: 'save_only_' + selectedMedia.id },
-                            { text: '📲 App + PUSH', callback_data: 'save_publish_and_push_' + selectedMedia.id }
+                            { text: '💾 Solo App (Visible)', callback_data: 'save_only_' + selectedMedia.id },
+                            { text: '🤫 Solo Guardar (Oculto)', callback_data: 'save_silent_hidden_' + selectedMedia.id }
                         ],
                         [
-                            { text: '🚀 Canal + PUSH', callback_data: 'save_publish_push_channel_' + selectedMedia.id },
-                            { text: '📢 Solo Canal', callback_data: 'save_publish_channel_no_push_' + selectedMedia.id }
+                            { text: '🚀 Canal (A+B) + PUSH', callback_data: 'save_publish_push_channel_' + selectedMedia.id }
+                        ],
+                        [
+                            { text: '📢 Canal (A+B) - Sin Push', callback_data: 'save_publish_channel_no_push_' + selectedMedia.id }
                         ]
                     ]
                 }
@@ -711,7 +715,39 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 bot.sendMessage(chatId, `✅ "${movieDataToSave.title}" guardada solo en la app.`);
                 adminState[chatId] = { step: 'menu' };
             }
+            
+            // --- NUEVA OPCIÓN: SUBIDA SILENCIOSA Y OCULTA (Para Sagas) ---
+            else if (data.startsWith('save_silent_hidden_')) {
+                const { movieDataToSave } = adminState[chatId];
+                
+                if (!movieDataToSave?.tmdbId) { 
+                    bot.sendMessage(chatId, 'Error: Datos perdidos. Intenta de nuevo.'); 
+                    adminState[chatId] = { step: 'menu' }; 
+                    return; 
+                }
+
+                // AQUI ESTA LA CLAVE: Agregamos la bandera para ocultar
+                movieDataToSave.hideFromRecent = true; 
+
+                try {
+                    await axios.post(`${RENDER_BACKEND_URL}/add-movie`, movieDataToSave);
+                    
+                    bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id });
+                    
+                    bot.sendMessage(chatId, `✅ *${movieDataToSave.title}* guardada en MODO SILENCIO.\n\n🤫 No se envió notificación.\n👻 No aparecerá en "Recién Agregados".\n📂 Visible solo en el buscador y colecciones.`, { parse_mode: 'Markdown' });
+                    
+                } catch (error) {
+                    console.error("Error en save_silent_hidden:", error.response ? error.response.data : error.message);
+                    bot.sendMessage(chatId, '❌ Error al guardar en modo silencioso.');
+                } finally {
+                    adminState[chatId] = { step: 'menu' };
+                }
+            }
+
             else if (data.startsWith('save_publish_and_push_')) {
+                // NOTA: Este era el botón antiguo. Si quieres usar el nuevo sistema de canales dobles,
+                // usa el botón 'save_publish_push_channel_'. Este se mantiene por compatibilidad si es necesario,
+                // pero en el menú nuevo ya no aparece.
                 const { movieDataToSave } = adminState[chatId];
                 if (!movieDataToSave?.tmdbId) { bot.sendMessage(chatId, 'Error: Datos perdidos.'); adminState[chatId] = { step: 'menu' }; return; }
                 try {
@@ -825,26 +861,35 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
             else if (data.startsWith('save_publish_channel_no_push_')) {
                 const tmdbIdFromCallback = data.split('_').pop();
                 const { movieDataToSave } = adminState[chatId];
+                
+                // Verificación de seguridad
                 if (!movieDataToSave?.tmdbId || movieDataToSave.tmdbId !== tmdbIdFromCallback) { 
                     bot.sendMessage(chatId, 'Error: Datos perdidos. Intenta de nuevo.'); 
                     adminState[chatId] = { step: 'menu' }; 
                     return; 
                 }
+
                 try {
+                    // 1. Guardar en Backend (Sin Push)
                     await axios.post(`${RENDER_BACKEND_URL}/add-movie`, movieDataToSave);
-                    bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id });
-                    bot.sendMessage(chatId, `✅ "${movieDataToSave.title}" guardada. Publicando en CANAL (Silencioso)...`);
-
-                    const DEEPLINK_URL = `${RENDER_BACKEND_URL}/app/details/${movieDataToSave.tmdbId}`;
-                    const CHANNEL_ID = process.env.TELEGRAM_CHANNEL_A_ID; 
                     
-                    if (CHANNEL_ID) {
-                        const messageToChannel = `🎬 *¡NUEVO ESTRENO EN SALA CINE!* 🎬\n\n` +
-                                                `**${movieDataToSave.title}** ya está disponible en la app.\n\n` +
-                                                `_Entra para verla ahora:_`;
+                    bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id });
+                    bot.sendMessage(chatId, `✅ "${movieDataToSave.title}" guardada. Publicando en AMBOS canales (Sin Push App)...`);
 
-                        await bot.sendPhoto(CHANNEL_ID, movieDataToSave.poster_path ? `https://image.tmdb.org/t/p/w500${movieDataToSave.poster_path}` : 'https://placehold.co/500x750?text=SALA+CINE', {
-                            caption: messageToChannel,
+                    // 2. Preparar datos de Canales
+                    const DEEPLINK_URL = `${RENDER_BACKEND_URL}/app/details/${movieDataToSave.tmdbId}`;
+                    const CHANNEL_SMALL = process.env.TELEGRAM_CHANNEL_A_ID; 
+                    const CHANNEL_BIG_ID = process.env.TELEGRAM_CHANNEL_B_ID; // Ahora leemos el canal grande también
+                    
+                    if (CHANNEL_SMALL) {
+                        // --- A. PUBLICAR EN CANAL PEQUEÑO ---
+                        const messageToSmall = `🎬 *¡PELÍCULA COMPLETA DISPONIBLE!* 🎬\n\n` +
+                                                `**${movieDataToSave.title}**\n\n` +
+                                                `${movieDataToSave.overview || 'Sin sinopsis.'}\n\n` +
+                                                `_Toca el botón para ver en la App:_`;
+
+                        const sentMsgSmall = await bot.sendPhoto(CHANNEL_SMALL, movieDataToSave.poster_path ? `https://image.tmdb.org/t/p/w500${movieDataToSave.poster_path}` : 'https://placehold.co/500x750?text=SALA+CINE', {
+                            caption: messageToSmall,
                             parse_mode: 'Markdown',
                             reply_markup: {
                                 inline_keyboard: [
@@ -852,8 +897,43 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                                 ]
                             }
                         });
-                        bot.sendMessage(chatId, `📢 Mensaje enviado al canal público (Sin molestar a usuarios).`);
+
+                        // --- B. PUBLICAR EN CANAL GRANDE (Redirección) ---
+                        const channelUsername = CHANNEL_SMALL.replace('@', '');
+                        const linkToPost = `https://t.me/${channelUsername}/${sentMsgSmall.message_id}`;
+
+                        if (CHANNEL_BIG_ID) {
+                            const releaseYear = movieDataToSave.release_date ? `(${movieDataToSave.release_date.substring(0, 4)})` : '';
+                            const overviewTeaser = movieDataToSave.overview 
+                                ? movieDataToSave.overview.length > 250 
+                                    ? movieDataToSave.overview.substring(0, 250) + '...' 
+                                    : movieDataToSave.overview
+                                : 'Una historia increíble te espera...';
+
+                            const messageToBig = `🍿 *ESTRENO YA DISPONIBLE* 🍿\n\n` +
+                                                 `🎬 *${movieDataToSave.title}* ${releaseYear}\n\n` +
+                                                 `📝 _${overviewTeaser}_\n\n` +
+                                                 `⚠️ _Por temas de copyright, la película completa se encuentra en nuestro canal privado._\n\n` +
+                                                 `👇 *VER PELÍCULA AQUÍ* 👇`;
+
+                            await bot.sendPhoto(CHANNEL_BIG_ID, movieDataToSave.poster_path ? `https://image.tmdb.org/t/p/w500${movieDataToSave.poster_path}` : 'https://placehold.co/500x750?text=SALA+CINE', {
+                                caption: messageToBig,
+                                parse_mode: 'Markdown',
+                                reply_markup: {
+                                    inline_keyboard: [
+                                        [{ text: '🚀 IR AL CANAL Y VER AHORA 🚀', url: linkToPost }]
+                                    ]
+                                }
+                            });
+                            bot.sendMessage(chatId, `📢 Éxito: Publicado en Canal A (Link App) y Canal B (Redirección).`);
+                        } else {
+                            bot.sendMessage(chatId, `📢 Publicado solo en Canal A (Falta configurar Canal B).`);
+                        }
+
+                    } else {
+                        bot.sendMessage(chatId, `⚠️ Error: No hay canales configurados en .env`);
                     }
+
                 } catch (error) {
                     console.error("Error en save_publish_channel_no_push_:", error.response ? error.response.data : error.message);
                     bot.sendMessage(chatId, '❌ Error al guardar o publicar.');
