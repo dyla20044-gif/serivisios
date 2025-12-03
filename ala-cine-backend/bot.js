@@ -1,12 +1,14 @@
 function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_ID, TMDB_API_KEY, RENDER_BACKEND_URL, axios) {
 
-    console.log("🤖 Lógica del Bot inicializada y escuchando...");
+    console.log("🤖 Lógica del Bot inicializada y escuchando (Versión Mejorada)...");
+    
     bot.setMyCommands([
         { command: 'start', description: 'Reiniciar el bot y ver el menú principal' },
         { command: 'subir', description: 'Subir una película o serie a la base de datos' },
         { command: 'editar', description: 'Editar los enlaces de una película o serie existente' },
         { command: 'pedidos', description: 'Ver la lista de películas solicitadas por los usuarios' }
     ]);
+
     bot.onText(/\/start|\/subir/, (msg) => {
         const chatId = msg.chat.id;
         if (chatId !== ADMIN_CHAT_ID) {
@@ -38,6 +40,7 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_ID, TMDB_API_KEY
         );
         const isNotAdmin = msg.from.id !== ADMIN_CHAT_ID;
 
+        // --- Moderación de Enlaces ---
         if (hasLinks && isNotAdmin) {
             try {
                 await bot.deleteMessage(msg.chat.id, msg.message_id);
@@ -53,12 +56,15 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_ID, TMDB_API_KEY
             }
             return; 
         }
+
         const chatId = msg.chat.id;
         const userText = msg.text;
 
         if (!userText) {
             return;
         }
+
+        // --- Comandos Públicos ---
         if (userText.startsWith('/')) {
             const command = userText.split(' ')[0];
 
@@ -83,13 +89,13 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 }
                 
                 if (command === '/contacto') {
-                    // !!! IMPORTANTE: Cambia @TuUsuarioDeTelegram por tu user real !!!
                     bot.sendMessage(chatId, 'Para soporte o dudas, puedes contactar al desarrollador en: @TuUsuarioDeTelegram');
                     return; 
                 }
             }
         }
         
+        // --- Bloqueo de No Admins ---
         if (chatId !== ADMIN_CHAT_ID) {
              if (userText.startsWith('/')) {
                  bot.sendMessage(chatId, 'Lo siento, no tienes permiso para usar este comando.');
@@ -100,6 +106,11 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
         if (userText.startsWith('/')) {
             return; 
         }      
+
+        // =======================================================================
+        // === MÁQUINA DE ESTADOS (Lógica de Texto) ===
+        // =======================================================================
+        
         if (adminState[chatId] && adminState[chatId].step === 'search_movie') {
            try {
                 const searchUrl = `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(userText)}&language=es-ES`;
@@ -227,7 +238,6 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
             };
 
             adminState[chatId].step = 'awaiting_publish_choice';
-            // --- BOTONES ORGANIZADOS EN CUADRÍCULA ---
             const options = {
                 reply_markup: {
                     inline_keyboard: [
@@ -246,10 +256,10 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
         }
 
         // =======================================================================
-        // === NUEVA LÓGICA DE UN SÓLO ENLACE (SERIES) ===
+        // === NUEVA LÓGICA DE UN SÓLO ENLACE (SERIES) + GESTIÓN + FIN DE TEMPORADA ===
         // =======================================================================
         else if (adminState[chatId] && adminState[chatId].step === 'awaiting_unified_link_series') {
-            const { selectedSeries, season, episode } = adminState[chatId];
+            const { selectedSeries, season, episode, totalEpisodesInSeason } = adminState[chatId]; 
             if (!selectedSeries) { 
                 bot.sendMessage(chatId, 'Error: Se perdieron los datos de la serie.'); 
                 adminState[chatId] = { step: 'menu' }; 
@@ -277,32 +287,54 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 isPremium: false
             };
 
-            // Guardado automático (Igual que antes, las series se guardan paso a paso)
             try {
                 await axios.post(`${RENDER_BACKEND_URL}/add-series-episode`, seriesDataToSave);
-                bot.sendMessage(chatId, `✅ Episodio S${season}E${episode} guardado (Enlace unificado).`);
                 
-                const nextEpisodeNumber = episode + 1;
+                // --- LÓGICA INTELIGENTE DE SIGUIENTE PASO ---
+                const nextEpisode = episode + 1;
+                const isSeasonFinished = totalEpisodesInSeason && episode >= totalEpisodesInSeason;
+
                 adminState[chatId].lastSavedEpisodeData = seriesDataToSave;
                 adminState[chatId].step = 'awaiting_series_action';
                 
-                // --- BOTONES ORGANIZADOS EN CUADRÍCULA ---
+                // FILA 1: Acciones sobre lo que ACABAS de subir (Correcciones)
+                const rowCorrections = [
+                    { text: `✏️ Editar este (S${season}E${episode})`, callback_data: `edit_episode_${seriesDataToSave.tmdbId}_${season}_${episode}` },
+                    { text: '🗑️ Borrar este', callback_data: `delete_episode_${seriesDataToSave.tmdbId}_${season}_${episode}` }
+                ];
+
+                // FILA 2: Siguiente paso
+                let rowNext = [];
+                if (isSeasonFinished) {
+                    const nextSeason = season + 1;
+                    rowNext.push({ text: `🎉 Fin T${season} -> Iniciar T${nextSeason}`, callback_data: `manage_season_${seriesDataToSave.tmdbId}_${nextSeason}` });
+                } else {
+                    rowNext.push({ text: `➡️ Siguiente: S${season}E${nextEpisode}`, callback_data: `add_next_episode_${seriesDataToSave.tmdbId}_${season}` });
+                }
+
+                // FILA 3: Publicación
+                const rowPublish = [
+                    { text: `📲 App + PUSH`, callback_data: `publish_push_this_episode_${seriesDataToSave.tmdbId}_${season}_${episode}` },
+                    { text: `🚀 Canal + PUSH`, callback_data: `publish_push_channel_this_episode_${seriesDataToSave.tmdbId}_${season}_${episode}` }
+                ];
+                
+                // FILA 4: Finalizar
+                const rowFinal = [
+                     { text: `📢 Solo Canal`, callback_data: `publish_channel_no_push_this_episode_${seriesDataToSave.tmdbId}_${season}_${episode}` },
+                     { text: '⏹️ Finalizar Todo', callback_data: `finish_series_${seriesDataToSave.tmdbId}` }
+                ];
+
                 const options = {
                     reply_markup: {
-                        inline_keyboard: [
-                            [{ text: `➡️ Agregar S${season}E${nextEpisodeNumber}`, callback_data: `add_next_episode_${seriesDataToSave.tmdbId}_${season}` }],
-                            [
-                                { text: `📲 Publicar + PUSH`, callback_data: `publish_push_this_episode_${seriesDataToSave.tmdbId}_${season}_${episode}` },
-                                { text: `🚀 Canal + PUSH`, callback_data: `publish_push_channel_this_episode_${seriesDataToSave.tmdbId}_${season}_${episode}` }
-                            ],
-                            [
-                                { text: `📢 Solo Canal`, callback_data: `publish_channel_no_push_this_episode_${seriesDataToSave.tmdbId}_${season}_${episode}` },
-                                { text: '⏹️ Finalizar', callback_data: `finish_series_${seriesDataToSave.tmdbId}` }
-                            ]
-                        ]
+                        inline_keyboard: [ rowCorrections, rowNext, rowPublish, rowFinal ]
                     }
                 };
-                bot.sendMessage(chatId, '¿Qué quieres hacer ahora?', options);
+                
+                let msgConfirm = `✅ *S${season}E${episode} Guardado (Unificado).*\n`;
+                if (isSeasonFinished) msgConfirm += `⚠️ ¡Has llegado al último episodio de la temporada (${totalEpisodesInSeason})!`;
+                
+                bot.sendMessage(chatId, msgConfirm, { parse_mode: 'Markdown', ...options });
+
             } catch (error) {
                 console.error("Error guardando episodio:", error.response ? error.response.data : error.message);
                 bot.sendMessage(chatId, 'Error guardando episodio.');
@@ -310,7 +342,28 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
             }
         }
         
-        // --- (FIN DE LÓGICA DE ESTADOS) ---
+        // --- NUEVA LÓGICA DE EDICIÓN DE PELÍCULA (TEXTO) ---
+        else if (adminState[chatId] && adminState[chatId].step === 'awaiting_edit_movie_link') {
+            const { tmdbId, isPro } = adminState[chatId];
+            const linkInput = userText.trim();
+            if (!linkInput) { bot.sendMessage(chatId, '❌ Enlace inválido.'); return; }
+
+            const movieDataToUpdate = {
+                tmdbId: tmdbId,
+                proEmbedCode: linkInput,
+                freeEmbedCode: linkInput, // Asumimos unificado al editar también
+                isPremium: false 
+            };
+
+            try {
+                // Reusamos add-movie que hace upsert ($set)
+                await axios.post(`${RENDER_BACKEND_URL}/add-movie`, movieDataToUpdate);
+                bot.sendMessage(chatId, `✅ Enlace actualizado correctamente para ID ${tmdbId}.`);
+            } catch (error) {
+                bot.sendMessage(chatId, `❌ Error al actualizar.`);
+            }
+            adminState[chatId] = { step: 'menu' };
+        }
     });
 
     // =======================================================================
@@ -323,23 +376,13 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
 
         try {
             
-            // --- LÓGICA PÚBLICA (Callbacks públicos) ---
+            // --- LÓGICA PÚBLICA ---
             if (data === 'public_help') {
                 bot.answerCallbackQuery(callbackQuery.id);
                 const helpMessage = `👋 ¡Hola! Soy un Bot de Auto-Aceptación de Solicitudes.
                     
 **Función Principal:**
-Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu canal o grupo privado.
-
-**¿Cómo configurarme?**
-1. Añádeme como administrador a tu canal o grupo.
-2. Otórgame el permiso: "**Administrar solicitudes de ingreso**".
-3. ¡Listo! Aceptaré a los nuevos miembros y les enviaré un DM de bienvenida.
-
-*Comandos disponibles:*
-/ayuda - Muestra esta información.
-/contacto - Contactar con el desarrollador.
-`;
+Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu canal o grupo privado.`;
                 bot.sendMessage(chatId, helpMessage, { parse_mode: 'Markdown' });
                 return;
             }
@@ -371,9 +414,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 bot.sendMessage(chatId, 'Envía el ENLACE (URL) de la imagen para el evento.'); 
             }
             
-            // =======================================================================
-            // === (NUEVO) GESTIÓN DE MENÚ DE PEDIDOS ===
-            // =======================================================================
+            // --- GESTIÓN DE PEDIDOS ---
             else if (data === 'view_requests_menu') {
                 const options = {
                     reply_markup: {
@@ -381,14 +422,14 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                             [{ text: '🚀 Ultra Rápido (1-2h)', callback_data: 'req_filter_ultra' }],
                             [{ text: '⚡ Rápido (12h)', callback_data: 'req_filter_fast' }],
                             [{ text: '📅 Regular (Semana)', callback_data: 'req_filter_regular' }],
-                            [{ text: '⬅️ Volver', callback_data: 'back_to_menu' }] // Necesitas manejar esto o reiniciar
+                            [{ text: '⬅️ Volver', callback_data: 'back_to_menu' }]
                         ]
                     }
                 };
                 bot.sendMessage(chatId, '📂 *Filtrar Pedidos por Prioridad:*', { parse_mode: 'Markdown', ...options });
             }
             else if (data.startsWith('req_filter_')) {
-                const filterType = data.split('_')[2]; // ultra, fast, regular
+                const filterType = data.split('_')[2]; 
                 let query = {};
                 let titleMsg = '';
 
@@ -406,7 +447,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 try {
                     const requests = await mongoDb.collection('movie_requests')
                         .find(query)
-                        .sort({ votes: -1 }) // Los más votados primero
+                        .sort({ votes: -1 }) 
                         .limit(10)
                         .toArray();
 
@@ -415,9 +456,6 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                     } else {
                         bot.sendMessage(chatId, `📋 *${titleMsg}:*`, { parse_mode: 'Markdown' });
                         for (const req of requests) {
-                            // Botón "Subir" usa la misma lógica que "solicitud_"
-                            // Usamos "add_new_movie_" porque la lógica es idéntica: buscar en TMDB y pedir enlace.
-                            // Pero para ser más claros, usaremos el prefijo "solicitud_" que ya existía y lo adaptaremos.
                             const btn = {
                                 reply_markup: {
                                     inline_keyboard: [[{ text: '✅ Subir Ahora', callback_data: `solicitud_${req.tmdbId}` }]]
@@ -437,11 +475,8 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 }
             }
 
-            // =======================================================================
-            // === LÓGICA DE SUBIDA (MODIFICADA: UNIFIED LINK) ===
-            // =======================================================================
+            // --- LÓGICA DE SUBIDA (PELÍCULAS) ---
             else if (data.startsWith('add_new_movie_') || data.startsWith('solicitud_')) {
-                // Captura tanto subidas manuales como desde solicitudes
                 let tmdbId = '';
                 if (data.startsWith('add_new_movie_')) tmdbId = data.split('_')[3];
                 if (data.startsWith('solicitud_')) tmdbId = data.split('_')[1];
@@ -453,9 +488,8 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                     const movieData = response.data;
                     if (!movieData) { bot.sendMessage(chatId, 'Error: No se encontraron detalles para esa película.'); return; }
 
-                    // ESTADO: Awaiting Unified Link
                     adminState[chatId] = {
-                        step: 'awaiting_unified_link_movie', // NUEVO ESTADO UNIFICADO
+                        step: 'awaiting_unified_link_movie', 
                         selectedMedia: {
                             id: movieData.id,
                             title: movieData.title,
@@ -471,7 +505,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 }
             }
 
-            // --- GESTIÓN DE SERIES (MODIFICADA: UNIFIED LINK) ---
+            // --- GESTIÓN DE SERIES ---
             else if (data.startsWith('add_new_series_')) {
                 const tmdbId = data.split('_')[3];
                 bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id }).catch(() => {});
@@ -482,13 +516,28 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id }).catch(() => {});
                 await handleManageSeries(chatId, tmdbId);
             }
+            
+            // --- SELECCIONAR TEMPORADA Y DETECTAR EPISODIOS ---
             else if (data.startsWith('manage_season_')) {
                 const [_, __, tmdbId, seasonNumber] = data.split('_');
-                const { selectedSeries } = adminState[chatId];
-                if (!selectedSeries || selectedSeries.id.toString() !== tmdbId) {
-                    bot.sendMessage(chatId, 'Error: Se perdieron los datos de la serie. Vuelve a buscar.');
+                const { selectedSeries } = adminState[chatId] || {};
+                
+                if (!selectedSeries || (selectedSeries.id && selectedSeries.id.toString() !== tmdbId && selectedSeries.tmdbId !== tmdbId)) {
+                    // Si perdimos estado, intentamos recuperarlo rápido si es posible, o error
+                    bot.sendMessage(chatId, '⚠️ Estado perdido. Por favor busca la serie nuevamente.');
                     return;
                 }
+
+                // 1. Obtener Total de Episodios de TMDB para saber cuándo parar
+                let totalEpisodes = 0;
+                try {
+                    const url = `https://api.themoviedb.org/3/tv/${tmdbId}/season/${seasonNumber}?api_key=${TMDB_API_KEY}`;
+                    const resp = await axios.get(url);
+                    if (resp.data && resp.data.episodes) {
+                        totalEpisodes = resp.data.episodes.length;
+                    }
+                } catch (e) { console.warn("No se pudo obtener total episodios TMDB"); }
+
                 const seriesData = await mongoDb.collection('series_catalog').findOne({ tmdbId: tmdbId });
                 let lastEpisode = 0;
                 if (seriesData && seriesData.seasons && seriesData.seasons[seasonNumber] && seriesData.seasons[seasonNumber].episodes) {
@@ -498,43 +547,85 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 }
                 const nextEpisode = lastEpisode + 1;
                 
-                // ESTADO: Awaiting Unified Link Series
                 adminState[chatId] = {
                     ...adminState[chatId],
-                    step: 'awaiting_unified_link_series', // NUEVO ESTADO UNIFICADO
+                    step: 'awaiting_unified_link_series',
                     season: parseInt(seasonNumber),
-                    episode: nextEpisode
+                    episode: nextEpisode,
+                    totalEpisodesInSeason: totalEpisodes // Guardamos el total
                 };
+                
                 bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id }).catch(() => {});
-                bot.sendMessage(chatId, `Gestionando *S${seasonNumber}* de *${selectedSeries.name}*.\nAgregando episodio *E${nextEpisode}*.\n\n🔗 Envía el **ENLACE (Link)** del video.`, { parse_mode: 'Markdown' });
+                
+                let infoMsg = `Gestionando *S${seasonNumber}* de *${selectedSeries.name}* (Total eps: ${totalEpisodes}).\nAgregando episodio *E${nextEpisode}*.\n\n🔗 Envía el **ENLACE** del video.`;
+                if (nextEpisode > totalEpisodes && totalEpisodes > 0) infoMsg += "\n⚠️ Nota: Estás agregando más episodios de los que indica TMDB.";
+
+                bot.sendMessage(chatId, infoMsg, { parse_mode: 'Markdown' });
             }
+
             else if (data.startsWith('add_next_episode_')) {
                 const [_, __, ___, tmdbId, seasonNumber] = data.split('_');
-                const { selectedSeries } = adminState[chatId];
-                if (!selectedSeries || selectedSeries.id.toString() !== tmdbId) { 
+                // Asumimos que el estado totalEpisodesInSeason se mantiene o lo reusamos
+                // Para seguridad, simplemente incrementamos lo que había
+                const { selectedSeries, totalEpisodesInSeason } = adminState[chatId];
+                
+                if (!selectedSeries || selectedSeries.id.toString() !== tmdbId && selectedSeries.tmdbId !== tmdbId) { 
                     bot.sendMessage(chatId, 'Error: Datos de la serie perdidos. Vuelve a empezar.'); 
                     adminState[chatId] = { step: 'menu' };
                     return; 
                 }
-                const seriesData = await mongoDb.collection('series_catalog').findOne({ tmdbId: tmdbId });
-                let lastEpisode = 0;
-                 if (seriesData && seriesData.seasons && seriesData.seasons[seasonNumber] && seriesData.seasons[seasonNumber].episodes) {
-                    lastEpisode = Object.keys(seriesData.seasons[seasonNumber].episodes)
-                                    .map(Number)
-                                    .sort((a, b) => b - a)[0] || 0;
-                }
-                const nextEpisode = lastEpisode + 1;
+                
+                // Calculamos siguiente ep basado en lo último guardado
+                const lastSaved = adminState[chatId].lastSavedEpisodeData;
+                const nextEpisode = (lastSaved ? lastSaved.episodeNumber : 0) + 1;
+
                 adminState[chatId] = { 
                     ...adminState[chatId],
-                    step: 'awaiting_unified_link_series', // NUEVO ESTADO UNIFICADO
+                    step: 'awaiting_unified_link_series',
                     season: parseInt(seasonNumber), 
                     episode: nextEpisode 
                 };
+                
                 bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id });
-                bot.sendMessage(chatId, `Siguiente: Envía **ENLACE** para S${seasonNumber}E${nextEpisode}.`);
+                
+                let msgNext = `Siguiente: Envía **ENLACE** para S${seasonNumber}E${nextEpisode}.`;
+                if (totalEpisodesInSeason && nextEpisode === totalEpisodesInSeason) msgNext += " (Último de la temporada)";
+                
+                bot.sendMessage(chatId, msgNext);
+            }
+            
+            // --- NUEVOS CALLBACKS DE GESTIÓN DE EPISODIOS ---
+            
+            // A. BORRAR EL EPISODIO RECIÉN SUBIDO
+            else if (data.startsWith('delete_episode_')) {
+                const [_, __, tmdbId, season, episode] = data.split('_');
+                try {
+                    await axios.post(`${RENDER_BACKEND_URL}/delete-series-episode`, {
+                        tmdbId, seasonNumber: parseInt(season), episodeNumber: parseInt(episode)
+                    });
+                    bot.sendMessage(chatId, `🗑️ Episodio S${season}E${episode} eliminado. Puedes volver a subirlo.`);
+                    // Opcional: Podrías forzar el estado para pedir el link de nuevo inmediatamente
+                } catch (e) {
+                    bot.sendMessage(chatId, '❌ Error eliminando episodio.');
+                }
             }
 
-            // --- GESTIÓN DE EDICIÓN (INTACTA - SE MANTIENE SEPARADO PRO/FREE PARA FLEXIBILIDAD) ---
+            // B. EDITAR EL EPISODIO RECIÉN SUBIDO (Simplemente vuelve a pedir el link)
+            else if (data.startsWith('edit_episode_')) {
+                const [_, __, tmdbId, season, episode] = data.split('_');
+                
+                // Restablecemos el estado para pedir link de nuevo
+                adminState[chatId] = {
+                    ...adminState[chatId], // Mantener otros datos
+                    step: 'awaiting_unified_link_series',
+                    season: parseInt(season),
+                    episode: parseInt(episode)
+                };
+                
+                bot.sendMessage(chatId, `✏️ Corrección: Envía el NUEVO enlace para **S${season}E${episode}**:`);
+            }
+
+            // --- GESTIÓN DE EDICIÓN DE PELÍCULAS ---
             else if (data.startsWith('manage_movie_')) {
                 const tmdbId = data.split('_')[2];
                 try {
@@ -550,9 +641,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                     const options = {
                         reply_markup: {
                             inline_keyboard: [
-                                // MANTENEMOS ESTO SEPARADO POR SI QUIERES CORREGIR SOLO UNO
-                                [{ text: '✏️ Editar Link PRO', callback_data: `add_pro_movie_${tmdbId}` }],
-                                [{ text: '✏️ Editar Link GRATIS', callback_data: `add_free_movie_${tmdbId}` }]
+                                [{ text: '✏️ Editar Link PRO/GRATIS', callback_data: `add_pro_movie_${tmdbId}` }],
                             ]
                         }
                     };
@@ -563,10 +652,22 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                     bot.sendMessage(chatId, 'Error al obtener los detalles de la película.');
                 }
             }
-            
-            // ... (Resto de lógica de edición: add_pro_movie_, add_free_movie_ ... MANTENIDA)
+            // ACTIVAR EDICIÓN PELÍCULA
+            else if (data.startsWith('add_pro_movie_') || data.startsWith('add_free_movie_')) {
+                const isPro = data.startsWith('add_pro_movie_');
+                const tmdbId = data.split('_')[3];
+                
+                adminState[chatId] = {
+                    step: 'awaiting_edit_movie_link',
+                    tmdbId: tmdbId,
+                    isPro: isPro
+                };
+                
+                bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id }).catch(() => {});
+                bot.sendMessage(chatId, `✏️ Editando enlace para ID: ${tmdbId}.\n\n🔗 Envía el nuevo enlace ahora:`);
+            }
 
-            // --- Lógica de Eliminación y Diamantes (INTACTA) ---
+            // --- Lógica de Eliminación y Diamantes ---
             else if (data === 'manage_movies') { 
                 adminState[chatId] = { step: 'search_manage' };
                 bot.sendMessage(chatId, 'Escribe el nombre del contenido a gestionar.'); 
@@ -601,7 +702,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 bot.sendMessage(chatId, `✅ Pedido de diamantes para el ID \`${gameId}\` marcado como completado.`);
             }
 
-            // --- Callbacks de Guardado/Publicación (INTACTOS - CRÍTICO) ---
+            // --- Callbacks de Guardado/Publicación ---
             else if (data.startsWith('save_only_')) {
                 const { movieDataToSave } = adminState[chatId];
                 if (!movieDataToSave?.tmdbId) { bot.sendMessage(chatId, 'Error: Datos perdidos.'); adminState[chatId] = { step: 'menu' }; return; }
@@ -635,9 +736,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 }
             }
 
-            // ==============================================================================
-            // === LÓGICA DE DOBLE PUBLICACIÓN (FUNNEL) PARA PELÍCULAS ===
-            // ==============================================================================
+            // --- DOBLE PUBLICACIÓN PELÍCULAS ---
           else if (data.startsWith('save_publish_push_channel_')) {
                 const tmdbIdFromCallback = data.split('_').pop(); 
                 const { movieDataToSave } = adminState[chatId];
@@ -649,12 +748,10 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 }
                 
                 try {
-                    // 1. Guardar en Base de Datos
                     await axios.post(`${RENDER_BACKEND_URL}/add-movie`, movieDataToSave);
                     bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id });
                     bot.sendMessage(chatId, `✅ "${movieDataToSave.title}" guardada. Iniciando publicación doble...`);
                     
-                    // 2. Enviar Notificación PUSH (App)
                     await axios.post(`${RENDER_BACKEND_URL}/api/notify-new-content`, {
                         title: "¡Nuevo Estreno!",
                         body: `Ya puedes ver: ${movieDataToSave.title}`,
@@ -663,15 +760,11 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                         mediaType: 'movie'
                     });
 
-                    // --- DOBLE PUBLICACIÓN TELEGRAM ---
-
                     const DEEPLINK_URL = `${RENDER_BACKEND_URL}/app/details/${movieDataToSave.tmdbId}`;
                     const CHANNEL_SMALL = process.env.TELEGRAM_CHANNEL_A_ID; 
                     const CHANNEL_BIG_ID = process.env.TELEGRAM_CHANNEL_B_ID;   
                     
                     if (CHANNEL_SMALL) {
-                        
-                        // A) PUBLICAR EN CANAL PEQUEÑO (Completo y Directo)
                         const messageToSmall = `🎬 *¡PELÍCULA COMPLETA DISPONIBLE!* 🎬\n\n` +
                                                  `**${movieDataToSave.title}**\n\n` +
                                                  `${movieDataToSave.overview || 'Sin sinopsis.'}\n\n` +
@@ -687,15 +780,11 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                             }
                         });
 
-                        // Generar el enlace al post
                         const channelUsername = CHANNEL_SMALL.replace('@', '');
                         const linkToPost = `https://t.me/${channelUsername}/${sentMsgSmall.message_id}`;
 
-                        // B) PUBLICAR EN CANAL GRANDE (DISEÑO PREMIUM)
                         if (CHANNEL_BIG_ID) {
-                            // Preparamos datos bonitos
                             const releaseYear = movieDataToSave.release_date ? `(${movieDataToSave.release_date.substring(0, 4)})` : '';
-                            // Cortamos la sinopsis a 250 caracteres para que sea un "Teaser"
                             const overviewTeaser = movieDataToSave.overview 
                                 ? movieDataToSave.overview.length > 250 
                                     ? movieDataToSave.overview.substring(0, 250) + '...' 
@@ -741,7 +830,6 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                     adminState[chatId] = { step: 'menu' }; 
                     return; 
                 }
-                
                 try {
                     await axios.post(`${RENDER_BACKEND_URL}/add-movie`, movieDataToSave);
                     bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id });
@@ -766,7 +854,6 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                         });
                         bot.sendMessage(chatId, `📢 Mensaje enviado al canal público (Sin molestar a usuarios).`);
                     }
-                    
                 } catch (error) {
                     console.error("Error en save_publish_channel_no_push_:", error.response ? error.response.data : error.message);
                     bot.sendMessage(chatId, '❌ Error al guardar o publicar.');
@@ -792,7 +879,6 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                         tmdbId: episodeData.tmdbId,
                         mediaType: 'tv'
                     });
-                    
                     bot.sendMessage(chatId, `📲 Notificación PUSH y Publicación completadas.`);
                 } catch (error) {
                     console.error("Error en publish_push_this_episode:", error.response ? error.response.data : error.message);
@@ -802,9 +888,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 }
             }
             
-            // ==============================================================================
-            // === LÓGICA DE DOBLE PUBLICACIÓN (FUNNEL) PARA EPISODIOS ===
-            // ==============================================================================
+            // --- DOBLE PUBLICACIÓN SERIES ---
            else if (data.startsWith('publish_push_channel_this_episode_')) {
                 const parts = data.split('_'); 
                 const tmdbId = parts[5]; 
@@ -822,7 +906,6 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 bot.sendMessage(chatId, `✅ Episodio S${season}E${episode} listo. Iniciando doble publicación...`);
                 
                 try {
-                    // 1. Notificación PUSH
                     await axios.post(`${RENDER_BACKEND_URL}/api/notify-new-content`, {
                         title: `¡Nuevo Episodio! ${episodeData.title}`,
                         body: `Ya disponible: S${episodeData.seasonNumber}E${episodeData.episodeNumber}`,
@@ -831,15 +914,11 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                         mediaType: 'tv'
                     });
 
-                    // --- DOBLE PUBLICACIÓN TELEGRAM (SERIES) ---
-
                     const DEEPLINK_URL = `${RENDER_BACKEND_URL}/app/details/${episodeData.tmdbId}`; 
                     const CHANNEL_SMALL = process.env.TELEGRAM_CHANNEL_A_ID; 
                     const CHANNEL_BIG_ID = process.env.TELEGRAM_CHANNEL_B_ID; 
                     
                     if (CHANNEL_SMALL) {
-                        
-                        // A) PUBLICAR EN CANAL PEQUEÑO
                         const messageToSmall = `📺 *¡NUEVO EPISODIO EN SALA CINE!* 📺\n\n` +
                                                  `**${episodeData.title}**\n` +
                                                  `Temporada ${episodeData.seasonNumber} - Episodio ${episodeData.episodeNumber} ya disponible.\n\n` +
@@ -855,13 +934,10 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                             }
                         });
 
-                        // Generar link al post
                         const channelUsername = CHANNEL_SMALL.replace('@', '');
                         const linkToPost = `https://t.me/${channelUsername}/${sentMsgSmall.message_id}`;
 
-                        // B) PUBLICAR EN CANAL GRANDE (DISEÑO PREMIUM)
                         if (CHANNEL_BIG_ID) {
-                            // Sinopsis corta del episodio o de la serie
                             const overviewTeaser = episodeData.overview 
                                 ? episodeData.overview.length > 200 
                                     ? episodeData.overview.substring(0, 200) + '...' 
@@ -970,7 +1046,6 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 console.log(`[Auto-Aceptar] Bot promovido a ADMIN en chat ${chatId} (${update.chat.title}) por ${adminUserId}`);
                 
                 const canManageJoins = update.new_chat_member.can_manage_chat_join_requests;
-                
                 let adminMessage = `¡Gracias por hacerme administrador en **${update.chat.title}**! 👋\n\n`;
                 
                 if (canManageJoins) {
@@ -990,7 +1065,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                         ]
                     }
                 }).catch(e => {
-                    console.warn(`[Auto-Aceptar] No se pudo enviar DM al admin ${adminUserId}. (Quizás el admin tiene los DMs bloqueados)`);
+                    console.warn(`[Auto-Aceptar] No se pudo enviar DM al admin ${adminUserId}.`);
                 });
             }
         } catch (error) {
@@ -1011,7 +1086,6 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
             console.log(`[Auto-Aceptar] ✅ Solicitud de ${userFirstName} ACEPTADA en chat ${chatTitle}.`);
 
             const inviteLink = await bot.exportChatInviteLink(chatId);
-
             const welcomeMessage = `¡Hola ${userFirstName}! 👋\n\nTu solicitud para unirte a **${chatTitle}** ha sido aceptada.\n\nPuedes acceder usando el botón de abajo:`;
             
             const options = {
@@ -1036,14 +1110,14 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
 
             if (chatPhotoId) {
                 bot.sendPhoto(userId, chatPhotoId, options).catch(e => {
-                    console.warn(`[Auto-Aceptar] No se pudo enviar DM con foto a ${userId}. (El usuario puede tener DMs bloqueados)`);
+                    console.warn(`[Auto-Aceptar] No se pudo enviar DM con foto a ${userId}.`);
                 });
             } else {
                 bot.sendMessage(userId, welcomeMessage, { 
                     parse_mode: 'Markdown',
                     reply_markup: options.reply_markup 
                 }).catch(e => {
-                    console.warn(`[Auto-Aceptar] No se pudo enviar DM de bienvenida a ${userId}. (El usuario puede tener DMs bloqueados)`);
+                    console.warn(`[Auto-Aceptar] No se pudo enviar DM de bienvenida a ${userId}.`);
                 });
             }
 
