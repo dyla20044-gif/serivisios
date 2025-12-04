@@ -19,9 +19,8 @@ const tmdbCache = new NodeCache({ stdTTL: 86400, checkperiod: 3600 });
 const recentCache = new NodeCache({ stdTTL: 86400, checkperiod: 600 });
 const RECENT_CACHE_KEY = 'recent_content_main'; 
 const historyCache = new NodeCache({ stdTTL: 900, checkperiod: 120 });
-
-// Cache específico para detalles de géneros locales para no saturar TMDB
-const localDetailsCache = new NodeCache({ stdTTL: 43200, checkperiod: 3600 }); 
+// Cache para detalles de géneros locales (Evita saturar TMDB con pelis antiguas)
+const localDetailsCache = new NodeCache({ stdTTL: 86400, checkperiod: 3600 }); 
 
 const app = express();
 dotenv.config();
@@ -92,7 +91,8 @@ app.use((req, res, next) => {
 async function verifyIdToken(req, res, next) {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return res.status(401).json({ error: 'Autorización requerida. Bearer token no proporcionado.' });
+        // Permitimos acceso sin token a ciertos endpoints de contenido
+        return next(); 
     }
     const idToken = authHeader.split(' ')[1];
     try {
@@ -102,20 +102,20 @@ async function verifyIdToken(req, res, next) {
         next();
     } catch (error) {
         // console.error("Error al verificar Firebase ID Token:", error.code);
-        // Permitimos fallos silenciosos para endpoints públicos híbridos, 
-        // pero idealmente el frontend refresca el token.
-        return res.status(403).json({ error: 'Token de autenticación inválido o expirado.', code: error.code });
+        // Si el token falla, seguimos como usuario anónimo (req.uid undefined)
+        next();
     }
 }
 
 function countsCacheMiddleware(req, res, next) {
+    if (!req.uid) return next(); // No cachear si no hay usuario
     const uid = req.uid;
     const route = req.path;
     const cacheKey = `${uid}:${route}`;
     try {
         const cachedData = countsCache.get(cacheKey);
         if (cachedData) {
-            console.log(`[Cache HIT] Sirviendo datos de usuario desde caché para: ${cacheKey}`);
+            // console.log(`[Cache HIT] Sirviendo datos de usuario desde caché para: ${cacheKey}`);
             return res.status(200).json(cachedData);
         }
     } catch (err) {
@@ -131,106 +131,149 @@ async function llamarAlExtractor(targetUrl) {
 }
 
 // =========================================================================
-// === NUEVA RUTA CRÍTICA: /api/content/local (Lógica Híbrida) ===
+// === NUEVA RUTA CRÍTICA: /api/content/local (LÓGICA HÍBRIDA REAL) ===
 // =========================================================================
+// Esta ruta maneja "Tendencias Inteligentes" y "Filtrado por Género"
 app.get('/api/content/local', verifyIdToken, async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
 
-    const { type, genre, category, source } = req.query; // genre es el ID numérico (ej: 28 para acción)
+    const { type, genre, category, source } = req.query; 
     
-    console.log(`[Local API] Solicitud: Type=${type}, Genre=${genre}, Category=${category}`);
-
     try {
-        let results = [];
-        let collection;
-        let projection;
+        // 1. Configurar Colección y Proyección
+        const collection = (type === 'tv') ? mongoDb.collection('series_catalog') : mongoDb.collection('media_catalog');
+        // Traemos 'genres' y 'addedAt' para filtrar correctamente
+        const projection = { tmdbId: 1, title: 1, name: 1, poster_path: 1, backdrop_path: 1, addedAt: 1, genres: 1 };
 
-        // 1. Seleccionar Colección
-        if (type === 'tv') {
-            collection = mongoDb.collection('series_catalog');
-            projection = { tmdbId: 1, name: 1, poster_path: 1, backdrop_path: 1, addedAt: 1 }; 
-        } else {
-            // Por defecto películas
-            collection = mongoDb.collection('media_catalog');
-            projection = { tmdbId: 1, title: 1, poster_path: 1, backdrop_path: 1, addedAt: 1 };
-        }
+        // ---------------------------------------------------------
+        // A. LÓGICA DE CRUCE (POPULARES / TENDENCIAS)
+        // ---------------------------------------------------------
+        if (category === 'populares' || category === 'tendencias' || category === 'series_populares') {
+            let tmdbEndpoint = '';
+            if (category === 'populares') tmdbEndpoint = 'movie/popular';
+            else if (category === 'series_populares') tmdbEndpoint = 'tv/popular';
+            else tmdbEndpoint = 'trending/all/day';
 
-        // 2. Obtener TODO el contenido local (Sin filtrar por hideFromRecent)
-        // Traemos todo para luego filtrar por género si es necesario
-        const items = await collection.find({})
-            .project(projection)
-            .sort({ addedAt: -1 }) // Las más recientes primero
-            .limit(100) // Límite de seguridad para rendimiento
-            .toArray();
-
-        // 3. Formatear al estándar de TMDB
-        const formattedItems = items.map(item => ({
-            id: parseInt(item.tmdbId), // Importante: ID numérico para coincidir con TMDB
-            tmdbId: item.tmdbId,
-            title: item.title || item.name,
-            name: item.name || item.title,
-            poster_path: item.poster_path,
-            backdrop_path: item.backdrop_path,
-            media_type: type === 'tv' ? 'tv' : 'movie',
-            isLocal: true // Bandera para el frontend
-        }));
-
-        // 4. Caso A: Botón "Películas Agregadas" (source=manual)
-        // Devolvemos TODO sin filtrar por género.
-        if (source === 'manual' || category === 'added') {
-            return res.status(200).json(formattedItems);
-        }
-
-        // 5. Caso B: Filtrado por Género (Para secciones del Home)
-        if (genre) {
-            const targetGenreId = parseInt(genre);
-            const filteredItems = [];
-
-            // Necesitamos verificar el género de cada ítem local.
-            // Como MongoDB no tiene el género guardado, consultamos caché o TMDB rápido.
-            
-            /* Lógica de "Enriquecimiento" */
-            const promises = formattedItems.map(async (item) => {
-                const cacheKey = `details-${type}-${item.id}`;
-                let details = localDetailsCache.get(cacheKey);
-
-                if (!details) {
-                    try {
-                        // Buscar en TMDB solo para obtener géneros
-                        const url = `https://api.themoviedb.org/3/${type}/${item.id}?api_key=${TMDB_API_KEY}&language=es-MX`;
-                        const resp = await axios.get(url);
-                        details = resp.data;
-                        localDetailsCache.set(cacheKey, details); // Guardar en caché largo
-                    } catch (e) {
-                        // Si falla TMDB, ignoramos este item para el filtro
-                        return null;
-                    }
+            // 1. Pedir lista REAL a TMDB
+            let tmdbList = tmdbCache.get(`smart_cross_${category}`);
+            if (!tmdbList) {
+                try {
+                    const resp = await axios.get(`https://api.themoviedb.org/3/${tmdbEndpoint}?api_key=${TMDB_API_KEY}&language=es-MX`);
+                    tmdbList = resp.data.results || [];
+                    tmdbCache.set(`smart_cross_${category}`, tmdbList, 3600); // Cache 1 hora
+                } catch (e) {
+                    return res.status(200).json([]); // Fallback vacío
                 }
+            }
 
-                if (details && details.genres) {
-                    const hasGenre = details.genres.some(g => g.id === targetGenreId);
-                    if (hasGenre) return item;
-                }
-                return null;
+            // 2. Extraer IDs y buscar coincidencias locales
+            const targetIds = tmdbList.map(item => item.id.toString());
+            let localMatches = [];
+
+            if (category === 'tendencias') {
+                // Tendencias mezcla series y pelis
+                const movies = await mongoDb.collection('media_catalog').find({ tmdbId: { $in: targetIds } }).project(projection).toArray();
+                const series = await mongoDb.collection('series_catalog').find({ tmdbId: { $in: targetIds } }).project(projection).toArray();
+                const fMovies = movies.map(m => formatLocalItem(m, 'movie'));
+                const fSeries = series.map(s => formatLocalItem(s, 'tv'));
+                localMatches = [...fMovies, ...fSeries];
+            } else {
+                // Populares específicos
+                const matches = await collection.find({ tmdbId: { $in: targetIds } }).project(projection).toArray();
+                localMatches = matches.map(m => formatLocalItem(m, type === 'tv' ? 'tv' : 'movie'));
+            }
+
+            // 3. Ordenar según popularidad de TMDB
+            const sortedMatches = [];
+            targetIds.forEach(id => {
+                const match = localMatches.find(m => m.tmdbId === id);
+                if (match) sortedMatches.push(match);
             });
 
-            const resolvedItems = await Promise.all(promises);
-            // Filtramos los nulos
-            results = resolvedItems.filter(i => i !== null);
-            
-            return res.status(200).json(results);
+            return res.status(200).json(sortedMatches);
         }
 
-        // Si no hay filtro de género ni manual, devolvemos todo (comportamiento por defecto)
-        res.status(200).json(formattedItems);
+        // ---------------------------------------------------------
+        // B. LÓGICA DE FILTRADO POR GÉNERO (ESTRICTO)
+        // ---------------------------------------------------------
+        if (genre) {
+            const genreId = parseInt(genre);
+            
+            // 1. Buscar en BD items que tengan ese género guardado (Rápido)
+            let items = await collection.find({ genres: genreId }).project(projection).sort({ addedAt: -1 }).limit(20).toArray();
+            
+            // 2. Fallback Híbrido: Si hay pocas (pelis viejas sin género), revisamos las recientes
+            if (items.length < 5) {
+                const candidates = await collection.find({}).project(projection).sort({ addedAt: -1 }).limit(50).toArray();
+                
+                const verified = [];
+                for (const item of candidates) {
+                    if (items.find(i => i.tmdbId === item.tmdbId)) continue; // Ya está
+
+                    let hasGenre = false;
+                    // Si ya tiene genres pero no coincidió antes, no es.
+                    if (item.genres && Array.isArray(item.genres) && item.genres.length > 0) {
+                        if (item.genres.includes(genreId)) hasGenre = true;
+                    } 
+                    // Si NO tiene genres (subida antigua), consultamos TMDB
+                    else {
+                        const cacheKey = `genre_chk_${type}_${item.tmdbId}`;
+                        let cachedGenres = localDetailsCache.get(cacheKey);
+                        if (!cachedGenres) {
+                            try {
+                                const url = `https://api.themoviedb.org/3/${type}/${item.tmdbId}?api_key=${TMDB_API_KEY}`;
+                                const resp = await axios.get(url);
+                                cachedGenres = resp.data.genres.map(g => g.id);
+                                localDetailsCache.set(cacheKey, cachedGenres);
+                                // Auto-reparación: Guardar en BD para la próxima
+                                await collection.updateOne({ _id: item._id }, { $set: { genres: cachedGenres } });
+                            } catch (e) {}
+                        }
+                        if (cachedGenres && cachedGenres.includes(genreId)) hasGenre = true;
+                    }
+
+                    if (hasGenre) verified.push(item);
+                    if (verified.length + items.length >= 20) break; 
+                }
+                items = [...items, ...verified];
+            }
+
+            const formatted = items.map(i => formatLocalItem(i, type === 'tv' ? 'tv' : 'movie'));
+            return res.status(200).json(formatted);
+        }
+
+        // ---------------------------------------------------------
+        // C. TODO EL CONTENIDO (Botón "Agregadas")
+        // ---------------------------------------------------------
+        const allItems = await collection.find({})
+            .project(projection)
+            .sort({ addedAt: -1 })
+            .limit(100)
+            .toArray();
+            
+        const formattedAll = allItems.map(i => formatLocalItem(i, type === 'tv' ? 'tv' : 'movie'));
+        res.status(200).json(formattedAll);
 
     } catch (error) {
         console.error("Error en /api/content/local:", error);
-        res.status(500).json({ error: "Error interno al obtener contenido local." });
+        res.status(500).json({ error: "Error interno." });
     }
 });
-// =========================================================================
 
+function formatLocalItem(item, type) {
+    return {
+        id: parseInt(item.tmdbId),
+        tmdbId: item.tmdbId,
+        title: item.title || item.name,
+        name: item.name || item.title,
+        poster_path: item.poster_path,
+        backdrop_path: item.backdrop_path,
+        media_type: type,
+        isLocal: true
+    };
+}
+
+// =========================================================================
 
 app.get('/api/tmdb-proxy', async (req, res) => {
     const endpoint = req.query.endpoint;
@@ -281,7 +324,7 @@ app.get('/api/content/recent', async (req, res) => {
         return res.status(200).json(cachedRecent);
     }
 
-    console.log(`[Recent Cache MISS] Generando lista unificada (Películas + Series)...`);
+    // console.log(`[Recent Cache MISS] Generando lista unificada...`);
 
     try {
         const moviesPromise = mongoDb.collection('media_catalog')
@@ -298,7 +341,7 @@ app.get('/api/content/recent', async (req, res) => {
             .toArray();
         const [movies, series] = await Promise.all([moviesPromise, seriesPromise]);
         const formattedMovies = movies.map(movie => ({
-            id: parseInt(movie.tmdbId),
+            id: movie.tmdbId,
             tmdbId: movie.tmdbId,
             title: movie.title,
             poster_path: movie.poster_path,
@@ -308,7 +351,7 @@ app.get('/api/content/recent', async (req, res) => {
         }));
 
         const formattedSeries = series.map(serie => ({
-            id: parseInt(serie.tmdbId),
+            id: serie.tmdbId,
             tmdbId: serie.tmdbId,
             title: serie.name, 
             poster_path: serie.poster_path,
@@ -330,7 +373,7 @@ app.get('/api/content/recent', async (req, res) => {
 });
 
 app.get('/api/user/me', verifyIdToken, countsCacheMiddleware, async (req, res) => {
-    const { uid, email, cacheKey, query } = req;
+    const { uid, email, cacheKey } = req;
     const usernameFromQuery = req.query.username;    
     try {
         const userDocRef = db.collection('users').doc(uid);
@@ -445,6 +488,7 @@ app.post('/api/user/coins', verifyIdToken, async (req, res) => {
         res.status(500).json({ error: 'Error en la transacción de monedas.' });
     }
 });
+
 app.get('/api/user/history', verifyIdToken, async (req, res) => {
     const { uid } = req;
     const cacheKey = `history-${uid}`;
@@ -477,6 +521,7 @@ app.get('/api/user/history', verifyIdToken, async (req, res) => {
         res.status(500).json({ error: 'Error al obtener el historial.' });
     }
 });
+
 app.post('/api/user/history', verifyIdToken, async (req, res) => {
     const { uid } = req;
     let { tmdbId, title, poster_path, backdrop_path, type } = req.body;
@@ -523,28 +568,20 @@ app.post('/api/user/history', verifyIdToken, async (req, res) => {
         };
 
         if (existingDocs.empty) {
-            // No existe, creamos uno nuevo
             await historyRef.add(safeData);
         } else {
             if (existingDocs.size > 1) {
-                console.log(`[History] Reparando duplicados para usuario ${uid} item ${idAsString}`);
                 const docs = existingDocs.docs;
-                // Actualizamos el primero
                 await historyRef.doc(docs[0].id).update(safeData);
-                // Borramos el resto
                 for (let i = 1; i < docs.length; i++) {
                     await historyRef.doc(docs[i].id).delete();
                 }
             } else {
-                // Solo hay uno, actualizamos normal
                 const docId = existingDocs.docs[0].id;
-                await historyRef.doc(docId).update(safeData); // Actualizará tmdbId a string limpio si era número
+                await historyRef.doc(docId).update(safeData); 
             }
         }
-
-        // Invalidación de caché
         historyCache.del(`history-${uid}`);
-        
         res.status(200).json({ message: 'Historial actualizado y reparado.' });
 
     } catch (error) {
@@ -689,28 +726,17 @@ app.post('/api/user/likes', verifyIdToken, async (req, res) => {
     }
 });
 app.post('/api/rewards/redeem/premium', verifyIdToken, async (req, res) => {
-    console.log("=============================================");
-    console.log("INICIO DEPURACIÓN: /api/rewards/redeem/premium");
     const { uid } = req;
     const { daysToAdd } = req.body; 
-    console.log(`Datos recibidos: UserID=${uid}, DaysToAdd=${daysToAdd}`);
     if (!daysToAdd) { 
-        console.log("Error: Faltan datos en la solicitud (daysToAdd).");
-        console.log("FIN DEPURACIÓN");
-        console.log("=============================================");
         return res.status(400).json({ success: false, error: 'daysToAdd es requerido.' }); 
     }
     const days = parseInt(daysToAdd, 10); 
     if (isNaN(days) || days <= 0) { 
-        console.log(`Error: 'daysToAdd' no es un número válido (${daysToAdd}).`);
-        console.log("FIN DEPURACIÓN");
-        console.log("=============================================");
         return res.status(400).json({ success: false, error: 'daysToAdd debe ser un número positivo.' }); 
     }
     try {
-        console.log(`Referencia de documento: db.collection('users').doc('${uid}')`);
         const userDocRef = db.collection('users').doc(uid); 
-        console.log("Intentando leer documento (get)...");
         const newExpiryDate = await db.runTransaction(async (transaction) => {
             const docSnap = await transaction.get(userDocRef);
             let currentExpiry; 
@@ -730,15 +756,10 @@ app.post('/api/rewards/redeem/premium', verifyIdToken, async (req, res) => {
                 return new Date(now.getTime() + days * 24 * 60 * 60 * 1000); 
             }
         });
-        console.log(`Nueva fecha de expiración calculada: ${newExpiryDate.toISOString()}`);
         await userDocRef.set({ isPro: true, premiumExpiry: newExpiryDate }, { merge: true });
         countsCache.del(`${uid}:/api/user/me`);
-        console.log("✅ ESCRITURA EXITOSA en Firestore.");
-        console.log("FIN DEPURACIÓN");
-        console.log("=============================================");
         res.status(200).json({ success: true, message: `Premium activado por ${days} días.`, expiryDate: newExpiryDate.toISOString() });
     } catch (error) { 
-        console.error(`❌ ERROR FATAL en /api/rewards/redeem/premium:`, error);
         console.error(`❌ Error al activar Premium:`, error); 
         res.status(500).json({ success: false, error: 'Error interno del servidor al actualizar el estado Premium.' }); 
     }
@@ -1053,10 +1074,13 @@ app.post('/api/increment-likes', async (req, res) => {
     } catch (error) { console.error("Error increment-likes:", error); res.status(500).json({ error: "Error interno." }); }
 });
 
+// === MODIFICACIÓN DE SUBIDA: Guardar metadatos (genres, etc) ===
 app.post('/add-movie', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "BD no disponible." });
     try {
-        const { tmdbId, title, poster_path, freeEmbedCode, proEmbedCode, isPremium, overview, hideFromRecent } = req.body;
+        // Obtenemos los nuevos campos que envía el bot: genres, release_date, etc.
+        const { tmdbId, title, poster_path, freeEmbedCode, proEmbedCode, isPremium, overview, hideFromRecent, genres, release_date, popularity, vote_average } = req.body;
+        
         if (!tmdbId) return res.status(400).json({ error: 'tmdbId requerido.' });
         
         const cleanTmdbId = String(tmdbId).trim();
@@ -1069,7 +1093,12 @@ app.post('/add-movie', async (req, res) => {
                 freeEmbedCode, 
                 proEmbedCode, 
                 isPremium,
-                hideFromRecent: hideFromRecent === true || hideFromRecent === 'true' 
+                hideFromRecent: hideFromRecent === true || hideFromRecent === 'true',
+                // Guardar metadatos nuevos
+                genres: genres || [],
+                release_date: release_date || null,
+                popularity: popularity || 0,
+                vote_average: vote_average || 0
             }, 
             $setOnInsert: { tmdbId: cleanTmdbId, views: 0, likes: 0, addedAt: new Date() } 
         };
@@ -1086,7 +1115,6 @@ app.post('/add-movie', async (req, res) => {
         embedCache.del(`embed-${cleanTmdbId}-movie-1-pro`);
         embedCache.del(`embed-${cleanTmdbId}-movie-1-free`);
         countsCache.del(`counts-data-${cleanTmdbId}`);
-        
         recentCache.del(RECENT_CACHE_KEY);
         console.log(`[Cache] Lista de recientes invalidada por subida de película: ${title}`);
 
@@ -1095,10 +1123,12 @@ app.post('/add-movie', async (req, res) => {
     } catch (error) { console.error("Error add-movie:", error); res.status(500).json({ error: 'Error interno.' }); }
 });
 
+// === MODIFICACIÓN DE SUBIDA SERIES: Guardar metadatos ===
 app.post('/add-series-episode', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "BD no disponible." });
     try {
-        const { tmdbId, title, poster_path, overview, seasonNumber, episodeNumber, freeEmbedCode, proEmbedCode, isPremium } = req.body;
+        const { tmdbId, title, poster_path, overview, seasonNumber, episodeNumber, freeEmbedCode, proEmbedCode, isPremium, genres, first_air_date, popularity, vote_average } = req.body;
+        
         if (!tmdbId || !seasonNumber || !episodeNumber) return res.status(400).json({ error: 'tmdbId, seasonNumber y episodeNumber requeridos.' });
         
         const cleanTmdbId = String(tmdbId).trim();
@@ -1107,6 +1137,12 @@ app.post('/add-series-episode', async (req, res) => {
         const updateData = {
             $set: {
                 title, poster_path, overview, isPremium,
+                // Guardar metadatos generales de la serie
+                genres: genres || [],
+                first_air_date: first_air_date || null,
+                popularity: popularity || 0,
+                vote_average: vote_average || 0,
+                
                 [`seasons.${seasonNumber}.name`]: `Temporada ${seasonNumber}`,
                 [episodePath + '.freeEmbedCode']: freeEmbedCode,
                 [episodePath + '.proEmbedCode']: proEmbedCode,
@@ -1126,7 +1162,6 @@ app.post('/add-series-episode', async (req, res) => {
         embedCache.del(`embed-${cleanTmdbId}-${seasonNumber}-${episodeNumber}-pro`);
         embedCache.del(`embed-${cleanTmdbId}-${seasonNumber}-${episodeNumber}-free`);
         countsCache.del(`counts-data-${cleanTmdbId}`);
-
         recentCache.del(RECENT_CACHE_KEY);
         console.log(`[Cache] Lista de recientes invalidada por subida de episodio: S${seasonNumber}E${episodeNumber}`);
 
@@ -1162,99 +1197,6 @@ app.post('/delete-series-episode', async (req, res) => {
         res.status(500).json({ error: 'Error interno.' });
     }
 });
-
-app.post('/create-paypal-payment', (req, res) => {
-    const plan = req.body.plan; const amount = (plan === 'annual') ? '19.99' : '1.99'; const userId = req.body.userId; if (!userId) return res.status(400).json({ error: "userId es requerido." });
-    const create_payment_json = { 
-        "intent": "sale", "payer": { "payment_method": "paypal" },
-        "redirect_urls": { "return_url": `${RENDER_BACKEND_URL}/paypal/success?userId=${userId}&plan=${plan}`, "cancel_url": `${RENDER_BACKEND_URL}/paypal/cancel?userId=${userId}&plan=${plan}` },
-        "transactions": [{"item_list": { "items": [{ "name": `Plan Premium ${plan}`, "sku": `PLAN-${plan.toUpperCase()}`, "price": amount, "currency": "USD", "quantity": "1" }] }, "amount": { "currency": "USD", "total": amount }, "description": `Suscripción Premium ${plan} Sala Cine` }]
-    };
-    paypal.payment.create(create_payment_json, (error, payment) => {
-        if (error) {
-            console.error("Error al crear el pago de PayPal:", error);
-            res.status(500).json({ error: 'Error al crear el pago de PayPal.', details: error.response });
-        } else {
-            for (let i = 0; i < payment.links.length; i++) {
-                if (payment.links[i].rel === 'approval_url') {
-                    res.json({ approval_url: payment.links[i].href });
-                    return;
-                }
-            }
-            res.status(500).json({ error: 'No se encontró URL de aprobación en la respuesta de PayPal.' });
-        }
-    });
-});
-
-app.get('/paypal/success', async (req, res) => {
-    const payerId = req.query.PayerID; const paymentId = req.query.paymentId; const userId = req.query.userId; const plan = req.query.plan;
-    const amount = (plan === 'annual') ? '19.99' : '1.99';
-    if (!payerId || !paymentId || !userId || !plan) {
-        return res.status(400).send('Faltan parámetros requeridos.');
-    }
-    const execute_payment_json = { "payer_id": payerId, "transactions": [{"amount": { "currency": "USD", "total": amount }}] };
-    try {
-        const payment = await new Promise((resolve, reject) => {
-            paypal.payment.execute(paymentId, execute_payment_json, (error, payment) => {
-                if (error) return reject(error);
-                resolve(payment);
-            });
-        });
-        const daysToAdd = (plan === 'annual') ? 365 : 30;
-        const now = new Date();
-        const userDocRef = db.collection('users').doc(userId);
-        const docSnap = await userDocRef.get();
-        let newExpiryDate;
-        if (docSnap.exists && docSnap.data().premiumExpiry) {
-            let currentExpiry = docSnap.data().premiumExpiry.toDate();
-            if (currentExpiry > now) {
-                newExpiryDate = new Date(currentExpiry.getTime() + daysToAdd * 24 * 60 * 60 * 1000);
-            } else {
-                newExpiryDate = new Date(now.getTime() + daysToAdd * 24 * 60 * 60 * 1000);
-            }
-        } else {
-            newExpiryDate = new Date(now.getTime() + daysToAdd * 24 * 60 * 60 * 1000);
-        }
-        await userDocRef.set({ 
-            isPro: true, premiumExpiry: newExpiryDate, lastPayment: paymentId, paymentMethod: 'PayPal'
-        }, { merge: true });
-        countsCache.del(`${userId}:/api/user/me`);
-        bot.sendMessage(ADMIN_CHAT_ID, `💰 *PAGO RECIBIDO (PayPal):* $${amount} USD\n*Usuario:* \`${userId}\`\n*Plan:* ${plan.toUpperCase()}`, { parse_mode: 'Markdown' });
-        res.send('<html><body><h1>✅ Pago Exitoso</h1><p>Tu cuenta Premium ha sido activada/extendida. Puedes cerrar esta ventana.</p></body></html>');
-    } catch (error) {
-        console.error("Error al ejecutar o guardar el pago de PayPal:", error);
-        res.status(500).send('<html><body><h1>❌ Error</h1><p>Hubo un error al procesar tu pago. Contacta a soporte con el ID de Pago si lo tienes.</p></body></html>');
-    }
-});
-
-app.get('/paypal/cancel', (req, res) => {
-    res.send('<html><body><h1>❌ Pago Cancelado</h1><p>Has cancelado el pago. Vuelve a la aplicación para intentarlo de nuevo.</p></body></html>');
-});
-
-app.post('/create-binance-payment', (req, res) => {
-    res.json({ message: 'Pago con Binance simulado.' });
-});
-
-async function sendNotificationToTopic(title, body, imageUrl, tmdbId, mediaType) {
-    const topic = 'new_content';
-    const dataPayload = {
-        title: title, body: body, tmdbId: tmdbId.toString(), mediaType: mediaType,
-        ...(imageUrl && { imageUrl: imageUrl })
-    };
-    const message = {
-        topic: topic, data: dataPayload,
-        android: { priority: 'high' }
-    };
-    try {
-        console.log(`🚀 Intentando enviar notificación al topic '${topic}'... Payload:`, JSON.stringify(dataPayload));
-        const response = await messaging.send(message);
-        console.log('✅ Notificación FCM enviada exitosamente al topic:', response);
-        return { success: true, message: `Notificación enviada al topic '${topic}'.`, response: response };
-    } catch (error) {
-        console.error(`❌ Error al enviar notificación FCM al topic '${topic}':`, error);
-        return { success: false, error: error.message };
-    }
-}
 
 app.post('/api/notify-new-content', async (req, res) => {
     const { title, body, imageUrl, tmdbId, mediaType } = req.body;
