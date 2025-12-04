@@ -11,15 +11,22 @@ const initializeBot = require('./bot.js');
 const crypto = require('crypto');
 const cron = require('node-cron');
 const NodeCache = require('node-cache');
+
+// --- CACHÉS ---
 const embedCache = new NodeCache({ stdTTL: 86400, checkperiod: 600 });
 const countsCache = new NodeCache({ stdTTL: 900, checkperiod: 120 });
 const tmdbCache = new NodeCache({ stdTTL: 86400, checkperiod: 3600 });
 const recentCache = new NodeCache({ stdTTL: 86400, checkperiod: 600 });
 const RECENT_CACHE_KEY = 'recent_content_main'; 
 const historyCache = new NodeCache({ stdTTL: 900, checkperiod: 120 });
+
+// Cache específico para detalles de géneros locales para no saturar TMDB
+const localDetailsCache = new NodeCache({ stdTTL: 43200, checkperiod: 3600 }); 
+
 const app = express();
 dotenv.config();
 const PORT = process.env.PORT || 3000;
+
 try {
     const serviceAccount = JSON.parse(process.env.FIREBASE_ADMIN_SDK);
     admin.initializeApp({
@@ -81,6 +88,7 @@ app.use((req, res, next) => {
     if (req.method === 'OPTIONS') { return res.sendStatus(200); }
     next();
 });
+
 async function verifyIdToken(req, res, next) {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -93,7 +101,9 @@ async function verifyIdToken(req, res, next) {
         req.email = decodedToken.email;
         next();
     } catch (error) {
-        console.error("Error al verificar Firebase ID Token:", error.code, error.message);
+        // console.error("Error al verificar Firebase ID Token:", error.code);
+        // Permitimos fallos silenciosos para endpoints públicos híbridos, 
+        // pero idealmente el frontend refresca el token.
         return res.status(403).json({ error: 'Token de autenticación inválido o expirado.', code: error.code });
     }
 }
@@ -114,10 +124,114 @@ function countsCacheMiddleware(req, res, next) {
     req.cacheKey = cacheKey;
     next();
 }
+
 async function llamarAlExtractor(targetUrl) {
     if (!targetUrl) return null;
     return targetUrl;
 }
+
+// =========================================================================
+// === NUEVA RUTA CRÍTICA: /api/content/local (Lógica Híbrida) ===
+// =========================================================================
+app.get('/api/content/local', verifyIdToken, async (req, res) => {
+    if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
+
+    const { type, genre, category, source } = req.query; // genre es el ID numérico (ej: 28 para acción)
+    
+    console.log(`[Local API] Solicitud: Type=${type}, Genre=${genre}, Category=${category}`);
+
+    try {
+        let results = [];
+        let collection;
+        let projection;
+
+        // 1. Seleccionar Colección
+        if (type === 'tv') {
+            collection = mongoDb.collection('series_catalog');
+            projection = { tmdbId: 1, name: 1, poster_path: 1, backdrop_path: 1, addedAt: 1 }; 
+        } else {
+            // Por defecto películas
+            collection = mongoDb.collection('media_catalog');
+            projection = { tmdbId: 1, title: 1, poster_path: 1, backdrop_path: 1, addedAt: 1 };
+        }
+
+        // 2. Obtener TODO el contenido local (Sin filtrar por hideFromRecent)
+        // Traemos todo para luego filtrar por género si es necesario
+        const items = await collection.find({})
+            .project(projection)
+            .sort({ addedAt: -1 }) // Las más recientes primero
+            .limit(100) // Límite de seguridad para rendimiento
+            .toArray();
+
+        // 3. Formatear al estándar de TMDB
+        const formattedItems = items.map(item => ({
+            id: parseInt(item.tmdbId), // Importante: ID numérico para coincidir con TMDB
+            tmdbId: item.tmdbId,
+            title: item.title || item.name,
+            name: item.name || item.title,
+            poster_path: item.poster_path,
+            backdrop_path: item.backdrop_path,
+            media_type: type === 'tv' ? 'tv' : 'movie',
+            isLocal: true // Bandera para el frontend
+        }));
+
+        // 4. Caso A: Botón "Películas Agregadas" (source=manual)
+        // Devolvemos TODO sin filtrar por género.
+        if (source === 'manual' || category === 'added') {
+            return res.status(200).json(formattedItems);
+        }
+
+        // 5. Caso B: Filtrado por Género (Para secciones del Home)
+        if (genre) {
+            const targetGenreId = parseInt(genre);
+            const filteredItems = [];
+
+            // Necesitamos verificar el género de cada ítem local.
+            // Como MongoDB no tiene el género guardado, consultamos caché o TMDB rápido.
+            
+            /* Lógica de "Enriquecimiento" */
+            const promises = formattedItems.map(async (item) => {
+                const cacheKey = `details-${type}-${item.id}`;
+                let details = localDetailsCache.get(cacheKey);
+
+                if (!details) {
+                    try {
+                        // Buscar en TMDB solo para obtener géneros
+                        const url = `https://api.themoviedb.org/3/${type}/${item.id}?api_key=${TMDB_API_KEY}&language=es-MX`;
+                        const resp = await axios.get(url);
+                        details = resp.data;
+                        localDetailsCache.set(cacheKey, details); // Guardar en caché largo
+                    } catch (e) {
+                        // Si falla TMDB, ignoramos este item para el filtro
+                        return null;
+                    }
+                }
+
+                if (details && details.genres) {
+                    const hasGenre = details.genres.some(g => g.id === targetGenreId);
+                    if (hasGenre) return item;
+                }
+                return null;
+            });
+
+            const resolvedItems = await Promise.all(promises);
+            // Filtramos los nulos
+            results = resolvedItems.filter(i => i !== null);
+            
+            return res.status(200).json(results);
+        }
+
+        // Si no hay filtro de género ni manual, devolvemos todo (comportamiento por defecto)
+        res.status(200).json(formattedItems);
+
+    } catch (error) {
+        console.error("Error en /api/content/local:", error);
+        res.status(500).json({ error: "Error interno al obtener contenido local." });
+    }
+});
+// =========================================================================
+
+
 app.get('/api/tmdb-proxy', async (req, res) => {
     const endpoint = req.query.endpoint;
     const query = req.query.query;
@@ -159,6 +273,7 @@ app.get('/api/tmdb-proxy', async (req, res) => {
         res.status(500).json({ error: 'Error al conectar con TMDB' });
     }
 });
+
 app.get('/api/content/recent', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
     const cachedRecent = recentCache.get(RECENT_CACHE_KEY);
@@ -169,7 +284,6 @@ app.get('/api/content/recent', async (req, res) => {
     console.log(`[Recent Cache MISS] Generando lista unificada (Películas + Series)...`);
 
     try {
-        // === MODIFICACIÓN AQUÍ: Filtro hideFromRecent ===
         const moviesPromise = mongoDb.collection('media_catalog')
             .find({ hideFromRecent: { $ne: true } }) 
             .project({ tmdbId: 1, title: 1, poster_path: 1, backdrop_path: 1, addedAt: 1 })
@@ -184,7 +298,7 @@ app.get('/api/content/recent', async (req, res) => {
             .toArray();
         const [movies, series] = await Promise.all([moviesPromise, seriesPromise]);
         const formattedMovies = movies.map(movie => ({
-            id: movie.tmdbId,
+            id: parseInt(movie.tmdbId),
             tmdbId: movie.tmdbId,
             title: movie.title,
             poster_path: movie.poster_path,
@@ -194,7 +308,7 @@ app.get('/api/content/recent', async (req, res) => {
         }));
 
         const formattedSeries = series.map(serie => ({
-            id: serie.tmdbId,
+            id: parseInt(serie.tmdbId),
             tmdbId: serie.tmdbId,
             title: serie.name, 
             poster_path: serie.poster_path,
@@ -214,6 +328,7 @@ app.get('/api/content/recent', async (req, res) => {
         res.status(500).json({ error: "Error interno al obtener contenido reciente." });
     }
 });
+
 app.get('/api/user/me', verifyIdToken, countsCacheMiddleware, async (req, res) => {
     const { uid, email, cacheKey, query } = req;
     const usernameFromQuery = req.query.username;    
@@ -670,15 +785,11 @@ if (process.env.NODE_ENV === 'production' && token) {
     console.warn("⚠️  Webhook de Telegram no configurado porque TELEGRAM_BOT_TOKEN no está definido.");
 }
 
-// +++ RUTA MODIFICADA PARA DEEP LINK +++
 app.get('/app/details/:tmdbId', (req, res) => {
     const tmdbId = req.params.tmdbId;
-    // La URL de esquema profundo de la app nativa (debe estar configurada en AndroidManifest.xml)
     const APP_SCHEME_URL = `salacine://details?id=${tmdbId}`;
-    // URL de la Play Store para la descarga (Fallback)
     const PLAY_STORE_URL = `https://play.google.com/store/apps/details?id=com.salacine.app`;
 
-    // Servimos un HTML que intenta abrir la app primero
     const htmlResponse = `
         <!DOCTYPE html>
         <html>
@@ -687,7 +798,6 @@ app.get('/app/details/:tmdbId', (req, res) => {
                 <title>Abriendo Sala Cine...</title>
                 <script>
                     window.onload = function() {
-                        // Espera medio segundo (500ms). Si la app no abre, redirige a la tienda.
                         setTimeout(function() {
                             window.location.replace('${PLAY_STORE_URL}');
                         }, 500); 
@@ -701,11 +811,7 @@ app.get('/app/details/:tmdbId', (req, res) => {
     `;
     res.send(htmlResponse);
 });
-// +++ FIN DE RUTA MODIFICADA +++
 
-// =======================================================================
-// === NUEVA LÓGICA DE SOLICITUDES (CON MONGODB Y FILTRO DE SILENCIO) ===
-// =======================================================================
 app.post('/request-movie', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
 
@@ -716,7 +822,6 @@ app.post('/request-movie', async (req, res) => {
     }
 
     try {
-        // 1. GUARDAR EN MONGODB (Upsert: Crear o Actualizar Votos)
         const requestCollection = mongoDb.collection('movie_requests');
         const cleanId = String(tmdbId).trim();
         
@@ -734,8 +839,6 @@ app.post('/request-movie', async (req, res) => {
             { upsert: true }
         );
 
-        // 2. LÓGICA DE NOTIFICACIÓN (FILTRO DE SILENCIO)
-        // Solo enviamos mensaje al admin si NO es 'regular'
         if (priority && priority !== 'regular') {
             const posterUrl = poster_path ? `https://image.tmdb.org/t/p/w500${poster_path}` : 'https://placehold.co/500x750?text=No+Poster';
             
@@ -744,7 +847,7 @@ app.post('/request-movie', async (req, res) => {
                 case 'fast': priorityText = '⚡ Rápido (~24h)'; break;
                 case 'immediate': priorityText = '🚀 Inmediato (~1h)'; break;
                 case 'premium': priorityText = '👑 PREMIUM (Prioridad)'; break;
-                default: priorityText = '⏳ Regular (1-2 semanas)'; // Fallback por seguridad
+                default: priorityText = '⏳ Regular (1-2 semanas)'; 
             }
 
             const message = `🔔 *Solicitud PRIORITARIA:* ${title}\n` +
@@ -756,7 +859,6 @@ app.post('/request-movie', async (req, res) => {
                 reply_markup: { inline_keyboard: [[{ text: '✅ Gestionar (Subir ahora)', callback_data: `solicitud_${tmdbId}` }]] }
             });
         }
-        // Si es 'regular', NO enviamos nada a Telegram para no hacer spam.
 
         res.status(200).json({ message: 'Solicitud guardada correctamente.' });
 
@@ -765,12 +867,9 @@ app.post('/request-movie', async (req, res) => {
         res.status(500).json({ error: 'Error al procesar solicitud.' });
     }
 });
-// =======================================================================
 
 app.get('/api/streaming-status', (req, res) => {
-    // Obtenemos el build_id que envía la app
     const clientBuildId = parseInt(req.query.build_id) || 0;
-    // Soporte para 'version' por si acaso quedó alguna versión legacy
     const clientVersion = parseInt(req.query.version) || 0;
 
     const receivedId = clientBuildId || clientVersion;
@@ -778,7 +877,7 @@ app.get('/api/streaming-status', (req, res) => {
     console.log(`[Status Check] ID Recibido: ${receivedId} | ID en Revisión: ${BUILD_ID_UNDER_REVIEW}`);
     if (receivedId === BUILD_ID_UNDER_REVIEW) {
         console.log("⚠️ [Review Mode] Detectada versión en revisión. Ocultando streaming.");
-        return res.status(200).json({ isStreamingActive: false }); // MODO SEGURO
+        return res.status(200).json({ isStreamingActive: false }); 
     }
     console.log(`[Status Check] Usuario normal. Devolviendo estado global: ${GLOBAL_STREAMING_ACTIVE}`);
     res.status(200).json({ isStreamingActive: GLOBAL_STREAMING_ACTIVE });
@@ -833,7 +932,6 @@ app.get('/api/get-movie-data', async (req, res) => {
     }
 });
 
-// +++ RUTA MODIFICADA (AHORA MANUAL Y ROBUSTA) +++
 app.get('/api/get-embed-code', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
     
@@ -842,7 +940,6 @@ app.get('/api/get-embed-code', async (req, res) => {
 
     const cacheKey = `embed-${id}-${season || 'movie'}-${episode || '1'}-${isPro === 'true' ? 'pro' : 'free'}`;
     
-    // 1. Revisar caché RAM (24 Horas de duración)
     try {
         const cachedData = embedCache.get(cacheKey);
         if (cachedData) {
@@ -873,7 +970,6 @@ app.get('/api/get-embed-code', async (req, res) => {
             }
         }
 
-        // Si existe el enlace (que tú subiste manualmente), lo guardamos y devolvemos.
         if (enlaceFinal) {
             embedCache.set(cacheKey, enlaceFinal);
             return res.json({ embedCode: enlaceFinal });
@@ -957,18 +1053,14 @@ app.post('/api/increment-likes', async (req, res) => {
     } catch (error) { console.error("Error increment-likes:", error); res.status(500).json({ error: "Error interno." }); }
 });
 
-// +++ RUTA DE SUBIDA OPTIMIZADA (INVALIDACIÓN + AUTO-LIMPIEZA DE PEDIDOS) +++
 app.post('/add-movie', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "BD no disponible." });
     try {
-        // === MODIFICACIÓN AQUÍ: Desestructuración de hideFromRecent ===
         const { tmdbId, title, poster_path, freeEmbedCode, proEmbedCode, isPremium, overview, hideFromRecent } = req.body;
         if (!tmdbId) return res.status(400).json({ error: 'tmdbId requerido.' });
         
-        // --- Limpiar ID antes de guardar ---
         const cleanTmdbId = String(tmdbId).trim();
 
-        // === MODIFICACIÓN AQUÍ: Guardar hideFromRecent en MongoDB ===
         const updateQuery = { 
             $set: { 
                 title, 
@@ -977,15 +1069,13 @@ app.post('/add-movie', async (req, res) => {
                 freeEmbedCode, 
                 proEmbedCode, 
                 isPremium,
-                hideFromRecent: hideFromRecent === true || hideFromRecent === 'true' // Guardar la bandera
+                hideFromRecent: hideFromRecent === true || hideFromRecent === 'true' 
             }, 
             $setOnInsert: { tmdbId: cleanTmdbId, views: 0, likes: 0, addedAt: new Date() } 
         };
         
         await mongoDb.collection('media_catalog').updateOne({ tmdbId: cleanTmdbId }, updateQuery, { upsert: true });
 
-        // === AUTO-LIMPIEZA (AUTO-DESTRUCCIÓN DEL PEDIDO) ===
-        // Si esta película estaba pedida, la borramos de la lista de pendientes.
         try {
             await mongoDb.collection('movie_requests').deleteOne({ tmdbId: cleanTmdbId });
             console.log(`[Auto-Clean] Pedido eliminado tras subida: ${title} (${cleanTmdbId})`);
@@ -993,29 +1083,24 @@ app.post('/add-movie', async (req, res) => {
             console.warn(`[Auto-Clean Warning] No se pudo limpiar el pedido: ${cleanupError.message}`);
         }
         
-        // Invalidaciones
         embedCache.del(`embed-${cleanTmdbId}-movie-1-pro`);
         embedCache.del(`embed-${cleanTmdbId}-movie-1-free`);
         countsCache.del(`counts-data-${cleanTmdbId}`);
         
-        // === (CRÍTICO) INVALIDACIÓN DE CACHÉ DE RECIENTES ===
         recentCache.del(RECENT_CACHE_KEY);
         console.log(`[Cache] Lista de recientes invalidada por subida de película: ${title}`);
 
-        // --- RESPUESTA RÁPIDA AL BOT ---
         res.status(200).json({ message: 'Película agregada y publicada.' });
         
     } catch (error) { console.error("Error add-movie:", error); res.status(500).json({ error: 'Error interno.' }); }
 });
 
-// +++ RUTA DE SUBIDA SERIES OPTIMIZADA (INVALIDACIÓN + AUTO-LIMPIEZA DE PEDIDOS) +++
 app.post('/add-series-episode', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "BD no disponible." });
     try {
         const { tmdbId, title, poster_path, overview, seasonNumber, episodeNumber, freeEmbedCode, proEmbedCode, isPremium } = req.body;
         if (!tmdbId || !seasonNumber || !episodeNumber) return res.status(400).json({ error: 'tmdbId, seasonNumber y episodeNumber requeridos.' });
         
-        // --- Limpiar ID antes de guardar ---
         const cleanTmdbId = String(tmdbId).trim();
 
         const episodePath = `seasons.${seasonNumber}.episodes.${episodeNumber}`;
@@ -1031,8 +1116,6 @@ app.post('/add-series-episode', async (req, res) => {
         };
         await mongoDb.collection('series_catalog').updateOne({ tmdbId: cleanTmdbId }, updateData, { upsert: true });
         
-        // === AUTO-LIMPIEZA (AUTO-DESTRUCCIÓN DEL PEDIDO) ===
-        // Si esta serie estaba pedida, la borramos de la lista de pendientes.
         try {
             await mongoDb.collection('movie_requests').deleteOne({ tmdbId: cleanTmdbId });
             console.log(`[Auto-Clean] Pedido eliminado tras subida episodio: ${title} (${cleanTmdbId})`);
@@ -1040,22 +1123,18 @@ app.post('/add-series-episode', async (req, res) => {
             console.warn(`[Auto-Clean Warning] No se pudo limpiar el pedido: ${cleanupError.message}`);
         }
 
-        // Invalidaciones
         embedCache.del(`embed-${cleanTmdbId}-${seasonNumber}-${episodeNumber}-pro`);
         embedCache.del(`embed-${cleanTmdbId}-${seasonNumber}-${episodeNumber}-free`);
         countsCache.del(`counts-data-${cleanTmdbId}`);
 
-        // === (CRÍTICO) INVALIDACIÓN DE CACHÉ DE RECIENTES ===
         recentCache.del(RECENT_CACHE_KEY);
         console.log(`[Cache] Lista de recientes invalidada por subida de episodio: S${seasonNumber}E${episodeNumber}`);
 
-        // --- RESPUESTA RÁPIDA AL BOT ---
         res.status(200).json({ message: `Episodio S${seasonNumber}E${episodeNumber} agregado y publicado.` });
 
     } catch (error) { console.error("Error add-series-episode:", error); res.status(500).json({ error: 'Error interno.' }); }
 });
 
-// --- NUEVA RUTA: ELIMINAR EPISODIO ESPECÍFICO ---
 app.post('/delete-series-episode', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "BD no disponible." });
     try {
@@ -1067,14 +1146,12 @@ app.post('/delete-series-episode', async (req, res) => {
         const cleanTmdbId = String(tmdbId).trim();
         const episodePath = `seasons.${seasonNumber}.episodes.${episodeNumber}`;
 
-        // Usamos $unset para borrar el campo del episodio específico
         const updateData = {
             $unset: { [episodePath]: "" }
         };
 
         await mongoDb.collection('series_catalog').updateOne({ tmdbId: cleanTmdbId }, updateData);
 
-        // Limpieza de caché
         embedCache.del(`embed-${cleanTmdbId}-${seasonNumber}-${episodeNumber}-pro`);
         embedCache.del(`embed-${cleanTmdbId}-${seasonNumber}-${episodeNumber}-free`);
         console.log(`[Delete] Episodio S${seasonNumber}E${episodeNumber} eliminado de ${cleanTmdbId}`);
@@ -1086,7 +1163,6 @@ app.post('/delete-series-episode', async (req, res) => {
     }
 });
 
-// --- Rutas PayPal (sin cambios) ---
 app.post('/create-paypal-payment', (req, res) => {
     const plan = req.body.plan; const amount = (plan === 'annual') ? '19.99' : '1.99'; const userId = req.body.userId; if (!userId) return res.status(400).json({ error: "userId es requerido." });
     const create_payment_json = { 
@@ -1159,7 +1235,6 @@ app.post('/create-binance-payment', (req, res) => {
     res.json({ message: 'Pago con Binance simulado.' });
 });
 
-// === LÓGICA DE NOTIFICACIONES PUSH (Mantenida intacta) ===
 async function sendNotificationToTopic(title, body, imageUrl, tmdbId, mediaType) {
     const topic = 'new_content';
     const dataPayload = {
@@ -1199,9 +1274,7 @@ app.post('/api/notify-new-content', async (req, res) => {
     }
 });
 
-// --- Rutas App Update, App Status, Assetlinks ---
 app.get('/api/app-update', (req, res) => {
-    // ACTUALIZADO: latest_version_code a 10 y force_update a false.
     const updateInfo = { "latest_version_code": 12, "update_url": "https://play.google.com/store/apps/details?id=com.salacine.app&pcampaignid=web_share", "force_update": false, "update_message": "¡Nueva versión (1.5.2) de Sala Cine disponible! Incluye mejoras de rendimiento. Actualiza ahora." };
     res.status(200).json(updateInfo);
 });
@@ -1215,7 +1288,6 @@ app.get('/.well-known/assetlinks.json', (req, res) => {
     res.sendFile('assetlinks.json', { root: __dirname });
 });
 
-// Ruta para probar el extractor manualmente
 app.get('/api/extract-link', async (req, res) => {
     const targetUrl = req.query.url;
     if (!targetUrl) return res.status(400).json({ success: false, error: "Se requiere parámetro 'url'." });
@@ -1254,7 +1326,6 @@ async function startServer() {
 
 startServer();
 
-// --- Manejo de errores no capturados ---
 process.on('uncaughtException', (error) => {
   console.error('Uncaught Exception:', error);
 });
