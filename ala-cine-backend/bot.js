@@ -1,6 +1,6 @@
 function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_ID, TMDB_API_KEY, RENDER_BACKEND_URL, axios) {
 
-    console.log("🤖 Lógica del Bot (Full Features + Pinned & K-Drama) inicializada...");
+    console.log("🤖 Lógica del Bot (Full Features + Pinned Refresh) inicializada...");
     
     bot.setMyCommands([
         { command: 'start', description: 'Reiniciar el bot y ver el menú principal' },
@@ -173,7 +173,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                          bot.sendPhoto(chatId, posterUrl, options);
                      }
                  } else { bot.sendMessage(chatId, `No se encontraron resultados.`); }
-             } catch (error) { console.error("Error buscando para gestionar:", error); bot.sendMessage(chatId, 'Error buscando.'); }
+             } catch (error) { console.error("Error buscando para gestion:", error); bot.sendMessage(chatId, 'Error buscando.'); }
 
         } else if (adminState[chatId] && adminState[chatId].step === 'search_delete') {
              try {
@@ -683,31 +683,96 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 bot.sendMessage(chatId, `✏️ Corrección: Envía el NUEVO enlace para **S${season}E${episode}**:`);
             }
 
-            // --- GESTIÓN DE EDICIÓN DE PELÍCULAS ---
+            // =========================================================
+            // === [NUEVO] GESTIÓN DE EDICIÓN DE PELÍCULAS + DESTACADOS ===
+            // =========================================================
             else if (data.startsWith('manage_movie_')) {
                 const tmdbId = data.split('_')[2];
                 try {
+                    // 1. Obtener datos de TMDB para mostrar título bonito
                     const movieUrl = `https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${TMDB_API_KEY}&language=es-ES`;
                     const response = await axios.get(movieUrl);
                     const movieData = response.data;
+
                     adminState[chatId].selectedMedia = {
                         id: movieData.id,
                         title: movieData.title,
                         overview: movieData.overview,
                         poster_path: movieData.poster_path
                     };
+
+                    // 2. CONSULTAR MONGODB para saber si ya es Destacado
+                    const localMovie = await mongoDb.collection('media_catalog').findOne({ tmdbId: tmdbId.toString() });
+                    const isPinned = localMovie?.isPinned || false;
+
+                    // 3. Preparar Botones Dinámicos
+                    let pinnedButtons = [];
+                    if (isPinned) {
+                        pinnedButtons = [
+                            { text: '🔄 Subir al 1° Lugar', callback_data: `pin_action_refresh_movie_${tmdbId}` },
+                            { text: '❌ Quitar de Top', callback_data: `pin_action_unpin_movie_${tmdbId}` }
+                        ];
+                    } else {
+                        pinnedButtons = [
+                            { text: '⭐ Fijar en Top', callback_data: `pin_action_pin_movie_${tmdbId}` }
+                        ];
+                    }
+
                     const options = {
                         reply_markup: {
                             inline_keyboard: [
-                                [{ text: '✏️ Editar Link PRO/GRATIS', callback_data: `add_pro_movie_${tmdbId}` }],
+                                // Fila 1: Gestión de Enlaces
+                                [{ text: '✏️ Editar Link', callback_data: `add_pro_movie_${tmdbId}` }],
+                                // Fila 2: Gestión de Destacados (Top)
+                                pinnedButtons,
+                                // Fila 3: Eliminar
+                                [{ text: '🗑️ Eliminar Película', callback_data: `delete_confirm_${tmdbId}_movie` }]
                             ]
                         }
                     };
+                    
+                    const statusText = isPinned ? "⭐ ES DESTACADO" : "📅 ES NORMAL";
                     bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id }).catch(() => {});
-                    bot.sendMessage(chatId, `Gestionando: *${movieData.title}*. ¿Qué quieres editar?`, options);
+                    bot.sendMessage(chatId, `Gestionando: *${movieData.title}*\nEstado: ${statusText}\n\n¿Qué deseas hacer?`, { ...options, parse_mode: 'Markdown' });
+
                 } catch (error) {
-                     console.error("Error al obtener detalles de TMDB en manage_movie_:", error.message);
-                    bot.sendMessage(chatId, 'Error al obtener los detalles de la película.');
+                     console.error("Error manage_movie_:", error.message);
+                    bot.sendMessage(chatId, 'Error al obtener los detalles.');
+                }
+            }
+
+            // === [NUEVO] HANDLER PARA LAS ACCIONES DE PIN (Refresh, Unpin, Pin) ===
+            else if (data.startsWith('pin_action_')) {
+                // Formato: pin_action_ACCION_TIPO_ID (ej: pin_action_refresh_movie_12345)
+                const parts = data.split('_');
+                const action = parts[2]; // refresh, unpin, pin
+                const type = parts[3];   // movie, series
+                const tmdbId = parts[4];
+
+                try {
+                    // Seleccionamos la colección correcta
+                    const collection = (type === 'tv' || type === 'series') ? mongoDb.collection('series_catalog') : mongoDb.collection('media_catalog');
+                    
+                    let updateDoc = {};
+                    let replyText = "";
+
+                    if (action === 'pin') {
+                        updateDoc = { $set: { isPinned: true, addedAt: new Date() } }; // Pin + Fecha Actual
+                        replyText = "✅ Película fijada y movida al PRIMER lugar.";
+                    } else if (action === 'unpin') {
+                        updateDoc = { $set: { isPinned: false } };
+                        replyText = "✅ Película quitada de destacados.";
+                    } else if (action === 'refresh') {
+                        updateDoc = { $set: { isPinned: true, addedAt: new Date() } }; // Solo actualizar fecha
+                        replyText = "🔄 Posición refrescada. Ahora está en el PRIMER lugar.";
+                    }
+
+                    await collection.updateOne({ tmdbId: tmdbId.toString() }, updateDoc);
+                    bot.sendMessage(chatId, replyText);
+
+                } catch (error) {
+                    console.error("Error pin_action:", error);
+                    bot.sendMessage(chatId, "❌ Error al cambiar el estado.");
                 }
             }
             
