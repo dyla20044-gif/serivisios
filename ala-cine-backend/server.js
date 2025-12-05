@@ -13,6 +13,7 @@ const cron = require('node-cron');
 const NodeCache = require('node-cache');
 
 // --- CACHÉS ---
+// Cachés existentes
 const embedCache = new NodeCache({ stdTTL: 86400, checkperiod: 600 });
 const countsCache = new NodeCache({ stdTTL: 900, checkperiod: 120 });
 const tmdbCache = new NodeCache({ stdTTL: 86400, checkperiod: 3600 });
@@ -20,13 +21,16 @@ const recentCache = new NodeCache({ stdTTL: 86400, checkperiod: 600 });
 const historyCache = new NodeCache({ stdTTL: 900, checkperiod: 120 });
 const localDetailsCache = new NodeCache({ stdTTL: 86400, checkperiod: 3600 }); 
 
-// --- NUEVAS CACHÉS OPTIMIZADAS ---
+// --- NUEVAS CACHÉS OPTIMIZADAS (FASE 1) ---
+// Caché para Destacados (Pinned) - TTL 1 hora
 const pinnedCache = new NodeCache({ stdTTL: 3600, checkperiod: 600 });
 const PINNED_CACHE_KEY = 'pinned_content_top';
 
+// Caché para K-Dramas (Automático) - TTL 1 hora
 const kdramaCache = new NodeCache({ stdTTL: 3600, checkperiod: 600 });
 const KDRAMA_CACHE_KEY = 'kdrama_content_list';
 
+// Caché para Catálogo Completo - TTL 1 hora (Para evitar lecturas masivas a Mongo)
 const catalogCache = new NodeCache({ stdTTL: 3600, checkperiod: 600 });
 const CATALOG_CACHE_KEY = 'full_catalog_list';
 
@@ -101,6 +105,7 @@ app.use((req, res, next) => {
 async function verifyIdToken(req, res, next) {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        // Permitimos acceso sin token a ciertos endpoints de contenido
         return next(); 
     }
     const idToken = authHeader.split(' ')[1];
@@ -110,18 +115,21 @@ async function verifyIdToken(req, res, next) {
         req.email = decodedToken.email;
         next();
     } catch (error) {
+        // console.error("Error al verificar Firebase ID Token:", error.code);
+        // Si el token falla, seguimos como usuario anónimo (req.uid undefined)
         next();
     }
 }
 
 function countsCacheMiddleware(req, res, next) {
-    if (!req.uid) return next(); 
+    if (!req.uid) return next(); // No cachear si no hay usuario
     const uid = req.uid;
     const route = req.path;
     const cacheKey = `${uid}:${route}`;
     try {
         const cachedData = countsCache.get(cacheKey);
         if (cachedData) {
+            // console.log(`[Cache HIT] Sirviendo datos de usuario desde caché para: ${cacheKey}`);
             return res.status(200).json(cachedData);
         }
     } catch (err) {
@@ -137,7 +145,7 @@ async function llamarAlExtractor(targetUrl) {
 }
 
 // =========================================================================
-// === NUEVOS ENDPOINTS CRÍTICOS (DESTACADOS, K-DRAMAS, CATALOGO) ===
+// === NUEVOS ENDPOINTS CRÍTICOS (FASE 1) - DESTACADOS, K-DRAMAS, CATALOGO ===
 // =========================================================================
 
 // 1. Endpoint Destacados (Pinned)
@@ -183,7 +191,7 @@ app.get('/api/content/featured', async (req, res) => {
     }
 });
 
-// 2. Endpoint K-Dramas
+// 2. Endpoint K-Dramas (Automático por origin_country: 'KR')
 app.get('/api/content/kdramas', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
 
@@ -194,6 +202,8 @@ app.get('/api/content/kdramas', async (req, res) => {
 
     try {
         const projection = { tmdbId: 1, title: 1, name: 1, poster_path: 1, backdrop_path: 1, addedAt: 1, origin_country: 1 };
+        
+        // Query para buscar 'KR' en el array origin_country
         const query = { origin_country: "KR" };
 
         const movies = await mongoDb.collection('media_catalog').find(query).project(projection).sort({ addedAt: -1 }).limit(50).toArray();
@@ -213,18 +223,21 @@ app.get('/api/content/kdramas', async (req, res) => {
     }
 });
 
-// 3. Endpoint Catálogo Completo
+// 3. Endpoint Catálogo Completo (CORREGIDO PARA TU SCRIPT.JS)
 app.get('/api/content/catalog', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
 
+    // Intentar leer de caché
     const cachedCatalog = catalogCache.get(CATALOG_CACHE_KEY);
     if (cachedCatalog) {
+        // CORRECCIÓN: Devolvemos objeto con propiedad 'items'
         return res.status(200).json({ items: cachedCatalog, total: cachedCatalog.length });
     }
 
     try {
         const projection = { tmdbId: 1, title: 1, name: 1, poster_path: 1, media_type: 1, addedAt: 1, origin_country: 1, genre_ids: 1 };
         
+        // Traemos más ítems (ej. 1000) para llenar bien el catálogo
         const movies = await mongoDb.collection('media_catalog').find({}).project(projection).sort({ addedAt: -1 }).limit(500).toArray();
         const series = await mongoDb.collection('series_catalog').find({}).project(projection).sort({ addedAt: -1 }).limit(500).toArray();
 
@@ -233,8 +246,15 @@ app.get('/api/content/catalog', async (req, res) => {
 
         const combined = [...formattedMovies, ...formattedSeries].sort((a, b) => new Date(b.addedAt || 0) - new Date(a.addedAt || 0));
 
+        // Guardamos en caché SOLO el array puro
         catalogCache.set(CATALOG_CACHE_KEY, combined);
-        res.status(200).json({ items: combined, total: combined.length });
+        
+        // CORRECCIÓN CRÍTICA: Al responder, envolvemos en { items: ... }
+        // Esto es lo que busca tu script.js para no dar error.
+        res.status(200).json({ 
+            items: combined, 
+            total: combined.length 
+        });
 
     } catch (error) {
         console.error("Error en /api/content/catalog:", error);
@@ -242,47 +262,61 @@ app.get('/api/content/catalog', async (req, res) => {
     }
 });
 
-// 4. Endpoint Contenido Local
+
+// =========================================================================
+// === RUTA CRÍTICA: /api/content/local (LÓGICA HÍBRIDA REAL) ===
+// =========================================================================
+// Esta ruta maneja "Tendencias Inteligentes" y "Filtrado por Género"
 app.get('/api/content/local', verifyIdToken, async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
 
-    const { type, genre, category } = req.query; 
+    const { type, genre, category, source } = req.query; 
     
     try {
+        // 1. Configurar Colección y Proyección
         const collection = (type === 'tv') ? mongoDb.collection('series_catalog') : mongoDb.collection('media_catalog');
+        // Traemos 'genres' y 'addedAt' para filtrar correctamente
         const projection = { tmdbId: 1, title: 1, name: 1, poster_path: 1, backdrop_path: 1, addedAt: 1, genres: 1 };
 
+        // ---------------------------------------------------------
+        // A. LÓGICA DE CRUCE (POPULARES / TENDENCIAS)
+        // ---------------------------------------------------------
         if (category === 'populares' || category === 'tendencias' || category === 'series_populares') {
             let tmdbEndpoint = '';
             if (category === 'populares') tmdbEndpoint = 'movie/popular';
             else if (category === 'series_populares') tmdbEndpoint = 'tv/popular';
             else tmdbEndpoint = 'trending/all/day';
 
+            // 1. Pedir lista REAL a TMDB
             let tmdbList = tmdbCache.get(`smart_cross_${category}`);
             if (!tmdbList) {
                 try {
                     const resp = await axios.get(`https://api.themoviedb.org/3/${tmdbEndpoint}?api_key=${TMDB_API_KEY}&language=es-MX`);
                     tmdbList = resp.data.results || [];
-                    tmdbCache.set(`smart_cross_${category}`, tmdbList, 3600); 
+                    tmdbCache.set(`smart_cross_${category}`, tmdbList, 3600); // Cache 1 hora
                 } catch (e) {
-                    return res.status(200).json([]);
+                    return res.status(200).json([]); // Fallback vacío
                 }
             }
 
+            // 2. Extraer IDs y buscar coincidencias locales
             const targetIds = tmdbList.map(item => item.id.toString());
             let localMatches = [];
 
             if (category === 'tendencias') {
+                // Tendencias mezcla series y pelis
                 const movies = await mongoDb.collection('media_catalog').find({ tmdbId: { $in: targetIds } }).project(projection).toArray();
                 const series = await mongoDb.collection('series_catalog').find({ tmdbId: { $in: targetIds } }).project(projection).toArray();
                 const fMovies = movies.map(m => formatLocalItem(m, 'movie'));
                 const fSeries = series.map(s => formatLocalItem(s, 'tv'));
                 localMatches = [...fMovies, ...fSeries];
             } else {
+                // Populares específicos
                 const matches = await collection.find({ tmdbId: { $in: targetIds } }).project(projection).toArray();
                 localMatches = matches.map(m => formatLocalItem(m, type === 'tv' ? 'tv' : 'movie'));
             }
 
+            // 3. Ordenar según popularidad de TMDB
             const sortedMatches = [];
             targetIds.forEach(id => {
                 const match = localMatches.find(m => m.tmdbId === id);
@@ -292,20 +326,29 @@ app.get('/api/content/local', verifyIdToken, async (req, res) => {
             return res.status(200).json(sortedMatches);
         }
 
+        // ---------------------------------------------------------
+        // B. LÓGICA DE FILTRADO POR GÉNERO (ESTRICTO)
+        // ---------------------------------------------------------
         if (genre) {
             const genreId = parseInt(genre);
+            
+            // 1. Buscar en BD items que tengan ese género guardado (Rápido)
             let items = await collection.find({ genres: genreId }).project(projection).sort({ addedAt: -1 }).limit(20).toArray();
             
+            // 2. Fallback Híbrido: Si hay pocas (pelis viejas sin género), revisamos las recientes
             if (items.length < 5) {
                 const candidates = await collection.find({}).project(projection).sort({ addedAt: -1 }).limit(50).toArray();
+                
                 const verified = [];
                 for (const item of candidates) {
-                    if (items.find(i => i.tmdbId === item.tmdbId)) continue; 
+                    if (items.find(i => i.tmdbId === item.tmdbId)) continue; // Ya está
 
                     let hasGenre = false;
+                    // Si ya tiene genres pero no coincidió antes, no es.
                     if (item.genres && Array.isArray(item.genres) && item.genres.length > 0) {
                         if (item.genres.includes(genreId)) hasGenre = true;
                     } 
+                    // Si NO tiene genres (subida antigua), consultamos TMDB
                     else {
                         const cacheKey = `genre_chk_${type}_${item.tmdbId}`;
                         let cachedGenres = localDetailsCache.get(cacheKey);
@@ -315,20 +358,26 @@ app.get('/api/content/local', verifyIdToken, async (req, res) => {
                                 const resp = await axios.get(url);
                                 cachedGenres = resp.data.genres.map(g => g.id);
                                 localDetailsCache.set(cacheKey, cachedGenres);
+                                // Auto-reparación: Guardar en BD para la próxima
                                 await collection.updateOne({ _id: item._id }, { $set: { genres: cachedGenres } });
                             } catch (e) {}
                         }
                         if (cachedGenres && cachedGenres.includes(genreId)) hasGenre = true;
                     }
+
                     if (hasGenre) verified.push(item);
                     if (verified.length + items.length >= 20) break; 
                 }
                 items = [...items, ...verified];
             }
+
             const formatted = items.map(i => formatLocalItem(i, type === 'tv' ? 'tv' : 'movie'));
             return res.status(200).json(formatted);
         }
 
+        // ---------------------------------------------------------
+        // C. TODO EL CONTENIDO (Botón "Agregadas")
+        // ---------------------------------------------------------
         const allItems = await collection.find({})
             .project(projection)
             .sort({ addedAt: -1 })
@@ -353,9 +402,9 @@ function formatLocalItem(item, type) {
         poster_path: item.poster_path,
         backdrop_path: item.backdrop_path,
         media_type: type,
-        isPinned: item.isPinned || false,
+        isPinned: item.isPinned || false, // Propagamos la propiedad
         isLocal: true,
-        addedAt: item.addedAt
+        addedAt: item.addedAt // Útil para ordenamientos en cliente
     };
 }
 
@@ -370,6 +419,7 @@ app.get('/api/tmdb-proxy', async (req, res) => {
     }
 
     const cacheKey = JSON.stringify(req.query);
+
     const cachedResponse = tmdbCache.get(cacheKey);
     if (cachedResponse) {
         return res.json(cachedResponse);
@@ -408,6 +458,8 @@ app.get('/api/content/recent', async (req, res) => {
     if (cachedRecent) {
         return res.status(200).json(cachedRecent);
     }
+
+    // console.log(`[Recent Cache MISS] Generando lista unificada...`);
 
     try {
         const moviesPromise = mongoDb.collection('media_catalog')
@@ -916,12 +968,252 @@ app.get('/app/details/:tmdbId', (req, res) => {
     res.send(htmlResponse);
 });
 
-// =========================================================================
-// === RUTA DE SUBIDA DE PELÍCULAS (RESTAURADA) ===
-// =========================================================================
+app.post('/request-movie', async (req, res) => {
+    if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
+
+    const { title, poster_path, tmdbId, priority } = req.body;
+    
+    if (!tmdbId || !title) {
+        return res.status(400).json({ error: 'tmdbId y title requeridos.' });
+    }
+
+    try {
+        const requestCollection = mongoDb.collection('movie_requests');
+        const cleanId = String(tmdbId).trim();
+        
+        await requestCollection.updateOne(
+            { tmdbId: cleanId },
+            {
+                $set: { 
+                    title: title, 
+                    poster_path: poster_path, 
+                    latestPriority: priority || 'regular',
+                    updatedAt: new Date()
+                },
+                $inc: { votes: 1 }
+            },
+            { upsert: true }
+        );
+
+        if (priority && priority !== 'regular') {
+            const posterUrl = poster_path ? `https://image.tmdb.org/t/p/w500${poster_path}` : 'https://placehold.co/500x750?text=No+Poster';
+            
+            let priorityText = '';
+            switch (priority) {
+                case 'fast': priorityText = '⚡ Rápido (~24h)'; break;
+                case 'immediate': priorityText = '🚀 Inmediato (~1h)'; break;
+                case 'premium': priorityText = '👑 PREMIUM (Prioridad)'; break;
+                default: priorityText = '⏳ Regular (1-2 semanas)'; 
+            }
+
+            const message = `🔔 *Solicitud PRIORITARIA:* ${title}\n` +
+                            `*Nivel:* ${priorityText}\n\n` +
+                            `Se ha registrado/actualizado en la base de datos de pedidos.`;
+            
+            await bot.sendPhoto(ADMIN_CHAT_ID, posterUrl, {
+                caption: message, parse_mode: 'Markdown',
+                reply_markup: { inline_keyboard: [[{ text: '✅ Gestionar (Subir ahora)', callback_data: `solicitud_${tmdbId}` }]] }
+            });
+        }
+
+        res.status(200).json({ message: 'Solicitud guardada correctamente.' });
+
+    } catch (error) {
+        console.error("Error al procesar la solicitud /request-movie:", error);
+        res.status(500).json({ error: 'Error al procesar solicitud.' });
+    }
+});
+
+app.get('/api/streaming-status', (req, res) => {
+    const clientBuildId = parseInt(req.query.build_id) || 0;
+    const clientVersion = parseInt(req.query.version) || 0;
+
+    const receivedId = clientBuildId || clientVersion;
+
+    console.log(`[Status Check] ID Recibido: ${receivedId} | ID en Revisión: ${BUILD_ID_UNDER_REVIEW}`);
+    if (receivedId === BUILD_ID_UNDER_REVIEW) {
+        console.log("⚠️ [Review Mode] Detectada versión en revisión. Ocultando streaming.");
+        return res.status(200).json({ isStreamingActive: false }); 
+    }
+    console.log(`[Status Check] Usuario normal. Devolviendo estado global: ${GLOBAL_STREAMING_ACTIVE}`);
+    res.status(200).json({ isStreamingActive: GLOBAL_STREAMING_ACTIVE });
+});
+app.get('/api/get-movie-data', async (req, res) => {
+    if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
+    const { id } = req.query;
+    if (!id) return res.status(400).json({ error: "El ID del contenido es requerido." });
+    const cacheKey = `counts-data-${id}`;
+    try {
+        const cachedData = countsCache.get(cacheKey);
+        if (cachedData) {
+            console.log(`[Cache HIT] Sirviendo contadores desde caché para: ${cacheKey}`);
+            return res.status(200).json(cachedData);
+        }
+    } catch (err) {
+        console.error("Error al leer del caché de contadores:", err);
+    }
+    console.log(`[Cache MISS] Buscando contadores en MongoDB para: ${cacheKey}`);
+    try {
+        const movieCollection = mongoDb.collection('media_catalog');
+        const seriesCollection = mongoDb.collection('series_catalog');
+        let docMovie = null; let docSeries = null; let views = 0; let likes = 0; let isAvailable = false;
+        const seriesProjection = { projection: { views: 1, likes: 1, seasons: 1 } };
+        docSeries = await seriesCollection.findOne({ tmdbId: id.toString() }, seriesProjection);
+        if (docSeries) {
+            views = docSeries.views || 0; likes = docSeries.likes || 0;
+            if (docSeries.seasons) {
+                isAvailable = Object.values(docSeries.seasons).some(season => season && season && season.episodes && Object.values(season.episodes).some(ep => (ep.freeEmbedCode && ep.freeEmbedCode !== '') || (ep.proEmbedCode && ep.proEmbedCode !== '')));
+            }
+            if (isAvailable) {
+                const responseData = { views: views, likes: likes, isAvailable: true };
+                countsCache.set(cacheKey, responseData);
+                return res.status(200).json(responseData);
+            }
+        }
+        const movieProjection = { projection: { views: 1, likes: 1, freeEmbedCode: 1, proEmbedCode: 1 } };
+        docMovie = await movieCollection.findOne({ tmdbId: id.toString() }, movieProjection);
+        if (docMovie) {
+            if (views === 0) views = docMovie.views || 0; if (likes === 0) likes = docMovie.likes || 0;
+            isAvailable = !!(docMovie.freeEmbedCode || docMovie.proEmbedCode);
+            const responseData = { views: views, likes: likes, isAvailable: isAvailable };
+            countsCache.set(cacheKey, responseData);
+            return res.status(200).json(responseData);
+        }
+        const responseData_NotFound = { views: views, likes: likes, isAvailable: false };
+        countsCache.set(cacheKey, responseData_NotFound);
+        res.status(200).json(responseData_NotFound);
+    } catch (error) {
+        console.error(`Error crítico al obtener los datos consolidados en MongoDB:`, error);
+        res.status(500).json({ error: "Error interno del servidor al obtener los datos." });
+    }
+});
+
+app.get('/api/get-embed-code', async (req, res) => {
+    if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
+    
+    const { id, season, episode, isPro } = req.query;
+    if (!id) return res.status(400).json({ error: "ID no proporcionado" });
+
+    const cacheKey = `embed-${id}-${season || 'movie'}-${episode || '1'}-${isPro === 'true' ? 'pro' : 'free'}`;
+    
+    try {
+        const cachedData = embedCache.get(cacheKey);
+        if (cachedData) {
+            console.log(`[Cache HIT] Sirviendo embed manual desde caché para: ${cacheKey}`);
+            return res.json({ embedCode: cachedData });
+        }
+    } catch (err) {
+        console.error("Error al leer del caché de embeds:", err);
+    }
+    
+    console.log(`[Cache MISS] Buscando embed en MongoDB para: ${cacheKey}`);
+
+    try {
+        const mediaType = season && episode ? 'series' : 'movies';
+        const collectionName = (mediaType === 'movies') ? 'media_catalog' : 'series_catalog';
+        const doc = await mongoDb.collection(collectionName).findOne({ tmdbId: id.toString() });
+
+        if (!doc) return res.status(404).json({ error: `${mediaType} no encontrada.` });
+
+        let enlaceFinal = null;
+
+        if (mediaType === 'movies') {
+            enlaceFinal = (isPro === 'true') ? doc.proEmbedCode : doc.freeEmbedCode; 
+        } else {
+            const epData = doc.seasons?.[season]?.episodes?.[episode];
+            if (epData) {
+                enlaceFinal = (isPro === 'true') ? epData.proEmbedCode : epData.freeEmbedCode;
+            }
+        }
+
+        if (enlaceFinal) {
+            embedCache.set(cacheKey, enlaceFinal);
+            return res.json({ embedCode: enlaceFinal });
+        }
+
+        console.log(`[Embed Code] No se encontró código para ${id} (isPro: ${isPro})`);
+        return res.status(404).json({ error: `No se encontró código de reproductor.` });
+
+    } catch (error) {
+        console.error("Error crítico get-embed-code:", error);
+        res.status(500).json({ error: "Error interno" });
+    }
+});
+
+app.get('/api/check-season-availability', async (req, res) => {
+     if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
+     const { id, season } = req.query;
+     if (!id || !season) return res.status(400).json({ error: "ID y temporada son requeridos." });
+     try {
+         const seriesCollection = mongoDb.collection('series_catalog');
+         const episodesField = `seasons.${season}.episodes`;
+         const doc = await seriesCollection.findOne({ tmdbId: id.toString() }, { projection: { [episodesField]: 1 } });
+         if (!doc?.seasons?.[season]?.episodes) { return res.status(200).json({ exists: false, availableEpisodes: {} }); }
+         const episodesData = doc.seasons[season].episodes; const availabilityMap = {};
+         for (const episodeNum in episodesData) { const ep = episodesData[episodeNum]; availabilityMap[episodeNum] = !!(ep.proEmbedCode || ep.freeEmbedCode); }
+         res.status(200).json({ exists: true, availableEpisodes: availabilityMap });
+     } catch (error) { console.error("Error check-season-availability:", error); res.status(500).json({ error: "Error interno." }); }
+});
+
+app.get('/api/get-metrics', async (req, res) => {
+    if (!mongoDb) return res.status(503).json({ error: "BD no disponible." });
+    const { id, field } = req.query;
+    if (!id || !field || (field !== 'views' && field !== 'likes')) { return res.status(400).json({ error: "ID y campo ('views' o 'likes') requeridos." }); }
+    const cacheKey = `counts-metrics-${id}-${field}`;
+    try {
+        const cachedData = countsCache.get(cacheKey);
+        if (cachedData) {
+            console.log(`[Cache HIT] Sirviendo métrica desde caché para: ${cacheKey}`);
+            return res.status(200).json(cachedData);
+        }
+    } catch (err) {
+        console.error("Error al leer del caché de métricas:", err);
+    }
+    console.log(`[Cache MISS] Buscando métrica en MongoDB para: ${cacheKey}`);
+    try {
+        let doc = await mongoDb.collection('media_catalog').findOne({ tmdbId: id.toString() }, { projection: { [field]: 1 } });
+        if (!doc) doc = await mongoDb.collection('series_catalog').findOne({ tmdbId: id.toString() }, { projection: { [field]: 1 } });
+        const responseData = { count: doc?.[field] || 0 };
+        countsCache.set(cacheKey, responseData);
+        res.status(200).json(responseData);
+    } catch (error) { console.error(`Error get-metrics (${field}):`, error); res.status(500).json({ error: "Error interno." }); }
+});
+
+app.post('/api/increment-views', async (req, res) => {
+    if (!mongoDb) return res.status(503).json({ error: "BD no disponible." });
+    const { tmdbId } = req.body; if (!tmdbId) return res.status(400).json({ error: "tmdbId requerido." });
+    try {
+        const update = { $inc: { views: 1 }, $setOnInsert: { likes: 0 } }; const options = { upsert: true };
+        let result = await mongoDb.collection('media_catalog').updateOne({ tmdbId: tmdbId.toString() }, update, options);
+        if (result.matchedCount === 0 && result.upsertedCount === 0) {
+           result = await mongoDb.collection('series_catalog').updateOne({ tmdbId: tmdbId.toString() }, update, options);
+        }
+        countsCache.del(`counts-data-${tmdbId}`);
+        countsCache.del(`counts-metrics-${tmdbId}-views`);
+        res.status(200).json({ message: 'Vista registrada.' });
+    } catch (error) { console.error("Error increment-views:", error); res.status(500).json({ error: "Error interno." }); }
+});
+
+app.post('/api/increment-likes', async (req, res) => {
+    if (!mongoDb) return res.status(503).json({ error: "BD no disponible." });
+    const { tmdbId } = req.body; if (!tmdbId) return res.status(400).json({ error: "tmdbId requerido." });
+    try {
+        const update = { $inc: { likes: 1 }, $setOnInsert: { views: 0 } }; const options = { upsert: true };
+        let result = await mongoDb.collection('media_catalog').updateOne({ tmdbId: tmdbId.toString() }, update, options);
+         if (result.matchedCount === 0 && result.upsertedCount === 0) {
+            result = await mongoDb.collection('series_catalog').updateOne({ tmdbId: tmdbId.toString() }, update, options);
+         }
+        countsCache.del(`counts-data-${tmdbId}`);
+        countsCache.del(`counts-metrics-${tmdbId}-likes`);
+        res.status(200).json({ message: 'Like registrado.' });
+    } catch (error) { console.error("Error increment-likes:", error); res.status(500).json({ error: "Error interno." }); }
+});
+
+// === MODIFICACIÓN DE SUBIDA: Guardar metadatos (pinned, kdramas, etc) ===
 app.post('/add-movie', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "BD no disponible." });
     try {
+        // Obtenemos los nuevos campos que envía el bot: genres, release_date, isPinned, origin_country etc.
         const { tmdbId, title, poster_path, freeEmbedCode, proEmbedCode, isPremium, overview, hideFromRecent, genres, release_date, popularity, vote_average, isPinned, origin_country } = req.body;
         
         if (!tmdbId) return res.status(400).json({ error: 'tmdbId requerido.' });
@@ -937,10 +1229,12 @@ app.post('/add-movie', async (req, res) => {
                 proEmbedCode, 
                 isPremium,
                 hideFromRecent: hideFromRecent === true || hideFromRecent === 'true',
+                // Guardar metadatos nuevos
                 genres: genres || [],
                 release_date: release_date || null,
                 popularity: popularity || 0,
                 vote_average: vote_average || 0,
+                // NUEVO: Destacado y País
                 isPinned: isPinned === true || isPinned === 'true',
                 origin_country: origin_country || []
             }, 
@@ -972,9 +1266,7 @@ app.post('/add-movie', async (req, res) => {
     } catch (error) { console.error("Error add-movie:", error); res.status(500).json({ error: 'Error interno.' }); }
 });
 
-// =========================================================================
-// === RUTA DE SUBIDA DE SERIES (RESTAURADA) ===
-// =========================================================================
+// === MODIFICACIÓN DE SUBIDA SERIES: Guardar metadatos y limpiar caché ===
 app.post('/add-series-episode', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "BD no disponible." });
     try {
@@ -988,10 +1280,12 @@ app.post('/add-series-episode', async (req, res) => {
         const updateData = {
             $set: {
                 title, poster_path, overview, isPremium,
+                // Guardar metadatos generales de la serie
                 genres: genres || [],
                 first_air_date: first_air_date || null,
                 popularity: popularity || 0,
                 vote_average: vote_average || 0,
+                // NUEVO: Destacado y País
                 isPinned: isPinned === true || isPinned === 'true',
                 origin_country: origin_country || [],
 
@@ -1054,104 +1348,6 @@ app.post('/delete-series-episode', async (req, res) => {
     }
 });
 
-// --- RUTA NUEVA: GESTIÓN DE DESTACADOS (PINNED) CON LIMPIEZA TOTAL Y BLINDAJE DE ID ---
-app.post('/api/manage-pinned', async (req, res) => {
-    const { tmdbId, action, type } = req.body; 
-    
-    if (!mongoDb || !tmdbId || !action) return res.status(400).json({ error: "Faltan datos" });
-
-    // Definimos la colección correcta
-    const collection = (type === 'tv' || type === 'series') ? mongoDb.collection('series_catalog') : mongoDb.collection('media_catalog');
-    
-    // --- BLINDAJE DE ID: Probamos String y Número por si acaso ---
-    const idAsString = tmdbId.toString().trim();
-    const idAsNumber = parseInt(tmdbId);
-
-    let updateData = {};
-    let message = "";
-
-    try {
-        if (action === 'pin') {
-            updateData = { $set: { isPinned: true, addedAt: new Date() } };
-            message = "Fijado en Destacados (Top 1).";
-        } 
-        else if (action === 'unpin') {
-            updateData = { $set: { isPinned: false } };
-            message = "Eliminado de Destacados.";
-        } 
-        else if (action === 'refresh') {
-            updateData = { $set: { isPinned: true, addedAt: new Date() } };
-            message = "Posición refrescada (Subido al Top 1).";
-        }
-
-        // 1. Intento principal con String ID (lo más común)
-        let result = await collection.updateOne({ tmdbId: idAsString }, updateData);
-        
-        // 2. Fallback: Si no encontró nada, probamos con Number ID
-        if (result.matchedCount === 0 && !isNaN(idAsNumber)) {
-            console.warn(`[Manage Pinned] ID String (${idAsString}) no encontrado. Probando Number (${idAsNumber})...`);
-            result = await collection.updateOne({ tmdbId: idAsNumber }, updateData);
-        }
-
-        if (result.matchedCount === 0) {
-            console.warn(`[Manage Pinned] ERROR: No se encontró el item ${tmdbId} en la BD.`);
-        }
-
-        // --- LIMPIEZA AGRESIVA DE CACHÉ ---
-        pinnedCache.del(PINNED_CACHE_KEY); 
-        recentCache.del(RECENT_CACHE_KEY); 
-        catalogCache.del(CATALOG_CACHE_KEY);
-        countsCache.del(`counts-data-${idAsString}`); // Borramos la del string
-        countsCache.del(`counts-data-${idAsNumber}`); // Borramos la del number por si acaso
-
-        console.log(`[Pinned] Acción '${action}' realizada en ${tmdbId}. Cachés limpiadas.`);
-        res.status(200).json({ success: true, message });
-
-    } catch (error) {
-        console.error("Error managing pinned:", error);
-        res.status(500).json({ error: "Error interno" });
-    }
-});
-
-// --- NUEVA RUTA: ELIMINAR CONTENIDO COMPLETAMENTE Y LIMPIAR CACHÉ ---
-app.post('/api/delete-content', async (req, res) => {
-    const { tmdbId, type } = req.body; 
-    if (!mongoDb || !tmdbId || !type) return res.status(400).json({ error: "Faltan datos." });
-
-    const idAsString = tmdbId.toString().trim();
-    const idAsNumber = parseInt(tmdbId);
-    
-    const collectionName = (type === 'tv' || type === 'series') ? 'series_catalog' : 'media_catalog';
-
-    try {
-        // Intentar borrar por String ID
-        let result = await mongoDb.collection(collectionName).deleteOne({ tmdbId: idAsString });
-        
-        // Si no borró nada, intentar por Number ID
-        if (result.deletedCount === 0 && !isNaN(idAsNumber)) {
-             result = await mongoDb.collection(collectionName).deleteOne({ tmdbId: idAsNumber });
-        }
-
-        if (result.deletedCount === 0) {
-            console.warn(`[Delete] No se encontró el item ${tmdbId} para eliminar, pero se limpiará caché.`);
-        }
-
-        // === LIMPIEZA TOTAL DE CACHÉ ===
-        pinnedCache.del(PINNED_CACHE_KEY);
-        kdramaCache.del(KDRAMA_CACHE_KEY);
-        catalogCache.del(CATALOG_CACHE_KEY);
-        recentCache.del(RECENT_CACHE_KEY);
-        countsCache.del(`counts-data-${idAsString}`);
-        
-        console.log(`[Delete] Item ${tmdbId} eliminado y cachés purgadas.`);
-        res.status(200).json({ success: true, message: "Eliminado y cachés actualizadas." });
-
-    } catch (error) {
-        console.error("Error en delete-content:", error);
-        res.status(500).json({ error: "Error interno al eliminar." });
-    }
-});
-
 app.post('/api/notify-new-content', async (req, res) => {
     const { title, body, imageUrl, tmdbId, mediaType } = req.body;
     if (!title || !body || !tmdbId || !mediaType) {
@@ -1170,7 +1366,35 @@ app.post('/api/notify-new-content', async (req, res) => {
     }
 });
 
-// === LÓGICA DE NOTIFICACIONES PUSH ===
+app.get('/api/app-update', (req, res) => {
+    const updateInfo = { "latest_version_code": 12, "update_url": "https://play.google.com/store/apps/details?id=com.salacine.app&pcampaignid=web_share", "force_update": false, "update_message": "¡Nueva versión (1.5.2) de Sala Cine disponible! Incluye mejoras de rendimiento. Actualiza ahora." };
+    res.status(200).json(updateInfo);
+});
+
+app.get('/api/app-status', (req, res) => {
+    const status = { isAppApproved: true, safeContentIds: [11104, 539, 4555, 27205, 33045] };
+    res.json(status);
+});
+
+app.get('/.well-known/assetlinks.json', (req, res) => {
+    res.sendFile('assetlinks.json', { root: __dirname });
+});
+
+app.get('/api/extract-link', async (req, res) => {
+    const targetUrl = req.query.url;
+    if (!targetUrl) return res.status(400).json({ success: false, error: "Se requiere parámetro 'url'." });
+    
+    console.log(`[Extractor] Solicitud manual recibida para: ${targetUrl}`);
+    try {
+        const extracted_link = await llamarAlExtractor(targetUrl);
+        res.status(200).json({ success: true, requested_url: targetUrl, extracted_link: extracted_link });
+    } catch (error) {
+        console.error(`[Extractor] Falla en ruta /api/extract-link: ${error.message}`);
+        res.status(500).json({ success: false, error: "Fallo extractor.", details: error.message });
+    }
+});
+
+// === LÓGICA DE NOTIFICACIONES PUSH (Recuperada de Server 11) ===
 async function sendNotificationToTopic(title, body, imageUrl, tmdbId, mediaType) {
     const topic = 'new_content';
     const dataPayload = {
