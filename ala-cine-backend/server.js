@@ -1209,51 +1209,188 @@ app.post('/api/increment-likes', async (req, res) => {
     } catch (error) { console.error("Error increment-likes:", error); res.status(500).json({ error: "Error interno." }); }
 });
 
-// --- RUTA NUEVA: GESTIÓN DE DESTACADOS (PINNED) ---
-app.post('/api/manage-pinned', async (req, res) => {
-    // Necesitamos verificar token aquí idealmente, o confiar en que solo el bot llama esto
-    const { tmdbId, action, type } = req.body; // action: 'pin', 'unpin', 'refresh'
-    
-    if (!mongoDb || !tmdbId || !action) return res.status(400).json({ error: "Faltan datos" });
-
-    const collection = (type === 'tv' || type === 'series') ? mongoDb.collection('series_catalog') : mongoDb.collection('media_catalog');
-    const cleanId = tmdbId.toString();
-
-    let updateData = {};
-    let message = "";
-
+// === MODIFICACIÓN DE SUBIDA: Guardar metadatos (pinned, kdramas, etc) ===
+app.post('/add-movie', async (req, res) => {
+    if (!mongoDb) return res.status(503).json({ error: "BD no disponible." });
     try {
-        if (action === 'pin') {
-            // Fijar y poner fecha actual para que salga primero
-            updateData = { $set: { isPinned: true, addedAt: new Date() } };
-            message = "Fijado en Destacados (Top 1).";
-        } 
-        else if (action === 'unpin') {
-            // Quitar de destacados
-            updateData = { $set: { isPinned: false } };
-            message = "Eliminado de Destacados.";
-        } 
-        else if (action === 'refresh') {
-            // Mantener fijado pero actualizar fecha para subirlo al Top 1
-            updateData = { $set: { isPinned: true, addedAt: new Date() } };
-            message = "Posición refrescada (Subido al Top 1).";
+        // Obtenemos los nuevos campos que envía el bot: genres, release_date, isPinned, origin_country etc.
+        const { tmdbId, title, poster_path, freeEmbedCode, proEmbedCode, isPremium, overview, hideFromRecent, genres, release_date, popularity, vote_average, isPinned, origin_country } = req.body;
+        
+        if (!tmdbId) return res.status(400).json({ error: 'tmdbId requerido.' });
+        
+        const cleanTmdbId = String(tmdbId).trim();
+
+        const updateQuery = { 
+            $set: { 
+                title, 
+                poster_path, 
+                overview, 
+                freeEmbedCode, 
+                proEmbedCode, 
+                isPremium,
+                hideFromRecent: hideFromRecent === true || hideFromRecent === 'true',
+                // Guardar metadatos nuevos
+                genres: genres || [],
+                release_date: release_date || null,
+                popularity: popularity || 0,
+                vote_average: vote_average || 0,
+                // NUEVO: Destacado y País
+                isPinned: isPinned === true || isPinned === 'true',
+                origin_country: origin_country || []
+            }, 
+            $setOnInsert: { tmdbId: cleanTmdbId, views: 0, likes: 0, addedAt: new Date() } 
+        };
+        
+        await mongoDb.collection('media_catalog').updateOne({ tmdbId: cleanTmdbId }, updateQuery, { upsert: true });
+
+        try {
+            await mongoDb.collection('movie_requests').deleteOne({ tmdbId: cleanTmdbId });
+            console.log(`[Auto-Clean] Pedido eliminado tras subida: ${title} (${cleanTmdbId})`);
+        } catch (cleanupError) {
+            console.warn(`[Auto-Clean Warning] No se pudo limpiar el pedido: ${cleanupError.message}`);
+        }
+        
+        // INVALIDACIÓN DE CACHÉS
+        embedCache.del(`embed-${cleanTmdbId}-movie-1-pro`);
+        embedCache.del(`embed-${cleanTmdbId}-movie-1-free`);
+        countsCache.del(`counts-data-${cleanTmdbId}`);
+        recentCache.del(RECENT_CACHE_KEY);
+        pinnedCache.del(PINNED_CACHE_KEY);
+        kdramaCache.del(KDRAMA_CACHE_KEY);
+        catalogCache.del(CATALOG_CACHE_KEY);
+
+        console.log(`[Cache] Cachés (Recent, Pinned, Kdrama, Catalog) invalidadas por subida de película: ${title}`);
+
+        res.status(200).json({ message: 'Película agregada y publicada.' });
+        
+    } catch (error) { console.error("Error add-movie:", error); res.status(500).json({ error: 'Error interno.' }); }
+});
+
+// === MODIFICACIÓN DE SUBIDA SERIES: Guardar metadatos y limpiar caché ===
+app.post('/add-series-episode', async (req, res) => {
+    if (!mongoDb) return res.status(503).json({ error: "BD no disponible." });
+    try {
+        const { tmdbId, title, poster_path, overview, seasonNumber, episodeNumber, freeEmbedCode, proEmbedCode, isPremium, genres, first_air_date, popularity, vote_average, isPinned, origin_country } = req.body;
+        
+        if (!tmdbId || !seasonNumber || !episodeNumber) return res.status(400).json({ error: 'tmdbId, seasonNumber y episodeNumber requeridos.' });
+        
+        const cleanTmdbId = String(tmdbId).trim();
+
+        const episodePath = `seasons.${seasonNumber}.episodes.${episodeNumber}`;
+        const updateData = {
+            $set: {
+                title, poster_path, overview, isPremium,
+                // Guardar metadatos generales de la serie
+                genres: genres || [],
+                first_air_date: first_air_date || null,
+                popularity: popularity || 0,
+                vote_average: vote_average || 0,
+                // NUEVO: Destacado y País
+                isPinned: isPinned === true || isPinned === 'true',
+                origin_country: origin_country || [],
+
+                [`seasons.${seasonNumber}.name`]: `Temporada ${seasonNumber}`,
+                [episodePath + '.freeEmbedCode']: freeEmbedCode,
+                [episodePath + '.proEmbedCode']: proEmbedCode,
+                 [episodePath + '.addedAt']: new Date()
+            },
+            $setOnInsert: { tmdbId: cleanTmdbId, views: 0, likes: 0, addedAt: new Date() }
+        };
+        await mongoDb.collection('series_catalog').updateOne({ tmdbId: cleanTmdbId }, updateData, { upsert: true });
+        
+        try {
+            await mongoDb.collection('movie_requests').deleteOne({ tmdbId: cleanTmdbId });
+            console.log(`[Auto-Clean] Pedido eliminado tras subida episodio: ${title} (${cleanTmdbId})`);
+        } catch (cleanupError) {
+            console.warn(`[Auto-Clean Warning] No se pudo limpiar el pedido: ${cleanupError.message}`);
         }
 
-        await collection.updateOne({ tmdbId: cleanId }, updateData);
-
-        // IMPORTANTE: Invalidar caché para que se vea el cambio en la App
-        pinnedCache.del(PINNED_CACHE_KEY); 
-        recentCache.del(RECENT_CACHE_KEY); 
+        embedCache.del(`embed-${cleanTmdbId}-${seasonNumber}-${episodeNumber}-pro`);
+        embedCache.del(`embed-${cleanTmdbId}-${seasonNumber}-${episodeNumber}-free`);
+        countsCache.del(`counts-data-${cleanTmdbId}`);
+        recentCache.del(RECENT_CACHE_KEY);
+        pinnedCache.del(PINNED_CACHE_KEY);
+        kdramaCache.del(KDRAMA_CACHE_KEY);
         catalogCache.del(CATALOG_CACHE_KEY);
-        // También borramos la caché individual por si acaso
-        countsCache.del(`counts-data-${cleanId}`);
+        
+        console.log(`[Cache] Cachés (Recent, Pinned, Kdrama, Catalog) invalidadas por subida de episodio: S${seasonNumber}E${episodeNumber}`);
 
-        console.log(`[Pinned] Acción '${action}' realizada en ${cleanId}. Cachés limpiadas.`);
-        res.status(200).json({ success: true, message });
+        res.status(200).json({ message: `Episodio S${seasonNumber}E${episodeNumber} agregado y publicado.` });
 
+    } catch (error) { console.error("Error add-series-episode:", error); res.status(500).json({ error: 'Error interno.' }); }
+});
+
+app.post('/delete-series-episode', async (req, res) => {
+    if (!mongoDb) return res.status(503).json({ error: "BD no disponible." });
+    try {
+        const { tmdbId, seasonNumber, episodeNumber } = req.body;
+        if (!tmdbId || !seasonNumber || !episodeNumber) {
+            return res.status(400).json({ error: 'Faltan datos.' });
+        }
+
+        const cleanTmdbId = String(tmdbId).trim();
+        const episodePath = `seasons.${seasonNumber}.episodes.${episodeNumber}`;
+
+        const updateData = {
+            $unset: { [episodePath]: "" }
+        };
+
+        await mongoDb.collection('series_catalog').updateOne({ tmdbId: cleanTmdbId }, updateData);
+
+        embedCache.del(`embed-${cleanTmdbId}-${seasonNumber}-${episodeNumber}-pro`);
+        embedCache.del(`embed-${cleanTmdbId}-${seasonNumber}-${episodeNumber}-free`);
+        console.log(`[Delete] Episodio S${seasonNumber}E${episodeNumber} eliminado de ${cleanTmdbId}`);
+
+        res.status(200).json({ message: 'Episodio eliminado.' });
     } catch (error) {
-        console.error("Error managing pinned:", error);
-        res.status(500).json({ error: "Error interno" });
+        console.error("Error delete-series-episode:", error);
+        res.status(500).json({ error: 'Error interno.' });
+    }
+});
+
+app.post('/api/notify-new-content', async (req, res) => {
+    const { title, body, imageUrl, tmdbId, mediaType } = req.body;
+    if (!title || !body || !tmdbId || !mediaType) {
+        return res.status(400).json({ success: false, error: "Faltan datos requeridos (title, body, tmdbId, mediaType)." });
+    }
+    try {
+        const result = await sendNotificationToTopic(title, body, imageUrl, tmdbId, mediaType);
+        if (result.success) {
+            res.status(200).json({ success: true, message: result.message, details: result.response });
+        } else {
+            res.status(500).json({ success: false, error: 'Error enviando notificación vía FCM.', details: result.error });
+        }
+    } catch (error) {
+        console.error("Error crítico en /api/notify-new-content:", error);
+        res.status(500).json({ success: false, error: "Error interno del servidor al procesar la notificación." });
+    }
+});
+
+app.get('/api/app-update', (req, res) => {
+    const updateInfo = { "latest_version_code": 12, "update_url": "https://play.google.com/store/apps/details?id=com.salacine.app&pcampaignid=web_share", "force_update": false, "update_message": "¡Nueva versión (1.5.2) de Sala Cine disponible! Incluye mejoras de rendimiento. Actualiza ahora." };
+    res.status(200).json(updateInfo);
+});
+
+app.get('/api/app-status', (req, res) => {
+    const status = { isAppApproved: true, safeContentIds: [11104, 539, 4555, 27205, 33045] };
+    res.json(status);
+});
+
+app.get('/.well-known/assetlinks.json', (req, res) => {
+    res.sendFile('assetlinks.json', { root: __dirname });
+});
+
+app.get('/api/extract-link', async (req, res) => {
+    const targetUrl = req.query.url;
+    if (!targetUrl) return res.status(400).json({ success: false, error: "Se requiere parámetro 'url'." });
+    
+    console.log(`[Extractor] Solicitud manual recibida para: ${targetUrl}`);
+    try {
+        const extracted_link = await llamarAlExtractor(targetUrl);
+        res.status(200).json({ success: true, requested_url: targetUrl, extracted_link: extracted_link });
+    } catch (error) {
+        console.error(`[Extractor] Falla en ruta /api/extract-link: ${error.message}`);
+        res.status(500).json({ success: false, error: "Fallo extractor.", details: error.message });
     }
 });
 
