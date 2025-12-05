@@ -1393,6 +1393,29 @@ app.get('/api/extract-link', async (req, res) => {
         res.status(500).json({ success: false, error: "Fallo extractor.", details: error.message });
     }
 });
+
+// === LÓGICA DE NOTIFICACIONES PUSH (Recuperada de Server 11) ===
+async function sendNotificationToTopic(title, body, imageUrl, tmdbId, mediaType) {
+    const topic = 'new_content';
+    const dataPayload = {
+        title: title, body: body, tmdbId: tmdbId.toString(), mediaType: mediaType,
+        ...(imageUrl && { imageUrl: imageUrl })
+    };
+    const message = {
+        topic: topic, data: dataPayload,
+        android: { priority: 'high' }
+    };
+    try {
+        console.log(`🚀 Intentando enviar notificación al topic '${topic}'... Payload:`, JSON.stringify(dataPayload));
+        const response = await messaging.send(message);
+        console.log('✅ Notificación FCM enviada exitosamente al topic:', response);
+        return { success: true, message: `Notificación enviada al topic '${topic}'.`, response: response };
+    } catch (error) {
+        console.error(`❌ Error al enviar notificación FCM al topic '${topic}':`, error);
+        return { success: false, error: error.message };
+    }
+}
+
 async function startServer() {
     await connectToMongo();
 
