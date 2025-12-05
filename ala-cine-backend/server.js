@@ -1427,7 +1427,8 @@ async function startServer() {
         ADMIN_CHAT_ID,
         TMDB_API_KEY,
         RENDER_BACKEND_URL,
-        axios
+        axios,
+        pinnedCache // <--- CAMBIO 2: Pasamos la caché al Bot para que pueda limpiarla
     );
 
     app.listen(PORT, () => {
