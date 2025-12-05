@@ -13,14 +13,28 @@ const cron = require('node-cron');
 const NodeCache = require('node-cache');
 
 // --- CACHÉS ---
+// Cachés existentes
 const embedCache = new NodeCache({ stdTTL: 86400, checkperiod: 600 });
 const countsCache = new NodeCache({ stdTTL: 900, checkperiod: 120 });
 const tmdbCache = new NodeCache({ stdTTL: 86400, checkperiod: 3600 });
 const recentCache = new NodeCache({ stdTTL: 86400, checkperiod: 600 });
-const RECENT_CACHE_KEY = 'recent_content_main'; 
 const historyCache = new NodeCache({ stdTTL: 900, checkperiod: 120 });
-// Cache para detalles de géneros locales (Evita saturar TMDB con pelis antiguas)
 const localDetailsCache = new NodeCache({ stdTTL: 86400, checkperiod: 3600 }); 
+
+// --- NUEVAS CACHÉS OPTIMIZADAS (FASE 1) ---
+// Caché para Destacados (Pinned) - TTL 1 hora
+const pinnedCache = new NodeCache({ stdTTL: 3600, checkperiod: 600 });
+const PINNED_CACHE_KEY = 'pinned_content_top';
+
+// Caché para K-Dramas (Automático) - TTL 1 hora
+const kdramaCache = new NodeCache({ stdTTL: 3600, checkperiod: 600 });
+const KDRAMA_CACHE_KEY = 'kdrama_content_list';
+
+// Caché para Catálogo Completo - TTL 1 hora (Para evitar lecturas masivas a Mongo)
+const catalogCache = new NodeCache({ stdTTL: 3600, checkperiod: 600 });
+const CATALOG_CACHE_KEY = 'full_catalog_list';
+
+const RECENT_CACHE_KEY = 'recent_content_main'; 
 
 const app = express();
 dotenv.config();
@@ -131,7 +145,117 @@ async function llamarAlExtractor(targetUrl) {
 }
 
 // =========================================================================
-// === NUEVA RUTA CRÍTICA: /api/content/local (LÓGICA HÍBRIDA REAL) ===
+// === NUEVOS ENDPOINTS CRÍTICOS (FASE 1) - DESTACADOS, K-DRAMAS, CATALOGO ===
+// =========================================================================
+
+// 1. Endpoint Destacados (Pinned)
+app.get('/api/content/featured', async (req, res) => {
+    if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
+
+    const cachedPinned = pinnedCache.get(PINNED_CACHE_KEY);
+    if (cachedPinned) {
+        return res.status(200).json(cachedPinned);
+    }
+
+    try {
+        const projection = { tmdbId: 1, title: 1, name: 1, poster_path: 1, backdrop_path: 1, addedAt: 1, isPinned: 1 };
+        
+        // Buscar en Películas
+        const movies = await mongoDb.collection('media_catalog')
+            .find({ isPinned: true })
+            .project(projection)
+            .sort({ addedAt: -1 })
+            .limit(10)
+            .toArray();
+
+        // Buscar en Series
+        const series = await mongoDb.collection('series_catalog')
+            .find({ isPinned: true })
+            .project(projection)
+            .sort({ addedAt: -1 })
+            .limit(10)
+            .toArray();
+
+        const formattedMovies = movies.map(m => formatLocalItem(m, 'movie'));
+        const formattedSeries = series.map(s => formatLocalItem(s, 'tv'));
+        
+        // Combinar y ordenar
+        const combined = [...formattedMovies, ...formattedSeries].sort((a, b) => new Date(b.addedAt || 0) - new Date(a.addedAt || 0));
+        
+        pinnedCache.set(PINNED_CACHE_KEY, combined);
+        res.status(200).json(combined);
+
+    } catch (error) {
+        console.error("Error en /api/content/featured:", error);
+        res.status(500).json({ error: "Error interno al obtener destacados." });
+    }
+});
+
+// 2. Endpoint K-Dramas (Automático por origin_country: 'KR')
+app.get('/api/content/kdramas', async (req, res) => {
+    if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
+
+    const cachedKdramas = kdramaCache.get(KDRAMA_CACHE_KEY);
+    if (cachedKdramas) {
+        return res.status(200).json(cachedKdramas);
+    }
+
+    try {
+        const projection = { tmdbId: 1, title: 1, name: 1, poster_path: 1, backdrop_path: 1, addedAt: 1, origin_country: 1 };
+        
+        // Query para buscar 'KR' en el array origin_country
+        const query = { origin_country: "KR" };
+
+        const movies = await mongoDb.collection('media_catalog').find(query).project(projection).sort({ addedAt: -1 }).limit(50).toArray();
+        const series = await mongoDb.collection('series_catalog').find(query).project(projection).sort({ addedAt: -1 }).limit(50).toArray();
+
+        const formattedMovies = movies.map(m => formatLocalItem(m, 'movie'));
+        const formattedSeries = series.map(s => formatLocalItem(s, 'tv'));
+        
+        const combined = [...formattedMovies, ...formattedSeries].sort((a, b) => new Date(b.addedAt || 0) - new Date(a.addedAt || 0));
+
+        kdramaCache.set(KDRAMA_CACHE_KEY, combined);
+        res.status(200).json(combined);
+
+    } catch (error) {
+        console.error("Error en /api/content/kdramas:", error);
+        res.status(500).json({ error: "Error interno al obtener K-Dramas." });
+    }
+});
+
+// 3. Endpoint Catálogo Completo (Cacheado)
+app.get('/api/content/catalog', async (req, res) => {
+    if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
+
+    const cachedCatalog = catalogCache.get(CATALOG_CACHE_KEY);
+    if (cachedCatalog) {
+        return res.status(200).json(cachedCatalog);
+    }
+
+    try {
+        const projection = { tmdbId: 1, title: 1, name: 1, poster_path: 1, media_type: 1, addedAt: 1 };
+        
+        // Traemos una cantidad razonable (ej. 500 más recientes) para no saturar memoria
+        const movies = await mongoDb.collection('media_catalog').find({}).project(projection).sort({ addedAt: -1 }).limit(300).toArray();
+        const series = await mongoDb.collection('series_catalog').find({}).project(projection).sort({ addedAt: -1 }).limit(300).toArray();
+
+        const formattedMovies = movies.map(m => formatLocalItem(m, 'movie'));
+        const formattedSeries = series.map(s => formatLocalItem(s, 'tv'));
+
+        const combined = [...formattedMovies, ...formattedSeries].sort((a, b) => new Date(b.addedAt || 0) - new Date(a.addedAt || 0));
+
+        catalogCache.set(CATALOG_CACHE_KEY, combined);
+        res.status(200).json(combined);
+
+    } catch (error) {
+        console.error("Error en /api/content/catalog:", error);
+        res.status(500).json({ error: "Error interno al obtener catálogo." });
+    }
+});
+
+
+// =========================================================================
+// === RUTA CRÍTICA: /api/content/local (LÓGICA HÍBRIDA REAL) ===
 // =========================================================================
 // Esta ruta maneja "Tendencias Inteligentes" y "Filtrado por Género"
 app.get('/api/content/local', verifyIdToken, async (req, res) => {
@@ -269,7 +393,9 @@ function formatLocalItem(item, type) {
         poster_path: item.poster_path,
         backdrop_path: item.backdrop_path,
         media_type: type,
-        isLocal: true
+        isPinned: item.isPinned || false, // Propagamos la propiedad
+        isLocal: true,
+        addedAt: item.addedAt // Útil para ordenamientos en cliente
     };
 }
 
@@ -1074,12 +1200,12 @@ app.post('/api/increment-likes', async (req, res) => {
     } catch (error) { console.error("Error increment-likes:", error); res.status(500).json({ error: "Error interno." }); }
 });
 
-// === MODIFICACIÓN DE SUBIDA: Guardar metadatos (genres, etc) ===
+// === MODIFICACIÓN DE SUBIDA: Guardar metadatos (pinned, kdramas, etc) ===
 app.post('/add-movie', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "BD no disponible." });
     try {
-        // Obtenemos los nuevos campos que envía el bot: genres, release_date, etc.
-        const { tmdbId, title, poster_path, freeEmbedCode, proEmbedCode, isPremium, overview, hideFromRecent, genres, release_date, popularity, vote_average } = req.body;
+        // Obtenemos los nuevos campos que envía el bot: genres, release_date, isPinned, origin_country etc.
+        const { tmdbId, title, poster_path, freeEmbedCode, proEmbedCode, isPremium, overview, hideFromRecent, genres, release_date, popularity, vote_average, isPinned, origin_country } = req.body;
         
         if (!tmdbId) return res.status(400).json({ error: 'tmdbId requerido.' });
         
@@ -1098,7 +1224,10 @@ app.post('/add-movie', async (req, res) => {
                 genres: genres || [],
                 release_date: release_date || null,
                 popularity: popularity || 0,
-                vote_average: vote_average || 0
+                vote_average: vote_average || 0,
+                // NUEVO: Destacado y País
+                isPinned: isPinned === true || isPinned === 'true',
+                origin_country: origin_country || []
             }, 
             $setOnInsert: { tmdbId: cleanTmdbId, views: 0, likes: 0, addedAt: new Date() } 
         };
@@ -1112,22 +1241,27 @@ app.post('/add-movie', async (req, res) => {
             console.warn(`[Auto-Clean Warning] No se pudo limpiar el pedido: ${cleanupError.message}`);
         }
         
+        // INVALIDACIÓN DE CACHÉS
         embedCache.del(`embed-${cleanTmdbId}-movie-1-pro`);
         embedCache.del(`embed-${cleanTmdbId}-movie-1-free`);
         countsCache.del(`counts-data-${cleanTmdbId}`);
         recentCache.del(RECENT_CACHE_KEY);
-        console.log(`[Cache] Lista de recientes invalidada por subida de película: ${title}`);
+        pinnedCache.del(PINNED_CACHE_KEY);
+        kdramaCache.del(KDRAMA_CACHE_KEY);
+        catalogCache.del(CATALOG_CACHE_KEY);
+
+        console.log(`[Cache] Cachés (Recent, Pinned, Kdrama, Catalog) invalidadas por subida de película: ${title}`);
 
         res.status(200).json({ message: 'Película agregada y publicada.' });
         
     } catch (error) { console.error("Error add-movie:", error); res.status(500).json({ error: 'Error interno.' }); }
 });
 
-// === MODIFICACIÓN DE SUBIDA SERIES: Guardar metadatos ===
+// === MODIFICACIÓN DE SUBIDA SERIES: Guardar metadatos y limpiar caché ===
 app.post('/add-series-episode', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "BD no disponible." });
     try {
-        const { tmdbId, title, poster_path, overview, seasonNumber, episodeNumber, freeEmbedCode, proEmbedCode, isPremium, genres, first_air_date, popularity, vote_average } = req.body;
+        const { tmdbId, title, poster_path, overview, seasonNumber, episodeNumber, freeEmbedCode, proEmbedCode, isPremium, genres, first_air_date, popularity, vote_average, isPinned, origin_country } = req.body;
         
         if (!tmdbId || !seasonNumber || !episodeNumber) return res.status(400).json({ error: 'tmdbId, seasonNumber y episodeNumber requeridos.' });
         
@@ -1142,7 +1276,10 @@ app.post('/add-series-episode', async (req, res) => {
                 first_air_date: first_air_date || null,
                 popularity: popularity || 0,
                 vote_average: vote_average || 0,
-                
+                // NUEVO: Destacado y País
+                isPinned: isPinned === true || isPinned === 'true',
+                origin_country: origin_country || [],
+
                 [`seasons.${seasonNumber}.name`]: `Temporada ${seasonNumber}`,
                 [episodePath + '.freeEmbedCode']: freeEmbedCode,
                 [episodePath + '.proEmbedCode']: proEmbedCode,
@@ -1163,7 +1300,11 @@ app.post('/add-series-episode', async (req, res) => {
         embedCache.del(`embed-${cleanTmdbId}-${seasonNumber}-${episodeNumber}-free`);
         countsCache.del(`counts-data-${cleanTmdbId}`);
         recentCache.del(RECENT_CACHE_KEY);
-        console.log(`[Cache] Lista de recientes invalidada por subida de episodio: S${seasonNumber}E${episodeNumber}`);
+        pinnedCache.del(PINNED_CACHE_KEY);
+        kdramaCache.del(KDRAMA_CACHE_KEY);
+        catalogCache.del(CATALOG_CACHE_KEY);
+        
+        console.log(`[Cache] Cachés (Recent, Pinned, Kdrama, Catalog) invalidadas por subida de episodio: S${seasonNumber}E${episodeNumber}`);
 
         res.status(200).json({ message: `Episodio S${seasonNumber}E${episodeNumber} agregado y publicado.` });
 
