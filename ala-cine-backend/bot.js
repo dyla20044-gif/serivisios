@@ -1,6 +1,6 @@
-function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_ID, TMDB_API_KEY, RENDER_BACKEND_URL, axios) {
+function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_ID, TMDB_API_KEY, RENDER_BACKEND_URL, axios, pinnedCache) { // <--- CAMBIO 1: Recibimos pinnedCache
 
-    console.log("🤖 Lógica del Bot (Full Features + Pinned Refresh) inicializada...");
+    console.log("🤖 Lógica del Bot (Full Features + Pinned Refresh + Cache Clear) inicializada...");
     
     bot.setMyCommands([
         { command: 'start', description: 'Reiniciar el bot y ver el menú principal' },
@@ -387,7 +387,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
             }
             else if (data === 'add_series') { 
                 adminState[chatId] = { step: 'search_series' }; 
-                bot.sendMessage(chatId, 'Escribe el nombre de la serie a agregar.'); 
+                bot.sendMessage(chatId, 'Escribe el nombre del serie a agregar.'); 
             }
             else if (data === 'eventos') { 
                 adminState[chatId] = { step: 'awaiting_event_image' }; 
@@ -741,7 +741,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 }
             }
 
-            // === [NUEVO] HANDLER PARA LAS ACCIONES DE PIN (Refresh, Unpin, Pin) ===
+            // === HANDLER PARA LAS ACCIONES DE PIN (Refresh, Unpin, Pin) ===
             else if (data.startsWith('pin_action_')) {
                 // Formato: pin_action_ACCION_TIPO_ID (ej: pin_action_refresh_movie_12345)
                 const parts = data.split('_');
@@ -757,17 +757,30 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                     let replyText = "";
 
                     if (action === 'pin') {
-                        updateDoc = { $set: { isPinned: true, addedAt: new Date() } }; // Pin + Fecha Actual
-                        replyText = "✅ Película fijada y movida al PRIMER lugar.";
+                        // Al poner fecha nueva, sube al Top 1 automáticamente
+                        updateDoc = { $set: { isPinned: true, addedAt: new Date() } }; 
+                        replyText = "✅ Película fijada y movida al PRIMER lugar (Top 1).";
                     } else if (action === 'unpin') {
+                        // Al poner false, desaparece de la lista del Frontend
                         updateDoc = { $set: { isPinned: false } };
                         replyText = "✅ Película quitada de destacados.";
                     } else if (action === 'refresh') {
-                        updateDoc = { $set: { isPinned: true, addedAt: new Date() } }; // Solo actualizar fecha
-                        replyText = "🔄 Posición refrescada. Ahora está en el PRIMER lugar.";
+                        // Al actualizar fecha, vuelve a subir al Top 1
+                        updateDoc = { $set: { isPinned: true, addedAt: new Date() } }; 
+                        replyText = "🔄 Refrescada: Ahora está en el PRIMER lugar (Top 1).";
                     }
 
                     await collection.updateOne({ tmdbId: tmdbId.toString() }, updateDoc);
+
+                    // --- 🔥 CORRECCIÓN CRÍTICA AQUÍ: LIMPIAR CACHÉ 🔥 ---
+                    if (pinnedCache) {
+                        pinnedCache.del('pinned_content_top'); // Usamos la misma Key que en server.js
+                        console.log("[Bot] Caché de destacados borrada. El cambio será inmediato.");
+                    } else {
+                        console.log("[Bot] Warning: pinnedCache no está disponible.");
+                    }
+                    // ----------------------------------------------------
+
                     bot.sendMessage(chatId, replyText);
 
                 } catch (error) {
