@@ -1,6 +1,6 @@
 function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_ID, TMDB_API_KEY, RENDER_BACKEND_URL, axios) {
 
-    console.log("🤖 Lógica del Bot (Con Clasificación Inteligente) inicializada...");
+    console.log("🤖 Lógica del Bot (Full Features + Pinned & K-Drama) inicializada...");
     
     bot.setMyCommands([
         { command: 'start', description: 'Reiniciar el bot y ver el menú principal' },
@@ -215,7 +215,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
         }
         
         // =======================================================================
-        // === NUEVA LÓGICA DE UN SÓLO ENLACE (PELÍCULAS) + METADATOS EXTRA ===
+        // === NUEVA LÓGICA DE UN SÓLO ENLACE (PELÍCULAS) + PINNED + ORIGIN ===
         // =======================================================================
         else if (adminState[chatId] && adminState[chatId].step === 'awaiting_unified_link_movie') {
             const { selectedMedia } = adminState[chatId];
@@ -228,17 +228,17 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
             const finalLink = linkInput.toLowerCase() === 'no' ? null : linkInput;
 
             if (!finalLink) {
-                bot.sendMessage(chatId, '❌ Debes enviar al menos un enlace válido para subir una película nueva. Escribe el enlace, no "no".');
+                bot.sendMessage(chatId, '❌ Debes enviar al menos un enlace válido. Escribe el enlace.');
                 return;
             }
             
-            // --- AQUI SE AGREGAN LOS DATOS PARA LA CLASIFICACIÓN ---
+            // --- PREPARAR DATOS (Aún no guardamos, falta preguntar si es Pinned) ---
             adminState[chatId].movieDataToSave = {
                 tmdbId: selectedMedia.id.toString(),
                 title: selectedMedia.title,
                 overview: selectedMedia.overview,
                 poster_path: selectedMedia.poster_path,
-                backdrop_path: selectedMedia.backdrop_path, // Importante para banners
+                backdrop_path: selectedMedia.backdrop_path, 
                 proEmbedCode: finalLink,
                 freeEmbedCode: finalLink,
                 isPremium: false,
@@ -246,32 +246,30 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 genres: selectedMedia.genres || [],
                 release_date: selectedMedia.release_date,
                 popularity: selectedMedia.popularity,
-                vote_average: selectedMedia.vote_average
+                vote_average: selectedMedia.vote_average,
+                // NUEVO: País (Para K-Dramas)
+                origin_country: selectedMedia.origin_country || [],
+                // Default: no pinned
+                isPinned: false
             };
 
-            adminState[chatId].step = 'awaiting_publish_choice';
+            // NUEVO PASO: Preguntar por "Destacados"
+            adminState[chatId].step = 'awaiting_pinned_choice_movie';
             
-            const options = {
+            bot.sendMessage(chatId, `✅ Enlace recibido.\n\n⭐ **¿Deseas FIJAR esta película en DESTACADOS (Top)?**`, {
                 reply_markup: {
                     inline_keyboard: [
                         [
-                            { text: '💾 Solo App (Visible)', callback_data: 'save_only_' + selectedMedia.id },
-                            { text: '🤫 Solo Guardar (Oculto)', callback_data: 'save_silent_hidden_' + selectedMedia.id }
-                        ],
-                        [
-                            { text: '🚀 Canal (A+B) + PUSH', callback_data: 'save_publish_push_channel_' + selectedMedia.id }
-                        ],
-                        [
-                            { text: '📢 Canal (A+B) - Sin Push', callback_data: 'save_publish_channel_no_push_' + selectedMedia.id }
+                            { text: '⭐ Sí, Destacar (Top)', callback_data: 'set_pinned_movie_true' },
+                            { text: '📅 No, Normal', callback_data: 'set_pinned_movie_false' }
                         ]
                     ]
                 }
-            };
-            bot.sendMessage(chatId, `✅ Enlace recibido y duplicado (Free/Pro).\nPelícula: ${selectedMedia.title}\nDatos guardados: ${selectedMedia.genres ? selectedMedia.genres.length : 0} géneros.\n\n¿Qué hacer ahora?`, options);
+            });
         }
 
         // =======================================================================
-        // === NUEVA LÓGICA DE UN SÓLO ENLACE (SERIES) + METADATOS EXTRA ===
+        // === NUEVA LÓGICA DE UN SÓLO ENLACE (SERIES) + PINNED + ORIGIN ===
         // =======================================================================
         else if (adminState[chatId] && adminState[chatId].step === 'awaiting_unified_link_series') {
             const { selectedSeries, season, episode, totalEpisodesInSeason } = adminState[chatId]; 
@@ -285,12 +283,12 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
             const finalLink = linkInput.toLowerCase() === 'no' ? null : linkInput;
 
             if (!finalLink) {
-                bot.sendMessage(chatId, '❌ Debes enviar un enlace válido para subir el episodio. Escribe el enlace.');
+                bot.sendMessage(chatId, '❌ Debes enviar un enlace válido.');
                 return;
             }
 
-            // --- AQUI SE AGREGAN LOS DATOS PARA LA CLASIFICACIÓN (SERIES) ---
-            const seriesDataToSave = {
+            // --- PREPARAR DATOS (No guardar aún) ---
+            adminState[chatId].seriesDataToSave = {
                 tmdbId: (selectedSeries.tmdbId || selectedSeries.id).toString(),
                 title: selectedSeries.title || selectedSeries.name,
                 poster_path: selectedSeries.poster_path,
@@ -304,60 +302,28 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 genres: selectedSeries.genres || [],
                 first_air_date: selectedSeries.first_air_date,
                 popularity: selectedSeries.popularity,
-                vote_average: selectedSeries.vote_average
+                vote_average: selectedSeries.vote_average,
+                // NUEVO: País y Pinned
+                origin_country: selectedSeries.origin_country || [],
+                isPinned: false
             };
 
-            try {
-                await axios.post(`${RENDER_BACKEND_URL}/add-series-episode`, seriesDataToSave);
-                
-                const nextEpisode = episode + 1;
-                const isSeasonFinished = totalEpisodesInSeason && episode >= totalEpisodesInSeason;
+            // NUEVO PASO: Preguntar por "Destacados"
+            adminState[chatId].step = 'awaiting_pinned_choice_series';
 
-                adminState[chatId].lastSavedEpisodeData = seriesDataToSave;
-                adminState[chatId].step = 'awaiting_series_action';
-                
-                const rowCorrections = [
-                    { text: `✏️ Editar este (S${season}E${episode})`, callback_data: `edit_episode_${seriesDataToSave.tmdbId}_${season}_${episode}` },
-                    { text: '🗑️ Borrar este', callback_data: `delete_episode_${seriesDataToSave.tmdbId}_${season}_${episode}` }
-                ];
-
-                let rowNext = [];
-                if (isSeasonFinished) {
-                    const nextSeason = season + 1;
-                    rowNext.push({ text: `🎉 Fin T${season} -> Iniciar T${nextSeason}`, callback_data: `manage_season_${seriesDataToSave.tmdbId}_${nextSeason}` });
-                } else {
-                    rowNext.push({ text: `➡️ Siguiente: S${season}E${nextEpisode}`, callback_data: `add_next_episode_${seriesDataToSave.tmdbId}_${season}` });
+            bot.sendMessage(chatId, `✅ Enlace recibido para S${season}E${episode}.\n\n⭐ **¿Deseas FIJAR esta serie en DESTACADOS (Top)?**`, {
+                reply_markup: {
+                    inline_keyboard: [
+                        [
+                            { text: '⭐ Sí, Destacar', callback_data: 'set_pinned_series_true' },
+                            { text: '📅 No, Normal', callback_data: 'set_pinned_series_false' }
+                        ]
+                    ]
                 }
-
-                const rowPublish = [
-                    { text: `📲 App + PUSH`, callback_data: `publish_push_this_episode_${seriesDataToSave.tmdbId}_${season}_${episode}` },
-                    { text: `🚀 Canal + PUSH`, callback_data: `publish_push_channel_this_episode_${seriesDataToSave.tmdbId}_${season}_${episode}` }
-                ];
-                
-                const rowFinal = [
-                     { text: `📢 Solo Canal`, callback_data: `publish_channel_no_push_this_episode_${seriesDataToSave.tmdbId}_${season}_${episode}` },
-                     { text: '⏹️ Finalizar Todo', callback_data: `finish_series_${seriesDataToSave.tmdbId}` }
-                ];
-
-                const options = {
-                    reply_markup: {
-                        inline_keyboard: [ rowCorrections, rowNext, rowPublish, rowFinal ]
-                    }
-                };
-                
-                let msgConfirm = `✅ *S${season}E${episode} Guardado (Unificado).*\n`;
-                if (isSeasonFinished) msgConfirm += `⚠️ ¡Has llegado al último episodio de la temporada (${totalEpisodesInSeason})!`;
-                
-                bot.sendMessage(chatId, msgConfirm, { parse_mode: 'Markdown', ...options });
-
-            } catch (error) {
-                console.error("Error guardando episodio:", error.response ? error.response.data : error.message);
-                bot.sendMessage(chatId, 'Error guardando episodio.');
-                 adminState[chatId] = { step: 'menu' };
-            }
+            });
         }
         
-        // --- NUEVA LÓGICA DE EDICIÓN DE PELÍCULA (TEXTO) ---
+        // --- EDICIÓN (Mantenida igual) ---
         else if (adminState[chatId] && adminState[chatId].step === 'awaiting_edit_movie_link') {
             const { tmdbId, isPro } = adminState[chatId];
             const linkInput = userText.trim();
@@ -366,12 +332,11 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
             const movieDataToUpdate = {
                 tmdbId: tmdbId,
                 proEmbedCode: linkInput,
-                freeEmbedCode: linkInput, // Asumimos unificado al editar también
+                freeEmbedCode: linkInput, 
                 isPremium: false 
             };
 
             try {
-                // Reusamos add-movie que hace upsert ($set)
                 await axios.post(`${RENDER_BACKEND_URL}/add-movie`, movieDataToUpdate);
                 bot.sendMessage(chatId, `✅ Enlace actualizado correctamente para ID ${tmdbId}.`);
             } catch (error) {
@@ -429,7 +394,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 bot.sendMessage(chatId, 'Envía el ENLACE (URL) de la imagen para el evento.'); 
             }
             
-            // --- GESTIÓN DE PEDIDOS ---
+            // --- GESTIÓN DE PEDIDOS (Sin cambios) ---
             else if (data === 'view_requests_menu') {
                 const options = {
                     reply_markup: {
@@ -490,21 +455,22 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 }
             }
 
-            // --- LÓGICA DE SUBIDA (PELÍCULAS) - CON EXTRACCIÓN DE GÉNEROS ---
+            // --- SUBIDA PELÍCULAS (Con Extracción de PAÍS) ---
             else if (data.startsWith('add_new_movie_') || data.startsWith('solicitud_')) {
                 let tmdbId = '';
                 if (data.startsWith('add_new_movie_')) tmdbId = data.split('_')[3];
                 if (data.startsWith('solicitud_')) tmdbId = data.split('_')[1];
 
-                if (!tmdbId) { bot.sendMessage(chatId, 'Error: No se pudo obtener el ID de la película.'); return; }
+                if (!tmdbId) { bot.sendMessage(chatId, 'Error: No se pudo obtener el ID.'); return; }
                 try {
                     const movieUrl = `https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${TMDB_API_KEY}&language=es-ES`;
                     const response = await axios.get(movieUrl);
                     const movieData = response.data;
-                    if (!movieData) { bot.sendMessage(chatId, 'Error: No se encontraron detalles para esa película.'); return; }
+                    if (!movieData) { bot.sendMessage(chatId, 'Error: No se encontraron detalles.'); return; }
 
-                    // --- EXTRACCIÓN DE METADATOS CLAVE ---
                     const genreIds = movieData.genres ? movieData.genres.map(g => g.id) : [];
+                    // NUEVO: Extraer países para K-Dramas
+                    const countries = movieData.production_countries ? movieData.production_countries.map(c => c.iso_3166_1) : [];
 
                     adminState[chatId] = {
                         step: 'awaiting_unified_link_movie', 
@@ -514,20 +480,112 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                             overview: movieData.overview,
                             poster_path: movieData.poster_path,
                             backdrop_path: movieData.backdrop_path,
-                            // Datos Nuevos para Clasificación:
                             genres: genreIds,
                             release_date: movieData.release_date,
                             popularity: movieData.popularity,
-                            vote_average: movieData.vote_average
+                            vote_average: movieData.vote_average,
+                            origin_country: countries // Se guarda aquí
                         }
                     };
                     bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id }).catch(() => {});
-                    bot.sendMessage(chatId, `🎬 Película: *${movieData.title}*\n🏷️ Géneros detectados: ${genreIds.length}\n\n🔗 Envía el **ENLACE (Link)** del video.`, { parse_mode: 'Markdown' });
+                    bot.sendMessage(chatId, `🎬 Película: *${movieData.title}*\n🏷️ Géneros: ${genreIds.length}\n🌍 Países: ${countries.join(', ')}\n\n🔗 Envía el **ENLACE (Link)** del video.`, { parse_mode: 'Markdown' });
                 } catch (error) {
-                    console.error("Error al obtener detalles de TMDB en add_new_movie/solicitud:", error.message);
-                    bot.sendMessage(chatId, 'Error al obtener los detalles de la película desde TMDB.');
+                    console.error("Error al obtener detalles de TMDB:", error.message);
+                    bot.sendMessage(chatId, 'Error al obtener los detalles de TMDB.');
                 }
             }
+
+            // --- HANDLER: PINNED CHOICE PELÍCULA (NUEVO) ---
+            else if (data.startsWith('set_pinned_movie_')) {
+                const isPinned = data === 'set_pinned_movie_true';
+                if (!adminState[chatId].movieDataToSave) { bot.sendMessage(chatId, 'Error de estado.'); return; }
+                
+                adminState[chatId].movieDataToSave.isPinned = isPinned;
+                adminState[chatId].step = 'awaiting_publish_choice';
+                
+                const mediaId = adminState[chatId].movieDataToSave.tmdbId;
+
+                const options = {
+                    reply_markup: {
+                        inline_keyboard: [
+                            [
+                                { text: '💾 Solo App (Visible)', callback_data: 'save_only_' + mediaId },
+                                { text: '🤫 Solo Guardar (Oculto)', callback_data: 'save_silent_hidden_' + mediaId }
+                            ],
+                            [
+                                { text: '🚀 Canal (A+B) + PUSH', callback_data: 'save_publish_push_channel_' + mediaId }
+                            ],
+                            [
+                                { text: '📢 Canal (A+B) - Sin Push', callback_data: 'save_publish_channel_no_push_' + mediaId }
+                            ]
+                        ]
+                    }
+                };
+                
+                const pinnedStatus = isPinned ? "⭐ DESTACADO (Top)" : "📅 Normal";
+                bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id });
+                bot.sendMessage(chatId, `✅ Estado definido: ${pinnedStatus}.\n¿Cómo deseas publicar?`, options);
+            }
+
+            // --- HANDLER: PINNED CHOICE SERIE (NUEVO) ---
+            else if (data.startsWith('set_pinned_series_')) {
+                const isPinned = data === 'set_pinned_series_true';
+                if (!adminState[chatId].seriesDataToSave) { bot.sendMessage(chatId, 'Error de estado.'); return; }
+
+                adminState[chatId].seriesDataToSave.isPinned = isPinned;
+                const seriesData = adminState[chatId].seriesDataToSave;
+                const season = adminState[chatId].season;
+                const episode = adminState[chatId].episode;
+                const totalEpisodesInSeason = adminState[chatId].totalEpisodesInSeason;
+
+                bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id });
+                bot.sendMessage(chatId, `⏳ Guardando S${season}E${episode} (${isPinned ? '⭐ Destacado' : '📅 Normal'})...`);
+
+                // AHORA SÍ GUARDAMOS (Lógica trasladada aquí)
+                try {
+                    await axios.post(`${RENDER_BACKEND_URL}/add-series-episode`, seriesData);
+                    
+                    const nextEpisode = episode + 1;
+                    const isSeasonFinished = totalEpisodesInSeason && episode >= totalEpisodesInSeason;
+
+                    adminState[chatId].lastSavedEpisodeData = seriesData;
+                    adminState[chatId].step = 'awaiting_series_action';
+                    
+                    const rowCorrections = [
+                        { text: `✏️ Editar`, callback_data: `edit_episode_${seriesData.tmdbId}_${season}_${episode}` },
+                        { text: '🗑️ Borrar', callback_data: `delete_episode_${seriesData.tmdbId}_${season}_${episode}` }
+                    ];
+
+                    let rowNext = [];
+                    if (isSeasonFinished) {
+                        const nextSeason = season + 1;
+                        rowNext.push({ text: `🎉 Fin T${season} -> Iniciar T${nextSeason}`, callback_data: `manage_season_${seriesData.tmdbId}_${nextSeason}` });
+                    } else {
+                        rowNext.push({ text: `➡️ Siguiente: S${season}E${nextEpisode}`, callback_data: `add_next_episode_${seriesData.tmdbId}_${season}` });
+                    }
+
+                    const rowPublish = [
+                        { text: `📲 App + PUSH`, callback_data: `publish_push_this_episode_${seriesData.tmdbId}_${season}_${episode}` },
+                        { text: `🚀 Canal + PUSH`, callback_data: `publish_push_channel_this_episode_${seriesData.tmdbId}_${season}_${episode}` }
+                    ];
+                    
+                    const rowFinal = [
+                         { text: `📢 Solo Canal`, callback_data: `publish_channel_no_push_this_episode_${seriesData.tmdbId}_${season}_${episode}` },
+                         { text: '⏹️ Finalizar Todo', callback_data: `finish_series_${seriesData.tmdbId}` }
+                    ];
+
+                    bot.sendMessage(chatId, `✅ *S${season}E${episode} Guardado.*`, { 
+                        parse_mode: 'Markdown', 
+                        reply_markup: { inline_keyboard: [ rowCorrections, rowNext, rowPublish, rowFinal ] } 
+                    });
+
+                } catch (error) {
+                    console.error("Error guardando episodio:", error.message);
+                    bot.sendMessage(chatId, '❌ Error guardando en servidor.');
+                    adminState[chatId] = { step: 'menu' };
+                }
+            }
+
 
             // --- GESTIÓN DE SERIES ---
             else if (data.startsWith('add_new_series_')) {
@@ -541,7 +599,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 await handleManageSeries(chatId, tmdbId);
             }
             
-            // --- SELECCIONAR TEMPORADA Y DETECTAR EPISODIOS ---
+            // --- SELECCIONAR TEMPORADA ---
             else if (data.startsWith('manage_season_')) {
                 const [_, __, tmdbId, seasonNumber] = data.split('_');
                 const { selectedSeries } = adminState[chatId] || {};
@@ -551,22 +609,17 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                     return;
                 }
 
-                // 1. Obtener Total de Episodios de TMDB
                 let totalEpisodes = 0;
                 try {
                     const url = `https://api.themoviedb.org/3/tv/${tmdbId}/season/${seasonNumber}?api_key=${TMDB_API_KEY}`;
                     const resp = await axios.get(url);
-                    if (resp.data && resp.data.episodes) {
-                        totalEpisodes = resp.data.episodes.length;
-                    }
-                } catch (e) { console.warn("No se pudo obtener total episodios TMDB"); }
+                    if (resp.data && resp.data.episodes) totalEpisodes = resp.data.episodes.length;
+                } catch (e) { }
 
                 const seriesData = await mongoDb.collection('series_catalog').findOne({ tmdbId: tmdbId });
                 let lastEpisode = 0;
                 if (seriesData && seriesData.seasons && seriesData.seasons[seasonNumber] && seriesData.seasons[seasonNumber].episodes) {
-                    lastEpisode = Object.keys(seriesData.seasons[seasonNumber].episodes)
-                                    .map(Number)
-                                    .sort((a, b) => b - a)[0] || 0;
+                    lastEpisode = Object.keys(seriesData.seasons[seasonNumber].episodes).map(Number).sort((a, b) => b - a)[0] || 0;
                 }
                 const nextEpisode = lastEpisode + 1;
                 
@@ -579,11 +632,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 };
                 
                 bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id }).catch(() => {});
-                
-                let infoMsg = `Gestionando *S${seasonNumber}* de *${selectedSeries.name}* (Total eps: ${totalEpisodes}).\nAgregando episodio *E${nextEpisode}*.\n\n🔗 Envía el **ENLACE** del video.`;
-                if (nextEpisode > totalEpisodes && totalEpisodes > 0) infoMsg += "\n⚠️ Nota: Estás agregando más episodios de los que indica TMDB.";
-
-                bot.sendMessage(chatId, infoMsg, { parse_mode: 'Markdown' });
+                bot.sendMessage(chatId, `Gestionando *S${seasonNumber}* de *${selectedSeries.name}*.\nAgregando episodio *E${nextEpisode}*.\n\n🔗 Envía el **ENLACE** del video.`, { parse_mode: 'Markdown' });
             }
 
             else if (data.startsWith('add_next_episode_')) {
@@ -607,11 +656,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 };
                 
                 bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id });
-                
-                let msgNext = `Siguiente: Envía **ENLACE** para S${seasonNumber}E${nextEpisode}.`;
-                if (totalEpisodesInSeason && nextEpisode === totalEpisodesInSeason) msgNext += " (Último de la temporada)";
-                
-                bot.sendMessage(chatId, msgNext);
+                bot.sendMessage(chatId, `Siguiente: Envía **ENLACE** para S${seasonNumber}E${nextEpisode}.`);
             }
             
             // --- GESTIÓN DE EPISODIOS (BORRAR/EDITAR) ---
@@ -713,7 +758,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 bot.sendMessage(chatId, `✅ Pedido de diamantes para el ID \`${gameId}\` marcado como completado.`);
             }
 
-            // --- Callbacks de Guardado/Publicación ---
+            // --- Callbacks de Guardado/Publicación (PELÍCULAS) ---
             else if (data.startsWith('save_only_')) {
                 const { movieDataToSave } = adminState[chatId];
                 if (!movieDataToSave?.tmdbId) { bot.sendMessage(chatId, 'Error: Datos perdidos.'); adminState[chatId] = { step: 'menu' }; return; }
@@ -1185,8 +1230,9 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 return;
             }
 
-            // --- EXTRACCIÓN DE GÉNEROS SERIES ---
+            // --- EXTRACCIÓN DE GÉNEROS Y PAÍS (SERIES) ---
             const genreIds = seriesData.genres ? seriesData.genres.map(g => g.id) : [];
+            const originCountries = seriesData.origin_country || [];
 
             adminState[chatId] = {
                 ...adminState[chatId],
@@ -1202,7 +1248,9 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                     genres: genreIds,
                     first_air_date: seriesData.first_air_date,
                     popularity: seriesData.popularity,
-                    vote_average: seriesData.vote_average
+                    vote_average: seriesData.vote_average,
+                    // NUEVO: País
+                    origin_country: originCountries
                 }
             };
             const seasonButtons = seriesData.seasons
@@ -1222,7 +1270,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                     inline_keyboard: seasonButtons
                 }
             };
-            bot.sendMessage(chatId, `Gestionando: *${seriesData.name}*. Selecciona la temporada para agregar/editar episodios:`, { ...options, parse_mode: 'Markdown' });
+            bot.sendMessage(chatId, `Gestionando: *${seriesData.name}*\n🌍 Países: ${originCountries.join(', ')}\n\nSelecciona la temporada:`, { ...options, parse_mode: 'Markdown' });
 
         } catch (error) {
             console.error("Error al obtener detalles de TMDB en handleManageSeries:", error.message);
