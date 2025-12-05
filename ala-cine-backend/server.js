@@ -13,7 +13,6 @@ const cron = require('node-cron');
 const NodeCache = require('node-cache');
 
 // --- CACHÉS ---
-// Cachés existentes
 const embedCache = new NodeCache({ stdTTL: 86400, checkperiod: 600 });
 const countsCache = new NodeCache({ stdTTL: 900, checkperiod: 120 });
 const tmdbCache = new NodeCache({ stdTTL: 86400, checkperiod: 3600 });
@@ -153,6 +152,7 @@ app.get('/api/content/featured', async (req, res) => {
     try {
         const projection = { tmdbId: 1, title: 1, name: 1, poster_path: 1, backdrop_path: 1, addedAt: 1, isPinned: 1 };
         
+        // Buscar en Películas
         const movies = await mongoDb.collection('media_catalog')
             .find({ isPinned: true })
             .project(projection)
@@ -160,6 +160,7 @@ app.get('/api/content/featured', async (req, res) => {
             .limit(10)
             .toArray();
 
+        // Buscar en Series
         const series = await mongoDb.collection('series_catalog')
             .find({ isPinned: true })
             .project(projection)
@@ -170,6 +171,7 @@ app.get('/api/content/featured', async (req, res) => {
         const formattedMovies = movies.map(m => formatLocalItem(m, 'movie'));
         const formattedSeries = series.map(s => formatLocalItem(s, 'tv'));
         
+        // Combinar y ordenar
         const combined = [...formattedMovies, ...formattedSeries].sort((a, b) => new Date(b.addedAt || 0) - new Date(a.addedAt || 0));
         
         pinnedCache.set(PINNED_CACHE_KEY, combined);
@@ -240,11 +242,11 @@ app.get('/api/content/catalog', async (req, res) => {
     }
 });
 
-// 4. Endpoint Contenido Local (Híbrido)
+// 4. Endpoint Contenido Local
 app.get('/api/content/local', verifyIdToken, async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
 
-    const { type, genre, category, source } = req.query; 
+    const { type, genre, category } = req.query; 
     
     try {
         const collection = (type === 'tv') ? mongoDb.collection('series_catalog') : mongoDb.collection('media_catalog');
@@ -1052,16 +1054,18 @@ app.post('/delete-series-episode', async (req, res) => {
     }
 });
 
-// --- RUTA NUEVA: GESTIÓN DE DESTACADOS (PINNED) CON LIMPIEZA TOTAL ---
+// --- RUTA NUEVA: GESTIÓN DE DESTACADOS (PINNED) CON LIMPIEZA TOTAL Y BLINDAJE DE ID ---
 app.post('/api/manage-pinned', async (req, res) => {
     const { tmdbId, action, type } = req.body; 
     
     if (!mongoDb || !tmdbId || !action) return res.status(400).json({ error: "Faltan datos" });
 
+    // Definimos la colección correcta
     const collection = (type === 'tv' || type === 'series') ? mongoDb.collection('series_catalog') : mongoDb.collection('media_catalog');
     
-    // --- LIMPIEZA DE ID (TRIM) ---
-    const cleanId = String(tmdbId).trim();
+    // --- BLINDAJE DE ID: Probamos String y Número por si acaso ---
+    const idAsString = tmdbId.toString().trim();
+    const idAsNumber = parseInt(tmdbId);
 
     let updateData = {};
     let message = "";
@@ -1080,20 +1084,27 @@ app.post('/api/manage-pinned', async (req, res) => {
             message = "Posición refrescada (Subido al Top 1).";
         }
 
-        const result = await collection.updateOne({ tmdbId: cleanId }, updateData);
+        // 1. Intento principal con String ID (lo más común)
+        let result = await collection.updateOne({ tmdbId: idAsString }, updateData);
         
+        // 2. Fallback: Si no encontró nada, probamos con Number ID
+        if (result.matchedCount === 0 && !isNaN(idAsNumber)) {
+            console.warn(`[Manage Pinned] ID String (${idAsString}) no encontrado. Probando Number (${idAsNumber})...`);
+            result = await collection.updateOne({ tmdbId: idAsNumber }, updateData);
+        }
+
         if (result.matchedCount === 0) {
-            console.warn(`[Manage Pinned] No se encontró el item con ID: ${cleanId}. Verifica espacios o tipo.`);
+            console.warn(`[Manage Pinned] ERROR: No se encontró el item ${tmdbId} en la BD.`);
         }
 
         // --- LIMPIEZA AGRESIVA DE CACHÉ ---
         pinnedCache.del(PINNED_CACHE_KEY); 
         recentCache.del(RECENT_CACHE_KEY); 
         catalogCache.del(CATALOG_CACHE_KEY);
-        // También borramos la caché de contadores individual por si acaso
-        countsCache.del(`counts-data-${cleanId}`);
+        countsCache.del(`counts-data-${idAsString}`); // Borramos la del string
+        countsCache.del(`counts-data-${idAsNumber}`); // Borramos la del number por si acaso
 
-        console.log(`[Pinned] Acción '${action}' realizada en ${cleanId}. Cachés limpiadas.`);
+        console.log(`[Pinned] Acción '${action}' realizada en ${tmdbId}. Cachés limpiadas.`);
         res.status(200).json({ success: true, message });
 
     } catch (error) {
@@ -1104,17 +1115,25 @@ app.post('/api/manage-pinned', async (req, res) => {
 
 // --- NUEVA RUTA: ELIMINAR CONTENIDO COMPLETAMENTE Y LIMPIAR CACHÉ ---
 app.post('/api/delete-content', async (req, res) => {
-    const { tmdbId, type } = req.body; // type: 'movie' o 'tv'
+    const { tmdbId, type } = req.body; 
     if (!mongoDb || !tmdbId || !type) return res.status(400).json({ error: "Faltan datos." });
 
-    const cleanId = String(tmdbId).trim();
+    const idAsString = tmdbId.toString().trim();
+    const idAsNumber = parseInt(tmdbId);
+    
     const collectionName = (type === 'tv' || type === 'series') ? 'series_catalog' : 'media_catalog';
 
     try {
-        const result = await mongoDb.collection(collectionName).deleteOne({ tmdbId: cleanId });
+        // Intentar borrar por String ID
+        let result = await mongoDb.collection(collectionName).deleteOne({ tmdbId: idAsString });
         
+        // Si no borró nada, intentar por Number ID
+        if (result.deletedCount === 0 && !isNaN(idAsNumber)) {
+             result = await mongoDb.collection(collectionName).deleteOne({ tmdbId: idAsNumber });
+        }
+
         if (result.deletedCount === 0) {
-            console.warn(`[Delete] No se encontró el item ${cleanId} en ${collectionName}, pero se limpiará caché.`);
+            console.warn(`[Delete] No se encontró el item ${tmdbId} para eliminar, pero se limpiará caché.`);
         }
 
         // === LIMPIEZA TOTAL DE CACHÉ ===
@@ -1122,10 +1141,9 @@ app.post('/api/delete-content', async (req, res) => {
         kdramaCache.del(KDRAMA_CACHE_KEY);
         catalogCache.del(CATALOG_CACHE_KEY);
         recentCache.del(RECENT_CACHE_KEY);
-        countsCache.del(`counts-data-${cleanId}`);
-        // Limpiar caché de embeds es difícil sin saber season/episode, pero lo principal (listas) ya está.
+        countsCache.del(`counts-data-${idAsString}`);
         
-        console.log(`[Delete] Item ${cleanId} eliminado y cachés purgadas.`);
+        console.log(`[Delete] Item ${tmdbId} eliminado y cachés purgadas.`);
         res.status(200).json({ success: true, message: "Eliminado y cachés actualizadas." });
 
     } catch (error) {
