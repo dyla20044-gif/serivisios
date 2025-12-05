@@ -223,29 +223,38 @@ app.get('/api/content/kdramas', async (req, res) => {
     }
 });
 
-// 3. Endpoint Catálogo Completo (Cacheado)
+// 3. Endpoint Catálogo Completo (CORREGIDO PARA TU SCRIPT.JS)
 app.get('/api/content/catalog', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
 
+    // Intentar leer de caché
     const cachedCatalog = catalogCache.get(CATALOG_CACHE_KEY);
     if (cachedCatalog) {
-        return res.status(200).json(cachedCatalog);
+        // CORRECCIÓN: Devolvemos objeto con propiedad 'items'
+        return res.status(200).json({ items: cachedCatalog, total: cachedCatalog.length });
     }
 
     try {
-        const projection = { tmdbId: 1, title: 1, name: 1, poster_path: 1, media_type: 1, addedAt: 1 };
+        const projection = { tmdbId: 1, title: 1, name: 1, poster_path: 1, media_type: 1, addedAt: 1, origin_country: 1, genre_ids: 1 };
         
-        // Traemos una cantidad razonable (ej. 500 más recientes) para no saturar memoria
-        const movies = await mongoDb.collection('media_catalog').find({}).project(projection).sort({ addedAt: -1 }).limit(300).toArray();
-        const series = await mongoDb.collection('series_catalog').find({}).project(projection).sort({ addedAt: -1 }).limit(300).toArray();
+        // Traemos más ítems (ej. 1000) para llenar bien el catálogo
+        const movies = await mongoDb.collection('media_catalog').find({}).project(projection).sort({ addedAt: -1 }).limit(500).toArray();
+        const series = await mongoDb.collection('series_catalog').find({}).project(projection).sort({ addedAt: -1 }).limit(500).toArray();
 
         const formattedMovies = movies.map(m => formatLocalItem(m, 'movie'));
         const formattedSeries = series.map(s => formatLocalItem(s, 'tv'));
 
         const combined = [...formattedMovies, ...formattedSeries].sort((a, b) => new Date(b.addedAt || 0) - new Date(a.addedAt || 0));
 
+        // Guardamos en caché SOLO el array puro
         catalogCache.set(CATALOG_CACHE_KEY, combined);
-        res.status(200).json(combined);
+        
+        // CORRECCIÓN CRÍTICA: Al responder, envolvemos en { items: ... }
+        // Esto es lo que busca tu script.js para no dar error.
+        res.status(200).json({ 
+            items: combined, 
+            total: combined.length 
+        });
 
     } catch (error) {
         console.error("Error en /api/content/catalog:", error);
