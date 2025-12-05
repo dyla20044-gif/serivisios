@@ -116,7 +116,7 @@ async function verifyIdToken(req, res, next) {
 }
 
 function countsCacheMiddleware(req, res, next) {
-    if (!req.uid) return next();
+    if (!req.uid) return next(); 
     const uid = req.uid;
     const route = req.path;
     const cacheKey = `${uid}:${route}`;
@@ -1052,14 +1052,16 @@ app.post('/delete-series-episode', async (req, res) => {
     }
 });
 
-// --- RUTA NUEVA: GESTIÓN DE DESTACADOS (PINNED) ---
+// --- RUTA NUEVA: GESTIÓN DE DESTACADOS (PINNED) CON LIMPIEZA TOTAL ---
 app.post('/api/manage-pinned', async (req, res) => {
     const { tmdbId, action, type } = req.body; 
     
     if (!mongoDb || !tmdbId || !action) return res.status(400).json({ error: "Faltan datos" });
 
     const collection = (type === 'tv' || type === 'series') ? mongoDb.collection('series_catalog') : mongoDb.collection('media_catalog');
-    const cleanId = tmdbId.toString();
+    
+    // --- LIMPIEZA DE ID (TRIM) ---
+    const cleanId = String(tmdbId).trim();
 
     let updateData = {};
     let message = "";
@@ -1078,11 +1080,17 @@ app.post('/api/manage-pinned', async (req, res) => {
             message = "Posición refrescada (Subido al Top 1).";
         }
 
-        await collection.updateOne({ tmdbId: cleanId }, updateData);
+        const result = await collection.updateOne({ tmdbId: cleanId }, updateData);
+        
+        if (result.matchedCount === 0) {
+            console.warn(`[Manage Pinned] No se encontró el item con ID: ${cleanId}. Verifica espacios o tipo.`);
+        }
 
+        // --- LIMPIEZA AGRESIVA DE CACHÉ ---
         pinnedCache.del(PINNED_CACHE_KEY); 
         recentCache.del(RECENT_CACHE_KEY); 
         catalogCache.del(CATALOG_CACHE_KEY);
+        // También borramos la caché de contadores individual por si acaso
         countsCache.del(`counts-data-${cleanId}`);
 
         console.log(`[Pinned] Acción '${action}' realizada en ${cleanId}. Cachés limpiadas.`);
@@ -1094,245 +1102,36 @@ app.post('/api/manage-pinned', async (req, res) => {
     }
 });
 
-app.post('/request-movie', async (req, res) => {
-    if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
+// --- NUEVA RUTA: ELIMINAR CONTENIDO COMPLETAMENTE Y LIMPIAR CACHÉ ---
+app.post('/api/delete-content', async (req, res) => {
+    const { tmdbId, type } = req.body; // type: 'movie' o 'tv'
+    if (!mongoDb || !tmdbId || !type) return res.status(400).json({ error: "Faltan datos." });
 
-    const { title, poster_path, tmdbId, priority } = req.body;
-    
-    if (!tmdbId || !title) {
-        return res.status(400).json({ error: 'tmdbId y title requeridos.' });
-    }
+    const cleanId = String(tmdbId).trim();
+    const collectionName = (type === 'tv' || type === 'series') ? 'series_catalog' : 'media_catalog';
 
     try {
-        const requestCollection = mongoDb.collection('movie_requests');
-        const cleanId = String(tmdbId).trim();
+        const result = await mongoDb.collection(collectionName).deleteOne({ tmdbId: cleanId });
         
-        await requestCollection.updateOne(
-            { tmdbId: cleanId },
-            {
-                $set: { 
-                    title: title, 
-                    poster_path: poster_path, 
-                    latestPriority: priority || 'regular',
-                    updatedAt: new Date()
-                },
-                $inc: { votes: 1 }
-            },
-            { upsert: true }
-        );
-
-        if (priority && priority !== 'regular') {
-            const posterUrl = poster_path ? `https://image.tmdb.org/t/p/w500${poster_path}` : 'https://placehold.co/500x750?text=No+Poster';
-            
-            let priorityText = '';
-            switch (priority) {
-                case 'fast': priorityText = '⚡ Rápido (~24h)'; break;
-                case 'immediate': priorityText = '🚀 Inmediato (~1h)'; break;
-                case 'premium': priorityText = '👑 PREMIUM (Prioridad)'; break;
-                default: priorityText = '⏳ Regular (1-2 semanas)'; 
-            }
-
-            const message = `🔔 *Solicitud PRIORITARIA:* ${title}\n` +
-                            `*Nivel:* ${priorityText}\n\n` +
-                            `Se ha registrado/actualizado en la base de datos de pedidos.`;
-            
-            await bot.sendPhoto(ADMIN_CHAT_ID, posterUrl, {
-                caption: message, parse_mode: 'Markdown',
-                reply_markup: { inline_keyboard: [[{ text: '✅ Gestionar (Subir ahora)', callback_data: `solicitud_${tmdbId}` }]] }
-            });
+        if (result.deletedCount === 0) {
+            console.warn(`[Delete] No se encontró el item ${cleanId} en ${collectionName}, pero se limpiará caché.`);
         }
 
-        res.status(200).json({ message: 'Solicitud guardada correctamente.' });
+        // === LIMPIEZA TOTAL DE CACHÉ ===
+        pinnedCache.del(PINNED_CACHE_KEY);
+        kdramaCache.del(KDRAMA_CACHE_KEY);
+        catalogCache.del(CATALOG_CACHE_KEY);
+        recentCache.del(RECENT_CACHE_KEY);
+        countsCache.del(`counts-data-${cleanId}`);
+        // Limpiar caché de embeds es difícil sin saber season/episode, pero lo principal (listas) ya está.
+        
+        console.log(`[Delete] Item ${cleanId} eliminado y cachés purgadas.`);
+        res.status(200).json({ success: true, message: "Eliminado y cachés actualizadas." });
 
     } catch (error) {
-        console.error("Error al procesar la solicitud /request-movie:", error);
-        res.status(500).json({ error: 'Error al procesar solicitud.' });
+        console.error("Error en delete-content:", error);
+        res.status(500).json({ error: "Error interno al eliminar." });
     }
-});
-
-app.get('/api/streaming-status', (req, res) => {
-    const clientBuildId = parseInt(req.query.build_id) || 0;
-    const clientVersion = parseInt(req.query.version) || 0;
-
-    const receivedId = clientBuildId || clientVersion;
-
-    console.log(`[Status Check] ID Recibido: ${receivedId} | ID en Revisión: ${BUILD_ID_UNDER_REVIEW}`);
-    if (receivedId === BUILD_ID_UNDER_REVIEW) {
-        console.log("⚠️ [Review Mode] Detectada versión en revisión. Ocultando streaming.");
-        return res.status(200).json({ isStreamingActive: false }); 
-    }
-    console.log(`[Status Check] Usuario normal. Devolviendo estado global: ${GLOBAL_STREAMING_ACTIVE}`);
-    res.status(200).json({ isStreamingActive: GLOBAL_STREAMING_ACTIVE });
-});
-app.get('/api/get-movie-data', async (req, res) => {
-    if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
-    const { id } = req.query;
-    if (!id) return res.status(400).json({ error: "El ID del contenido es requerido." });
-    const cacheKey = `counts-data-${id}`;
-    try {
-        const cachedData = countsCache.get(cacheKey);
-        if (cachedData) {
-            console.log(`[Cache HIT] Sirviendo contadores desde caché para: ${cacheKey}`);
-            return res.status(200).json(cachedData);
-        }
-    } catch (err) {
-        console.error("Error al leer del caché de contadores:", err);
-    }
-    console.log(`[Cache MISS] Buscando contadores en MongoDB para: ${cacheKey}`);
-    try {
-        const movieCollection = mongoDb.collection('media_catalog');
-        const seriesCollection = mongoDb.collection('series_catalog');
-        let docMovie = null; let docSeries = null; let views = 0; let likes = 0; let isAvailable = false;
-        const seriesProjection = { projection: { views: 1, likes: 1, seasons: 1 } };
-        docSeries = await seriesCollection.findOne({ tmdbId: id.toString() }, seriesProjection);
-        if (docSeries) {
-            views = docSeries.views || 0; likes = docSeries.likes || 0;
-            if (docSeries.seasons) {
-                isAvailable = Object.values(docSeries.seasons).some(season => season && season && season.episodes && Object.values(season.episodes).some(ep => (ep.freeEmbedCode && ep.freeEmbedCode !== '') || (ep.proEmbedCode && ep.proEmbedCode !== '')));
-            }
-            if (isAvailable) {
-                const responseData = { views: views, likes: likes, isAvailable: true };
-                countsCache.set(cacheKey, responseData);
-                return res.status(200).json(responseData);
-            }
-        }
-        const movieProjection = { projection: { views: 1, likes: 1, freeEmbedCode: 1, proEmbedCode: 1 } };
-        docMovie = await movieCollection.findOne({ tmdbId: id.toString() }, movieProjection);
-        if (docMovie) {
-            if (views === 0) views = docMovie.views || 0; if (likes === 0) likes = docMovie.likes || 0;
-            isAvailable = !!(docMovie.freeEmbedCode || docMovie.proEmbedCode);
-            const responseData = { views: views, likes: likes, isAvailable: isAvailable };
-            countsCache.set(cacheKey, responseData);
-            return res.status(200).json(responseData);
-        }
-        const responseData_NotFound = { views: views, likes: likes, isAvailable: false };
-        countsCache.set(cacheKey, responseData_NotFound);
-        res.status(200).json(responseData_NotFound);
-    } catch (error) {
-        console.error(`Error crítico al obtener los datos consolidados en MongoDB:`, error);
-        res.status(500).json({ error: "Error interno del servidor al obtener los datos." });
-    }
-});
-
-app.get('/api/get-embed-code', async (req, res) => {
-    if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
-    
-    const { id, season, episode, isPro } = req.query;
-    if (!id) return res.status(400).json({ error: "ID no proporcionado" });
-
-    const cacheKey = `embed-${id}-${season || 'movie'}-${episode || '1'}-${isPro === 'true' ? 'pro' : 'free'}`;
-    
-    try {
-        const cachedData = embedCache.get(cacheKey);
-        if (cachedData) {
-            console.log(`[Cache HIT] Sirviendo embed manual desde caché para: ${cacheKey}`);
-            return res.json({ embedCode: cachedData });
-        }
-    } catch (err) {
-        console.error("Error al leer del caché de embeds:", err);
-    }
-    
-    console.log(`[Cache MISS] Buscando embed en MongoDB para: ${cacheKey}`);
-
-    try {
-        const mediaType = season && episode ? 'series' : 'movies';
-        const collectionName = (mediaType === 'movies') ? 'media_catalog' : 'series_catalog';
-        const doc = await mongoDb.collection(collectionName).findOne({ tmdbId: id.toString() });
-
-        if (!doc) return res.status(404).json({ error: `${mediaType} no encontrada.` });
-
-        let enlaceFinal = null;
-
-        if (mediaType === 'movies') {
-            enlaceFinal = (isPro === 'true') ? doc.proEmbedCode : doc.freeEmbedCode; 
-        } else {
-            const epData = doc.seasons?.[season]?.episodes?.[episode];
-            if (epData) {
-                enlaceFinal = (isPro === 'true') ? epData.proEmbedCode : epData.freeEmbedCode;
-            }
-        }
-
-        if (enlaceFinal) {
-            embedCache.set(cacheKey, enlaceFinal);
-            return res.json({ embedCode: enlaceFinal });
-        }
-
-        console.log(`[Embed Code] No se encontró código para ${id} (isPro: ${isPro})`);
-        return res.status(404).json({ error: `No se encontró código de reproductor.` });
-
-    } catch (error) {
-        console.error("Error crítico get-embed-code:", error);
-        res.status(500).json({ error: "Error interno" });
-    }
-});
-
-app.get('/api/check-season-availability', async (req, res) => {
-     if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
-     const { id, season } = req.query;
-     if (!id || !season) return res.status(400).json({ error: "ID y temporada son requeridos." });
-     try {
-         const seriesCollection = mongoDb.collection('series_catalog');
-         const episodesField = `seasons.${season}.episodes`;
-         const doc = await seriesCollection.findOne({ tmdbId: id.toString() }, { projection: { [episodesField]: 1 } });
-         if (!doc?.seasons?.[season]?.episodes) { return res.status(200).json({ exists: false, availableEpisodes: {} }); }
-         const episodesData = doc.seasons[season].episodes; const availabilityMap = {};
-         for (const episodeNum in episodesData) { const ep = episodesData[episodeNum]; availabilityMap[episodeNum] = !!(ep.proEmbedCode || ep.freeEmbedCode); }
-         res.status(200).json({ exists: true, availableEpisodes: availabilityMap });
-     } catch (error) { console.error("Error check-season-availability:", error); res.status(500).json({ error: "Error interno." }); }
-});
-
-app.get('/api/get-metrics', async (req, res) => {
-    if (!mongoDb) return res.status(503).json({ error: "BD no disponible." });
-    const { id, field } = req.query;
-    if (!id || !field || (field !== 'views' && field !== 'likes')) { return res.status(400).json({ error: "ID y campo ('views' o 'likes') requeridos." }); }
-    const cacheKey = `counts-metrics-${id}-${field}`;
-    try {
-        const cachedData = countsCache.get(cacheKey);
-        if (cachedData) {
-            console.log(`[Cache HIT] Sirviendo métrica desde caché para: ${cacheKey}`);
-            return res.status(200).json(cachedData);
-        }
-    } catch (err) {
-        console.error("Error al leer del caché de métricas:", err);
-    }
-    console.log(`[Cache MISS] Buscando métrica en MongoDB para: ${cacheKey}`);
-    try {
-        let doc = await mongoDb.collection('media_catalog').findOne({ tmdbId: id.toString() }, { projection: { [field]: 1 } });
-        if (!doc) doc = await mongoDb.collection('series_catalog').findOne({ tmdbId: id.toString() }, { projection: { [field]: 1 } });
-        const responseData = { count: doc?.[field] || 0 };
-        countsCache.set(cacheKey, responseData);
-        res.status(200).json(responseData);
-    } catch (error) { console.error(`Error get-metrics (${field}):`, error); res.status(500).json({ error: "Error interno." }); }
-});
-
-app.post('/api/increment-views', async (req, res) => {
-    if (!mongoDb) return res.status(503).json({ error: "BD no disponible." });
-    const { tmdbId } = req.body; if (!tmdbId) return res.status(400).json({ error: "tmdbId requerido." });
-    try {
-        const update = { $inc: { views: 1 }, $setOnInsert: { likes: 0 } }; const options = { upsert: true };
-        let result = await mongoDb.collection('media_catalog').updateOne({ tmdbId: tmdbId.toString() }, update, options);
-        if (result.matchedCount === 0 && result.upsertedCount === 0) {
-           result = await mongoDb.collection('series_catalog').updateOne({ tmdbId: tmdbId.toString() }, update, options);
-        }
-        countsCache.del(`counts-data-${tmdbId}`);
-        countsCache.del(`counts-metrics-${tmdbId}-views`);
-        res.status(200).json({ message: 'Vista registrada.' });
-    } catch (error) { console.error("Error increment-views:", error); res.status(500).json({ error: "Error interno." }); }
-});
-
-app.post('/api/increment-likes', async (req, res) => {
-    if (!mongoDb) return res.status(503).json({ error: "BD no disponible." });
-    const { tmdbId } = req.body; if (!tmdbId) return res.status(400).json({ error: "tmdbId requerido." });
-    try {
-        const update = { $inc: { likes: 1 }, $setOnInsert: { views: 0 } }; const options = { upsert: true };
-        let result = await mongoDb.collection('media_catalog').updateOne({ tmdbId: tmdbId.toString() }, update, options);
-         if (result.matchedCount === 0 && result.upsertedCount === 0) {
-            result = await mongoDb.collection('series_catalog').updateOne({ tmdbId: tmdbId.toString() }, update, options);
-         }
-        countsCache.del(`counts-data-${tmdbId}`);
-        countsCache.del(`counts-metrics-${tmdbId}-likes`);
-        res.status(200).json({ message: 'Like registrado.' });
-    } catch (error) { console.error("Error increment-likes:", error); res.status(500).json({ error: "Error interno." }); }
 });
 
 app.post('/api/notify-new-content', async (req, res) => {
@@ -1350,34 +1149,6 @@ app.post('/api/notify-new-content', async (req, res) => {
     } catch (error) {
         console.error("Error crítico en /api/notify-new-content:", error);
         res.status(500).json({ success: false, error: "Error interno del servidor al procesar la notificación." });
-    }
-});
-
-app.get('/api/app-update', (req, res) => {
-    const updateInfo = { "latest_version_code": 12, "update_url": "https://play.google.com/store/apps/details?id=com.salacine.app&pcampaignid=web_share", "force_update": false, "update_message": "¡Nueva versión (1.5.2) de Sala Cine disponible! Incluye mejoras de rendimiento. Actualiza ahora." };
-    res.status(200).json(updateInfo);
-});
-
-app.get('/api/app-status', (req, res) => {
-    const status = { isAppApproved: true, safeContentIds: [11104, 539, 4555, 27205, 33045] };
-    res.json(status);
-});
-
-app.get('/.well-known/assetlinks.json', (req, res) => {
-    res.sendFile('assetlinks.json', { root: __dirname });
-});
-
-app.get('/api/extract-link', async (req, res) => {
-    const targetUrl = req.query.url;
-    if (!targetUrl) return res.status(400).json({ success: false, error: "Se requiere parámetro 'url'." });
-    
-    console.log(`[Extractor] Solicitud manual recibida para: ${targetUrl}`);
-    try {
-        const extracted_link = await llamarAlExtractor(targetUrl);
-        res.status(200).json({ success: true, requested_url: targetUrl, extracted_link: extracted_link });
-    } catch (error) {
-        console.error(`[Extractor] Falla en ruta /api/extract-link: ${error.message}`);
-        res.status(500).json({ success: false, error: "Fallo extractor.", details: error.message });
     }
 });
 
