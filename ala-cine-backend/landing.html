@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ver Película en Sala Cine</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #0f0f13; /* Fondo oscuro casi negro */
+            color: white;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            text-align: center;
+        }
+        .container {
+            max-width: 600px; /* Ancho máximo para móviles */
+            margin: 0 auto;
+            padding: 20px;
+            display: none; /* Se oculta al inicio para intentar abrir la app */
+        }
+        
+        /* El Banner de la Película */
+        .movie-banner {
+            width: 100%;
+            border-radius: 12px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.6);
+            margin-bottom: 20px;
+            aspect-ratio: 16/9;
+            object-fit: cover;
+        }
+
+        h1 {
+            font-size: 20px;
+            margin: 10px 0;
+            color: #fff;
+        }
+
+        p.subtitle {
+            color: #aaa;
+            font-size: 14px;
+            margin-bottom: 25px;
+        }
+
+        /* Contenedor del Video Tutorial */
+        .video-wrapper {
+            width: 100%;
+            border-radius: 10px;
+            overflow: hidden;
+            border: 2px solid #2a2a35;
+            background: #000;
+            margin-bottom: 25px;
+        }
+
+        video {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+
+        /* Botón Grande de Descarga */
+        .btn-playstore {
+            display: block;
+            background: #00E676; /* Verde tipo Android o puedes poner #E50914 rojo Netflix */
+            color: #052e16;
+            text-decoration: none;
+            padding: 18px;
+            border-radius: 12px;
+            font-weight: 900;
+            font-size: 18px;
+            text-transform: uppercase;
+            box-shadow: 0 4px 15px rgba(0, 230, 118, 0.4);
+            transition: transform 0.2s;
+        }
+        
+        .btn-playstore:active {
+            transform: scale(0.98);
+        }
+
+        /* Loader para cuando intenta abrir la app */
+        #loader {
+            margin-top: 100px;
+        }
+        .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.1);
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            border-left-color: #09f;
+            margin: 0 auto 15px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+
+    <div id="loader">
+        <div class="spinner"></div>
+        <p style="color:#888;">Abriendo Sala Cine...</p>
+    </div>
+
+    <div class="container" id="main-content">
+        <img src="https://via.placeholder.com/500x281?text=Cargando..." id="imgBanner" class="movie-banner" alt="Portada">
+        
+        <h1 id="movieTitle">...</h1>
+        <p class="subtitle">Para ver este contenido, sigue el tutorial:</p>
+
+        <div class="video-wrapper">
+            <video controls playsinline poster="https://via.placeholder.com/500x281?text=Ver+Tutorial">
+                <source src="AQUI_PONES_TU_ENLACE_DEL_VIDEO.mp4" type="video/mp4">
+                Tu navegador no soporta video.
+            </video>
+        </div>
+
+        <a href="https://play.google.com/store/apps/details?id=com.salacine.app" class="btn-playstore">
+            📥 Instalar Aplicación
+        </a>
+        <p style="margin-top:15px; font-size:12px; color:#555;">Una vez instalada, vuelve a dar clic al enlace de la película.</p>
+    </div>
+
+    <script>
+        // --- VARIABLES QUE EL SERVIDOR REEMPLAZARÁ ---
+        // El servidor cambiará estas palabras raras por los datos reales
+        const TMDB_ID = "ReemplazarID"; 
+        const TITLE = "ReemplazarTitulo";
+        const BACKDROP = "ReemplazarBackdrop"; 
+
+        // 1. Configurar la página visualmente con los datos
+        if (TITLE !== "ReemplazarTitulo") {
+            document.getElementById('movieTitle').innerText = TITLE;
+            // Usamos la imagen de TMDB directamente
+            document.getElementById('imgBanner').src = "https://image.tmdb.org/t/p/w780" + BACKDROP;
+        }
+
+        // 2. LÓGICA DE REDIRECCIÓN (Deep Linking)
+        const appScheme = "salacine://details?id=" + TMDB_ID;
+        const playStore = "https://play.google.com/store/apps/details?id=com.salacine.app";
+
+        // Intentar abrir la app inmediatamente
+        window.location.href = appScheme;
+
+        // Si después de 2.5 segundos seguimos aquí, es que no tenía la app
+        setTimeout(function() {
+            // Ocultamos el cargando
+            document.getElementById('loader').style.display = 'none';
+            // Mostramos el tutorial y el banner
+            document.getElementById('main-content').style.display = 'block';
+        }, 2500);
+    </script>
+</body>
+</html>
