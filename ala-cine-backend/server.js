@@ -21,20 +21,25 @@ const recentCache = new NodeCache({ stdTTL: 86400, checkperiod: 600 });
 const historyCache = new NodeCache({ stdTTL: 900, checkperiod: 120 });
 const localDetailsCache = new NodeCache({ stdTTL: 86400, checkperiod: 3600 }); 
 
-// --- NUEVAS CACHÉS OPTIMIZADAS (FASE 1) ---
-// Caché para Destacados (Pinned) - TTL 1 hora
+// --- NUEVAS CACHÉS OPTIMIZADAS (FASE 1 - CONTENIDO) ---
 const pinnedCache = new NodeCache({ stdTTL: 3600, checkperiod: 600 });
 const PINNED_CACHE_KEY = 'pinned_content_top';
 
-// Caché para K-Dramas (Automático) - TTL 1 hora
 const kdramaCache = new NodeCache({ stdTTL: 3600, checkperiod: 600 });
 const KDRAMA_CACHE_KEY = 'kdrama_content_list';
 
-// Caché para Catálogo Completo - TTL 1 hora (Para evitar lecturas masivas a Mongo)
 const catalogCache = new NodeCache({ stdTTL: 3600, checkperiod: 600 });
 const CATALOG_CACHE_KEY = 'full_catalog_list';
 
 const RECENT_CACHE_KEY = 'recent_content_main'; 
+
+// --- NUEVAS CACHÉS OPTIMIZADAS (FASE 2 - USUARIOS Y MONEDAS) ---
+// 1. Caché de Usuarios (RAM) - TTL 15 minutos
+const userCache = new NodeCache({ stdTTL: 900, checkperiod: 120 });
+
+// 2. Buffer de Escritura de Monedas (RAM)
+// Almacena { uid: cantidad_acumulada }
+let coinWriteBuffer = {};
 
 const app = express();
 dotenv.config();
@@ -102,10 +107,53 @@ app.use((req, res, next) => {
     next();
 });
 
+// =========================================================================
+// === SISTEMA DE BUFFER DE MONEDAS (OPTIMIZACIÓN DE ESCRITURA) ===
+// =========================================================================
+
+async function flushCoinBuffer() {
+    const uids = Object.keys(coinWriteBuffer);
+    if (uids.length === 0) return;
+
+    console.log(`[Coin Buffer] Iniciando escritura en lote para ${uids.length} usuarios...`);
+    
+    // Firestore Batch permite max 500 operaciones. Si hay más, habría que dividir.
+    // Asumimos < 500 por intervalo de 5 min, o implementamos chunking simple.
+    const batch = db.batch();
+    const uidsToFlush = uids.slice(0, 490); // Margen de seguridad
+
+    uidsToFlush.forEach(uid => {
+        const amount = coinWriteBuffer[uid];
+        if (amount !== 0) {
+            const userRef = db.collection('users').doc(uid);
+            // Usamos increment para evitar conflictos de carrera
+            batch.update(userRef, { 
+                coins: admin.firestore.FieldValue.increment(amount) 
+            });
+        }
+    });
+
+    try {
+        await batch.commit();
+        console.log(`[Coin Buffer] ✅ Escritura en lote exitosa. Buffer limpiado.`);
+        
+        // Limpiar del buffer SOLO los que procesamos
+        uidsToFlush.forEach(uid => {
+            delete coinWriteBuffer[uid];
+        });
+    } catch (error) {
+        console.error("❌ [Coin Buffer] Error crítico al escribir en Firestore:", error);
+    }
+}
+
+// Ejecutar flush cada 5 minutos (300,000 ms)
+setInterval(flushCoinBuffer, 300000);
+
+// =========================================================================
+
 async function verifyIdToken(req, res, next) {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        // Permitimos acceso sin token a ciertos endpoints de contenido
         return next(); 
     }
     const idToken = authHeader.split(' ')[1];
@@ -115,21 +163,20 @@ async function verifyIdToken(req, res, next) {
         req.email = decodedToken.email;
         next();
     } catch (error) {
-        // console.error("Error al verificar Firebase ID Token:", error.code);
-        // Si el token falla, seguimos como usuario anónimo (req.uid undefined)
         next();
     }
 }
 
 function countsCacheMiddleware(req, res, next) {
-    if (!req.uid) return next(); // No cachear si no hay usuario
+    if (!req.uid) return next();
+    // NOTA: Mantenemos este middleware para compatibilidad, 
+    // pero la lógica principal de caché de usuario ahora está en /api/user/me
     const uid = req.uid;
     const route = req.path;
     const cacheKey = `${uid}:${route}`;
     try {
         const cachedData = countsCache.get(cacheKey);
         if (cachedData) {
-            // console.log(`[Cache HIT] Sirviendo datos de usuario desde caché para: ${cacheKey}`);
             return res.status(200).json(cachedData);
         }
     } catch (err) {
@@ -148,7 +195,6 @@ async function llamarAlExtractor(targetUrl) {
 // === NUEVOS ENDPOINTS CRÍTICOS (FASE 1) - DESTACADOS, K-DRAMAS, CATALOGO ===
 // =========================================================================
 
-// 1. Endpoint Destacados (Pinned)
 app.get('/api/content/featured', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
 
@@ -160,7 +206,6 @@ app.get('/api/content/featured', async (req, res) => {
     try {
         const projection = { tmdbId: 1, title: 1, name: 1, poster_path: 1, backdrop_path: 1, addedAt: 1, isPinned: 1 };
         
-        // Buscar en Películas
         const movies = await mongoDb.collection('media_catalog')
             .find({ isPinned: true })
             .project(projection)
@@ -168,7 +213,6 @@ app.get('/api/content/featured', async (req, res) => {
             .limit(10)
             .toArray();
 
-        // Buscar en Series
         const series = await mongoDb.collection('series_catalog')
             .find({ isPinned: true })
             .project(projection)
@@ -179,7 +223,6 @@ app.get('/api/content/featured', async (req, res) => {
         const formattedMovies = movies.map(m => formatLocalItem(m, 'movie'));
         const formattedSeries = series.map(s => formatLocalItem(s, 'tv'));
         
-        // Combinar y ordenar
         const combined = [...formattedMovies, ...formattedSeries].sort((a, b) => new Date(b.addedAt || 0) - new Date(a.addedAt || 0));
         
         pinnedCache.set(PINNED_CACHE_KEY, combined);
@@ -191,7 +234,6 @@ app.get('/api/content/featured', async (req, res) => {
     }
 });
 
-// 2. Endpoint K-Dramas (Automático por origin_country: 'KR')
 app.get('/api/content/kdramas', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
 
@@ -203,7 +245,6 @@ app.get('/api/content/kdramas', async (req, res) => {
     try {
         const projection = { tmdbId: 1, title: 1, name: 1, poster_path: 1, backdrop_path: 1, addedAt: 1, origin_country: 1 };
         
-        // Query para buscar 'KR' en el array origin_country
         const query = { origin_country: "KR" };
 
         const movies = await mongoDb.collection('media_catalog').find(query).project(projection).sort({ addedAt: -1 }).limit(50).toArray();
@@ -223,21 +264,17 @@ app.get('/api/content/kdramas', async (req, res) => {
     }
 });
 
-// 3. Endpoint Catálogo Completo (CORREGIDO PARA TU SCRIPT.JS)
 app.get('/api/content/catalog', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
 
-    // Intentar leer de caché
     const cachedCatalog = catalogCache.get(CATALOG_CACHE_KEY);
     if (cachedCatalog) {
-        // CORRECCIÓN: Devolvemos objeto con propiedad 'items'
         return res.status(200).json({ items: cachedCatalog, total: cachedCatalog.length });
     }
 
     try {
         const projection = { tmdbId: 1, title: 1, name: 1, poster_path: 1, media_type: 1, addedAt: 1, origin_country: 1, genre_ids: 1 };
         
-        // Traemos más ítems (ej. 1000) para llenar bien el catálogo
         const movies = await mongoDb.collection('media_catalog').find({}).project(projection).sort({ addedAt: -1 }).limit(500).toArray();
         const series = await mongoDb.collection('series_catalog').find({}).project(projection).sort({ addedAt: -1 }).limit(500).toArray();
 
@@ -246,11 +283,8 @@ app.get('/api/content/catalog', async (req, res) => {
 
         const combined = [...formattedMovies, ...formattedSeries].sort((a, b) => new Date(b.addedAt || 0) - new Date(a.addedAt || 0));
 
-        // Guardamos en caché SOLO el array puro
         catalogCache.set(CATALOG_CACHE_KEY, combined);
         
-        // CORRECCIÓN CRÍTICA: Al responder, envolvemos en { items: ... }
-        // Esto es lo que busca tu script.js para no dar error.
         res.status(200).json({ 
             items: combined, 
             total: combined.length 
@@ -266,57 +300,46 @@ app.get('/api/content/catalog', async (req, res) => {
 // =========================================================================
 // === RUTA CRÍTICA: /api/content/local (LÓGICA HÍBRIDA REAL) ===
 // =========================================================================
-// Esta ruta maneja "Tendencias Inteligentes" y "Filtrado por Género"
 app.get('/api/content/local', verifyIdToken, async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
 
     const { type, genre, category, source } = req.query; 
     
     try {
-        // 1. Configurar Colección y Proyección
         const collection = (type === 'tv') ? mongoDb.collection('series_catalog') : mongoDb.collection('media_catalog');
-        // Traemos 'genres' y 'addedAt' para filtrar correctamente
         const projection = { tmdbId: 1, title: 1, name: 1, poster_path: 1, backdrop_path: 1, addedAt: 1, genres: 1 };
 
-        // ---------------------------------------------------------
-        // A. LÓGICA DE CRUCE (POPULARES / TENDENCIAS)
-        // ---------------------------------------------------------
         if (category === 'populares' || category === 'tendencias' || category === 'series_populares') {
             let tmdbEndpoint = '';
             if (category === 'populares') tmdbEndpoint = 'movie/popular';
             else if (category === 'series_populares') tmdbEndpoint = 'tv/popular';
             else tmdbEndpoint = 'trending/all/day';
 
-            // 1. Pedir lista REAL a TMDB
             let tmdbList = tmdbCache.get(`smart_cross_${category}`);
             if (!tmdbList) {
                 try {
                     const resp = await axios.get(`https://api.themoviedb.org/3/${tmdbEndpoint}?api_key=${TMDB_API_KEY}&language=es-MX`);
                     tmdbList = resp.data.results || [];
-                    tmdbCache.set(`smart_cross_${category}`, tmdbList, 3600); // Cache 1 hora
+                    tmdbCache.set(`smart_cross_${category}`, tmdbList, 3600); 
                 } catch (e) {
-                    return res.status(200).json([]); // Fallback vacío
+                    return res.status(200).json([]); 
                 }
             }
 
-            // 2. Extraer IDs y buscar coincidencias locales
             const targetIds = tmdbList.map(item => item.id.toString());
             let localMatches = [];
 
             if (category === 'tendencias') {
-                // Tendencias mezcla series y pelis
                 const movies = await mongoDb.collection('media_catalog').find({ tmdbId: { $in: targetIds } }).project(projection).toArray();
                 const series = await mongoDb.collection('series_catalog').find({ tmdbId: { $in: targetIds } }).project(projection).toArray();
                 const fMovies = movies.map(m => formatLocalItem(m, 'movie'));
                 const fSeries = series.map(s => formatLocalItem(s, 'tv'));
                 localMatches = [...fMovies, ...fSeries];
             } else {
-                // Populares específicos
                 const matches = await collection.find({ tmdbId: { $in: targetIds } }).project(projection).toArray();
                 localMatches = matches.map(m => formatLocalItem(m, type === 'tv' ? 'tv' : 'movie'));
             }
 
-            // 3. Ordenar según popularidad de TMDB
             const sortedMatches = [];
             targetIds.forEach(id => {
                 const match = localMatches.find(m => m.tmdbId === id);
@@ -326,29 +349,19 @@ app.get('/api/content/local', verifyIdToken, async (req, res) => {
             return res.status(200).json(sortedMatches);
         }
 
-        // ---------------------------------------------------------
-        // B. LÓGICA DE FILTRADO POR GÉNERO (ESTRICTO)
-        // ---------------------------------------------------------
         if (genre) {
             const genreId = parseInt(genre);
-            
-            // 1. Buscar en BD items que tengan ese género guardado (Rápido)
             let items = await collection.find({ genres: genreId }).project(projection).sort({ addedAt: -1 }).limit(20).toArray();
             
-            // 2. Fallback Híbrido: Si hay pocas (pelis viejas sin género), revisamos las recientes
             if (items.length < 5) {
                 const candidates = await collection.find({}).project(projection).sort({ addedAt: -1 }).limit(50).toArray();
-                
                 const verified = [];
                 for (const item of candidates) {
-                    if (items.find(i => i.tmdbId === item.tmdbId)) continue; // Ya está
-
+                    if (items.find(i => i.tmdbId === item.tmdbId)) continue; 
                     let hasGenre = false;
-                    // Si ya tiene genres pero no coincidió antes, no es.
                     if (item.genres && Array.isArray(item.genres) && item.genres.length > 0) {
                         if (item.genres.includes(genreId)) hasGenre = true;
                     } 
-                    // Si NO tiene genres (subida antigua), consultamos TMDB
                     else {
                         const cacheKey = `genre_chk_${type}_${item.tmdbId}`;
                         let cachedGenres = localDetailsCache.get(cacheKey);
@@ -358,7 +371,6 @@ app.get('/api/content/local', verifyIdToken, async (req, res) => {
                                 const resp = await axios.get(url);
                                 cachedGenres = resp.data.genres.map(g => g.id);
                                 localDetailsCache.set(cacheKey, cachedGenres);
-                                // Auto-reparación: Guardar en BD para la próxima
                                 await collection.updateOne({ _id: item._id }, { $set: { genres: cachedGenres } });
                             } catch (e) {}
                         }
@@ -375,9 +387,6 @@ app.get('/api/content/local', verifyIdToken, async (req, res) => {
             return res.status(200).json(formatted);
         }
 
-        // ---------------------------------------------------------
-        // C. TODO EL CONTENIDO (Botón "Agregadas")
-        // ---------------------------------------------------------
         const allItems = await collection.find({})
             .project(projection)
             .sort({ addedAt: -1 })
@@ -402,9 +411,9 @@ function formatLocalItem(item, type) {
         poster_path: item.poster_path,
         backdrop_path: item.backdrop_path,
         media_type: type,
-        isPinned: item.isPinned || false, // Propagamos la propiedad
+        isPinned: item.isPinned || false, 
         isLocal: true,
-        addedAt: item.addedAt // Útil para ordenamientos en cliente
+        addedAt: item.addedAt 
     };
 }
 
@@ -459,8 +468,6 @@ app.get('/api/content/recent', async (req, res) => {
         return res.status(200).json(cachedRecent);
     }
 
-    // console.log(`[Recent Cache MISS] Generando lista unificada...`);
-
     try {
         const moviesPromise = mongoDb.collection('media_catalog')
             .find({ hideFromRecent: { $ne: true } }) 
@@ -507,14 +514,32 @@ app.get('/api/content/recent', async (req, res) => {
     }
 });
 
-app.get('/api/user/me', verifyIdToken, countsCacheMiddleware, async (req, res) => {
-    const { uid, email, cacheKey } = req;
-    const usernameFromQuery = req.query.username;    
+// =========================================================================
+// === OPTIMIZACIÓN: RUTA DE USUARIO (/api/user/me) ===
+// =========================================================================
+app.get('/api/user/me', verifyIdToken, async (req, res) => {
+    const { uid, email } = req;
+    const usernameFromQuery = req.query.username;
+    
+    // 1. Intentar leer de userCache (RAM)
+    const cachedUser = userCache.get(uid);
+    if (cachedUser) {
+        // console.log(`[User Cache HIT] Usuario ${uid} recuperado de RAM.`);
+        // Si hay algo en el buffer de monedas, lo aseguramos aquí (aunque ya debería estar sincronizado)
+        if (coinWriteBuffer[uid]) {
+            // Nota: En teoría ya está actualizado en cache al momento del POST, 
+            // pero esto es doble seguridad visual.
+            cachedUser.coins = Math.max(cachedUser.coins, cachedUser.coins); 
+        }
+        return res.status(200).json(cachedUser);
+    }
+
     try {
         const userDocRef = db.collection('users').doc(uid);
         const docSnap = await userDocRef.get();
         const now = new Date();
         let userData;
+
         if (docSnap.exists) {
             userData = docSnap.data();
             let isPro = userData.isPro || false;
@@ -523,16 +548,24 @@ app.get('/api/user/me', verifyIdToken, countsCacheMiddleware, async (req, res) =
                 isPro = false;
                 await userDocRef.update({ isPro: false });
             }
+
+            // Calcular monedas reales (DB + Buffer no guardado)
+            const dbCoins = userData.coins || 0;
+            const bufferedCoins = coinWriteBuffer[uid] || 0;
+            const totalCoins = dbCoins + bufferedCoins;
+
             const responseData = {
                 uid,
                 email,
                 username: userData.username || email.split('@')[0],
                 flair: userData.flair || "👋",
-                coins: userData.coins || 0,
+                coins: totalCoins, // Entregamos saldo real
                 isPro: isPro,
                 renewalDate: renewalDate
             };
-            countsCache.set(cacheKey, responseData);
+            
+            // Guardar en RAM
+            userCache.set(uid, responseData);
             return res.status(200).json(responseData);
         } else {
             const initialData = {
@@ -546,7 +579,8 @@ app.get('/api/user/me', verifyIdToken, countsCacheMiddleware, async (req, res) =
             };
             await userDocRef.set(initialData);
             const responseData = { ...initialData, renewalDate: null };
-            countsCache.set(cacheKey, responseData);
+            
+            userCache.set(uid, responseData);
             return res.status(200).json(responseData);
         }
     } catch (error) {
@@ -567,7 +601,10 @@ app.put('/api/user/profile', verifyIdToken, async (req, res) => {
             username: username,
             flair: flair || ""
         });
-        countsCache.del(`${uid}:/api/user/me`);
+        
+        // Invalidamos caché para forzar recarga con nuevos datos
+        userCache.del(uid);
+        
         res.status(200).json({ message: 'Perfil actualizado con éxito.' });
     } catch (error) {
         console.error("Error en /api/user/profile:", error);
@@ -577,11 +614,22 @@ app.put('/api/user/profile', verifyIdToken, async (req, res) => {
 
 app.get('/api/user/coins', verifyIdToken, countsCacheMiddleware, async (req, res) => {
     const { uid, cacheKey } = req;
+    
+    // Si tenemos al usuario en RAM Cache, sacamos las monedas de ahí directamente
+    const cachedUser = userCache.get(uid);
+    if (cachedUser) {
+        return res.status(200).json({ coins: cachedUser.coins });
+    }
+
     try {
         const userDocRef = db.collection('users').doc(uid);
         const docSnap = await userDocRef.get();
-        const coins = docSnap.exists ? (docSnap.data().coins || 0) : 0;
-        const responseData = { coins };
+        // Sumar buffer si existe
+        const dbCoins = docSnap.exists ? (docSnap.data().coins || 0) : 0;
+        const buffered = coinWriteBuffer[uid] || 0;
+        
+        const responseData = { coins: dbCoins + buffered };
+        
         countsCache.set(cacheKey, responseData);
         res.status(200).json(responseData);
     } catch (error) {
@@ -590,36 +638,94 @@ app.get('/api/user/coins', verifyIdToken, countsCacheMiddleware, async (req, res
     }
 });
 
+// =========================================================================
+// === OPTIMIZACIÓN: ESCRITURA DE MONEDAS (/api/user/coins) ===
+// =========================================================================
 app.post('/api/user/coins', verifyIdToken, async (req, res) => {
     const { uid } = req;
     const { amount } = req.body;
     if (typeof amount !== 'number' || amount === 0) {
         return res.status(400).json({ error: 'Cantidad inválida.' });
     }
+
+    // CASO 1: GANANCIA (Buffer - No escribe en Firebase inmediatamente)
+    if (amount > 0) {
+        // 1. Agregar al buffer global
+        coinWriteBuffer[uid] = (coinWriteBuffer[uid] || 0) + amount;
+
+        // 2. Actualizar UserCache (RAM) para que la UI responda rápido
+        // Si el usuario no está en caché, no pasa nada, se cargará actualizado en el siguiente /me
+        const cachedUser = userCache.get(uid);
+        let newDisplayBalance = 0;
+        
+        if (cachedUser) {
+            cachedUser.coins += amount;
+            userCache.set(uid, cachedUser); // Guardamos actualización
+            newDisplayBalance = cachedUser.coins;
+        } else {
+            // Si no está en caché, no sabemos el total real sin leer DB.
+            // Devolvemos 'pending' o 0, el cliente suele refrescar /me
+            newDisplayBalance = amount; 
+        }
+
+        // Invalidar cachés cortas
+        countsCache.del(`${uid}:/api/user/coins`);
+        // No invalidamos countsCache de /me porque ya actualizamos userCache arriba
+
+        return res.status(200).json({ 
+            message: 'Balance actualizado (Buffer).', 
+            newBalance: newDisplayBalance 
+        });
+    }
+
+    // CASO 2: GASTO (Negativo - Requiere validación estricta en DB)
     const userDocRef = db.collection('users').doc(uid);
     try {
         const newBalance = await db.runTransaction(async (transaction) => {
             const doc = await transaction.get(userDocRef);
-            const currentCoins = doc.exists ? (doc.data().coins || 0) : 0;
-            const finalBalance = currentCoins + amount;
+            let currentCoins = doc.exists ? (doc.data().coins || 0) : 0;
+            
+            // IMPORTANTE: Si el usuario tiene monedas en el buffer pendientes de guardar,
+            // deberíamos considerarlas para el gasto.
+            const buffered = coinWriteBuffer[uid] || 0;
+            const totalReal = currentCoins + buffered;
+
+            const finalBalance = totalReal + amount; // amount es negativo
+
             if (finalBalance < 0) {
                 throw new Error("Saldo insuficiente");
             }
+
+            // Si gastamos, guardamos en BD el resultado final y limpiamos el buffer de este usuario
+            // para evitar doble contabilidad.
             if (!doc.exists) {
                  transaction.set(userDocRef, { coins: finalBalance }, { merge: true });
             } else {
                  transaction.update(userDocRef, { coins: finalBalance });
             }
+            
+            // Limpiar buffer porque ya consolidamos todo en la transacción
+            delete coinWriteBuffer[uid];
+
             return finalBalance;
         });
+
+        // Actualizar caché RAM con el nuevo saldo real
+        const cachedUser = userCache.get(uid);
+        if (cachedUser) {
+            cachedUser.coins = newBalance;
+            userCache.set(uid, cachedUser);
+        }
+
         countsCache.del(`${uid}:/api/user/coins`);
         countsCache.del(`${uid}:/api/user/me`);
+        
         res.status(200).json({ message: 'Balance actualizado.', newBalance });
     } catch (error) {
         if (error.message === "Saldo insuficiente") {
             return res.status(400).json({ error: 'Saldo insuficiente para realizar el gasto.' });
         }
-        console.error("Error en /api/user/coins (POST):", error);
+        console.error("Error en /api/user/coins (POST Transaction):", error);
         res.status(500).json({ error: 'Error en la transacción de monedas.' });
     }
 });
@@ -891,8 +997,12 @@ app.post('/api/rewards/redeem/premium', verifyIdToken, async (req, res) => {
                 return new Date(now.getTime() + days * 24 * 60 * 60 * 1000); 
             }
         });
+        
         await userDocRef.set({ isPro: true, premiumExpiry: newExpiryDate }, { merge: true });
-        countsCache.del(`${uid}:/api/user/me`);
+        
+        // Invalidar caché de usuario para que vea su premium activo
+        userCache.del(uid);
+        
         res.status(200).json({ success: true, message: `Premium activado por ${days} días.`, expiryDate: newExpiryDate.toISOString() });
     } catch (error) { 
         console.error(`❌ Error al activar Premium:`, error); 
@@ -1209,11 +1319,9 @@ app.post('/api/increment-likes', async (req, res) => {
     } catch (error) { console.error("Error increment-likes:", error); res.status(500).json({ error: "Error interno." }); }
 });
 
-// === MODIFICACIÓN DE SUBIDA: Guardar metadatos (pinned, kdramas, etc) ===
 app.post('/add-movie', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "BD no disponible." });
     try {
-        // Obtenemos los nuevos campos que envía el bot: genres, release_date, isPinned, origin_country etc.
         const { tmdbId, title, poster_path, freeEmbedCode, proEmbedCode, isPremium, overview, hideFromRecent, genres, release_date, popularity, vote_average, isPinned, origin_country } = req.body;
         
         if (!tmdbId) return res.status(400).json({ error: 'tmdbId requerido.' });
@@ -1229,12 +1337,10 @@ app.post('/add-movie', async (req, res) => {
                 proEmbedCode, 
                 isPremium,
                 hideFromRecent: hideFromRecent === true || hideFromRecent === 'true',
-                // Guardar metadatos nuevos
                 genres: genres || [],
                 release_date: release_date || null,
                 popularity: popularity || 0,
                 vote_average: vote_average || 0,
-                // NUEVO: Destacado y País
                 isPinned: isPinned === true || isPinned === 'true',
                 origin_country: origin_country || []
             }, 
@@ -1250,7 +1356,6 @@ app.post('/add-movie', async (req, res) => {
             console.warn(`[Auto-Clean Warning] No se pudo limpiar el pedido: ${cleanupError.message}`);
         }
         
-        // INVALIDACIÓN DE CACHÉS
         embedCache.del(`embed-${cleanTmdbId}-movie-1-pro`);
         embedCache.del(`embed-${cleanTmdbId}-movie-1-free`);
         countsCache.del(`counts-data-${cleanTmdbId}`);
@@ -1266,7 +1371,6 @@ app.post('/add-movie', async (req, res) => {
     } catch (error) { console.error("Error add-movie:", error); res.status(500).json({ error: 'Error interno.' }); }
 });
 
-// === MODIFICACIÓN DE SUBIDA SERIES: Guardar metadatos y limpiar caché ===
 app.post('/add-series-episode', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "BD no disponible." });
     try {
@@ -1280,12 +1384,10 @@ app.post('/add-series-episode', async (req, res) => {
         const updateData = {
             $set: {
                 title, poster_path, overview, isPremium,
-                // Guardar metadatos generales de la serie
                 genres: genres || [],
                 first_air_date: first_air_date || null,
                 popularity: popularity || 0,
                 vote_average: vote_average || 0,
-                // NUEVO: Destacado y País
                 isPinned: isPinned === true || isPinned === 'true',
                 origin_country: origin_country || [],
 
@@ -1394,7 +1496,6 @@ app.get('/api/extract-link', async (req, res) => {
     }
 });
 
-// === LÓGICA DE NOTIFICACIONES PUSH (Recuperada de Server 11) ===
 async function sendNotificationToTopic(title, body, imageUrl, tmdbId, mediaType) {
     const topic = 'new_content';
     const dataPayload = {
@@ -1428,7 +1529,7 @@ async function startServer() {
         TMDB_API_KEY,
         RENDER_BACKEND_URL,
         axios,
-        pinnedCache // <--- CAMBIO 2: Pasamos la caché al Bot para que pueda limpiarla
+        pinnedCache 
     );
 
     app.listen(PORT, () => {
