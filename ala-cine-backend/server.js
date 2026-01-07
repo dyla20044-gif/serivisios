@@ -28,14 +28,15 @@ const PINNED_CACHE_KEY = 'pinned_content_top';
 const kdramaCache = new NodeCache({ stdTTL: 3600, checkperiod: 600 });
 const KDRAMA_CACHE_KEY = 'kdrama_content_list';
 
+// Cache de Catálogo (Se usa flushAll para limpiar variantes por género)
 const catalogCache = new NodeCache({ stdTTL: 3600, checkperiod: 600 });
-const CATALOG_CACHE_KEY = 'full_catalog_list';
+const CATALOG_CACHE_KEY = 'full_catalog_list'; // Key por defecto para "todo"
 
 const RECENT_CACHE_KEY = 'recent_content_main'; 
 
 // --- NUEVAS CACHÉS OPTIMIZADAS (FASE 2 - USUARIOS Y MONEDAS) ---
-// 1. Caché de Usuarios (RAM) - TTL 15 minutos
-const userCache = new NodeCache({ stdTTL: 900, checkperiod: 120 });
+// 1. Caché de Usuarios (RAM) - TTL AUMENTADO A 6 HORAS (21600s) PARA 20K USUARIOS
+const userCache = new NodeCache({ stdTTL: 21600, checkperiod: 1200 });
 
 // 2. Buffer de Escritura de Monedas (RAM)
 // Almacena { uid: cantidad_acumulada }
@@ -118,7 +119,6 @@ async function flushCoinBuffer() {
     console.log(`[Coin Buffer] Iniciando escritura en lote para ${uids.length} usuarios...`);
     
     // Firestore Batch permite max 500 operaciones. Si hay más, habría que dividir.
-    // Asumimos < 500 por intervalo de 5 min, o implementamos chunking simple.
     const batch = db.batch();
     const uidsToFlush = uids.slice(0, 490); // Margen de seguridad
 
@@ -184,11 +184,6 @@ function countsCacheMiddleware(req, res, next) {
     }
     req.cacheKey = cacheKey;
     next();
-}
-
-async function llamarAlExtractor(targetUrl) {
-    if (!targetUrl) return null;
-    return targetUrl;
 }
 
 // =========================================================================
@@ -264,26 +259,92 @@ app.get('/api/content/kdramas', async (req, res) => {
     }
 });
 
+// =========================================================================
+// === REFECTORIZACIÓN: CATÁLOGO HÍBRIDO (LOCAL + TMDB RELLENO) ===
+// =========================================================================
 app.get('/api/content/catalog', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
 
-    const cachedCatalog = catalogCache.get(CATALOG_CACHE_KEY);
+    const genre = req.query.genre;
+    // Generamos Key única por género. Si no hay género, usa la key general.
+    const cacheKey = genre ? `catalog_genre_${genre}` : CATALOG_CACHE_KEY;
+
+    const cachedCatalog = catalogCache.get(cacheKey);
     if (cachedCatalog) {
         return res.status(200).json({ items: cachedCatalog, total: cachedCatalog.length });
     }
 
     try {
-        const projection = { tmdbId: 1, title: 1, name: 1, poster_path: 1, media_type: 1, addedAt: 1, origin_country: 1, genre_ids: 1 };
-        
-        const movies = await mongoDb.collection('media_catalog').find({}).project(projection).sort({ addedAt: -1 }).limit(500).toArray();
-        const series = await mongoDb.collection('series_catalog').find({}).project(projection).sort({ addedAt: -1 }).limit(500).toArray();
+        const projection = { tmdbId: 1, title: 1, name: 1, poster_path: 1, media_type: 1, addedAt: 1, origin_country: 1, genres: 1 };
+        let combined = [];
 
-        const formattedMovies = movies.map(m => formatLocalItem(m, 'movie'));
-        const formattedSeries = series.map(s => formatLocalItem(s, 'tv'));
+        if (!genre) {
+            // --- CASO 1: Catálogo General (Sin Filtro) ---
+            const movies = await mongoDb.collection('media_catalog').find({}).project(projection).sort({ addedAt: -1 }).limit(500).toArray();
+            const series = await mongoDb.collection('series_catalog').find({}).project(projection).sort({ addedAt: -1 }).limit(500).toArray();
 
-        const combined = [...formattedMovies, ...formattedSeries].sort((a, b) => new Date(b.addedAt || 0) - new Date(a.addedAt || 0));
+            const formattedMovies = movies.map(m => formatLocalItem(m, 'movie'));
+            const formattedSeries = series.map(s => formatLocalItem(s, 'tv'));
 
-        catalogCache.set(CATALOG_CACHE_KEY, combined);
+            combined = [...formattedMovies, ...formattedSeries].sort((a, b) => new Date(b.addedAt || 0) - new Date(a.addedAt || 0));
+        } else {
+            // --- CASO 2: Filtrado por Género con Relleno TMDB ---
+            const genreId = parseInt(genre);
+            const query = { genres: genreId };
+
+            const movies = await mongoDb.collection('media_catalog').find(query).project(projection).sort({ addedAt: -1 }).limit(100).toArray();
+            const series = await mongoDb.collection('series_catalog').find(query).project(projection).sort({ addedAt: -1 }).limit(100).toArray();
+
+            const formattedMovies = movies.map(m => formatLocalItem(m, 'movie'));
+            const formattedSeries = series.map(s => formatLocalItem(s, 'tv'));
+
+            combined = [...formattedMovies, ...formattedSeries].sort((a, b) => new Date(b.addedAt || 0) - new Date(a.addedAt || 0));
+
+            // Lógica de Relleno si hay menos de 18 items
+            if (combined.length < 18) {
+                const needed = 18 - combined.length;
+                console.log(`[Catalog] Género ${genreId}: Faltan ${needed} items. Rellenando con TMDB...`);
+                
+                try {
+                    // Pedimos películas populares de ese género a TMDB
+                    const tmdbUrl = `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}&with_genres=${genreId}&language=es-MX&sort_by=popularity.desc&include_adult=false&page=1`;
+                    const resp = await axios.get(tmdbUrl);
+                    const tmdbResults = resp.data.results || [];
+                    
+                    let addedCount = 0;
+                    const existingIds = new Set(combined.map(i => String(i.tmdbId)));
+
+                    for (const item of tmdbResults) {
+                        if (addedCount >= needed) break;
+                        const sId = String(item.id);
+                        
+                        // Solo agregamos si no lo tenemos ya en local
+                        if (!existingIds.has(sId)) {
+                            combined.push({
+                                id: item.id,
+                                tmdbId: sId,
+                                title: item.title,
+                                name: item.title,
+                                poster_path: item.poster_path,
+                                backdrop_path: item.backdrop_path,
+                                media_type: 'movie',
+                                isPinned: false,
+                                isLocal: false, // Marcado como NO local para que la UI sepa gestionarlo
+                                addedAt: new Date(0) // Fecha antigua para que aparezcan al final
+                            });
+                            existingIds.add(sId);
+                            addedCount++;
+                        }
+                    }
+                } catch (tmdbError) {
+                    console.error(`[Catalog] Error rellenando con TMDB: ${tmdbError.message}`);
+                    // Si falla TMDB, devolvemos lo que tengamos localmente
+                }
+            }
+        }
+
+        // Guardamos en caché (Key específica del género o general)
+        catalogCache.set(cacheKey, combined);
         
         res.status(200).json({ 
             items: combined, 
@@ -1362,9 +1423,11 @@ app.post('/add-movie', async (req, res) => {
         recentCache.del(RECENT_CACHE_KEY);
         pinnedCache.del(PINNED_CACHE_KEY);
         kdramaCache.del(KDRAMA_CACHE_KEY);
-        catalogCache.del(CATALOG_CACHE_KEY);
+        
+        // --- LIMPIEZA TOTAL DE CATÁLOGO PARA ACTUALIZAR TODOS LOS GÉNEROS ---
+        catalogCache.flushAll();
 
-        console.log(`[Cache] Cachés (Recent, Pinned, Kdrama, Catalog) invalidadas por subida de película: ${title}`);
+        console.log(`[Cache] Cachés (Recent, Pinned, Kdrama, Catalog FLUSH) invalidadas por subida de película: ${title}`);
 
         res.status(200).json({ message: 'Película agregada y publicada.' });
         
@@ -1413,9 +1476,11 @@ app.post('/add-series-episode', async (req, res) => {
         recentCache.del(RECENT_CACHE_KEY);
         pinnedCache.del(PINNED_CACHE_KEY);
         kdramaCache.del(KDRAMA_CACHE_KEY);
-        catalogCache.del(CATALOG_CACHE_KEY);
         
-        console.log(`[Cache] Cachés (Recent, Pinned, Kdrama, Catalog) invalidadas por subida de episodio: S${seasonNumber}E${episodeNumber}`);
+        // --- LIMPIEZA TOTAL DE CATÁLOGO ---
+        catalogCache.flushAll();
+        
+        console.log(`[Cache] Cachés (Recent, Pinned, Kdrama, Catalog FLUSH) invalidadas por subida de episodio: S${seasonNumber}E${episodeNumber}`);
 
         res.status(200).json({ message: `Episodio S${seasonNumber}E${episodeNumber} agregado y publicado.` });
 
@@ -1441,6 +1506,10 @@ app.post('/delete-series-episode', async (req, res) => {
 
         embedCache.del(`embed-${cleanTmdbId}-${seasonNumber}-${episodeNumber}-pro`);
         embedCache.del(`embed-${cleanTmdbId}-${seasonNumber}-${episodeNumber}-free`);
+        
+        // Limpiamos catálogo por si acaso
+        catalogCache.flushAll();
+
         console.log(`[Delete] Episodio S${seasonNumber}E${episodeNumber} eliminado de ${cleanTmdbId}`);
 
         res.status(200).json({ message: 'Episodio eliminado.' });
@@ -1480,20 +1549,6 @@ app.get('/api/app-status', (req, res) => {
 
 app.get('/.well-known/assetlinks.json', (req, res) => {
     res.sendFile('assetlinks.json', { root: __dirname });
-});
-
-app.get('/api/extract-link', async (req, res) => {
-    const targetUrl = req.query.url;
-    if (!targetUrl) return res.status(400).json({ success: false, error: "Se requiere parámetro 'url'." });
-    
-    console.log(`[Extractor] Solicitud manual recibida para: ${targetUrl}`);
-    try {
-        const extracted_link = await llamarAlExtractor(targetUrl);
-        res.status(200).json({ success: true, requested_url: targetUrl, extracted_link: extracted_link });
-    } catch (error) {
-        console.error(`[Extractor] Falla en ruta /api/extract-link: ${error.message}`);
-        res.status(500).json({ success: false, error: "Fallo extractor.", details: error.message });
-    }
 });
 
 async function sendNotificationToTopic(title, body, imageUrl, tmdbId, mediaType) {
