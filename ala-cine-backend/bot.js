@@ -1,6 +1,6 @@
-function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_ID, TMDB_API_KEY, RENDER_BACKEND_URL, axios, pinnedCache) { // <--- CAMBIO 1: Recibimos pinnedCache
+function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_ID, TMDB_API_KEY, RENDER_BACKEND_URL, axios, pinnedCache, sendNotificationToTopic) { // <--- CAMBIO: Recibimos sendNotificationToTopic
 
-    console.log("🤖 Lógica del Bot (Full Features + Pinned Refresh + Cache Clear) inicializada...");
+    console.log("🤖 Lógica del Bot (Full Features + Pagos Manuales + Notif Globales) inicializada...");
     
     bot.setMyCommands([
         { command: 'start', description: 'Reiniciar el bot y ver el menú principal' },
@@ -27,6 +27,9 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_ID, TMDB_API_KEY
                         { text: 'Eventos', callback_data: 'eventos' },
                         { text: 'Gestionar películas', callback_data: 'manage_movies' }
                     ], 
+                    // --- NUEVO BOTÓN PARA NOTIFICACIONES GLOBALES ---
+                    [{ text: '📢 Enviar Notificación Global', callback_data: 'send_global_msg' }],
+                    // ------------------------------------------------
                     [{ text: 'Eliminar película', callback_data: 'delete_movie' }]
                 ]
             }
@@ -111,7 +114,37 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
         // === MÁQUINA DE ESTADOS (Lógica de Texto) ===
         // =======================================================================
         
-        if (adminState[chatId] && adminState[chatId].step === 'search_movie') {
+        // --- NUEVO: Lógica de Notificación Global ---
+        if (adminState[chatId] && adminState[chatId].step === 'awaiting_global_msg_text') {
+            const messageBody = userText;
+            
+            bot.sendMessage(chatId, '🚀 Enviando notificación a TODOS los usuarios...');
+            
+            try {
+                // Usamos la función inyectada. topic='all' (o 'general'), specificTopic='all'
+                const result = await sendNotificationToTopic(
+                    "📢 Aviso Importante", // Título fijo o podrías pedirlo también
+                    messageBody,
+                    null, // No imagen
+                    '0',  // No ID
+                    'general', // Tipo
+                    'all' // TOPIC ESPECÍFICO PARA TODOS
+                );
+                
+                if (result.success) {
+                    bot.sendMessage(chatId, '✅ Notificación global enviada con éxito.');
+                } else {
+                    bot.sendMessage(chatId, `⚠️ Error al enviar: ${result.error}`);
+                }
+            } catch (e) {
+                console.error("Error enviando global msg:", e);
+                bot.sendMessage(chatId, '❌ Error crítico al enviar la notificación.');
+            } finally {
+                adminState[chatId] = { step: 'menu' };
+            }
+        }
+        
+        else if (adminState[chatId] && adminState[chatId].step === 'search_movie') {
            try {
                 const searchUrl = `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(userText)}&language=es-ES`;
                 const response = await axios.get(searchUrl);
@@ -381,7 +414,71 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
 
             bot.answerCallbackQuery(callbackQuery.id);
 
-            if (data === 'add_movie') { 
+            // --- NUEVO: PAGO MANUAL - ACTIVAR ---
+            if (data.startsWith('act_man_')) {
+                // Formato: act_man_USERID_DAYS
+                const parts = data.split('_');
+                const userId = parts[2];
+                const daysToAdd = parseInt(parts[3], 10);
+
+                bot.sendMessage(chatId, `⏳ Procesando activación para ID ${userId} por ${daysToAdd} días...`);
+
+                try {
+                    const userRef = db.collection('users').doc(userId);
+                    
+                    await db.runTransaction(async (transaction) => {
+                        const doc = await transaction.get(userRef);
+                        const now = new Date();
+                        let newExpiry;
+
+                        if (doc.exists && doc.data().premiumExpiry) {
+                            const currentExpiry = doc.data().premiumExpiry.toDate();
+                            if (currentExpiry > now) {
+                                // Extender
+                                newExpiry = new Date(currentExpiry.getTime() + (daysToAdd * 24 * 60 * 60 * 1000));
+                            } else {
+                                // Renovación desde hoy
+                                newExpiry = new Date(now.getTime() + (daysToAdd * 24 * 60 * 60 * 1000));
+                            }
+                        } else {
+                            // Nuevo premium
+                            newExpiry = new Date(now.getTime() + (daysToAdd * 24 * 60 * 60 * 1000));
+                        }
+
+                        transaction.set(userRef, { 
+                            isPro: true, 
+                            premiumExpiry: newExpiry 
+                        }, { merge: true });
+                    });
+
+                    // Editamos el mensaje original para que no se pueda volver a clicar
+                    bot.editMessageText(`✅ PREMIUM ACTIVADO\n👤 Usuario: ${userId}\n📅 Días: ${daysToAdd}`, {
+                        chat_id: chatId,
+                        message_id: msg.message_id
+                    });
+
+                } catch (error) {
+                    console.error("Error activando premium manual:", error);
+                    bot.sendMessage(chatId, "❌ Error al actualizar la base de datos.");
+                }
+            }
+
+            // --- NUEVO: PAGO MANUAL - IGNORAR ---
+            else if (data === 'ignore_payment_request') {
+                try {
+                    await bot.deleteMessage(chatId, msg.message_id);
+                } catch (e) {
+                    bot.sendMessage(chatId, "Solicitud descartada.");
+                }
+            }
+
+            // --- NUEVO: BOTÓN DE NOTIFICACIÓN GLOBAL ---
+            else if (data === 'send_global_msg') {
+                adminState[chatId] = { step: 'awaiting_global_msg_text' };
+                bot.sendMessage(chatId, "📝 Escribe el mensaje que deseas enviar a TODOS los usuarios (Notificación Push):");
+            }
+
+            else if (data === 'add_movie') { 
                 adminState[chatId] = { step: 'search_movie' }; 
                 bot.sendMessage(chatId, 'Escribe el nombre de la película a agregar.'); 
             }
