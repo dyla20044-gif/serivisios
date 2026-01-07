@@ -1633,7 +1633,8 @@ async function startServer() {
         RENDER_BACKEND_URL,
         axios,
         pinnedCache,
-        sendNotificationToTopic // <--- NUEVA INYECCIÓN PARA USAR EN FASE 2
+        sendNotificationToTopic,
+        userCache // <--- AÑADIDO: userCache pasado como último argumento para limpieza manual
     );
 
     app.listen(PORT, () => {
