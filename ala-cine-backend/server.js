@@ -1071,6 +1071,50 @@ app.post('/api/rewards/redeem/premium', verifyIdToken, async (req, res) => {
     }
 });
 
+// =========================================================================
+// === NUEVA LÓGICA DE PAGOS MANUALES Y NOTIFICACIÓN AL BOT ===
+// =========================================================================
+
+app.post('/api/payments/request-manual', async (req, res) => {
+    const { userId, username, planName, price } = req.body;
+    
+    // Validaciones básicas
+    if (!userId || !planName) {
+        return res.status(400).json({ error: 'Faltan datos (userId, planName).' });
+    }
+
+    // Determinar duración según el nombre del plan
+    let days = 30; // Default
+    if (planName.includes('3 Meses')) {
+        days = 90;
+    } else if (planName.includes('Anual') || planName.includes('12 Meses')) {
+        days = 365;
+    }
+
+    const message = `⚠️ *SOLICITUD DE ACTIVACIÓN PREMIUM* ⚠️\n\n` +
+                    `👤 *Usuario:* ${username || 'Sin nombre'}\n` +
+                    `🆔 *ID:* \`${userId}\`\n` + 
+                    `📅 *Plan:* ${planName}\n` +
+                    `💰 *Precio:* ${price}`;
+
+    try {
+        await bot.sendMessage(ADMIN_CHAT_ID, message, {
+            parse_mode: 'Markdown',
+            reply_markup: { 
+                inline_keyboard: [
+                    // Enviamos userId y days en el callback_data
+                    [{ text: '✅ Activar Ahora', callback_data: `act_man_${userId}_${days}` }],
+                    [{ text: '❌ Ignorar', callback_data: 'ignore_payment_request' }]
+                ] 
+            }
+        });
+        res.status(200).json({ success: true, message: 'Solicitud enviada al administrador.' });
+    } catch (error) {
+        console.error("Error enviando solicitud de pago al bot:", error);
+        res.status(500).json({ error: 'Error al notificar al administrador.' });
+    }
+});
+
 app.post('/api/rewards/request-diamond', verifyIdToken, async (req, res) => {
     const { uid, email } = req;
     const { gameId, diamonds, costInCoins } = req.body;
@@ -1551,10 +1595,14 @@ app.get('/.well-known/assetlinks.json', (req, res) => {
     res.sendFile('assetlinks.json', { root: __dirname });
 });
 
-async function sendNotificationToTopic(title, body, imageUrl, tmdbId, mediaType) {
-    const topic = 'new_content';
+async function sendNotificationToTopic(title, body, imageUrl, tmdbId, mediaType, specificTopic) {
+    // Si se pasa specificTopic se usa, sino por defecto 'new_content'
+    const topic = specificTopic || 'new_content';
     const dataPayload = {
-        title: title, body: body, tmdbId: tmdbId.toString(), mediaType: mediaType,
+        title: title, 
+        body: body, 
+        tmdbId: tmdbId ? tmdbId.toString() : '0', 
+        mediaType: mediaType || 'general',
         ...(imageUrl && { imageUrl: imageUrl })
     };
     const message = {
@@ -1584,7 +1632,8 @@ async function startServer() {
         TMDB_API_KEY,
         RENDER_BACKEND_URL,
         axios,
-        pinnedCache 
+        pinnedCache,
+        sendNotificationToTopic // <--- NUEVA INYECCIÓN PARA USAR EN FASE 2
     );
 
     app.listen(PORT, () => {
