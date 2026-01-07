@@ -1,6 +1,6 @@
-function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_ID, TMDB_API_KEY, RENDER_BACKEND_URL, axios, pinnedCache, sendNotificationToTopic) { // <--- CAMBIO: Recibimos sendNotificationToTopic
+function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_ID, TMDB_API_KEY, RENDER_BACKEND_URL, axios, pinnedCache, sendNotificationToTopic, userCache) { // <--- CAMBIO: Recibimos userCache al final
 
-    console.log("🤖 Lógica del Bot (Full Features + Pagos Manuales + Notif Globales) inicializada...");
+    console.log("🤖 Lógica del Bot (Full Features + Pagos Manuales Instantáneos + Notif Globales) inicializada...");
     
     bot.setMyCommands([
         { command: 'start', description: 'Reiniciar el bot y ver el menú principal' },
@@ -414,7 +414,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
 
             bot.answerCallbackQuery(callbackQuery.id);
 
-            // --- NUEVO: PAGO MANUAL - ACTIVAR ---
+            // --- NUEVO: PAGO MANUAL - ACTIVAR (CON LATENCIA CERO) ---
             if (data.startsWith('act_man_')) {
                 // Formato: act_man_USERID_DAYS
                 const parts = data.split('_');
@@ -451,8 +451,17 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                         }, { merge: true });
                     });
 
+                    // --- MEJORA CRÍTICA: BORRADO DE CACHÉ ---
+                    if (userCache) {
+                        userCache.del(userId);
+                        console.log(`[Bot] ✅ Caché de usuario ${userId} purgada tras activación manual. El usuario verá el cambio inmediatamente.`);
+                    } else {
+                        console.warn(`[Bot] ⚠️ No se recibió userCache, el usuario podría experimentar latencia.`);
+                    }
+                    // ----------------------------------------
+
                     // Editamos el mensaje original para que no se pueda volver a clicar
-                    bot.editMessageText(`✅ PREMIUM ACTIVADO\n👤 Usuario: ${userId}\n📅 Días: ${daysToAdd}`, {
+                    bot.editMessageText(`✅ PREMIUM ACTIVADO\n👤 Usuario: ${userId}\n📅 Días: ${daysToAdd}\n⚡ Caché limpiada (Acceso inmediato)`, {
                         chat_id: chatId,
                         message_id: msg.message_id
                     });
