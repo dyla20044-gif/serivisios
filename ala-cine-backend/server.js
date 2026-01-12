@@ -11,6 +11,8 @@ const initializeBot = require('./bot.js');
 const crypto = require('crypto');
 const cron = require('node-cron');
 const NodeCache = require('node-cache');
+const fs = require('fs'); // <--- NUEVO: Para manejar archivos
+const path = require('path'); // <--- NUEVO: Para manejar rutas de archivos
 
 // --- CACHÉS ---
 // Cachés existentes
@@ -1580,6 +1582,32 @@ app.post('/api/notify-new-content', async (req, res) => {
         res.status(500).json({ success: false, error: "Error interno del servidor al procesar la notificación." });
     }
 });
+
+// =========================================================================
+// === NUEVA RUTA PARA COMUNICADOS GLOBALES (CMS) ===
+// =========================================================================
+app.get('/api/announcement', (req, res) => {
+    const filePath = path.join(__dirname, 'globalAnnouncement.json');
+
+    // Comprobar si el archivo existe
+    if (!fs.existsSync(filePath)) {
+        return res.status(204).send(); // 204 No Content (No hay anuncio)
+    }
+
+    try {
+        const data = fs.readFileSync(filePath, 'utf8');
+        if (!data) {
+            return res.status(204).send();
+        }
+        const json = JSON.parse(data);
+        return res.status(200).json(json);
+    } catch (error) {
+        console.error("Error leyendo anuncio global:", error);
+        // Si hay error leyendo el archivo, asumimos que no hay anuncio válido
+        return res.status(204).send();
+    }
+});
+// =========================================================================
 
 app.get('/api/app-update', (req, res) => {
     const updateInfo = { "latest_version_code": 12, "update_url": "https://play.google.com/store/apps/details?id=com.salacine.app&pcampaignid=web_share", "force_update": false, "update_message": "¡Nueva versión (1.5.2) de Sala Cine disponible! Incluye mejoras de rendimiento. Actualiza ahora." };
