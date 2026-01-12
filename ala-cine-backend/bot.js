@@ -1,10 +1,8 @@
 const fs = require('fs');
 const path = require('path');
 
-function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_ID, TMDB_API_KEY, RENDER_BACKEND_URL, axios, pinnedCache, sendNotificationToTopic, userCache) { 
+function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_ID, TMDB_API_KEY, RENDER_BACKEND_URL, axios, pinnedCache, sendNotificationToTopic, userCache) {
 
-    console.log("🤖 Lógica del Bot (Full Features + CMS Comunicados + Pagos) inicializada...");
-    
     bot.setMyCommands([
         { command: 'start', description: 'Reiniciar el bot y ver el menú principal' },
         { command: 'subir', description: 'Subir una película o serie a la base de datos' },
@@ -15,7 +13,7 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_ID, TMDB_API_KEY
     bot.onText(/\/start|\/subir/, (msg) => {
         const chatId = msg.chat.id;
         if (chatId !== ADMIN_CHAT_ID) {
-            return; 
+            return;
         }
         adminState[chatId] = { step: 'menu' };
         const options = {
@@ -29,10 +27,8 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_ID, TMDB_API_KEY
                     [
                         { text: 'Eventos', callback_data: 'eventos' },
                         { text: 'Gestionar películas', callback_data: 'manage_movies' }
-                    ], 
-                    // --- NUEVO: GESTIÓN DE COMUNICADOS (CMS) ---
+                    ],
                     [{ text: '📡 Gestionar Comunicados (App)', callback_data: 'cms_announcement_menu' }],
-                    // -------------------------------------------
                     [{ text: '📢 Enviar Notificación Global', callback_data: 'send_global_msg' }],
                     [{ text: 'Eliminar película', callback_data: 'delete_movie' }]
                 ]
@@ -47,21 +43,19 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_ID, TMDB_API_KEY
         );
         const isNotAdmin = msg.from.id !== ADMIN_CHAT_ID;
 
-        // --- Moderación de Enlaces ---
         if (hasLinks && isNotAdmin) {
             try {
                 await bot.deleteMessage(msg.chat.id, msg.message_id);
                 const warningMessage = await bot.sendMessage(
-                    msg.chat.id, 
+                    msg.chat.id,
                     `@${msg.from.username || msg.from.first_name}, no se permite enviar enlaces en este grupo.`
                 );
                 setTimeout(() => {
-                    bot.deleteMessage(warningMessage.chat.id, warningMessage.message_id).catch(e => console.warn("No se pudo borrar el aviso de moderación."));
+                    bot.deleteMessage(warningMessage.chat.id, warningMessage.message_id).catch(e => { });
                 }, 5000);
             } catch (error) {
-                console.warn(`[Moderación] No se pudo borrar el enlace del usuario ${msg.from.id} en el chat ${msg.chat.id}.`);
             }
-            return; 
+            return;
         }
 
         const chatId = msg.chat.id;
@@ -71,7 +65,6 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_ID, TMDB_API_KEY
             return;
         }
 
-        // --- Comandos Públicos ---
         if (userText.startsWith('/')) {
             const command = userText.split(' ')[0];
 
@@ -92,37 +85,30 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
 /contacto - Contactar con el desarrollador.
 `;
                     bot.sendMessage(chatId, helpMessage, { parse_mode: 'Markdown' });
-                    return; 
+                    return;
                 }
-                
+
                 if (command === '/contacto') {
                     bot.sendMessage(chatId, 'Para soporte o dudas, puedes contactar al desarrollador en: @TuUsuarioDeTelegram');
-                    return; 
+                    return;
                 }
             }
         }
-        
-        // --- Bloqueo de No Admins ---
+
         if (chatId !== ADMIN_CHAT_ID) {
-             if (userText.startsWith('/')) {
-                 bot.sendMessage(chatId, 'Lo siento, no tienes permiso para usar este comando.');
-             }
+            if (userText.startsWith('/')) {
+                bot.sendMessage(chatId, 'Lo siento, no tienes permiso para usar este comando.');
+            }
             return;
         }
 
         if (userText.startsWith('/')) {
-            return; 
-        }      
+            return;
+        }
 
-        // =======================================================================
-        // === MÁQUINA DE ESTADOS (Lógica de Texto) ===
-        // =======================================================================
-        
-        // --- NUEVO: WIZARD DE COMUNICADOS (CMS) ---
         if (adminState[chatId] && adminState[chatId].step && adminState[chatId].step.startsWith('cms_')) {
             const step = adminState[chatId].step;
-            
-            // Paso 2: Recibir URL del Media
+
             if (step === 'cms_await_media_url') {
                 if (!userText.startsWith('http')) {
                     bot.sendMessage(chatId, '❌ Por favor envía una URL válida (empieza con http).');
@@ -132,44 +118,42 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 adminState[chatId].step = 'cms_await_title';
                 bot.sendMessage(chatId, '✅ URL Guardada.\n\n📝 Ahora escribe el **TÍTULO** del anuncio:');
             }
-            // Paso 3: Recibir Título
             else if (step === 'cms_await_title') {
                 adminState[chatId].tempAnnouncement.title = userText;
                 adminState[chatId].step = 'cms_await_body';
                 bot.sendMessage(chatId, '✅ Título Guardado.\n\n📝 Ahora escribe el **MENSAJE (Cuerpo)** del anuncio:');
             }
-            // Paso 4: Recibir Cuerpo
             else if (step === 'cms_await_body') {
                 adminState[chatId].tempAnnouncement.message = userText;
                 adminState[chatId].step = 'cms_await_btn_text';
                 bot.sendMessage(chatId, '✅ Cuerpo Guardado.\n\n🔘 Escribe el texto del **BOTÓN** (Ej: "Ver ahora", "Más info"):');
             }
-            // Paso 5: Recibir Texto Botón
             else if (step === 'cms_await_btn_text') {
                 adminState[chatId].tempAnnouncement.buttonText = userText;
                 adminState[chatId].step = 'cms_await_action_url';
                 bot.sendMessage(chatId, '✅ Botón Guardado.\n\n🔗 Finalmente, envía la **URL DE ACCIÓN** (A donde lleva el botón):');
             }
-            // Paso 6: Recibir URL Acción y Confirmar
             else if (step === 'cms_await_action_url') {
                 if (!userText.startsWith('http')) {
                     bot.sendMessage(chatId, '❌ Envía una URL válida.');
                     return;
                 }
                 adminState[chatId].tempAnnouncement.actionUrl = userText;
-                
-                // Mostrar Resumen
+
                 const ann = adminState[chatId].tempAnnouncement;
+                let mediaDisplay = `🔗 **Media:** [Ver Link](${ann.mediaUrl})`;
+                if (ann.mediaType === 'text') mediaDisplay = "📄 **Tipo:** Solo Texto";
+
                 const summary = `📢 *RESUMEN DEL ANUNCIO*\n\n` +
-                                `🎬 **Tipo:** ${ann.mediaType}\n` +
-                                `🔗 **Media:** [Ver Link](${ann.mediaUrl})\n` +
-                                `📌 **Título:** ${ann.title}\n` +
-                                `📝 **Cuerpo:** ${ann.message}\n` +
-                                `🔘 **Botón:** ${ann.buttonText}\n` +
-                                `🚀 **Acción:** [Ver Link](${ann.actionUrl})`;
-                                
+                    `🎬 **Tipo:** ${ann.mediaType}\n` +
+                    `${mediaDisplay}\n` +
+                    `📌 **Título:** ${ann.title}\n` +
+                    `📝 **Cuerpo:** ${ann.message}\n` +
+                    `🔘 **Botón:** ${ann.buttonText}\n` +
+                    `🚀 **Acción:** [Ver Link](${ann.actionUrl})`;
+
                 adminState[chatId].step = 'cms_confirm_save';
-                
+
                 bot.sendMessage(chatId, summary, {
                     parse_mode: 'Markdown',
                     reply_markup: {
@@ -181,23 +165,22 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 });
             }
         }
-        
-        // --- Notificación Global (Push manual anterior) ---
+
         else if (adminState[chatId] && adminState[chatId].step === 'awaiting_global_msg_text') {
             const messageBody = userText;
-            
+
             bot.sendMessage(chatId, '🚀 Enviando notificación a TODOS los usuarios...');
-            
+
             try {
                 const result = await sendNotificationToTopic(
-                    "📢 Aviso Importante", 
+                    "📢 Aviso Importante",
                     messageBody,
-                    null, 
-                    '0',  
-                    'general', 
-                    'all' 
+                    null,
+                    '0',
+                    'general',
+                    'all'
                 );
-                
+
                 if (result.success) {
                     bot.sendMessage(chatId, '✅ Notificación global enviada con éxito.');
                 } else {
@@ -210,9 +193,9 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 adminState[chatId] = { step: 'menu' };
             }
         }
-        
+
         else if (adminState[chatId] && adminState[chatId].step === 'search_movie') {
-           try {
+            try {
                 const searchUrl = `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(userText)}&language=es-ES`;
                 const response = await axios.get(searchUrl);
                 const data = response.data;
@@ -231,7 +214,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                     }
                 } else { bot.sendMessage(chatId, `No se encontraron resultados. Intenta de nuevo.`); }
             } catch (error) { console.error("Error buscando en TMDB (movie):", error); bot.sendMessage(chatId, 'Error buscando. Intenta de nuevo.'); }
-        
+
         } else if (adminState[chatId] && adminState[chatId].step === 'search_series') {
             try {
                 const searchUrl = `https://api.themoviedb.org/3/search/tv?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(userText)}&language=es-ES`;
@@ -252,77 +235,81 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                     }
                 } else { bot.sendMessage(chatId, `No se encontraron resultados. Intenta de nuevo.`); }
             } catch (error) { console.error("Error buscando en TMDB (series):", error); bot.sendMessage(chatId, 'Error buscando. Intenta de nuevo.'); }
-        
+
         } else if (adminState[chatId] && adminState[chatId].step === 'search_manage') {
-             try {
+            try {
                 const searchUrl = `https://api.themoviedb.org/3/search/multi?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(userText)}&language=es-ES`;
                 const response = await axios.get(searchUrl);
                 const data = response.data;
                 if (data.results?.length > 0) {
-                     const results = data.results.slice(0, 5).filter(m => m.media_type === 'movie' || m.media_type === 'tv');
-                     if (results.length === 0) { bot.sendMessage(chatId, `No se encontraron películas o series.`); return; }
-                     for (const item of results) {
-                         const posterUrl = item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : 'https://placehold.co/500x750?text=No+Poster';
-                         const title = item.title || item.name;
-                         const date = item.release_date || item.first_air_date;
-                         const message = `🎬 *${title}* (${date ? date.substring(0, 4) : 'N/A'})\n\n${item.overview || 'Sin sinopsis.'}`;
-                         const callback_manage = item.media_type === 'movie' ? `manage_movie_${item.id}` : `manage_series_${item.id}`;
-                         const options = { caption: message, parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{
-                             text: '✅ Gestionar Este', callback_data: callback_manage
-                         }]]}};
-                         bot.sendPhoto(chatId, posterUrl, options);
-                     }
-                 } else { bot.sendMessage(chatId, `No se encontraron resultados.`); }
-             } catch (error) { console.error("Error buscando para gestion:", error); bot.sendMessage(chatId, 'Error buscando.'); }
+                    const results = data.results.slice(0, 5).filter(m => m.media_type === 'movie' || m.media_type === 'tv');
+                    if (results.length === 0) { bot.sendMessage(chatId, `No se encontraron películas o series.`); return; }
+                    for (const item of results) {
+                        const posterUrl = item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : 'https://placehold.co/500x750?text=No+Poster';
+                        const title = item.title || item.name;
+                        const date = item.release_date || item.first_air_date;
+                        const message = `🎬 *${title}* (${date ? date.substring(0, 4) : 'N/A'})\n\n${item.overview || 'Sin sinopsis.'}`;
+                        const callback_manage = item.media_type === 'movie' ? `manage_movie_${item.id}` : `manage_series_${item.id}`;
+                        const options = {
+                            caption: message, parse_mode: 'Markdown', reply_markup: {
+                                inline_keyboard: [[{
+                                    text: '✅ Gestionar Este', callback_data: callback_manage
+                                }]]
+                            }
+                        };
+                        bot.sendPhoto(chatId, posterUrl, options);
+                    }
+                } else { bot.sendMessage(chatId, `No se encontraron resultados.`); }
+            } catch (error) { console.error("Error buscando para gestion:", error); bot.sendMessage(chatId, 'Error buscando.'); }
 
         } else if (adminState[chatId] && adminState[chatId].step === 'search_delete') {
-             try {
-                 const searchUrl = `https://api.themoviedb.org/3/search/multi?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(userText)}&language=es-ES`;
-                 const response = await axios.get(searchUrl);
-                 const data = response.data;
-                 if (data.results?.length > 0) {
-                     const results = data.results.slice(0, 5).filter(m => m.media_type === 'movie' || m.media_type === 'tv');
-                     if (results.length === 0) { bot.sendMessage(chatId, `No se encontraron películas o series.`); return; }
-                     for (const item of results) {
-                         const posterUrl = item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : 'https://placehold.co/500x750?text=No+Poster';
-                         const title = item.title || item.name;
-                         const date = item.release_date || item.first_air_date;
-                         const message = `🎬 *${title}* (${date ? date.substring(0, 4) : 'N/A'})\n\n${item.overview || 'Sin sinopsis.'}`;
-                         const options = { caption: message, parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{
-                             text: '🗑️ Confirmar Eliminación', callback_data: `delete_confirm_${item.id}_${item.media_type}`
-                         }]]}};
-                         bot.sendPhoto(chatId, posterUrl, options);
-                     }
-                 } else { bot.sendMessage(chatId, `No se encontraron resultados.`); }
-             } catch (error) { console.error("Error buscando para eliminar:", error); bot.sendMessage(chatId, 'Error buscando.'); }
+            try {
+                const searchUrl = `https://api.themoviedb.org/3/search/multi?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(userText)}&language=es-ES`;
+                const response = await axios.get(searchUrl);
+                const data = response.data;
+                if (data.results?.length > 0) {
+                    const results = data.results.slice(0, 5).filter(m => m.media_type === 'movie' || m.media_type === 'tv');
+                    if (results.length === 0) { bot.sendMessage(chatId, `No se encontraron películas o series.`); return; }
+                    for (const item of results) {
+                        const posterUrl = item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : 'https://placehold.co/500x750?text=No+Poster';
+                        const title = item.title || item.name;
+                        const date = item.release_date || item.first_air_date;
+                        const message = `🎬 *${title}* (${date ? date.substring(0, 4) : 'N/A'})\n\n${item.overview || 'Sin sinopsis.'}`;
+                        const options = {
+                            caption: message, parse_mode: 'Markdown', reply_markup: {
+                                inline_keyboard: [[{
+                                    text: '🗑️ Confirmar Eliminación', callback_data: `delete_confirm_${item.id}_${item.media_type}`
+                                }]]
+                            }
+                        };
+                        bot.sendPhoto(chatId, posterUrl, options);
+                    }
+                } else { bot.sendMessage(chatId, `No se encontraron resultados.`); }
+            } catch (error) { console.error("Error buscando para eliminar:", error); bot.sendMessage(chatId, 'Error buscando.'); }
         }
-        
-        // --- Lógica de Eventos ---
+
         else if (adminState[chatId] && adminState[chatId].step === 'awaiting_event_image') {
             if (!userText.startsWith('http')) { bot.sendMessage(chatId, '❌ Envía un ENLACE (URL) de imagen válido.'); return; }
             adminState[chatId].imageUrl = userText;
             adminState[chatId].step = 'awaiting_event_description';
             bot.sendMessage(chatId, 'Enlace recibido! Ahora envía la DESCRIPCIÓN.');
         } else if (adminState[chatId] && adminState[chatId].step === 'awaiting_event_description') {
-           const { imageUrl } = adminState[chatId];
+            const { imageUrl } = adminState[chatId];
             const description = userText;
             try {
                 bot.sendMessage(chatId, '✅ Evento guardado y listo para notificar.');
-            } catch (error) { 
+            } catch (error) {
                 bot.sendMessage(chatId, '❌ Error guardando evento.');
             }
             finally { adminState[chatId] = { step: 'menu' }; }
         }
-        
-        // =======================================================================
-        // === NUEVA LÓGICA DE UN SÓLO ENLACE (PELÍCULAS) + PINNED + ORIGIN ===
-        // =======================================================================
+
         else if (adminState[chatId] && adminState[chatId].step === 'awaiting_unified_link_movie') {
             const { selectedMedia } = adminState[chatId];
-            if (!selectedMedia?.id) { 
-                bot.sendMessage(chatId, 'Error: Se perdieron los datos de la película.'); 
-                adminState[chatId] = { step: 'menu' }; 
-                return; 
+            if (!selectedMedia?.id) {
+                bot.sendMessage(chatId, 'Error: Se perdieron los datos de la película.');
+                adminState[chatId] = { step: 'menu' };
+                return;
             }
             const linkInput = userText.trim();
             const finalLink = linkInput.toLowerCase() === 'no' ? null : linkInput;
@@ -331,31 +318,26 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 bot.sendMessage(chatId, '❌ Debes enviar al menos un enlace válido. Escribe el enlace.');
                 return;
             }
-            
-            // --- PREPARAR DATOS (Aún no guardamos, falta preguntar si es Pinned) ---
+
             adminState[chatId].movieDataToSave = {
                 tmdbId: selectedMedia.id.toString(),
                 title: selectedMedia.title,
                 overview: selectedMedia.overview,
                 poster_path: selectedMedia.poster_path,
-                backdrop_path: selectedMedia.backdrop_path, 
+                backdrop_path: selectedMedia.backdrop_path,
                 proEmbedCode: finalLink,
                 freeEmbedCode: finalLink,
                 isPremium: false,
-                // --- METADATOS CLAVE ---
                 genres: selectedMedia.genres || [],
                 release_date: selectedMedia.release_date,
                 popularity: selectedMedia.popularity,
                 vote_average: selectedMedia.vote_average,
-                // NUEVO: País (Para K-Dramas)
                 origin_country: selectedMedia.origin_country || [],
-                // Default: no pinned
                 isPinned: false
             };
 
-            // NUEVO PASO: Preguntar por "Destacados"
             adminState[chatId].step = 'awaiting_pinned_choice_movie';
-            
+
             bot.sendMessage(chatId, `✅ Enlace recibido.\n\n⭐ **¿Deseas FIJAR esta película en DESTACADOS (Top)?**`, {
                 reply_markup: {
                     inline_keyboard: [
@@ -368,15 +350,12 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
             });
         }
 
-        // =======================================================================
-        // === NUEVA LÓGICA DE UN SÓLO ENLACE (SERIES) + PINNED + ORIGIN ===
-        // =======================================================================
         else if (adminState[chatId] && adminState[chatId].step === 'awaiting_unified_link_series') {
-            const { selectedSeries, season, episode, totalEpisodesInSeason } = adminState[chatId]; 
-            if (!selectedSeries) { 
-                bot.sendMessage(chatId, 'Error: Se perdieron los datos de la serie.'); 
-                adminState[chatId] = { step: 'menu' }; 
-                return; 
+            const { selectedSeries, season, episode, totalEpisodesInSeason } = adminState[chatId];
+            if (!selectedSeries) {
+                bot.sendMessage(chatId, 'Error: Se perdieron los datos de la serie.');
+                adminState[chatId] = { step: 'menu' };
+                return;
             }
 
             const linkInput = userText.trim();
@@ -387,7 +366,6 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 return;
             }
 
-            // --- PREPARAR DATOS (No guardar aún) ---
             adminState[chatId].seriesDataToSave = {
                 tmdbId: (selectedSeries.tmdbId || selectedSeries.id).toString(),
                 title: selectedSeries.title || selectedSeries.name,
@@ -398,17 +376,14 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 proEmbedCode: finalLink,
                 freeEmbedCode: finalLink,
                 isPremium: false,
-                // --- METADATOS CLAVE ---
                 genres: selectedSeries.genres || [],
                 first_air_date: selectedSeries.first_air_date,
                 popularity: selectedSeries.popularity,
                 vote_average: selectedSeries.vote_average,
-                // NUEVO: País y Pinned
                 origin_country: selectedSeries.origin_country || [],
                 isPinned: false
             };
 
-            // NUEVO PASO: Preguntar por "Destacados"
             adminState[chatId].step = 'awaiting_pinned_choice_series';
 
             bot.sendMessage(chatId, `✅ Enlace recibido para S${season}E${episode}.\n\n⭐ **¿Deseas FIJAR esta serie en DESTACADOS (Top)?**`, {
@@ -422,8 +397,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 }
             });
         }
-        
-        // --- EDICIÓN (Mantenida igual) ---
+
         else if (adminState[chatId] && adminState[chatId].step === 'awaiting_edit_movie_link') {
             const { tmdbId, isPro } = adminState[chatId];
             const linkInput = userText.trim();
@@ -432,8 +406,8 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
             const movieDataToUpdate = {
                 tmdbId: tmdbId,
                 proEmbedCode: linkInput,
-                freeEmbedCode: linkInput, 
-                isPremium: false 
+                freeEmbedCode: linkInput,
+                isPremium: false
             };
 
             try {
@@ -446,17 +420,13 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
         }
     });
 
-    // =======================================================================
-    // === MANEJADOR DE BOTONES (CALLBACK_QUERY) ===
-    // =======================================================================
     bot.on('callback_query', async (callbackQuery) => {
         const msg = callbackQuery.message;
         const data = callbackQuery.data;
         const chatId = msg.chat.id;
 
         try {
-            
-            // --- LÓGICA PÚBLICA ---
+
             if (data === 'public_help') {
                 bot.answerCallbackQuery(callbackQuery.id);
                 const helpMessage = `👋 ¡Hola! Soy un Bot de Auto-Aceptación de Solicitudes.
@@ -466,14 +436,13 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 bot.sendMessage(chatId, helpMessage, { parse_mode: 'Markdown' });
                 return;
             }
-            
+
             if (data === 'public_contact') {
                 bot.answerCallbackQuery(callbackQuery.id);
                 bot.sendMessage(chatId, 'Para soporte o dudas, puedes contactar al desarrollador en: @TuUsuarioDeTelegram');
                 return;
             }
-            
-            // --- LÓGICA DE ADMIN ---
+
             if (chatId !== ADMIN_CHAT_ID) {
                 bot.answerCallbackQuery(callbackQuery.id, { text: 'No tienes permiso.', show_alert: true });
                 return;
@@ -481,44 +450,51 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
 
             bot.answerCallbackQuery(callbackQuery.id);
 
-            // =================================================================
-            // === LÓGICA DE COMUNICADOS (CMS) ===
-            // =================================================================
-            
             if (data === 'cms_announcement_menu') {
                 const options = {
                     reply_markup: {
                         inline_keyboard: [
                             [{ text: '🆕 Crear Nuevo', callback_data: 'cms_create_new' }],
                             [{ text: '🗑️ Borrar Actual', callback_data: 'cms_delete_current' }],
-                            [{ text: '👀 Ver Actual (JSON)', callback_data: 'cms_view_current' }],
-                            [{ text: '⬅️ Volver', callback_data: 'back_to_menu' }] // Para volver, o simplemente reinicia con /start
+                            [{ text: '👀 Ver JSON Actual', callback_data: 'cms_view_current' }],
+                            [{ text: '⬅️ Volver', callback_data: 'back_to_menu' }]
                         ]
                     }
                 };
-                bot.sendMessage(chatId, '📡 **Gestor de Comunicados Globales**\n\nAquí puedes crear anuncios que aparecerán en la pantalla principal de la App.', { parse_mode: 'Markdown', ...options });
+                bot.sendMessage(chatId, '📡 **Gestor de Comunicados Globales**\n\nAquí puedes crear anuncios multimedia para la App.', { parse_mode: 'Markdown', ...options });
             }
 
             else if (data === 'cms_create_new') {
-                adminState[chatId] = { 
-                    step: 'cms_await_media_type', 
-                    tempAnnouncement: {} 
+                adminState[chatId] = {
+                    step: 'cms_await_media_type',
+                    tempAnnouncement: {}
                 };
-                bot.sendMessage(chatId, '🛠️ **Creando Nuevo Anuncio**\n\nSelecciona el tipo de media:', {
+                bot.sendMessage(chatId, '🛠️ **Creando Nuevo Anuncio**\n\nSelecciona el formato:', {
                     reply_markup: {
                         inline_keyboard: [
-                            [{ text: '🖼️ Imagen', callback_data: 'cms_type_image' }],
-                            [{ text: '🎬 Video', callback_data: 'cms_type_video' }]
+                            [{ text: '🎬 Video (MP4/M3U8)', callback_data: 'cms_type_video' }],
+                            [{ text: '🖼️ Imagen (JPG/PNG)', callback_data: 'cms_type_image' }],
+                            [{ text: '📝 Solo Texto', callback_data: 'cms_type_text' }]
                         ]
                     }
                 });
             }
 
-            else if (data === 'cms_type_image' || data === 'cms_type_video') {
-                const type = data === 'cms_type_image' ? 'image' : 'video';
+            else if (data === 'cms_type_image' || data === 'cms_type_video' || data === 'cms_type_text') {
+                let type = 'text';
+                if (data === 'cms_type_image') type = 'image';
+                if (data === 'cms_type_video') type = 'video';
+
                 adminState[chatId].tempAnnouncement.mediaType = type;
-                adminState[chatId].step = 'cms_await_media_url';
-                bot.sendMessage(chatId, `✅ Seleccionado: ${type.toUpperCase()}.\n\n🔗 Envía la **URL** directa del media:`);
+
+                if (type === 'text') {
+                    adminState[chatId].step = 'cms_await_title';
+                    bot.sendMessage(chatId, '✅ Formato: Solo Texto.\n\n📝 Escribe el **TÍTULO** del anuncio:');
+                } else {
+                    adminState[chatId].step = 'cms_await_media_url';
+                    const tipoMsg = type === 'video' ? 'del VIDEO (mp4, m3u8)' : 'de la IMAGEN';
+                    bot.sendMessage(chatId, `✅ Formato: ${type.toUpperCase()}.\n\n🔗 Envía la **URL** directa ${tipoMsg}:`);
+                }
             }
 
             else if (data === 'cms_delete_current') {
@@ -530,12 +506,12 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                     bot.sendMessage(chatId, '⚠️ No había comunicado activo.');
                 }
             }
-            
+
             else if (data === 'cms_view_current') {
                 const filePath = path.join(__dirname, 'globalAnnouncement.json');
                 if (fs.existsSync(filePath)) {
                     const content = fs.readFileSync(filePath, 'utf8');
-                    bot.sendMessage(chatId, `📄 **Contenido Actual:**\n\`${content}\``, { parse_mode: 'Markdown' });
+                    bot.sendMessage(chatId, `📄 **JSON Actual en Servidor:**\n\`${content}\``, { parse_mode: 'Markdown' });
                 } else {
                     bot.sendMessage(chatId, '📭 No hay comunicado activo.');
                 }
@@ -544,42 +520,39 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
             else if (data === 'cms_save_confirm') {
                 const announcement = adminState[chatId].tempAnnouncement;
                 const filePath = path.join(__dirname, 'globalAnnouncement.json');
-                
+
                 try {
-                    // Generar el JSON final
-                    const jsonToSave = {
-                        id: Date.now().toString(), // ID único basado en timestamp
-                        mediaType: announcement.mediaType,
-                        mediaUrl: announcement.mediaUrl,
+                    let jsonToSave = {
+                        id: Date.now().toString(),
                         title: announcement.title,
                         message: announcement.message,
-                        buttonText: announcement.buttonText,
-                        actionUrl: announcement.actionUrl,
-                        isDismissible: true // Por defecto
+                        btnText: announcement.buttonText,
+                        actionUrl: announcement.actionUrl
                     };
-                    
+
+                    if (announcement.mediaType === 'video') {
+                        jsonToSave.videoUrl = announcement.mediaUrl;
+                    } else if (announcement.mediaType === 'image') {
+                        jsonToSave.imageUrl = announcement.mediaUrl;
+                    }
+
                     fs.writeFileSync(filePath, JSON.stringify(jsonToSave, null, 2));
-                    bot.sendMessage(chatId, '✅ **¡Comunicado Publicado!**\nLa App lo cargará automáticamente.');
+
+                    bot.sendMessage(chatId, '✅ **¡Comunicado Publicado Correctamente!**\n\nEl JSON ha sido generado con el formato que el Frontend espera.');
                     adminState[chatId] = { step: 'menu' };
-                    
+
                 } catch (err) {
                     console.error("CMS Save Error:", err);
                     bot.sendMessage(chatId, '❌ Error al guardar el archivo JSON.');
                 }
             }
-            
+
             else if (data === 'cms_cancel') {
-                 adminState[chatId] = { step: 'menu' };
-                 bot.sendMessage(chatId, '❌ Operación cancelada.');
+                adminState[chatId] = { step: 'menu' };
+                bot.sendMessage(chatId, '❌ Operación cancelada.');
             }
 
-            // =================================================================
-            // === FIN LÓGICA CMS ===
-            // =================================================================
-
-            // --- NUEVO: PAGO MANUAL - ACTIVAR (CON LATENCIA CERO) ---
             else if (data.startsWith('act_man_')) {
-                // Formato: act_man_USERID_DAYS
                 const parts = data.split('_');
                 const userId = parts[2];
                 const daysToAdd = parseInt(parts[3], 10);
@@ -588,7 +561,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
 
                 try {
                     const userRef = db.collection('users').doc(userId);
-                    
+
                     await db.runTransaction(async (transaction) => {
                         const doc = await transaction.get(userRef);
                         const now = new Date();
@@ -597,33 +570,25 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                         if (doc.exists && doc.data().premiumExpiry) {
                             const currentExpiry = doc.data().premiumExpiry.toDate();
                             if (currentExpiry > now) {
-                                // Extender
                                 newExpiry = new Date(currentExpiry.getTime() + (daysToAdd * 24 * 60 * 60 * 1000));
                             } else {
-                                // Renovación desde hoy
                                 newExpiry = new Date(now.getTime() + (daysToAdd * 24 * 60 * 60 * 1000));
                             }
                         } else {
-                            // Nuevo premium
                             newExpiry = new Date(now.getTime() + (daysToAdd * 24 * 60 * 60 * 1000));
                         }
 
-                        transaction.set(userRef, { 
-                            isPro: true, 
-                            premiumExpiry: newExpiry 
+                        transaction.set(userRef, {
+                            isPro: true,
+                            premiumExpiry: newExpiry
                         }, { merge: true });
                     });
 
-                    // --- MEJORA CRÍTICA: BORRADO DE CACHÉ ---
                     if (userCache) {
                         userCache.del(userId);
-                        console.log(`[Bot] ✅ Caché de usuario ${userId} purgada tras activación manual. El usuario verá el cambio inmediatamente.`);
-                    } else {
-                        console.warn(`[Bot] ⚠️ No se recibió userCache, el usuario podría experimentar latencia.`);
+                        console.log(`[Bot] ✅ Caché de usuario ${userId} purgada tras activación manual.`);
                     }
-                    // ----------------------------------------
 
-                    // Editamos el mensaje original para que no se pueda volver a clicar
                     bot.editMessageText(`✅ PREMIUM ACTIVADO\n👤 Usuario: ${userId}\n📅 Días: ${daysToAdd}\n⚡ Caché limpiada (Acceso inmediato)`, {
                         chat_id: chatId,
                         message_id: msg.message_id
@@ -635,7 +600,6 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 }
             }
 
-            // --- NUEVO: PAGO MANUAL - IGNORAR ---
             else if (data === 'ignore_payment_request') {
                 try {
                     await bot.deleteMessage(chatId, msg.message_id);
@@ -644,26 +608,24 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 }
             }
 
-            // --- NUEVO: BOTÓN DE NOTIFICACIÓN GLOBAL ---
             else if (data === 'send_global_msg') {
                 adminState[chatId] = { step: 'awaiting_global_msg_text' };
                 bot.sendMessage(chatId, "📝 Escribe el mensaje que deseas enviar a TODOS los usuarios (Notificación Push):");
             }
 
-            else if (data === 'add_movie') { 
-                adminState[chatId] = { step: 'search_movie' }; 
-                bot.sendMessage(chatId, 'Escribe el nombre de la película a agregar.'); 
+            else if (data === 'add_movie') {
+                adminState[chatId] = { step: 'search_movie' };
+                bot.sendMessage(chatId, 'Escribe el nombre de la película a agregar.');
             }
-            else if (data === 'add_series') { 
-                adminState[chatId] = { step: 'search_series' }; 
-                bot.sendMessage(chatId, 'Escribe el nombre del serie a agregar.'); 
+            else if (data === 'add_series') {
+                adminState[chatId] = { step: 'search_series' };
+                bot.sendMessage(chatId, 'Escribe el nombre del serie a agregar.');
             }
-            else if (data === 'eventos') { 
-                adminState[chatId] = { step: 'awaiting_event_image' }; 
-                bot.sendMessage(chatId, 'Envía el ENLACE (URL) de la imagen para el evento.'); 
+            else if (data === 'eventos') {
+                adminState[chatId] = { step: 'awaiting_event_image' };
+                bot.sendMessage(chatId, 'Envía el ENLACE (URL) de la imagen para el evento.');
             }
-            
-            // --- GESTIÓN DE PEDIDOS (Sin cambios) ---
+
             else if (data === 'view_requests_menu') {
                 const options = {
                     reply_markup: {
@@ -678,7 +640,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 bot.sendMessage(chatId, '📂 *Filtrar Pedidos por Prioridad:*', { parse_mode: 'Markdown', ...options });
             }
             else if (data.startsWith('req_filter_')) {
-                const filterType = data.split('_')[2]; 
+                const filterType = data.split('_')[2];
                 let query = {};
                 let titleMsg = '';
 
@@ -696,7 +658,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 try {
                     const requests = await mongoDb.collection('movie_requests')
                         .find(query)
-                        .sort({ votes: -1 }) 
+                        .sort({ votes: -1 })
                         .limit(10)
                         .toArray();
 
@@ -724,7 +686,6 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 }
             }
 
-            // --- SUBIDA PELÍCULAS (Con Extracción de PAÍS) ---
             else if (data.startsWith('add_new_movie_') || data.startsWith('solicitud_')) {
                 let tmdbId = '';
                 if (data.startsWith('add_new_movie_')) tmdbId = data.split('_')[3];
@@ -738,11 +699,10 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                     if (!movieData) { bot.sendMessage(chatId, 'Error: No se encontraron detalles.'); return; }
 
                     const genreIds = movieData.genres ? movieData.genres.map(g => g.id) : [];
-                    // NUEVO: Extraer países para K-Dramas
                     const countries = movieData.production_countries ? movieData.production_countries.map(c => c.iso_3166_1) : [];
 
                     adminState[chatId] = {
-                        step: 'awaiting_unified_link_movie', 
+                        step: 'awaiting_unified_link_movie',
                         selectedMedia: {
                             id: movieData.id,
                             title: movieData.title,
@@ -753,10 +713,10 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                             release_date: movieData.release_date,
                             popularity: movieData.popularity,
                             vote_average: movieData.vote_average,
-                            origin_country: countries // Se guarda aquí
+                            origin_country: countries
                         }
                     };
-                    bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id }).catch(() => {});
+                    bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id }).catch(() => { });
                     bot.sendMessage(chatId, `🎬 Película: *${movieData.title}*\n🏷️ Géneros: ${genreIds.length}\n🌍 Países: ${countries.join(', ')}\n\n🔗 Envía el **ENLACE (Link)** del video.`, { parse_mode: 'Markdown' });
                 } catch (error) {
                     console.error("Error al obtener detalles de TMDB:", error.message);
@@ -764,14 +724,13 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 }
             }
 
-            // --- HANDLER: PINNED CHOICE PELÍCULA (NUEVO) ---
             else if (data.startsWith('set_pinned_movie_')) {
                 const isPinned = data === 'set_pinned_movie_true';
                 if (!adminState[chatId].movieDataToSave) { bot.sendMessage(chatId, 'Error de estado.'); return; }
-                
+
                 adminState[chatId].movieDataToSave.isPinned = isPinned;
                 adminState[chatId].step = 'awaiting_publish_choice';
-                
+
                 const mediaId = adminState[chatId].movieDataToSave.tmdbId;
 
                 const options = {
@@ -790,13 +749,12 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                         ]
                     }
                 };
-                
+
                 const pinnedStatus = isPinned ? "⭐ DESTACADO (Top)" : "📅 Normal";
                 bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id });
                 bot.sendMessage(chatId, `✅ Estado definido: ${pinnedStatus}.\n¿Cómo deseas publicar?`, options);
             }
 
-            // --- HANDLER: PINNED CHOICE SERIE (NUEVO) ---
             else if (data.startsWith('set_pinned_series_')) {
                 const isPinned = data === 'set_pinned_series_true';
                 if (!adminState[chatId].seriesDataToSave) { bot.sendMessage(chatId, 'Error de estado.'); return; }
@@ -810,16 +768,15 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id });
                 bot.sendMessage(chatId, `⏳ Guardando S${season}E${episode} (${isPinned ? '⭐ Destacado' : '📅 Normal'})...`);
 
-                // AHORA SÍ GUARDAMOS (Lógica trasladada aquí)
                 try {
                     await axios.post(`${RENDER_BACKEND_URL}/add-series-episode`, seriesData);
-                    
+
                     const nextEpisode = episode + 1;
                     const isSeasonFinished = totalEpisodesInSeason && episode >= totalEpisodesInSeason;
 
                     adminState[chatId].lastSavedEpisodeData = seriesData;
                     adminState[chatId].step = 'awaiting_series_action';
-                    
+
                     const rowCorrections = [
                         { text: `✏️ Editar`, callback_data: `edit_episode_${seriesData.tmdbId}_${season}_${episode}` },
                         { text: '🗑️ Borrar', callback_data: `delete_episode_${seriesData.tmdbId}_${season}_${episode}` }
@@ -837,15 +794,15 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                         { text: `📲 App + PUSH`, callback_data: `publish_push_this_episode_${seriesData.tmdbId}_${season}_${episode}` },
                         { text: `🚀 Canal + PUSH`, callback_data: `publish_push_channel_this_episode_${seriesData.tmdbId}_${season}_${episode}` }
                     ];
-                    
+
                     const rowFinal = [
-                         { text: `📢 Solo Canal`, callback_data: `publish_channel_no_push_this_episode_${seriesData.tmdbId}_${season}_${episode}` },
-                         { text: '⏹️ Finalizar Todo', callback_data: `finish_series_${seriesData.tmdbId}` }
+                        { text: `📢 Solo Canal`, callback_data: `publish_channel_no_push_this_episode_${seriesData.tmdbId}_${season}_${episode}` },
+                        { text: '⏹️ Finalizar Todo', callback_data: `finish_series_${seriesData.tmdbId}` }
                     ];
 
-                    bot.sendMessage(chatId, `✅ *S${season}E${episode} Guardado.*`, { 
-                        parse_mode: 'Markdown', 
-                        reply_markup: { inline_keyboard: [ rowCorrections, rowNext, rowPublish, rowFinal ] } 
+                    bot.sendMessage(chatId, `✅ *S${season}E${episode} Guardado.*`, {
+                        parse_mode: 'Markdown',
+                        reply_markup: { inline_keyboard: [rowCorrections, rowNext, rowPublish, rowFinal] }
                     });
 
                 } catch (error) {
@@ -856,23 +813,21 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
             }
 
 
-            // --- GESTIÓN DE SERIES ---
             else if (data.startsWith('add_new_series_')) {
                 const tmdbId = data.split('_')[3];
-                bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id }).catch(() => {});
+                bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id }).catch(() => { });
                 await handleManageSeries(chatId, tmdbId);
             }
             else if (data.startsWith('manage_series_')) {
                 const tmdbId = data.split('_')[2];
-                bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id }).catch(() => {});
+                bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id }).catch(() => { });
                 await handleManageSeries(chatId, tmdbId);
             }
-            
-            // --- SELECCIONAR TEMPORADA ---
+
             else if (data.startsWith('manage_season_')) {
                 const [_, __, tmdbId, seasonNumber] = data.split('_');
                 const { selectedSeries } = adminState[chatId] || {};
-                
+
                 if (!selectedSeries || (selectedSeries.id && selectedSeries.id.toString() !== tmdbId && selectedSeries.tmdbId !== tmdbId)) {
                     bot.sendMessage(chatId, '⚠️ Estado perdido. Por favor busca la serie nuevamente.');
                     return;
@@ -891,44 +846,43 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                     lastEpisode = Object.keys(seriesData.seasons[seasonNumber].episodes).map(Number).sort((a, b) => b - a)[0] || 0;
                 }
                 const nextEpisode = lastEpisode + 1;
-                
+
                 adminState[chatId] = {
                     ...adminState[chatId],
                     step: 'awaiting_unified_link_series',
                     season: parseInt(seasonNumber),
                     episode: nextEpisode,
-                    totalEpisodesInSeason: totalEpisodes 
+                    totalEpisodesInSeason: totalEpisodes
                 };
-                
-                bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id }).catch(() => {});
+
+                bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id }).catch(() => { });
                 bot.sendMessage(chatId, `Gestionando *S${seasonNumber}* de *${selectedSeries.name}*.\nAgregando episodio *E${nextEpisode}*.\n\n🔗 Envía el **ENLACE** del video.`, { parse_mode: 'Markdown' });
             }
 
             else if (data.startsWith('add_next_episode_')) {
                 const [_, __, ___, tmdbId, seasonNumber] = data.split('_');
                 const { selectedSeries, totalEpisodesInSeason } = adminState[chatId];
-                
-                if (!selectedSeries || selectedSeries.id.toString() !== tmdbId && selectedSeries.tmdbId !== tmdbId) { 
-                    bot.sendMessage(chatId, 'Error: Datos de la serie perdidos. Vuelve a empezar.'); 
+
+                if (!selectedSeries || selectedSeries.id.toString() !== tmdbId && selectedSeries.tmdbId !== tmdbId) {
+                    bot.sendMessage(chatId, 'Error: Datos de la serie perdidos. Vuelve a empezar.');
                     adminState[chatId] = { step: 'menu' };
-                    return; 
+                    return;
                 }
-                
+
                 const lastSaved = adminState[chatId].lastSavedEpisodeData;
                 const nextEpisode = (lastSaved ? lastSaved.episodeNumber : 0) + 1;
 
-                adminState[chatId] = { 
+                adminState[chatId] = {
                     ...adminState[chatId],
                     step: 'awaiting_unified_link_series',
-                    season: parseInt(seasonNumber), 
-                    episode: nextEpisode 
+                    season: parseInt(seasonNumber),
+                    episode: nextEpisode
                 };
-                
+
                 bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id });
                 bot.sendMessage(chatId, `Siguiente: Envía **ENLACE** para S${seasonNumber}E${nextEpisode}.`);
             }
-            
-            // --- GESTIÓN DE EPISODIOS (BORRAR/EDITAR) ---
+
             else if (data.startsWith('delete_episode_')) {
                 const [_, __, tmdbId, season, episode] = data.split('_');
                 try {
@@ -944,7 +898,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
             else if (data.startsWith('edit_episode_')) {
                 const [_, __, tmdbId, season, episode] = data.split('_');
                 adminState[chatId] = {
-                    ...adminState[chatId], 
+                    ...adminState[chatId],
                     step: 'awaiting_unified_link_series',
                     season: parseInt(season),
                     episode: parseInt(episode)
@@ -952,13 +906,9 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 bot.sendMessage(chatId, `✏️ Corrección: Envía el NUEVO enlace para **S${season}E${episode}**:`);
             }
 
-            // =========================================================
-            // === [NUEVO] GESTIÓN DE EDICIÓN DE PELÍCULAS + DESTACADOS ===
-            // =========================================================
             else if (data.startsWith('manage_movie_')) {
                 const tmdbId = data.split('_')[2];
                 try {
-                    // 1. Obtener datos de TMDB para mostrar título bonito
                     const movieUrl = `https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${TMDB_API_KEY}&language=es-ES`;
                     const response = await axios.get(movieUrl);
                     const movieData = response.data;
@@ -970,11 +920,9 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                         poster_path: movieData.poster_path
                     };
 
-                    // 2. CONSULTAR MONGODB para saber si ya es Destacado
                     const localMovie = await mongoDb.collection('media_catalog').findOne({ tmdbId: tmdbId.toString() });
                     const isPinned = localMovie?.isPinned || false;
 
-                    // 3. Preparar Botones Dinámicos
                     let pinnedButtons = [];
                     if (isPinned) {
                         pinnedButtons = [
@@ -990,65 +938,54 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                     const options = {
                         reply_markup: {
                             inline_keyboard: [
-                                // Fila 1: Gestión de Enlaces
                                 [{ text: '✏️ Editar Link', callback_data: `add_pro_movie_${tmdbId}` }],
-                                // Fila 2: Gestión de Destacados (Top)
                                 pinnedButtons,
-                                // Fila 3: Eliminar
                                 [{ text: '🗑️ Eliminar Película', callback_data: `delete_confirm_${tmdbId}_movie` }]
                             ]
                         }
                     };
-                    
+
                     const statusText = isPinned ? "⭐ ES DESTACADO" : "📅 ES NORMAL";
-                    bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id }).catch(() => {});
+                    bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id }).catch(() => { });
                     bot.sendMessage(chatId, `Gestionando: *${movieData.title}*\nEstado: ${statusText}\n\n¿Qué deseas hacer?`, { ...options, parse_mode: 'Markdown' });
 
                 } catch (error) {
-                     console.error("Error manage_movie_:", error.message);
+                    console.error("Error manage_movie_:", error.message);
                     bot.sendMessage(chatId, 'Error al obtener los detalles.');
                 }
             }
 
-            // === HANDLER PARA LAS ACCIONES DE PIN (Refresh, Unpin, Pin) ===
             else if (data.startsWith('pin_action_')) {
-                // Formato: pin_action_ACCION_TIPO_ID (ej: pin_action_refresh_movie_12345)
                 const parts = data.split('_');
-                const action = parts[2]; // refresh, unpin, pin
-                const type = parts[3];   // movie, series
+                const action = parts[2];
+                const type = parts[3];
                 const tmdbId = parts[4];
 
                 try {
-                    // Seleccionamos la colección correcta
                     const collection = (type === 'tv' || type === 'series') ? mongoDb.collection('series_catalog') : mongoDb.collection('media_catalog');
-                    
+
                     let updateDoc = {};
                     let replyText = "";
 
                     if (action === 'pin') {
-                        // Al poner fecha nueva, sube al Top 1 automáticamente
-                        updateDoc = { $set: { isPinned: true, addedAt: new Date() } }; 
+                        updateDoc = { $set: { isPinned: true, addedAt: new Date() } };
                         replyText = "✅ Película fijada y movida al PRIMER lugar (Top 1).";
                     } else if (action === 'unpin') {
-                        // Al poner false, desaparece de la lista del Frontend
                         updateDoc = { $set: { isPinned: false } };
                         replyText = "✅ Película quitada de destacados.";
                     } else if (action === 'refresh') {
-                        // Al actualizar fecha, vuelve a subir al Top 1
-                        updateDoc = { $set: { isPinned: true, addedAt: new Date() } }; 
+                        updateDoc = { $set: { isPinned: true, addedAt: new Date() } };
                         replyText = "🔄 Refrescada: Ahora está en el PRIMER lugar (Top 1).";
                     }
 
                     await collection.updateOne({ tmdbId: tmdbId.toString() }, updateDoc);
 
-                    // --- 🔥 CORRECCIÓN CRÍTICA AQUÍ: LIMPIAR CACHÉ 🔥 ---
                     if (pinnedCache) {
-                        pinnedCache.del('pinned_content_top'); // Usamos la misma Key que en server.js
+                        pinnedCache.del('pinned_content_top');
                         console.log("[Bot] Caché de destacados borrada. El cambio será inmediato.");
                     } else {
                         console.log("[Bot] Warning: pinnedCache no está disponible.");
                     }
-                    // ----------------------------------------------------
 
                     bot.sendMessage(chatId, replyText);
 
@@ -1057,7 +994,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                     bot.sendMessage(chatId, "❌ Error al cambiar el estado.");
                 }
             }
-            
+
             else if (data.startsWith('add_pro_movie_') || data.startsWith('add_free_movie_')) {
                 const isPro = data.startsWith('add_pro_movie_');
                 const tmdbId = data.split('_')[3];
@@ -1066,18 +1003,17 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                     tmdbId: tmdbId,
                     isPro: isPro
                 };
-                bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id }).catch(() => {});
+                bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id }).catch(() => { });
                 bot.sendMessage(chatId, `✏️ Editando enlace para ID: ${tmdbId}.\n\n🔗 Envía el nuevo enlace ahora:`);
             }
 
-            // --- Lógica de Eliminación y Diamantes ---
-            else if (data === 'manage_movies') { 
+            else if (data === 'manage_movies') {
                 adminState[chatId] = { step: 'search_manage' };
-                bot.sendMessage(chatId, 'Escribe el nombre del contenido a gestionar.'); 
+                bot.sendMessage(chatId, 'Escribe el nombre del contenido a gestionar.');
             }
-            else if (data === 'delete_movie') { 
-                adminState[chatId] = { step: 'search_delete' }; 
-                bot.sendMessage(chatId, 'Escribe el nombre del contenido a ELIMINAR.'); 
+            else if (data === 'delete_movie') {
+                adminState[chatId] = { step: 'search_delete' };
+                bot.sendMessage(chatId, 'Escribe el nombre del contenido a ELIMINAR.');
             }
             else if (data.startsWith('delete_confirm_')) {
                 const [_, __, tmdbId, mediaType] = data.split('_');
@@ -1088,10 +1024,10 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 try {
                     const result = await mongoDb.collection(collectionName).deleteOne({ tmdbId: tmdbId.toString() });
                     if (result.deletedCount > 0) {
-                         bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id }).catch(() => {});
-                         bot.sendMessage(chatId, `✅ Contenido (ID: ${tmdbId}) eliminado exitosamente.`);
+                        bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id }).catch(() => { });
+                        bot.sendMessage(chatId, `✅ Contenido (ID: ${tmdbId}) eliminado exitosamente.`);
                     } else {
-                         bot.sendMessage(chatId, `⚠️ No se encontró contenido con ID ${tmdbId} en la base de datos para eliminar.`);
+                        bot.sendMessage(chatId, `⚠️ No se encontró contenido con ID ${tmdbId} en la base de datos para eliminar.`);
                     }
                 } catch (error) {
                     console.error("Error al eliminar de MongoDB:", error);
@@ -1101,11 +1037,10 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
             }
             else if (data.startsWith('diamond_completed_')) {
                 const gameId = data.split('_')[2];
-                bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id }).catch(() => {});
+                bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id }).catch(() => { });
                 bot.sendMessage(chatId, `✅ Pedido de diamantes para el ID \`${gameId}\` marcado como completado.`);
             }
 
-            // --- Callbacks de Guardado/Publicación (PELÍCULAS) ---
             else if (data.startsWith('save_only_')) {
                 const { movieDataToSave } = adminState[chatId];
                 if (!movieDataToSave?.tmdbId) { bot.sendMessage(chatId, 'Error: Datos perdidos.'); adminState[chatId] = { step: 'menu' }; return; }
@@ -1114,11 +1049,11 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 bot.sendMessage(chatId, `✅ "${movieDataToSave.title}" guardada solo en la app.`);
                 adminState[chatId] = { step: 'menu' };
             }
-            
+
             else if (data.startsWith('save_silent_hidden_')) {
                 const { movieDataToSave } = adminState[chatId];
                 if (!movieDataToSave?.tmdbId) { bot.sendMessage(chatId, 'Error: Datos perdidos.'); adminState[chatId] = { step: 'menu' }; return; }
-                movieDataToSave.hideFromRecent = true; 
+                movieDataToSave.hideFromRecent = true;
                 try {
                     await axios.post(`${RENDER_BACKEND_URL}/add-movie`, movieDataToSave);
                     bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id });
@@ -1129,22 +1064,22 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                     adminState[chatId] = { step: 'menu' };
                 }
             }
-            
+
             else if (data.startsWith('save_publish_push_channel_')) {
-                const tmdbIdFromCallback = data.split('_').pop(); 
+                const tmdbIdFromCallback = data.split('_').pop();
                 const { movieDataToSave } = adminState[chatId];
-                
-                if (!movieDataToSave?.tmdbId || movieDataToSave.tmdbId !== tmdbIdFromCallback) { 
-                    bot.sendMessage(chatId, 'Error: Datos perdidos. Intenta de nuevo desde la búsqueda.'); 
-                    adminState[chatId] = { step: 'menu' }; 
-                    return; 
+
+                if (!movieDataToSave?.tmdbId || movieDataToSave.tmdbId !== tmdbIdFromCallback) {
+                    bot.sendMessage(chatId, 'Error: Datos perdidos. Intenta de nuevo desde la búsqueda.');
+                    adminState[chatId] = { step: 'menu' };
+                    return;
                 }
-                
+
                 try {
                     await axios.post(`${RENDER_BACKEND_URL}/add-movie`, movieDataToSave);
                     bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id });
                     bot.sendMessage(chatId, `✅ "${movieDataToSave.title}" guardada. Iniciando publicación doble...`);
-                    
+
                     await axios.post(`${RENDER_BACKEND_URL}/api/notify-new-content`, {
                         title: "¡Nuevo Estreno!",
                         body: `Ya puedes ver: ${movieDataToSave.title}`,
@@ -1154,14 +1089,14 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                     });
 
                     const DEEPLINK_URL = `${RENDER_BACKEND_URL}/app/details/${movieDataToSave.tmdbId}`;
-                    const CHANNEL_SMALL = process.env.TELEGRAM_CHANNEL_A_ID; 
-                    const CHANNEL_BIG_ID = process.env.TELEGRAM_CHANNEL_B_ID;   
-                    
+                    const CHANNEL_SMALL = process.env.TELEGRAM_CHANNEL_A_ID;
+                    const CHANNEL_BIG_ID = process.env.TELEGRAM_CHANNEL_B_ID;
+
                     if (CHANNEL_SMALL) {
                         const messageToSmall = `🎬 *¡PELÍCULA COMPLETA DISPONIBLE!* 🎬\n\n` +
-                                                 `**${movieDataToSave.title}**\n\n` +
-                                                 `${movieDataToSave.overview || 'Sin sinopsis.'}\n\n` +
-                                                 `_Toca el botón para ver en la App:_`;
+                            `**${movieDataToSave.title}**\n\n` +
+                            `${movieDataToSave.overview || 'Sin sinopsis.'}\n\n` +
+                            `_Toca el botón para ver en la App:_`;
 
                         const sentMsgSmall = await bot.sendPhoto(CHANNEL_SMALL, movieDataToSave.poster_path ? `https://image.tmdb.org/t/p/w500${movieDataToSave.poster_path}` : 'https://placehold.co/500x750?text=SALA+CINE', {
                             caption: messageToSmall,
@@ -1178,17 +1113,17 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
 
                         if (CHANNEL_BIG_ID) {
                             const releaseYear = movieDataToSave.release_date ? `(${movieDataToSave.release_date.substring(0, 4)})` : '';
-                            const overviewTeaser = movieDataToSave.overview 
-                                ? movieDataToSave.overview.length > 250 
-                                    ? movieDataToSave.overview.substring(0, 250) + '...' 
+                            const overviewTeaser = movieDataToSave.overview
+                                ? movieDataToSave.overview.length > 250
+                                    ? movieDataToSave.overview.substring(0, 250) + '...'
                                     : movieDataToSave.overview
                                 : 'Una historia increíble te espera...';
 
                             const messageToBig = `🍿 *ESTRENO YA DISPONIBLE* 🍿\n\n` +
-                                                 `🎬 *${movieDataToSave.title}* ${releaseYear}\n\n` +
-                                                 `📝 _${overviewTeaser}_\n\n` +
-                                                 `⚠️ _Por temas de copyright, la película completa se encuentra en nuestro canal privado._\n\n` +
-                                                 `👇 *VER PELÍCULA AQUÍ* 👇`;
+                                `🎬 *${movieDataToSave.title}* ${releaseYear}\n\n` +
+                                `📝 _${overviewTeaser}_\n\n` +
+                                `⚠️ _Por temas de copyright, la película completa se encuentra en nuestro canal privado._\n\n` +
+                                `👇 *VER PELÍCULA AQUÍ* 👇`;
 
                             await bot.sendPhoto(CHANNEL_BIG_ID, movieDataToSave.poster_path ? `https://image.tmdb.org/t/p/w500${movieDataToSave.poster_path}` : 'https://placehold.co/500x750?text=SALA+CINE', {
                                 caption: messageToBig,
@@ -1206,7 +1141,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                     } else {
                         bot.sendMessage(chatId, `⚠️ Error: Falta configurar TELEGRAM_CHANNEL_A_ID en .env`);
                     }
-                    
+
                 } catch (error) {
                     console.error("Error en save_publish_push_channel_:", error.response ? error.response.data : error.message);
                     bot.sendMessage(chatId, '❌ Error al guardar o enviar notificación.');
@@ -1218,32 +1153,28 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
             else if (data.startsWith('save_publish_channel_no_push_')) {
                 const tmdbIdFromCallback = data.split('_').pop();
                 const { movieDataToSave } = adminState[chatId];
-                
-                // Verificación de seguridad
-                if (!movieDataToSave?.tmdbId || movieDataToSave.tmdbId !== tmdbIdFromCallback) { 
-                    bot.sendMessage(chatId, 'Error: Datos perdidos. Intenta de nuevo.'); 
-                    adminState[chatId] = { step: 'menu' }; 
-                    return; 
+
+                if (!movieDataToSave?.tmdbId || movieDataToSave.tmdbId !== tmdbIdFromCallback) {
+                    bot.sendMessage(chatId, 'Error: Datos perdidos. Intenta de nuevo.');
+                    adminState[chatId] = { step: 'menu' };
+                    return;
                 }
 
                 try {
-                    // 1. Guardar en Backend (Sin Push)
                     await axios.post(`${RENDER_BACKEND_URL}/add-movie`, movieDataToSave);
-                    
+
                     bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id });
                     bot.sendMessage(chatId, `✅ "${movieDataToSave.title}" guardada. Publicando en AMBOS canales (Sin Push App)...`);
 
-                    // 2. Preparar datos de Canales
                     const DEEPLINK_URL = `${RENDER_BACKEND_URL}/app/details/${movieDataToSave.tmdbId}`;
-                    const CHANNEL_SMALL = process.env.TELEGRAM_CHANNEL_A_ID; 
-                    const CHANNEL_BIG_ID = process.env.TELEGRAM_CHANNEL_B_ID; // Ahora leemos el canal grande también
-                    
+                    const CHANNEL_SMALL = process.env.TELEGRAM_CHANNEL_A_ID;
+                    const CHANNEL_BIG_ID = process.env.TELEGRAM_CHANNEL_B_ID;
+
                     if (CHANNEL_SMALL) {
-                        // --- A. PUBLICAR EN CANAL PEQUEÑO ---
                         const messageToSmall = `🎬 *¡PELÍCULA COMPLETA DISPONIBLE!* 🎬\n\n` +
-                                                `**${movieDataToSave.title}**\n\n` +
-                                                `${movieDataToSave.overview || 'Sin sinopsis.'}\n\n` +
-                                                `_Toca el botón para ver en la App:_`;
+                            `**${movieDataToSave.title}**\n\n` +
+                            `${movieDataToSave.overview || 'Sin sinopsis.'}\n\n` +
+                            `_Toca el botón para ver en la App:_`;
 
                         const sentMsgSmall = await bot.sendPhoto(CHANNEL_SMALL, movieDataToSave.poster_path ? `https://image.tmdb.org/t/p/w500${movieDataToSave.poster_path}` : 'https://placehold.co/500x750?text=SALA+CINE', {
                             caption: messageToSmall,
@@ -1255,23 +1186,22 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                             }
                         });
 
-                        // --- B. PUBLICAR EN CANAL GRANDE (Redirección) ---
                         const channelUsername = CHANNEL_SMALL.replace('@', '');
                         const linkToPost = `https://t.me/${channelUsername}/${sentMsgSmall.message_id}`;
 
                         if (CHANNEL_BIG_ID) {
                             const releaseYear = movieDataToSave.release_date ? `(${movieDataToSave.release_date.substring(0, 4)})` : '';
-                            const overviewTeaser = movieDataToSave.overview 
-                                ? movieDataToSave.overview.length > 250 
-                                    ? movieDataToSave.overview.substring(0, 250) + '...' 
+                            const overviewTeaser = movieDataToSave.overview
+                                ? movieDataToSave.overview.length > 250
+                                    ? movieDataToSave.overview.substring(0, 250) + '...'
                                     : movieDataToSave.overview
                                 : 'Una historia increíble te espera...';
 
                             const messageToBig = `🍿 *ESTRENO YA DISPONIBLE* 🍿\n\n` +
-                                                 `🎬 *${movieDataToSave.title}* ${releaseYear}\n\n` +
-                                                 `📝 _${overviewTeaser}_\n\n` +
-                                                 `⚠️ _Por temas de copyright, la película completa se encuentra en nuestro canal privado._\n\n` +
-                                                 `👇 *VER PELÍCULA AQUÍ* 👇`;
+                                `🎬 *${movieDataToSave.title}* ${releaseYear}\n\n` +
+                                `📝 _${overviewTeaser}_\n\n` +
+                                `⚠️ _Por temas de copyright, la película completa se encuentra en nuestro canal privado._\n\n` +
+                                `👇 *VER PELÍCULA AQUÍ* 👇`;
 
                             await bot.sendPhoto(CHANNEL_BIG_ID, movieDataToSave.poster_path ? `https://image.tmdb.org/t/p/w500${movieDataToSave.poster_path}` : 'https://placehold.co/500x750?text=SALA+CINE', {
                                 caption: messageToBig,
@@ -1298,7 +1228,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                     adminState[chatId] = { step: 'menu' };
                 }
             }
-            
+
             else if (data.startsWith('publish_push_this_episode_')) {
                 const [_, __, ___, tmdbId, season, episode] = data.split('_');
                 const state = adminState[chatId];
@@ -1324,24 +1254,23 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                     adminState[chatId] = { step: 'menu' };
                 }
             }
-            
-            // --- DOBLE PUBLICACIÓN SERIES ---
-           else if (data.startsWith('publish_push_channel_this_episode_')) {
-                const parts = data.split('_'); 
-                const tmdbId = parts[5]; 
-                const season = parts[6]; 
-                const episode = parts[7]; 
+
+            else if (data.startsWith('publish_push_channel_this_episode_')) {
+                const parts = data.split('_');
+                const tmdbId = parts[5];
+                const season = parts[6];
+                const episode = parts[7];
 
                 const state = adminState[chatId];
                 const episodeData = state?.lastSavedEpisodeData;
                 if (!episodeData || episodeData.tmdbId !== tmdbId || episodeData.seasonNumber.toString() !== season || episodeData.episodeNumber.toString() !== episode) {
-                    bot.sendMessage(chatId, 'Error: Datos perdidos. Intenta de nuevo desde el episodio anterior.'); 
-                    adminState[chatId] = { step: 'menu' }; 
+                    bot.sendMessage(chatId, 'Error: Datos perdidos. Intenta de nuevo desde el episodio anterior.');
+                    adminState[chatId] = { step: 'menu' };
                     return;
                 }
                 bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id });
                 bot.sendMessage(chatId, `✅ Episodio S${season}E${episode} listo. Iniciando doble publicación...`);
-                
+
                 try {
                     await axios.post(`${RENDER_BACKEND_URL}/api/notify-new-content`, {
                         title: `¡Nuevo Episodio! ${episodeData.title}`,
@@ -1351,15 +1280,15 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                         mediaType: 'tv'
                     });
 
-                    const DEEPLINK_URL = `${RENDER_BACKEND_URL}/app/details/${episodeData.tmdbId}`; 
-                    const CHANNEL_SMALL = process.env.TELEGRAM_CHANNEL_A_ID; 
-                    const CHANNEL_BIG_ID = process.env.TELEGRAM_CHANNEL_B_ID; 
-                    
+                    const DEEPLINK_URL = `${RENDER_BACKEND_URL}/app/details/${episodeData.tmdbId}`;
+                    const CHANNEL_SMALL = process.env.TELEGRAM_CHANNEL_A_ID;
+                    const CHANNEL_BIG_ID = process.env.TELEGRAM_CHANNEL_B_ID;
+
                     if (CHANNEL_SMALL) {
                         const messageToSmall = `📺 *¡NUEVO EPISODIO EN SALA CINE!* 📺\n\n` +
-                                                 `**${episodeData.title}**\n` +
-                                                 `Temporada ${episodeData.seasonNumber} - Episodio ${episodeData.episodeNumber} ya disponible.\n\n` +
-                                                 `_Entra para verla ahora:_`;
+                            `**${episodeData.title}**\n` +
+                            `Temporada ${episodeData.seasonNumber} - Episodio ${episodeData.episodeNumber} ya disponible.\n\n` +
+                            `_Entra para verla ahora:_`;
 
                         const sentMsgSmall = await bot.sendPhoto(CHANNEL_SMALL, episodeData.poster_path ? `https://image.tmdb.org/t/p/w500${episodeData.poster_path}` : 'https://placehold.co/500x750?text=SALA+CINE', {
                             caption: messageToSmall,
@@ -1375,18 +1304,18 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                         const linkToPost = `https://t.me/${channelUsername}/${sentMsgSmall.message_id}`;
 
                         if (CHANNEL_BIG_ID) {
-                            const overviewTeaser = episodeData.overview 
-                                ? episodeData.overview.length > 200 
-                                    ? episodeData.overview.substring(0, 200) + '...' 
+                            const overviewTeaser = episodeData.overview
+                                ? episodeData.overview.length > 200
+                                    ? episodeData.overview.substring(0, 200) + '...'
                                     : episodeData.overview
                                 : '¡Un nuevo capítulo lleno de emoción te espera!';
 
                             const messageToBig = `🍿 *NUEVO EPISODIO DISPONIBLE* 🍿\n\n` +
-                                                 `📺 *${episodeData.title}*\n` +
-                                                 `🔹 Temporada ${episodeData.seasonNumber} - Episodio ${episodeData.episodeNumber}\n\n` +
-                                                 `📝 _${overviewTeaser}_\n\n` +
-                                                 `⚠️ _Disponible ahora en nuestro canal de respaldo privado._\n\n` +
-                                                 `👇 *VER EPISODIO AQUÍ* 👇`;
+                                `📺 *${episodeData.title}*\n` +
+                                `🔹 Temporada ${episodeData.seasonNumber} - Episodio ${episodeData.episodeNumber}\n\n` +
+                                `📝 _${overviewTeaser}_\n\n` +
+                                `⚠️ _Disponible ahora en nuestro canal de respaldo privado._\n\n` +
+                                `👇 *VER EPISODIO AQUÍ* 👇`;
 
                             await bot.sendPhoto(CHANNEL_BIG_ID, episodeData.poster_path ? `https://image.tmdb.org/t/p/w500${episodeData.poster_path}` : 'https://placehold.co/500x750?text=SALA+CINE', {
                                 caption: messageToBig,
@@ -1408,19 +1337,19 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                     adminState[chatId] = { step: 'menu' };
                 }
             }
-            
+
             else if (data.startsWith('publish_channel_no_push_this_episode_')) {
-                const parts = data.split('_'); 
-                const tmdbId = parts[6]; 
-                const season = parts[7]; 
-                const episode = parts[8]; 
+                const parts = data.split('_');
+                const tmdbId = parts[6];
+                const season = parts[7];
+                const episode = parts[8];
 
                 const state = adminState[chatId];
                 const episodeData = state?.lastSavedEpisodeData;
-                
+
                 if (!episodeData || episodeData.tmdbId !== tmdbId || episodeData.seasonNumber.toString() !== season || episodeData.episodeNumber.toString() !== episode) {
-                    bot.sendMessage(chatId, 'Error: Datos perdidos. Intenta de nuevo.'); 
-                    adminState[chatId] = { step: 'menu' }; 
+                    bot.sendMessage(chatId, 'Error: Datos perdidos. Intenta de nuevo.');
+                    adminState[chatId] = { step: 'menu' };
                     return;
                 }
 
@@ -1429,13 +1358,13 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
 
                 try {
                     const DEEPLINK_URL = `${RENDER_BACKEND_URL}/app/details/${episodeData.tmdbId}`;
-                    const CHANNEL_ID = process.env.TELEGRAM_CHANNEL_A_ID; 
-                    
+                    const CHANNEL_ID = process.env.TELEGRAM_CHANNEL_A_ID;
+
                     if (CHANNEL_ID) {
                         const messageToChannel = `📺 *¡NUEVO EPISODIO EN SALA CINE!* 📺\n\n` +
-                                                `**${episodeData.title}**\n` +
-                                                `Temporada ${episodeData.seasonNumber} - Episodio ${episodeData.episodeNumber} ya disponible.\n\n` +
-                                                `_Entra para verla ahora:_`;
+                            `**${episodeData.title}**\n` +
+                            `Temporada ${episodeData.seasonNumber} - Episodio ${episodeData.episodeNumber} ya disponible.\n\n` +
+                            `_Entra para verla ahora:_`;
 
                         await bot.sendPhoto(CHANNEL_ID, episodeData.poster_path ? `https://image.tmdb.org/t/p/w500${episodeData.poster_path}` : 'https://placehold.co/500x750?text=SALA+CINE', {
                             caption: messageToChannel,
@@ -1448,7 +1377,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                         });
                         bot.sendMessage(chatId, `📢 Mensaje enviado al canal público.`);
                     }
-                    
+
                 } catch (error) {
                     console.error("Error en publish_channel_no_push_series:", error.response ? error.response.data : error.message);
                     bot.sendMessage(chatId, '❌ Error al publicar.');
@@ -1468,31 +1397,27 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
         }
     });
 
-    // =======================================================================
-    // === LÓGICA PÚBLICA DE EVENTOS (Auto-aceptación y DM a Admin) ===
-    // =======================================================================
-
     bot.on('my_chat_member', async (update) => {
         try {
             const newStatus = update.new_chat_member.status;
             const oldStatus = update.old_chat_member.status;
             const chatId = update.chat.id;
-            const adminUserId = update.from.id; 
+            const adminUserId = update.from.id;
 
             if (oldStatus !== 'administrator' && newStatus === 'administrator') {
                 console.log(`[Auto-Aceptar] Bot promovido a ADMIN en chat ${chatId} (${update.chat.title}) por ${adminUserId}`);
-                
+
                 const canManageJoins = update.new_chat_member.can_manage_chat_join_requests;
                 let adminMessage = `¡Gracias por hacerme administrador en **${update.chat.title}**! 👋\n\n`;
-                
+
                 if (canManageJoins) {
                     adminMessage += "He detectado que tengo permisos para **Administrar solicitudes de ingreso**. ¡La función de auto-aceptación está **ACTIVA** para este chat!\n\n";
                 } else {
                     adminMessage += "⚠️ **Acción requerida:** Para que la auto-aceptación funcione, por favor edita mis permisos y activa la opción '**Administrar solicitudes de ingreso**'.\n\n";
                 }
-                
+
                 adminMessage += "Puedes usar /ayuda en este chat privado (aquí conmigo) si necesitas ver los comandos de asistencia.";
-                
+
                 bot.sendMessage(adminUserId, adminMessage, {
                     parse_mode: 'Markdown',
                     reply_markup: {
@@ -1506,7 +1431,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 });
             }
         } catch (error) {
-             console.error("Error en 'my_chat_member':", error.message);
+            console.error("Error en 'my_chat_member':", error.message);
         }
     });
 
@@ -1524,9 +1449,9 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
 
             const inviteLink = await bot.exportChatInviteLink(chatId);
             const welcomeMessage = `¡Hola ${userFirstName}! 👋\n\nTu solicitud para unirte a **${chatTitle}** ha sido aceptada.\n\nPuedes acceder usando el botón de abajo:`;
-            
+
             const options = {
-                caption: welcomeMessage, 
+                caption: welcomeMessage,
                 parse_mode: 'Markdown',
                 reply_markup: {
                     inline_keyboard: [
@@ -1550,9 +1475,9 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                     console.warn(`[Auto-Aceptar] No se pudo enviar DM con foto a ${userId}.`);
                 });
             } else {
-                bot.sendMessage(userId, welcomeMessage, { 
+                bot.sendMessage(userId, welcomeMessage, {
                     parse_mode: 'Markdown',
-                    reply_markup: options.reply_markup 
+                    reply_markup: options.reply_markup
                 }).catch(e => {
                     console.warn(`[Auto-Aceptar] No se pudo enviar DM de bienvenida a ${userId}.`);
                 });
@@ -1563,10 +1488,6 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
         }
     });
 
-
-    // =======================================================================
-    // --- FUNCIÓN DE AYUDA INTERNA (Series) - CON EXTRACCIÓN DE GÉNEROS ---
-    // =======================================================================
     async function handleManageSeries(chatId, tmdbId) {
         try {
             const seriesUrl = `https://api.themoviedb.org/3/tv/${tmdbId}?api_key=${TMDB_API_KEY}&language=es-ES`;
@@ -1577,7 +1498,6 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 return;
             }
 
-            // --- EXTRACCIÓN DE GÉNEROS Y PAÍS (SERIES) ---
             const genreIds = seriesData.genres ? seriesData.genres.map(g => g.id) : [];
             const originCountries = seriesData.origin_country || [];
 
@@ -1591,26 +1511,24 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                     overview: seriesData.overview,
                     poster_path: seriesData.poster_path,
                     backdrop_path: seriesData.backdrop_path,
-                    // Datos Nuevos:
                     genres: genreIds,
                     first_air_date: seriesData.first_air_date,
                     popularity: seriesData.popularity,
                     vote_average: seriesData.vote_average,
-                    // NUEVO: País
                     origin_country: originCountries
                 }
             };
             const seasonButtons = seriesData.seasons
                 .filter(s => s.season_number > 0)
                 .map(season => {
-                    return [{ 
-                        text: `S${season.season_number} - ${season.name} (${season.episode_count} eps)`, 
-                        callback_data: `manage_season_${tmdbId}_${season.season_number}` 
+                    return [{
+                        text: `S${season.season_number} - ${season.name} (${season.episode_count} eps)`,
+                        callback_data: `manage_season_${tmdbId}_${season.season_number}`
                     }];
                 });
             if (seasonButtons.length === 0) {
-                 bot.sendMessage(chatId, `La serie *${seriesData.name}* no parece tener temporadas (aparte de S0).`, { parse_mode: 'Markdown' });
-                 return;
+                bot.sendMessage(chatId, `La serie *${seriesData.name}* no parece tener temporadas (aparte de S0).`, { parse_mode: 'Markdown' });
+                return;
             }
             const options = {
                 reply_markup: {
@@ -1625,6 +1543,6 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
         }
     }
 
-} 
+}
 
 module.exports = initializeBot;
