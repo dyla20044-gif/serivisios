@@ -11,15 +11,17 @@ const initializeBot = require('./bot.js');
 const crypto = require('crypto');
 const cron = require('node-cron');
 const NodeCache = require('node-cache');
-const fs = require('fs'); // <--- NUEVO: Para manejar archivos
-const path = require('path'); // <--- NUEVO: Para manejar rutas de archivos
+const fs = require('fs'); 
+const path = require('path'); 
 
 // --- CACHÉS ---
 // Cachés existentes
 const embedCache = new NodeCache({ stdTTL: 86400, checkperiod: 600 });
 const countsCache = new NodeCache({ stdTTL: 900, checkperiod: 120 });
 const tmdbCache = new NodeCache({ stdTTL: 86400, checkperiod: 3600 });
-const recentCache = new NodeCache({ stdTTL: 86400, checkperiod: 600 });
+
+// [OPTIMIZACIÓN] Cambiado a 1 hora (3600s) para balancear frescura y ahorro de lecturas DB
+const recentCache = new NodeCache({ stdTTL: 3600, checkperiod: 600 }); 
 const historyCache = new NodeCache({ stdTTL: 900, checkperiod: 120 });
 const localDetailsCache = new NodeCache({ stdTTL: 86400, checkperiod: 3600 }); 
 
@@ -30,9 +32,9 @@ const PINNED_CACHE_KEY = 'pinned_content_top';
 const kdramaCache = new NodeCache({ stdTTL: 3600, checkperiod: 600 });
 const KDRAMA_CACHE_KEY = 'kdrama_content_list';
 
-// Cache de Catálogo (Se usa flushAll para limpiar variantes por género)
+// Cache de Catálogo (1 hora es suficiente para ahorrar lecturas masivas)
 const catalogCache = new NodeCache({ stdTTL: 3600, checkperiod: 600 });
-const CATALOG_CACHE_KEY = 'full_catalog_list'; // Key por defecto para "todo"
+const CATALOG_CACHE_KEY = 'full_catalog_list'; 
 
 const RECENT_CACHE_KEY = 'recent_content_main'; 
 
@@ -1449,9 +1451,11 @@ app.post('/add-movie', async (req, res) => {
                 popularity: popularity || 0,
                 vote_average: vote_average || 0,
                 isPinned: isPinned === true || isPinned === 'true',
-                origin_country: origin_country || []
+                origin_country: origin_country || [],
+                // [FIX] MOVIDO A $SET PARA ACTUALIZAR FECHA AL EDITAR/RE-SUBIR
+                addedAt: new Date() 
             }, 
-            $setOnInsert: { tmdbId: cleanTmdbId, views: 0, likes: 0, addedAt: new Date() } 
+            $setOnInsert: { tmdbId: cleanTmdbId, views: 0, likes: 0 } 
         };
         
         await mongoDb.collection('media_catalog').updateOne({ tmdbId: cleanTmdbId }, updateQuery, { upsert: true });
@@ -1503,9 +1507,13 @@ app.post('/add-series-episode', async (req, res) => {
                 [`seasons.${seasonNumber}.name`]: `Temporada ${seasonNumber}`,
                 [episodePath + '.freeEmbedCode']: freeEmbedCode,
                 [episodePath + '.proEmbedCode']: proEmbedCode,
-                 [episodePath + '.addedAt']: new Date()
+                [episodePath + '.addedAt']: new Date(),
+                
+                // [FIX CRÍTICO] ESTO ESTABA EN $setOnInsert, POR ESO NO SUBÍA AL TOP.
+                // AHORA AL ESTAR EN $SET, ACTUALIZA LA FECHA DE LA SERIE CADA VEZ QUE SUBES UN EPISODIO.
+                addedAt: new Date() 
             },
-            $setOnInsert: { tmdbId: cleanTmdbId, views: 0, likes: 0, addedAt: new Date() }
+            $setOnInsert: { tmdbId: cleanTmdbId, views: 0, likes: 0 }
         };
         await mongoDb.collection('series_catalog').updateOne({ tmdbId: cleanTmdbId }, updateData, { upsert: true });
         
