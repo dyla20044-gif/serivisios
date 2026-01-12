@@ -1,6 +1,9 @@
-function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_ID, TMDB_API_KEY, RENDER_BACKEND_URL, axios, pinnedCache, sendNotificationToTopic, userCache) { // <--- CAMBIO: Recibimos userCache al final
+const fs = require('fs');
+const path = require('path');
 
-    console.log("🤖 Lógica del Bot (Full Features + Pagos Manuales Instantáneos + Notif Globales) inicializada...");
+function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_ID, TMDB_API_KEY, RENDER_BACKEND_URL, axios, pinnedCache, sendNotificationToTopic, userCache) { 
+
+    console.log("🤖 Lógica del Bot (Full Features + CMS Comunicados + Pagos) inicializada...");
     
     bot.setMyCommands([
         { command: 'start', description: 'Reiniciar el bot y ver el menú principal' },
@@ -27,9 +30,10 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_ID, TMDB_API_KEY
                         { text: 'Eventos', callback_data: 'eventos' },
                         { text: 'Gestionar películas', callback_data: 'manage_movies' }
                     ], 
-                    // --- NUEVO BOTÓN PARA NOTIFICACIONES GLOBALES ---
+                    // --- NUEVO: GESTIÓN DE COMUNICADOS (CMS) ---
+                    [{ text: '📡 Gestionar Comunicados (App)', callback_data: 'cms_announcement_menu' }],
+                    // -------------------------------------------
                     [{ text: '📢 Enviar Notificación Global', callback_data: 'send_global_msg' }],
-                    // ------------------------------------------------
                     [{ text: 'Eliminar película', callback_data: 'delete_movie' }]
                 ]
             }
@@ -114,21 +118,84 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
         // === MÁQUINA DE ESTADOS (Lógica de Texto) ===
         // =======================================================================
         
-        // --- NUEVO: Lógica de Notificación Global ---
-        if (adminState[chatId] && adminState[chatId].step === 'awaiting_global_msg_text') {
+        // --- NUEVO: WIZARD DE COMUNICADOS (CMS) ---
+        if (adminState[chatId] && adminState[chatId].step && adminState[chatId].step.startsWith('cms_')) {
+            const step = adminState[chatId].step;
+            
+            // Paso 2: Recibir URL del Media
+            if (step === 'cms_await_media_url') {
+                if (!userText.startsWith('http')) {
+                    bot.sendMessage(chatId, '❌ Por favor envía una URL válida (empieza con http).');
+                    return;
+                }
+                adminState[chatId].tempAnnouncement.mediaUrl = userText;
+                adminState[chatId].step = 'cms_await_title';
+                bot.sendMessage(chatId, '✅ URL Guardada.\n\n📝 Ahora escribe el **TÍTULO** del anuncio:');
+            }
+            // Paso 3: Recibir Título
+            else if (step === 'cms_await_title') {
+                adminState[chatId].tempAnnouncement.title = userText;
+                adminState[chatId].step = 'cms_await_body';
+                bot.sendMessage(chatId, '✅ Título Guardado.\n\n📝 Ahora escribe el **MENSAJE (Cuerpo)** del anuncio:');
+            }
+            // Paso 4: Recibir Cuerpo
+            else if (step === 'cms_await_body') {
+                adminState[chatId].tempAnnouncement.message = userText;
+                adminState[chatId].step = 'cms_await_btn_text';
+                bot.sendMessage(chatId, '✅ Cuerpo Guardado.\n\n🔘 Escribe el texto del **BOTÓN** (Ej: "Ver ahora", "Más info"):');
+            }
+            // Paso 5: Recibir Texto Botón
+            else if (step === 'cms_await_btn_text') {
+                adminState[chatId].tempAnnouncement.buttonText = userText;
+                adminState[chatId].step = 'cms_await_action_url';
+                bot.sendMessage(chatId, '✅ Botón Guardado.\n\n🔗 Finalmente, envía la **URL DE ACCIÓN** (A donde lleva el botón):');
+            }
+            // Paso 6: Recibir URL Acción y Confirmar
+            else if (step === 'cms_await_action_url') {
+                if (!userText.startsWith('http')) {
+                    bot.sendMessage(chatId, '❌ Envía una URL válida.');
+                    return;
+                }
+                adminState[chatId].tempAnnouncement.actionUrl = userText;
+                
+                // Mostrar Resumen
+                const ann = adminState[chatId].tempAnnouncement;
+                const summary = `📢 *RESUMEN DEL ANUNCIO*\n\n` +
+                                `🎬 **Tipo:** ${ann.mediaType}\n` +
+                                `🔗 **Media:** [Ver Link](${ann.mediaUrl})\n` +
+                                `📌 **Título:** ${ann.title}\n` +
+                                `📝 **Cuerpo:** ${ann.message}\n` +
+                                `🔘 **Botón:** ${ann.buttonText}\n` +
+                                `🚀 **Acción:** [Ver Link](${ann.actionUrl})`;
+                                
+                adminState[chatId].step = 'cms_confirm_save';
+                
+                bot.sendMessage(chatId, summary, {
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: '✅ PUBLICAR AHORA', callback_data: 'cms_save_confirm' }],
+                            [{ text: '❌ Cancelar', callback_data: 'cms_cancel' }]
+                        ]
+                    }
+                });
+            }
+        }
+        
+        // --- Notificación Global (Push manual anterior) ---
+        else if (adminState[chatId] && adminState[chatId].step === 'awaiting_global_msg_text') {
             const messageBody = userText;
             
             bot.sendMessage(chatId, '🚀 Enviando notificación a TODOS los usuarios...');
             
             try {
-                // Usamos la función inyectada. topic='all' (o 'general'), specificTopic='all'
                 const result = await sendNotificationToTopic(
-                    "📢 Aviso Importante", // Título fijo o podrías pedirlo también
+                    "📢 Aviso Importante", 
                     messageBody,
-                    null, // No imagen
-                    '0',  // No ID
-                    'general', // Tipo
-                    'all' // TOPIC ESPECÍFICO PARA TODOS
+                    null, 
+                    '0',  
+                    'general', 
+                    'all' 
                 );
                 
                 if (result.success) {
@@ -414,8 +481,104 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
 
             bot.answerCallbackQuery(callbackQuery.id);
 
+            // =================================================================
+            // === LÓGICA DE COMUNICADOS (CMS) ===
+            // =================================================================
+            
+            if (data === 'cms_announcement_menu') {
+                const options = {
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: '🆕 Crear Nuevo', callback_data: 'cms_create_new' }],
+                            [{ text: '🗑️ Borrar Actual', callback_data: 'cms_delete_current' }],
+                            [{ text: '👀 Ver Actual (JSON)', callback_data: 'cms_view_current' }],
+                            [{ text: '⬅️ Volver', callback_data: 'back_to_menu' }] // Para volver, o simplemente reinicia con /start
+                        ]
+                    }
+                };
+                bot.sendMessage(chatId, '📡 **Gestor de Comunicados Globales**\n\nAquí puedes crear anuncios que aparecerán en la pantalla principal de la App.', { parse_mode: 'Markdown', ...options });
+            }
+
+            else if (data === 'cms_create_new') {
+                adminState[chatId] = { 
+                    step: 'cms_await_media_type', 
+                    tempAnnouncement: {} 
+                };
+                bot.sendMessage(chatId, '🛠️ **Creando Nuevo Anuncio**\n\nSelecciona el tipo de media:', {
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: '🖼️ Imagen', callback_data: 'cms_type_image' }],
+                            [{ text: '🎬 Video', callback_data: 'cms_type_video' }]
+                        ]
+                    }
+                });
+            }
+
+            else if (data === 'cms_type_image' || data === 'cms_type_video') {
+                const type = data === 'cms_type_image' ? 'image' : 'video';
+                adminState[chatId].tempAnnouncement.mediaType = type;
+                adminState[chatId].step = 'cms_await_media_url';
+                bot.sendMessage(chatId, `✅ Seleccionado: ${type.toUpperCase()}.\n\n🔗 Envía la **URL** directa del media:`);
+            }
+
+            else if (data === 'cms_delete_current') {
+                const filePath = path.join(__dirname, 'globalAnnouncement.json');
+                if (fs.existsSync(filePath)) {
+                    fs.unlinkSync(filePath);
+                    bot.sendMessage(chatId, '✅ Comunicado eliminado. La App ya no mostrará nada.');
+                } else {
+                    bot.sendMessage(chatId, '⚠️ No había comunicado activo.');
+                }
+            }
+            
+            else if (data === 'cms_view_current') {
+                const filePath = path.join(__dirname, 'globalAnnouncement.json');
+                if (fs.existsSync(filePath)) {
+                    const content = fs.readFileSync(filePath, 'utf8');
+                    bot.sendMessage(chatId, `📄 **Contenido Actual:**\n\`${content}\``, { parse_mode: 'Markdown' });
+                } else {
+                    bot.sendMessage(chatId, '📭 No hay comunicado activo.');
+                }
+            }
+
+            else if (data === 'cms_save_confirm') {
+                const announcement = adminState[chatId].tempAnnouncement;
+                const filePath = path.join(__dirname, 'globalAnnouncement.json');
+                
+                try {
+                    // Generar el JSON final
+                    const jsonToSave = {
+                        id: Date.now().toString(), // ID único basado en timestamp
+                        mediaType: announcement.mediaType,
+                        mediaUrl: announcement.mediaUrl,
+                        title: announcement.title,
+                        message: announcement.message,
+                        buttonText: announcement.buttonText,
+                        actionUrl: announcement.actionUrl,
+                        isDismissible: true // Por defecto
+                    };
+                    
+                    fs.writeFileSync(filePath, JSON.stringify(jsonToSave, null, 2));
+                    bot.sendMessage(chatId, '✅ **¡Comunicado Publicado!**\nLa App lo cargará automáticamente.');
+                    adminState[chatId] = { step: 'menu' };
+                    
+                } catch (err) {
+                    console.error("CMS Save Error:", err);
+                    bot.sendMessage(chatId, '❌ Error al guardar el archivo JSON.');
+                }
+            }
+            
+            else if (data === 'cms_cancel') {
+                 adminState[chatId] = { step: 'menu' };
+                 bot.sendMessage(chatId, '❌ Operación cancelada.');
+            }
+
+            // =================================================================
+            // === FIN LÓGICA CMS ===
+            // =================================================================
+
             // --- NUEVO: PAGO MANUAL - ACTIVAR (CON LATENCIA CERO) ---
-            if (data.startsWith('act_man_')) {
+            else if (data.startsWith('act_man_')) {
                 // Formato: act_man_USERID_DAYS
                 const parts = data.split('_');
                 const userId = parts[2];
