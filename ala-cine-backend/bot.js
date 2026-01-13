@@ -640,7 +640,11 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 bot.sendMessage(chatId, '📂 *Filtrar Pedidos por Prioridad:*', { parse_mode: 'Markdown', ...options });
             }
             else if (data.startsWith('req_filter_')) {
-                const filterType = data.split('_')[2];
+                const parts = data.split('_');
+                const filterType = parts[2];
+                const page = parseInt(parts[3]) || 0;
+                const PAGE_SIZE = 10;
+
                 let query = {};
                 let titleMsg = '';
 
@@ -656,16 +660,24 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 }
 
                 try {
+                    const totalDocs = await mongoDb.collection('movie_requests').countDocuments(query);
+                    
                     const requests = await mongoDb.collection('movie_requests')
                         .find(query)
                         .sort({ votes: -1 })
-                        .limit(10)
+                        .skip(page * PAGE_SIZE)
+                        .limit(PAGE_SIZE)
                         .toArray();
 
                     if (requests.length === 0) {
-                        bot.sendMessage(chatId, `✅ No hay pedidos pendientes en la categoría: ${filterType}`);
+                        if (page === 0) {
+                            bot.sendMessage(chatId, `✅ No hay pedidos pendientes en la categoría: ${filterType}`);
+                        } else {
+                            bot.sendMessage(chatId, `✅ No hay más pedidos en esta página.`);
+                        }
                     } else {
-                        bot.sendMessage(chatId, `📋 *${titleMsg}:*`, { parse_mode: 'Markdown' });
+                        bot.sendMessage(chatId, `📋 *${titleMsg} (Pág ${page + 1}):*`, { parse_mode: 'Markdown' });
+                        
                         for (const req of requests) {
                             const btn = {
                                 reply_markup: {
@@ -678,6 +690,21 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                             } else {
                                 bot.sendMessage(chatId, info, { parse_mode: 'Markdown', ...btn });
                             }
+                        }
+
+                        const nextIdx = page + 1;
+                        const hasMore = (page * PAGE_SIZE) + requests.length < totalDocs;
+
+                        if (hasMore) {
+                            const navOptions = {
+                                reply_markup: {
+                                    inline_keyboard: [
+                                        [{ text: `➡️ Ver más (Pág ${nextIdx + 1})`, callback_data: `req_filter_${filterType}_${nextIdx}` }],
+                                        [{ text: '⬅️ Volver al Menú', callback_data: 'view_requests_menu' }]
+                                    ]
+                                }
+                            };
+                            bot.sendMessage(chatId, `🔽 Navegación (${filterType})`, navOptions);
                         }
                     }
                 } catch (err) {
