@@ -6,7 +6,7 @@ const bridgeCache = new NodeCache({ stdTTL: 3600 });
 
 module.exports = function(app) {
     const TMDB_API_KEY = process.env.TMDB_API_KEY;
-    // URL de tu App en Play Store
+    // URL de la Play Store (Solo visual, la lógica real la maneja tu ruta /app/details)
     const PLAY_STORE_URL = "https://play.google.com/store/apps/details?id=com.salacine.app"; 
 
     // Función auxiliar para obtener datos
@@ -16,7 +16,6 @@ module.exports = function(app) {
         if (cached) return cached;
 
         try {
-            // Solicitamos detalles a TMDB
             const url = `https://api.themoviedb.org/3/${type}/${id}?api_key=${TMDB_API_KEY}&language=es-MX&append_to_response=credits,videos,images,watch/providers,recommendations`;
             const response = await axios.get(url);
             bridgeCache.set(cacheKey, response.data);
@@ -31,7 +30,6 @@ module.exports = function(app) {
     app.get('/view/:type/:id', async (req, res) => {
         const { type, id } = req.params;
         
-        // Validación básica
         if (type !== 'movie' && type !== 'tv') return res.status(404).send('Tipo de contenido inválido');
 
         const data = await getTmdbData(id, type);
@@ -42,31 +40,28 @@ module.exports = function(app) {
         const title = data.title || data.name;
         const overview = data.overview ? (data.overview.length > 300 ? data.overview.substring(0, 300) + '...' : data.overview) : "Sinopsis no disponible.";
         const backdrop = data.backdrop_path ? `https://image.tmdb.org/t/p/w1280${data.backdrop_path}` : 'https://placehold.co/1280x720/000000/FFFFFF?text=Sala+Cine';
+        const poster = data.poster_path ? `https://image.tmdb.org/t/p/w500${data.poster_path}` : '';
         const year = (data.release_date || data.first_air_date || '').substring(0, 4);
         const rating = data.vote_average ? data.vote_average.toFixed(1) : 'N/A';
         const genres = data.genres ? data.genres.slice(0, 3).map(g => g.name).join(' • ') : '';
         
-        // Elenco
         const cast = data.credits?.cast?.slice(0, 6).map(c => ({
             name: c.name,
             role: c.character,
             img: c.profile_path ? `https://image.tmdb.org/t/p/w200${c.profile_path}` : null
         })) || [];
 
-        // Proveedores
         const providers = data['watch/providers']?.results?.MX?.flatrate || []; 
 
-        // Trailer
         const trailer = data.videos?.results?.find(v => v.site === 'YouTube' && v.type === 'Trailer') || data.videos?.results?.[0];
         const youtubeEmbed = trailer ? `https://www.youtube.com/embed/${trailer.key}?autoplay=1&mute=1&controls=0&loop=1` : null;
 
-        // === CORRECCIÓN IMPORTANTE ===
-        // Dejamos el enlace LIMPIO, exactamente como lo tienes en tu server.js original.
-        // Sin '&type=', solo el ID. Así tu App sabe ir directo al detalle.
-        const appScheme = `salacine://details?id=${id}`; 
-        // =============================
+        // === CORRECCIÓN FINAL ===
+        // En lugar de inventar un esquema, usamos la ruta de tu servidor que ya funciona.
+        // Esto redirige al usuario a /app/details/12345, donde tu server.js se encarga del resto.
+        const safeRedirectUrl = `/app/details/${id}`;
+        // ========================
 
-        // --- RENDERIZADO HTML ---
         const html = `
         <!DOCTYPE html>
         <html lang="es">
@@ -97,6 +92,7 @@ module.exports = function(app) {
                 .rating { background: #f5c518; color: #000; padding: 2px 6px; border-radius: 4px; font-weight: bold; }
                 
                 .actions { display: flex; gap: 10px; margin-top: 20px; flex-wrap: wrap; }
+                /* Botón con href directo para máxima compatibilidad */
                 .btn { flex: 1; padding: 14px 20px; border-radius: 8px; font-weight: 600; text-decoration: none; text-align: center; display: flex; align-items: center; justify-content: center; gap: 8px; transition: 0.2s; min-width: 140px; cursor: pointer; }
                 .btn-primary { background: var(--primary); color: white; border: none; box-shadow: 0 4px 15px rgba(229, 9, 20, 0.4); }
                 .btn-primary:active { transform: scale(0.98); }
@@ -141,7 +137,7 @@ module.exports = function(app) {
                     </div>
 
                     <div class="actions">
-                        <a href="#" onclick="openApp()" class="btn btn-primary">
+                        <a href="${safeRedirectUrl}" class="btn btn-primary">
                             ▶ VER EN APP GRATIS
                         </a>
                         ${youtubeEmbed ? '<a href="#trailer" class="btn btn-secondary">Ver Trailer</a>' : ''}
@@ -151,7 +147,7 @@ module.exports = function(app) {
 
             <div class="info-section">
                 <div class="section-title">Vista Previa</div>
-                <div class="player-container" onclick="openApp()">
+                <div class="player-container" onclick="window.location.href='${safeRedirectUrl}'">
                     ${youtubeEmbed 
                         ? `<iframe src="${youtubeEmbed}" width="100%" height="100%" frameborder="0" style="pointer-events:none;"></iframe>` 
                         : `<img src="${backdrop}" width="100%" height="100%" style="object-fit:cover; opacity:0.5;">`
@@ -194,21 +190,8 @@ module.exports = function(app) {
             </div>
 
             <script>
-                function openApp() {
-                    const appUrl = "${appScheme}"; 
-                    const storeUrl = "${PLAY_STORE_URL}";
-                    
-                    // 1. Intentar abrir la App
-                    window.location = appUrl;
-
-                    // 2. Si en 1.5s no se ha ido de la página, asumir que no tiene la app
-                    setTimeout(function() {
-                        // Verificamos si la página sigue activa (usuario no cambió de app)
-                        if (!document.hidden) {
-                            window.location = storeUrl;
-                        }
-                    }, 1500);
-                }
+               // Ya no es estrictamente necesario porque el href maneja la navegación,
+               // pero lo dejamos vacío o para analytics si quisieras en el futuro.
             </script>
         </body>
         </html>
