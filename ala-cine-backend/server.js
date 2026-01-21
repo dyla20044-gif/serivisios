@@ -113,6 +113,17 @@ app.use((req, res, next) => {
 });
 
 // =========================================================================
+// === INTEGRACIÓN NUEVO MÓDULO BRIDGE (LANDING PAGE) ===
+// =========================================================================
+try {
+    require('./bridge.js')(app);
+    console.log("✅ Módulo Bridge (Landing Page) cargado correctamente.");
+} catch (error) {
+    console.warn("⚠️ Advertencia: No se pudo cargar bridge.js:", error.message);
+}
+// =========================================================================
+
+// =========================================================================
 // === SISTEMA DE BUFFER DE MONEDAS (OPTIMIZACIÓN DE ESCRITURA) ===
 // =========================================================================
 
