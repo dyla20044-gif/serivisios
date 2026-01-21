@@ -40,20 +40,22 @@ module.exports = function(app) {
         const title = data.title || data.name;
         const overview = data.overview ? (data.overview.length > 300 ? data.overview.substring(0, 300) + '...' : data.overview) : "Sinopsis no disponible.";
         
-        // Imágenes: Definimos Backdrop (Horizontal) y Poster (Vertical)
+        // Imágenes
         const backdropUrl = data.backdrop_path ? `https://image.tmdb.org/t/p/w1280${data.backdrop_path}` : 'https://placehold.co/1280x720/000000/FFFFFF?text=Sala+Cine';
-        // Para el poster usamos una calidad media-alta (w780) para que se vea bien de fondo en móviles
         const posterUrl = data.poster_path ? `https://image.tmdb.org/t/p/w780${data.poster_path}` : backdropUrl;
 
         const year = (data.release_date || data.first_air_date || '').substring(0, 4);
         const rating = data.vote_average ? data.vote_average.toFixed(1) : 'N/A';
-        const genres = data.genres ? data.genres.slice(0, 2).map(g => g.name).join(' • ') : ''; // Solo 2 géneros para que no sature en móvil
+        const genres = data.genres ? data.genres.slice(0, 2).map(g => g.name).join(' • ') : ''; 
         
         const cast = data.credits?.cast?.slice(0, 6).map(c => ({
             name: c.name,
             role: c.character,
             img: c.profile_path ? `https://image.tmdb.org/t/p/w200${c.profile_path}` : null
         })) || [];
+
+        // Procesar Temporadas si es Serie
+        const seasons = (type === 'tv' && data.seasons) ? data.seasons.filter(s => s.season_number > 0) : [];
 
         const providers = data['watch/providers']?.results?.MX?.flatrate || []; 
 
@@ -90,59 +92,31 @@ module.exports = function(app) {
                     background: var(--bg); 
                     color: var(--text); 
                     overflow-x: hidden; 
-                    padding-bottom: 90px; /* Espacio extra para el botón flotante en móvil */
+                    padding-bottom: 90px; 
                 }
                 
-                /* === HEADER RESPONSIVO === */
+                /* === HERO / PORTADA === */
                 .hero { 
                     position: relative; 
                     width: 100%; 
                     overflow: hidden; 
                     display: flex; 
                     align-items: flex-end; 
-                    /* En móvil: altura del 70% de la pantalla */
                     height: 70vh; 
                 }
                 
                 .hero-bg { 
-                    position: absolute; 
-                    top: 0; left: 0; width: 100%; height: 100%; 
-                    background-size: cover; 
-                    background-position: center top; 
-                    z-index: 1; 
-                    filter: brightness(0.65); /* Oscurece la imagen para que se lea el texto */
-                    
-                    /* Por defecto (Móvil) usamos el POSTER */
+                    position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
+                    background-size: cover; background-position: center top; 
+                    z-index: 1; filter: brightness(0.65); 
                     background-image: var(--bg-mobile);
-                    
                     transition: transform 10s ease;
                     animation: zoomIn 10s infinite alternate;
                 }
 
                 .hero-gradient { 
-                    position: absolute; 
-                    top: 0; left: 0; width: 100%; height: 100%; 
-                    z-index: 2; 
-                    /* Degradado mejorado para legibilidad */
-                    background: linear-gradient(to bottom, 
-                        rgba(15,15,15,0.3) 0%, 
-                        rgba(15,15,15,0.1) 50%, 
-                        var(--bg) 95%);
-                }
-                
-                /* Estilos específicos para PC */
-                @media (min-width: 768px) {
-                    .hero { height: 85vh; }
-                    .hero-bg { 
-                        /* En PC cambiamos al BACKDROP (Horizontal) */
-                        background-image: var(--bg-desktop); 
-                        background-position: center center;
-                    }
-                    .content { max-width: 900px; margin: 0 auto; text-align: center; }
-                    .meta { justify-content: center; }
-                    .actions { justify-content: center; }
-                    .sticky-cta { display: none !important; } /* Ocultar botón flotante en PC */
-                    body { padding-bottom: 0; }
+                    position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 2; 
+                    background: linear-gradient(to bottom, rgba(15,15,15,0.3) 0%, rgba(15,15,15,0.1) 50%, var(--bg) 98%);
                 }
                 
                 .content { position: relative; z-index: 10; padding: 25px; width: 100%; box-sizing: border-box; }
@@ -151,55 +125,84 @@ module.exports = function(app) {
                 h1 { font-size: 2.5rem; margin: 5px 0 10px 0; line-height: 1.1; font-weight: 800; text-shadow: 0 4px 20px rgba(0,0,0,0.8); }
                 
                 .meta { display: flex; align-items: center; gap: 15px; margin-bottom: 20px; font-size: 0.95rem; font-weight: 500; }
-                .rating { color: #f5c518; font-weight: bold; display: flex; align-items: center; gap:4px; }
+                .rating { color: #f5c518; font-weight: bold; }
                 .year-badge { background: rgba(255,255,255,0.2); padding: 2px 8px; border-radius: 4px; font-size: 0.8rem; }
                 
                 .actions { display: flex; gap: 12px; margin-top: 10px; flex-wrap: wrap; }
                 .btn { 
                     flex: 1; padding: 16px 24px; border-radius: 12px; font-weight: 700; 
                     text-decoration: none; text-align: center; display: flex; align-items: center; justify-content: center; gap: 10px; 
-                    transition: transform 0.2s; min-width: 140px; cursor: pointer; border: none;
-                    font-size: 1rem;
+                    transition: transform 0.2s; min-width: 140px; cursor: pointer; border: none; font-size: 1rem;
                 }
-                .btn-primary { 
-                    background: var(--primary); color: white; 
-                    box-shadow: 0 8px 25px rgba(229, 9, 20, 0.4); 
-                }
-                .btn-primary:active { transform: scale(0.96); }
-                .btn-secondary { 
-                    background: rgba(255,255,255,0.15); backdrop-filter: blur(10px); color: white; border: 1px solid rgba(255,255,255,0.1); 
-                }
+                .btn-primary { background: var(--primary); color: white; box-shadow: 0 8px 25px rgba(229, 9, 20, 0.4); }
+                .btn-secondary { background: rgba(255,255,255,0.15); backdrop-filter: blur(10px); color: white; border: 1px solid rgba(255,255,255,0.1); }
                 
-                /* BOTÓN FLOTANTE (STICKY) PARA MÓVIL */
+                /* LÓGICA DEL BOTÓN: Ocultar el primario en móvil, mostrar en PC */
+                @media (max-width: 767px) {
+                    /* En celular ocultamos el botón de ver principal porque ya tenemos el flotante */
+                    .actions .btn-primary { display: none; }
+                }
+
+                /* ESTILOS DE PC */
+                @media (min-width: 768px) {
+                    .hero { height: 85vh; }
+                    .hero-bg { background-image: var(--bg-desktop); background-position: center center; }
+                    .content { max-width: 900px; margin: 0 auto; text-align: center; }
+                    .meta { justify-content: center; }
+                    .actions { justify-content: center; }
+                    /* En PC mostramos el botón normal y ocultamos el flotante */
+                    .actions .btn-primary { display: flex; } 
+                    .sticky-cta { display: none !important; }
+                    body { padding-bottom: 0; }
+                }
+
                 .sticky-cta {
                     position: fixed; bottom: 20px; left: 20px; right: 20px; z-index: 100;
                     box-shadow: 0 10px 30px rgba(0,0,0,0.6);
                     animation: slideUp 0.5s ease-out 1s backwards;
                 }
                 
+                .info-section { padding: 0 25px 40px 25px; max-width: 800px; margin: 0 auto; }
+                .overview { color: #ccc; line-height: 1.7; font-size: 1.05rem; margin-bottom: 30px; }
+                .section-title { font-size: 1.2rem; font-weight: 700; margin-bottom: 20px; color: #fff; border-left: 4px solid var(--primary); padding-left: 12px; }
+                
+                /* PLAYER / TRAILER */
                 .player-container { 
                     margin: 30px 20px; background: #000; border-radius: 16px; overflow: hidden; position: relative; 
                     border: 1px solid #333; box-shadow: 0 10px 40px rgba(0,0,0,0.5); aspect-ratio: 16/9; cursor: pointer; 
                 }
                 .play-overlay { position: absolute; top:0; left:0; width:100%; height:100%; display: flex; align-items: center; justify-content: center; z-index: 10; background: rgba(0,0,0,0.2); }
-                .play-icon { width: 65px; height: 65px; background: rgba(229, 9, 20, 0.9); border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 30px rgba(229, 9, 20, 0.5); transition: transform 0.3s; }
-                .player-container:hover .play-icon { transform: scale(1.1); }
+                .play-icon { width: 65px; height: 65px; background: rgba(229, 9, 20, 0.9); border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 30px rgba(229, 9, 20, 0.5); }
                 
-                .info-section { padding: 0 25px 40px 25px; max-width: 800px; margin: 0 auto; }
-                .overview { color: #ccc; line-height: 1.7; font-size: 1.05rem; margin-bottom: 30px; }
+                /* LISTAS HORIZONTALES (CAST Y TEMPORADAS) */
+                .horizontal-list { display: flex; overflow-x: auto; gap: 15px; padding-bottom: 15px; scrollbar-width: none; }
+                .horizontal-list::-webkit-scrollbar { display: none; }
                 
-                .section-title { font-size: 1.2rem; font-weight: 700; margin-bottom: 20px; color: #fff; border-left: 4px solid var(--primary); padding-left: 12px; }
-                
-                .cast-row { display: flex; overflow-x: auto; gap: 15px; padding-bottom: 15px; scrollbar-width: none; }
-                .cast-row::-webkit-scrollbar { display: none; }
+                /* ESTILOS PARA LAS SERIES/TEMPORADAS */
+                .season-card { min-width: 140px; position: relative; cursor: pointer; transition: transform 0.2s; }
+                .season-card:active { transform: scale(0.95); }
+                .season-img-container { 
+                    position: relative; width: 100%; aspect-ratio: 2/3; border-radius: 8px; overflow: hidden; margin-bottom: 8px; border: 1px solid #333;
+                }
+                .season-img { width: 100%; height: 100%; object-fit: cover; }
+                .season-play {
+                    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+                    background: rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center;
+                }
+                .mini-play-icon {
+                    width: 40px; height: 40px; background: rgba(229,9,20,0.9); border-radius: 50%;
+                    display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+                }
+                .season-name { font-size: 0.9rem; font-weight: 600; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+                .season-eps { font-size: 0.75rem; color: #888; }
+
+                /* CAST */
                 .cast-item { min-width: 90px; text-align: center; }
                 .cast-img { width: 70px; height: 70px; border-radius: 50%; object-fit: cover; border: 2px solid #333; margin-bottom: 8px; }
-                .cast-name { font-size: 0.8rem; color: #fff; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
-                .cast-role { font-size: 0.7rem; color: #888; }
+                .cast-name { font-size: 0.8rem; font-weight: 600; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
                 
-                .providers { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 30px; }
+                .providers { display: flex; gap: 12px; flex-wrap: wrap; }
                 .provider-icon { width: 45px; height: 45px; border-radius: 10px; }
-                
                 .footer { text-align: center; padding: 40px 20px 80px 20px; color: #555; font-size: 0.8rem; }
                 
                 @keyframes zoomIn { from { transform: scale(1); } to { transform: scale(1.05); } }
@@ -245,7 +248,6 @@ module.exports = function(app) {
                         : `<img src="${backdropUrl}" width="100%" height="100%" style="object-fit:cover; opacity:0.6;">`
                     }
                     <div style="position:absolute; top:0; left:0; width:100%; height:100%; cursor:pointer; z-index:20;"></div>
-                    
                     <div class="play-overlay" style="pointer-events:none;">
                         <div class="play-icon">
                             <svg width="28" height="28" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>
@@ -255,23 +257,41 @@ module.exports = function(app) {
 
                 <div class="section-title">Sinopsis</div>
                 <p class="overview">${overview}</p>
+                
+                ${seasons.length > 0 ? `
+                <div class="section-title">Temporadas</div>
+                <div class="horizontal-list">
+                    ${seasons.map(s => `
+                        <div class="season-card" onclick="window.location.href='${safeRedirectUrl}'">
+                            <div class="season-img-container">
+                                <img src="${s.poster_path ? 'https://image.tmdb.org/t/p/w300'+s.poster_path : posterUrl}" class="season-img">
+                                <div class="season-play">
+                                    <div class="mini-play-icon">
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="season-name">${s.name}</div>
+                            <div class="season-eps">${s.episode_count} Capítulos</div>
+                        </div>
+                    `).join('')}
+                </div>
+                ` : ''}
 
                 ${providers.length > 0 ? `
                 <div class="section-title">Disponible en:</div>
                 <div class="providers">
                     ${providers.map(p => `<img src="https://image.tmdb.org/t/p/w200${p.logo_path}" class="provider-icon" alt="${p.provider_name}">`).join('')}
                 </div>
-                <p style="font-size:0.7rem; color:#444; margin-top:-10px;">Fuente: JustWatch</p>
                 ` : ''}
 
                 ${cast.length > 0 ? `
                 <div class="section-title">Reparto</div>
-                <div class="cast-row">
+                <div class="horizontal-list">
                     ${cast.map(c => `
                         <div class="cast-item">
-                            <img src="${c.img || 'https://placehold.co/100?text=User'}" class="cast-img">
+                            <img src="${c.img || 'https://placehold.co/100?text=Actor'}" class="cast-img">
                             <span class="cast-name">${c.name}</span>
-                            <span class="cast-role">${c.role}</span>
                         </div>
                     `).join('')}
                 </div>
