@@ -1115,33 +1115,28 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                         mediaType: 'movie'
                     });
 
-                    // MODIFICADO: URL APUNTA A LA BRIDGE PAGE
                     const DEEPLINK_URL = `${RENDER_BACKEND_URL}/view/movie/${movieDataToSave.tmdbId}`;
-                    
                     const CHANNEL_SMALL = process.env.TELEGRAM_CHANNEL_A_ID;
                     const CHANNEL_BIG_ID = process.env.TELEGRAM_CHANNEL_B_ID;
 
                     if (CHANNEL_SMALL) {
-                        const messageToSmall = `🎬 *¡PELÍCULA COMPLETA DISPONIBLE!* 🎬\n\n` +
-                            `**${movieDataToSave.title}**\n\n` +
-                            `${movieDataToSave.overview || 'Sin sinopsis.'}\n\n` +
-                            `_Toca el botón para ver en la App:_`;
+                        const releaseYear = movieDataToSave.release_date ? `(${movieDataToSave.release_date.substring(0, 4)})` : '';
+                        
+                        const messageToSmall = `🎬 *${movieDataToSave.title}* ${releaseYear}\n\n` +
+                            `📄 *Sinopsis:*\n_${movieDataToSave.overview || 'Sin sinopsis.'}_\n\n` +
+                            `[▶️ VER PELÍCULA AQUÍ ◀️](${DEEPLINK_URL})\n\n` +
+                            `[📘 ¿No sabes ver? Mira el Tutorial Aquí](https://t.me/peliculascinedyala_1m/15)`;
 
                         const sentMsgSmall = await bot.sendPhoto(CHANNEL_SMALL, movieDataToSave.poster_path ? `https://image.tmdb.org/t/p/w500${movieDataToSave.poster_path}` : 'https://placehold.co/500x750?text=SALA+CINE', {
                             caption: messageToSmall,
-                            parse_mode: 'Markdown',
-                            reply_markup: {
-                                inline_keyboard: [
-                                    [{ text: '▶️ Ver Ahora en la App', url: DEEPLINK_URL }]
-                                ]
-                            }
+                            parse_mode: 'Markdown'
+                            // SIN BOTONES AQUI, ES TEXTO LINK
                         });
 
                         const channelUsername = CHANNEL_SMALL.replace('@', '');
                         const linkToPost = `https://t.me/${channelUsername}/${sentMsgSmall.message_id}`;
 
                         if (CHANNEL_BIG_ID) {
-                            const releaseYear = movieDataToSave.release_date ? `(${movieDataToSave.release_date.substring(0, 4)})` : '';
                             const overviewTeaser = movieDataToSave.overview
                                 ? movieDataToSave.overview.length > 250
                                     ? movieDataToSave.overview.substring(0, 250) + '...'
@@ -1152,14 +1147,14 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                                 `🎬 *${movieDataToSave.title}* ${releaseYear}\n\n` +
                                 `📝 _${overviewTeaser}_\n\n` +
                                 `⚠️ _Por temas de copyright, la película completa se encuentra en nuestro canal privado._\n\n` +
-                                `👇 *VER PELÍCULA AQUÍ* 👇`;
+                                `📢 [Contratar Publicidad: @sala_cine_premiun](https://t.me/sala_cine_premiun)`;
 
                             await bot.sendPhoto(CHANNEL_BIG_ID, movieDataToSave.poster_path ? `https://image.tmdb.org/t/p/w500${movieDataToSave.poster_path}` : 'https://placehold.co/500x750?text=SALA+CINE', {
                                 caption: messageToBig,
                                 parse_mode: 'Markdown',
                                 reply_markup: {
                                     inline_keyboard: [
-                                        [{ text: '🚀 IR AL CANAL Y VER AHORA 🚀', url: linkToPost }]
+                                        [{ text: '🚀 IR AL CANAL PRIVADO', url: linkToPost }]
                                     ]
                                 }
                             });
@@ -1195,33 +1190,28 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                     bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id });
                     bot.sendMessage(chatId, `✅ "${movieDataToSave.title}" guardada. Publicando en AMBOS canales (Sin Push App)...`);
 
-                    // MODIFICADO: URL APUNTA A LA BRIDGE PAGE
                     const DEEPLINK_URL = `${RENDER_BACKEND_URL}/view/movie/${movieDataToSave.tmdbId}`;
-                    
                     const CHANNEL_SMALL = process.env.TELEGRAM_CHANNEL_A_ID;
                     const CHANNEL_BIG_ID = process.env.TELEGRAM_CHANNEL_B_ID;
 
                     if (CHANNEL_SMALL) {
-                        const messageToSmall = `🎬 *¡PELÍCULA COMPLETA DISPONIBLE!* 🎬\n\n` +
-                            `**${movieDataToSave.title}**\n\n` +
-                            `${movieDataToSave.overview || 'Sin sinopsis.'}\n\n` +
-                            `_Toca el botón para ver en la App:_`;
+                        const releaseYear = movieDataToSave.release_date ? `(${movieDataToSave.release_date.substring(0, 4)})` : '';
+                        
+                        const messageToSmall = `🎬 *${movieDataToSave.title}* ${releaseYear}\n\n` +
+                            `📄 *Sinopsis:*\n_${movieDataToSave.overview || 'Sin sinopsis.'}_\n\n` +
+                            `[▶️ VER PELÍCULA AQUÍ ◀️](${DEEPLINK_URL})\n\n` +
+                            `[📘 ¿No sabes ver? Mira el Tutorial Aquí](https://t.me/peliculascinedyala_1m/15)`;
 
                         const sentMsgSmall = await bot.sendPhoto(CHANNEL_SMALL, movieDataToSave.poster_path ? `https://image.tmdb.org/t/p/w500${movieDataToSave.poster_path}` : 'https://placehold.co/500x750?text=SALA+CINE', {
                             caption: messageToSmall,
-                            parse_mode: 'Markdown',
-                            reply_markup: {
-                                inline_keyboard: [
-                                    [{ text: '▶️ Ver Ahora en la App', url: DEEPLINK_URL }]
-                                ]
-                            }
+                            parse_mode: 'Markdown'
+                            // SIN BOTONES
                         });
 
                         const channelUsername = CHANNEL_SMALL.replace('@', '');
                         const linkToPost = `https://t.me/${channelUsername}/${sentMsgSmall.message_id}`;
 
                         if (CHANNEL_BIG_ID) {
-                            const releaseYear = movieDataToSave.release_date ? `(${movieDataToSave.release_date.substring(0, 4)})` : '';
                             const overviewTeaser = movieDataToSave.overview
                                 ? movieDataToSave.overview.length > 250
                                     ? movieDataToSave.overview.substring(0, 250) + '...'
@@ -1232,14 +1222,14 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                                 `🎬 *${movieDataToSave.title}* ${releaseYear}\n\n` +
                                 `📝 _${overviewTeaser}_\n\n` +
                                 `⚠️ _Por temas de copyright, la película completa se encuentra en nuestro canal privado._\n\n` +
-                                `👇 *VER PELÍCULA AQUÍ* 👇`;
+                                `📢 [Contratar Publicidad: @sala_cine_premiun](https://t.me/sala_cine_premiun)`;
 
                             await bot.sendPhoto(CHANNEL_BIG_ID, movieDataToSave.poster_path ? `https://image.tmdb.org/t/p/w500${movieDataToSave.poster_path}` : 'https://placehold.co/500x750?text=SALA+CINE', {
                                 caption: messageToBig,
                                 parse_mode: 'Markdown',
                                 reply_markup: {
                                     inline_keyboard: [
-                                        [{ text: '🚀 IR AL CANAL Y VER AHORA 🚀', url: linkToPost }]
+                                        [{ text: '🚀 IR AL CANAL PRIVADO', url: linkToPost }]
                                     ]
                                 }
                             });
@@ -1255,6 +1245,86 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 } catch (error) {
                     console.error("Error en save_publish_channel_no_push_:", error.response ? error.response.data : error.message);
                     bot.sendMessage(chatId, '❌ Error al guardar o publicar.');
+                } finally {
+                    adminState[chatId] = { step: 'menu' };
+                }
+            }
+
+            else if (data.startsWith('publish_push_channel_this_episode_')) {
+                const parts = data.split('_');
+                const tmdbId = parts[5];
+                const season = parts[6];
+                const episode = parts[7];
+
+                const state = adminState[chatId];
+                const episodeData = state?.lastSavedEpisodeData;
+                if (!episodeData || episodeData.tmdbId !== tmdbId || episodeData.seasonNumber.toString() !== season || episodeData.episodeNumber.toString() !== episode) {
+                    bot.sendMessage(chatId, 'Error: Datos perdidos. Intenta de nuevo desde el episodio anterior.');
+                    adminState[chatId] = { step: 'menu' };
+                    return;
+                }
+                bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id });
+                bot.sendMessage(chatId, `✅ Episodio S${season}E${episode} listo. Iniciando doble publicación...`);
+
+                try {
+                    await axios.post(`${RENDER_BACKEND_URL}/api/notify-new-content`, {
+                        title: `¡Nuevo Episodio! ${episodeData.title}`,
+                        body: `Ya disponible: S${episodeData.seasonNumber}E${episodeData.episodeNumber}`,
+                        imageUrl: episodeData.poster_path ? `https://image.tmdb.org/t/p/w500${episodeData.poster_path}` : null,
+                        tmdbId: episodeData.tmdbId,
+                        mediaType: 'tv'
+                    });
+
+                    const DEEPLINK_URL = `${RENDER_BACKEND_URL}/view/tv/${episodeData.tmdbId}`;
+                    const CHANNEL_SMALL = process.env.TELEGRAM_CHANNEL_A_ID;
+                    const CHANNEL_BIG_ID = process.env.TELEGRAM_CHANNEL_B_ID;
+
+                    if (CHANNEL_SMALL) {
+                        const messageToSmall = `📺 *${episodeData.title}*\n` +
+                            `🔹 Temporada ${episodeData.seasonNumber} - Episodio ${episodeData.episodeNumber}\n\n` +
+                            `📄 *Sinopsis:*\n_${episodeData.overview || 'Sin sinopsis.'}_\n\n` +
+                            `[▶️ VER EPISODIO AQUÍ ◀️](${DEEPLINK_URL})\n\n` +
+                            `[📘 ¿No sabes ver? Mira el Tutorial Aquí](https://t.me/peliculascinedyala_1m/15)`;
+
+                        const sentMsgSmall = await bot.sendPhoto(CHANNEL_SMALL, episodeData.poster_path ? `https://image.tmdb.org/t/p/w500${episodeData.poster_path}` : 'https://placehold.co/500x750?text=SALA+CINE', {
+                            caption: messageToSmall,
+                            parse_mode: 'Markdown'
+                            // SIN BOTONES
+                        });
+
+                        const channelUsername = CHANNEL_SMALL.replace('@', '');
+                        const linkToPost = `https://t.me/${channelUsername}/${sentMsgSmall.message_id}`;
+
+                        if (CHANNEL_BIG_ID) {
+                            const overviewTeaser = episodeData.overview
+                                ? episodeData.overview.length > 200
+                                    ? episodeData.overview.substring(0, 200) + '...'
+                                    : episodeData.overview
+                                : '¡Un nuevo capítulo lleno de emoción te espera!';
+
+                            const messageToBig = `🍿 *NUEVO EPISODIO DISPONIBLE* 🍿\n\n` +
+                                `📺 *${episodeData.title}*\n` +
+                                `🔹 Temporada ${episodeData.seasonNumber} - Episodio ${episodeData.episodeNumber}\n\n` +
+                                `📝 _${overviewTeaser}_\n\n` +
+                                `⚠️ _Disponible ahora en nuestro canal de respaldo privado._\n\n` +
+                                `📢 [Contratar Publicidad: @sala_cine_premiun](https://t.me/sala_cine_premiun)`;
+
+                            await bot.sendPhoto(CHANNEL_BIG_ID, episodeData.poster_path ? `https://image.tmdb.org/t/p/w500${episodeData.poster_path}` : 'https://placehold.co/500x750?text=SALA+CINE', {
+                                caption: messageToBig,
+                                parse_mode: 'Markdown',
+                                reply_markup: {
+                                    inline_keyboard: [
+                                        [{ text: '🚀 IR AL CANAL PRIVADO', url: linkToPost }]
+                                    ]
+                                }
+                            });
+                            bot.sendMessage(chatId, `📢 Publicado en ambos canales correctamente.`);
+                        }
+                    }
+
+                } catch (error) {
+                    console.error("Error en publish_push_channel_this_episode:", error.response ? error.response.data : error.message);
+                    bot.sendMessage(chatId, '❌ Error al enviar notificación.');
                 } finally {
                     adminState[chatId] = { step: 'menu' };
                 }
@@ -1286,91 +1356,6 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 }
             }
 
-            else if (data.startsWith('publish_push_channel_this_episode_')) {
-                const parts = data.split('_');
-                const tmdbId = parts[5];
-                const season = parts[6];
-                const episode = parts[7];
-
-                const state = adminState[chatId];
-                const episodeData = state?.lastSavedEpisodeData;
-                if (!episodeData || episodeData.tmdbId !== tmdbId || episodeData.seasonNumber.toString() !== season || episodeData.episodeNumber.toString() !== episode) {
-                    bot.sendMessage(chatId, 'Error: Datos perdidos. Intenta de nuevo desde el episodio anterior.');
-                    adminState[chatId] = { step: 'menu' };
-                    return;
-                }
-                bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id });
-                bot.sendMessage(chatId, `✅ Episodio S${season}E${episode} listo. Iniciando doble publicación...`);
-
-                try {
-                    await axios.post(`${RENDER_BACKEND_URL}/api/notify-new-content`, {
-                        title: `¡Nuevo Episodio! ${episodeData.title}`,
-                        body: `Ya disponible: S${episodeData.seasonNumber}E${episodeData.episodeNumber}`,
-                        imageUrl: episodeData.poster_path ? `https://image.tmdb.org/t/p/w500${episodeData.poster_path}` : null,
-                        tmdbId: episodeData.tmdbId,
-                        mediaType: 'tv'
-                    });
-
-                    // MODIFICADO: URL APUNTA A LA BRIDGE PAGE
-                    const DEEPLINK_URL = `${RENDER_BACKEND_URL}/view/tv/${episodeData.tmdbId}`;
-                    
-                    const CHANNEL_SMALL = process.env.TELEGRAM_CHANNEL_A_ID;
-                    const CHANNEL_BIG_ID = process.env.TELEGRAM_CHANNEL_B_ID;
-
-                    if (CHANNEL_SMALL) {
-                        const messageToSmall = `📺 *¡NUEVO EPISODIO EN SALA CINE!* 📺\n\n` +
-                            `**${episodeData.title}**\n` +
-                            `Temporada ${episodeData.seasonNumber} - Episodio ${episodeData.episodeNumber} ya disponible.\n\n` +
-                            `_Entra para verla ahora:_`;
-
-                        const sentMsgSmall = await bot.sendPhoto(CHANNEL_SMALL, episodeData.poster_path ? `https://image.tmdb.org/t/p/w500${episodeData.poster_path}` : 'https://placehold.co/500x750?text=SALA+CINE', {
-                            caption: messageToSmall,
-                            parse_mode: 'Markdown',
-                            reply_markup: {
-                                inline_keyboard: [
-                                    [{ text: '▶️ Ver Ahora en la App', url: DEEPLINK_URL }]
-                                ]
-                            }
-                        });
-
-                        const channelUsername = CHANNEL_SMALL.replace('@', '');
-                        const linkToPost = `https://t.me/${channelUsername}/${sentMsgSmall.message_id}`;
-
-                        if (CHANNEL_BIG_ID) {
-                            const overviewTeaser = episodeData.overview
-                                ? episodeData.overview.length > 200
-                                    ? episodeData.overview.substring(0, 200) + '...'
-                                    : episodeData.overview
-                                : '¡Un nuevo capítulo lleno de emoción te espera!';
-
-                            const messageToBig = `🍿 *NUEVO EPISODIO DISPONIBLE* 🍿\n\n` +
-                                `📺 *${episodeData.title}*\n` +
-                                `🔹 Temporada ${episodeData.seasonNumber} - Episodio ${episodeData.episodeNumber}\n\n` +
-                                `📝 _${overviewTeaser}_\n\n` +
-                                `⚠️ _Disponible ahora en nuestro canal de respaldo privado._\n\n` +
-                                `👇 *VER EPISODIO AQUÍ* 👇`;
-
-                            await bot.sendPhoto(CHANNEL_BIG_ID, episodeData.poster_path ? `https://image.tmdb.org/t/p/w500${episodeData.poster_path}` : 'https://placehold.co/500x750?text=SALA+CINE', {
-                                caption: messageToBig,
-                                parse_mode: 'Markdown',
-                                reply_markup: {
-                                    inline_keyboard: [
-                                        [{ text: '🚀 IR AL CANAL Y VER AHORA 🚀', url: linkToPost }]
-                                    ]
-                                }
-                            });
-                            bot.sendMessage(chatId, `📢 Publicado en ambos canales correctamente.`);
-                        }
-                    }
-
-                } catch (error) {
-                    console.error("Error en publish_push_channel_this_episode:", error.response ? error.response.data : error.message);
-                    bot.sendMessage(chatId, '❌ Error al enviar notificación.');
-                } finally {
-                    adminState[chatId] = { step: 'menu' };
-                }
-            }
-
             else if (data.startsWith('publish_channel_no_push_this_episode_')) {
                 const parts = data.split('_');
                 const tmdbId = parts[6];
@@ -1390,25 +1375,20 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 bot.sendMessage(chatId, `✅ Episodio S${season}E${episode}. Publicando en CANAL (Silencioso)...`);
 
                 try {
-                    // MODIFICADO: URL APUNTA A LA BRIDGE PAGE
                     const DEEPLINK_URL = `${RENDER_BACKEND_URL}/view/tv/${episodeData.tmdbId}`;
-                    
                     const CHANNEL_ID = process.env.TELEGRAM_CHANNEL_A_ID;
 
                     if (CHANNEL_ID) {
-                        const messageToChannel = `📺 *¡NUEVO EPISODIO EN SALA CINE!* 📺\n\n` +
-                            `**${episodeData.title}**\n` +
-                            `Temporada ${episodeData.seasonNumber} - Episodio ${episodeData.episodeNumber} ya disponible.\n\n` +
-                            `_Entra para verla ahora:_`;
+                        const messageToChannel = `📺 *${episodeData.title}*\n` +
+                            `🔹 Temporada ${episodeData.seasonNumber} - Episodio ${episodeData.episodeNumber}\n\n` +
+                            `📄 *Sinopsis:*\n_${episodeData.overview || 'Sin sinopsis.'}_\n\n` +
+                            `[▶️ VER EPISODIO AQUÍ ◀️](${DEEPLINK_URL})\n\n` +
+                            `[📘 ¿No sabes ver? Mira el Tutorial Aquí](https://t.me/peliculascinedyala_1m/15)`;
 
                         await bot.sendPhoto(CHANNEL_ID, episodeData.poster_path ? `https://image.tmdb.org/t/p/w500${episodeData.poster_path}` : 'https://placehold.co/500x750?text=SALA+CINE', {
                             caption: messageToChannel,
-                            parse_mode: 'Markdown',
-                            reply_markup: {
-                                inline_keyboard: [
-                                    [{ text: '▶️ Ver Ahora en la App', url: DEEPLINK_URL }]
-                                ]
-                            }
+                            parse_mode: 'Markdown'
+                            // SIN BOTONES
                         });
                         bot.sendMessage(chatId, `📢 Mensaje enviado al canal público.`);
                     }
