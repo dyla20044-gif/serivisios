@@ -3,30 +3,16 @@ const path = require('path');
 
 function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_ID, TMDB_API_KEY, RENDER_BACKEND_URL, axios, pinnedCache, sendNotificationToTopic, userCache) {
 
-    // --- HELPER FUNCTIONS FOR UI ---
-    const getStarString = (vote) => {
-        const count = Math.round((vote || 0) / 2);
-        return '⭐'.repeat(count > 0 ? count : 1);
-    };
+    // --- CONFIGURATION CONSTANTS ---
+    // Channel A is the PRIVATE storage/premium channel
+    const CHANNEL_PRIVATE = process.env.TELEGRAM_CHANNEL_A_ID; 
+    // Channel B is the main PUBLIC marketing channel
+    const CHANNEL_PUBLIC_MAIN = process.env.TELEGRAM_CHANNEL_B_ID; 
+    // Add more public channel IDs here if needed e.g. ['-100...', '-100...']
+    const EXTRA_PUBLIC_CHANNELS = []; 
 
-    const getQualityTag = (dateStr) => {
-        if (!dateStr) return "💎 Calidad: Ultra HD";
-        const releaseDate = new Date(dateStr);
-        const now = new Date();
-        const diffTime = Math.abs(now - releaseDate);
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-        return diffDays < 45 ? "🎦 Calidad: CINE" : "💎 Calidad: Ultra HD";
-    };
-
-    const truncateSynopsis = (text) => {
-        if (!text) return "Sin sinopsis.";
-        // Cortar a aprox 3 líneas (aprox 180 caracteres) para evitar scroll excesivo
-        return text.length > 180 ? text.substring(0, 177) + "..." : text;
-    };
-
-    const AD_SIGNATURE = "\n\n📢 PUBLICIDAD: Anuncia tu marca en nuestra red de canales. Contacto: @TuUsuario";
-
-    // -------------------------------
+    const TUTORIAL_URL = "https://t.me/TuCanalTutorial/123"; // CHANGE THIS
+    const AD_CONTACT = "@TuUsuario"; // CHANGE THIS
 
     bot.setMyCommands([
         { command: 'start', description: 'Reiniciar el bot y ver el menú principal' },
@@ -34,6 +20,53 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_ID, TMDB_API_KEY
         { command: 'editar', description: 'Editar los enlaces de una película o serie existente' },
         { command: 'pedidos', description: 'Ver la lista de películas solicitadas por los usuarios' }
     ]);
+
+    // --- HELPER FUNCTIONS FOR LAYOUTS ---
+
+    // 1. Private Channel Layout (Premium - Plain Text)
+    const generatePrivateCaption = (data, type) => {
+        const isMovie = type === 'movie';
+        const title = data.title || data.name;
+        const rating = data.vote_average ? parseFloat(data.vote_average).toFixed(1) : 'N/A';
+        const overview = data.overview ? (data.overview.length > 300 ? data.overview.substring(0, 300) + '...' : data.overview) : 'Sin sinopsis.';
+        const link = data.proEmbedCode || data.freeEmbedCode || "Enlace no disponible";
+        
+        // Specific metadata
+        const metaSeason = isMovie ? "" : `\n📂 Temporadas: ${data.seasonNumber}\n▶️ Episodios: ${data.episodeNumber} (Actual)`;
+        
+        return `🎬 ${title}
+📺 Calidad: Full HD
+🗣 Idioma: Latino
+⭐ Puntuación: ${rating} / 10${metaSeason}
+
+📖 Sinopsis:
+${overview}
+
+👇🏻 MIRA AQUÍ LA ${isMovie ? 'PELÍCULA' : 'SERIE'} 👇🏻
+${link}
+
+❓ ¿No sabes cómo verla?
+📘 Tutorial paso a paso aquí: ${TUTORIAL_URL}`;
+    };
+
+    // 2. Public Channel Layout (Marketing - Teaser)
+    const generatePublicCaption = (data, type) => {
+        const title = data.title || data.name;
+        const releaseYear = data.release_date || data.first_air_date || '';
+        const yearStr = releaseYear ? `(${releaseYear.substring(0, 4)})` : '';
+        const overviewTeaser = data.overview 
+            ? (data.overview.length > 200 ? data.overview.substring(0, 200) + '...' : data.overview) 
+            : 'Una historia increíble te espera...';
+        
+        let header = '';
+        if (type === 'movie') {
+            header = `🍿 *ESTRENO YA DISPONIBLE* 🍿\n\n🎬 *${title}* ${yearStr}`;
+        } else {
+            header = `🍿 *NUEVO EPISODIO DISPONIBLE* 🍿\n\n📺 *${title}*\n🔹 Temporada ${data.seasonNumber} - Episodio ${data.episodeNumber}`;
+        }
+
+        return `${header}\n\n📝 _${overviewTeaser}_\n\n⚠️ _Por temas de copyright, la versión completa se encuentra en nuestro canal privado._\n\n👇 *VER AQUÍ* 👇\n\n📢 PUBLICIDAD: Anuncia tu marca aquí. Contacto: ${AD_CONTACT}`;
+    };
 
     bot.onText(/\/start|\/subir/, (msg) => {
         const chatId = msg.chat.id;
@@ -468,14 +501,6 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 return;
             }
 
-            if (data === 'tutorial_how_to') {
-                bot.answerCallbackQuery(callbackQuery.id, {
-                    text: 'ℹ️ Para ver la película, descarga nuestra App Oficial.',
-                    show_alert: true
-                });
-                return;
-            }
-
             if (chatId !== ADMIN_CHAT_ID) {
                 bot.answerCallbackQuery(callbackQuery.id, { text: 'No tienes permiso.', show_alert: true });
                 return;
@@ -793,25 +818,34 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
 
                 const mediaId = adminState[chatId].movieDataToSave.tmdbId;
 
+                const pinnedStatus = isPinned ? "⭐ DESTACADO (Top)" : "📅 Normal";
+                bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id });
+                
+                // PUBLICATION MENU (Refactored)
                 const options = {
                     reply_markup: {
                         inline_keyboard: [
                             [
-                                { text: '💾 Solo App (Visible)', callback_data: 'save_only_' + mediaId },
-                                { text: '🤫 Solo Guardar (Oculto)', callback_data: 'save_silent_hidden_' + mediaId }
+                                { text: '💾 Solo en App', callback_data: `pub_select_app_only` },
+                                { text: '💾 Guardar Oculto', callback_data: `pub_select_hidden` }
                             ],
                             [
-                                { text: '🚀 Red Global (10+) + PUSH', callback_data: 'publish_network_push_' + mediaId }
+                                { text: '📢 Publicar: TODOS (A + B...)', callback_data: `pub_select_public_all` }
                             ],
                             [
-                                { text: '📢 Red Global (10+) - Sin Push', callback_data: 'publish_network_nopush_' + mediaId }
+                                { text: '🔒 Publicar: SOLO Canal Privado', callback_data: `pub_select_private` }
                             ]
                         ]
                     }
                 };
 
-                const pinnedStatus = isPinned ? "⭐ DESTACADO (Top)" : "📅 Normal";
-                bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id });
+                // Add main public channel button explicitly if needed, or stick to "ALL"
+                if (CHANNEL_PUBLIC_MAIN) {
+                    options.reply_markup.inline_keyboard.push([
+                        { text: '📢 Publicar: Canal Principal (Marketing)', callback_data: `pub_select_specific_main` }
+                    ]);
+                }
+
                 bot.sendMessage(chatId, `✅ Estado definido: ${pinnedStatus}.\n¿Cómo deseas publicar?`, options);
             }
 
@@ -850,13 +884,13 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                         rowNext.push({ text: `➡️ Siguiente: S${season}E${nextEpisode}`, callback_data: `add_next_episode_${seriesData.tmdbId}_${season}` });
                     }
 
+                    // Series Publication Options (Refactored)
                     const rowPublish = [
-                        { text: `📲 App + PUSH`, callback_data: `publish_push_this_episode_${seriesData.tmdbId}_${season}_${episode}` },
-                        { text: `🚀 Red Global + PUSH`, callback_data: `publish_network_push_series_${seriesData.tmdbId}_${season}_${episode}` }
+                        { text: `📢 Publicar (Todos)`, callback_data: `pub_series_all` },
+                        { text: `🔒 Solo Privado`, callback_data: `pub_series_private` }
                     ];
 
                     const rowFinal = [
-                        { text: `📢 Red Global (No Push)`, callback_data: `publish_network_nopush_series_${seriesData.tmdbId}_${season}_${episode}` },
                         { text: '⏹️ Finalizar Todo', callback_data: `finish_series_${seriesData.tmdbId}` }
                     ];
 
@@ -870,6 +904,157 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                     bot.sendMessage(chatId, '❌ Error guardando en servidor.');
                     adminState[chatId] = { step: 'menu' };
                 }
+            }
+
+            // --- REFACTORED PUBLICATION LOGIC (MOVIE) ---
+            else if (data.startsWith('pub_select_')) {
+                const action = data.replace('pub_select_', '');
+                const { movieDataToSave } = adminState[chatId];
+                if (!movieDataToSave) { bot.sendMessage(chatId, 'Error: Datos perdidos.'); return; }
+
+                bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id });
+
+                if (action === 'app_only') {
+                    await axios.post(`${RENDER_BACKEND_URL}/add-movie`, movieDataToSave);
+                    bot.sendMessage(chatId, `✅ "${movieDataToSave.title}" guardada solo en la app.`);
+                    adminState[chatId] = { step: 'menu' };
+                    return;
+                }
+
+                if (action === 'hidden') {
+                    movieDataToSave.hideFromRecent = true;
+                    await axios.post(`${RENDER_BACKEND_URL}/add-movie`, movieDataToSave);
+                    bot.sendMessage(chatId, `✅ Guardado en modo silencio (Oculto en recientes).`);
+                    adminState[chatId] = { step: 'menu' };
+                    return;
+                }
+
+                // For publishing flows:
+                // 1. Save to Backend
+                await axios.post(`${RENDER_BACKEND_URL}/add-movie`, movieDataToSave);
+                bot.sendMessage(chatId, '✅ Guardado en BD. Procesando publicación...');
+
+                // 2. Send Push Notification (Always)
+                try {
+                    await axios.post(`${RENDER_BACKEND_URL}/api/notify-new-content`, {
+                        title: "¡Nuevo Estreno!",
+                        body: `Ya puedes ver: ${movieDataToSave.title}`,
+                        imageUrl: movieDataToSave.poster_path ? `https://image.tmdb.org/t/p/w500${movieDataToSave.poster_path}` : null,
+                        tmdbId: movieDataToSave.tmdbId,
+                        mediaType: 'movie'
+                    });
+                } catch (e) { console.error("Push Error", e); }
+
+                // 3. Publish to PRIVATE Channel (The Bridge)
+                let privateMsgLink = null;
+                try {
+                    const privateCaption = generatePrivateCaption(movieDataToSave, 'movie');
+                    const sentMsg = await bot.sendPhoto(CHANNEL_PRIVATE, 
+                        movieDataToSave.poster_path ? `https://image.tmdb.org/t/p/w500${movieDataToSave.poster_path}` : 'https://placehold.co/500x750?text=NO+IMG',
+                        { caption: privateCaption, parse_mode: 'HTML' } // HTML mostly, or plain text if no bold needed in strict mode
+                    );
+                    
+                    // Construct link: https://t.me/c/CHANNEL_ID_NO_PREFIX/MSG_ID
+                    const chanIdStr = CHANNEL_PRIVATE.toString().replace('-100', '');
+                    privateMsgLink = `https://t.me/c/${chanIdStr}/${sentMsg.message_id}`;
+                    bot.sendMessage(chatId, `✅ Publicado en Canal Privado.`);
+
+                } catch (e) {
+                    bot.sendMessage(chatId, `❌ Error publicando en Privado: ${e.message}`);
+                    return; // Stop if private fails (Bridge broken)
+                }
+
+                // 4. Publish to Public Channels (if selected)
+                if (action === 'public_all' || action === 'specific_main') {
+                    const targets = action === 'public_all' ? [CHANNEL_PUBLIC_MAIN, ...EXTRA_PUBLIC_CHANNELS] : [CHANNEL_PUBLIC_MAIN];
+                    const publicCaption = generatePublicCaption(movieDataToSave, 'movie');
+
+                    for (const targetId of targets) {
+                        if (!targetId) continue;
+                        try {
+                            await bot.sendPhoto(targetId,
+                                movieDataToSave.poster_path ? `https://image.tmdb.org/t/p/w500${movieDataToSave.poster_path}` : 'https://placehold.co/500x750?text=NO+IMG',
+                                {
+                                    caption: publicCaption,
+                                    parse_mode: 'Markdown',
+                                    reply_markup: {
+                                        inline_keyboard: [
+                                            [{ text: '🚀 IR AL CANAL Y VER AHORA 🚀', url: privateMsgLink }]
+                                        ]
+                                    }
+                                }
+                            );
+                        } catch (e) { console.error(`Error sending to public ${targetId}`, e); }
+                    }
+                    bot.sendMessage(chatId, `📢 Publicado en canales públicos seleccionados.`);
+                }
+
+                adminState[chatId] = { step: 'menu' };
+            }
+
+            // --- REFACTORED PUBLICATION LOGIC (SERIES) ---
+            else if (data.startsWith('pub_series_')) {
+                const action = data.replace('pub_series_', '');
+                const { lastSavedEpisodeData } = adminState[chatId];
+                if (!lastSavedEpisodeData) { bot.sendMessage(chatId, 'Error: Datos perdidos.'); return; }
+
+                bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id });
+                bot.sendMessage(chatId, '⏳ Procesando publicación del episodio...');
+
+                // 1. Send Push
+                try {
+                    await axios.post(`${RENDER_BACKEND_URL}/api/notify-new-content`, {
+                        title: `¡Nuevo Episodio! ${lastSavedEpisodeData.title}`,
+                        body: `Ya disponible: S${lastSavedEpisodeData.seasonNumber}E${lastSavedEpisodeData.episodeNumber}`,
+                        imageUrl: lastSavedEpisodeData.poster_path ? `https://image.tmdb.org/t/p/w500${lastSavedEpisodeData.poster_path}` : null,
+                        tmdbId: lastSavedEpisodeData.tmdbId,
+                        mediaType: 'tv'
+                    });
+                } catch (e) { console.error("Push Error", e); }
+
+                // 2. Publish to Private (Bridge)
+                let privateMsgLink = null;
+                try {
+                    const privateCaption = generatePrivateCaption(lastSavedEpisodeData, 'tv');
+                    const sentMsg = await bot.sendPhoto(CHANNEL_PRIVATE, 
+                        lastSavedEpisodeData.poster_path ? `https://image.tmdb.org/t/p/w500${lastSavedEpisodeData.poster_path}` : 'https://placehold.co/500x750?text=NO+IMG',
+                        { caption: privateCaption, parse_mode: 'HTML' }
+                    );
+                    const chanIdStr = CHANNEL_PRIVATE.toString().replace('-100', '');
+                    privateMsgLink = `https://t.me/c/${chanIdStr}/${sentMsg.message_id}`;
+                    bot.sendMessage(chatId, `✅ Publicado en Canal Privado.`);
+                } catch (e) {
+                    bot.sendMessage(chatId, `❌ Error publicando en Privado: ${e.message}`);
+                    return;
+                }
+
+                // 3. Publish to Public (if selected)
+                if (action === 'all') {
+                    const targets = [CHANNEL_PUBLIC_MAIN, ...EXTRA_PUBLIC_CHANNELS];
+                    const publicCaption = generatePublicCaption(lastSavedEpisodeData, 'tv');
+
+                    for (const targetId of targets) {
+                        if (!targetId) continue;
+                        try {
+                            await bot.sendPhoto(targetId,
+                                lastSavedEpisodeData.poster_path ? `https://image.tmdb.org/t/p/w500${lastSavedEpisodeData.poster_path}` : 'https://placehold.co/500x750?text=NO+IMG',
+                                {
+                                    caption: publicCaption,
+                                    parse_mode: 'Markdown',
+                                    reply_markup: {
+                                        inline_keyboard: [
+                                            [{ text: '🚀 IR AL CANAL Y VER AHORA 🚀', url: privateMsgLink }]
+                                        ]
+                                    }
+                                }
+                            );
+                        } catch (e) { console.error(`Error sending to public ${targetId}`, e); }
+                    }
+                    bot.sendMessage(chatId, `📢 Publicado en canales públicos.`);
+                }
+
+                // Restore step to continue adding episodes if needed
+                adminState[chatId].step = 'awaiting_series_action';
             }
 
 
@@ -1094,265 +1279,6 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                     bot.sendMessage(chatId, '❌ Error al intentar eliminar el contenido.');
                 }
                 adminState[chatId] = { step: 'menu' };
-            }
-
-            else if (data.startsWith('save_only_')) {
-                const { movieDataToSave } = adminState[chatId];
-                if (!movieDataToSave?.tmdbId) { bot.sendMessage(chatId, 'Error: Datos perdidos.'); adminState[chatId] = { step: 'menu' }; return; }
-                await axios.post(`${RENDER_BACKEND_URL}/add-movie`, movieDataToSave);
-                bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id });
-                bot.sendMessage(chatId, `✅ "${movieDataToSave.title}" guardada solo en la app.`);
-                adminState[chatId] = { step: 'menu' };
-            }
-
-            else if (data.startsWith('save_silent_hidden_')) {
-                const { movieDataToSave } = adminState[chatId];
-                if (!movieDataToSave?.tmdbId) { bot.sendMessage(chatId, 'Error: Datos perdidos.'); adminState[chatId] = { step: 'menu' }; return; }
-                movieDataToSave.hideFromRecent = true;
-                try {
-                    await axios.post(`${RENDER_BACKEND_URL}/add-movie`, movieDataToSave);
-                    bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id });
-                    bot.sendMessage(chatId, `✅ *${movieDataToSave.title}* guardada en MODO SILENCIO.`, { parse_mode: 'Markdown' });
-                } catch (error) {
-                    bot.sendMessage(chatId, '❌ Error al guardar.');
-                } finally {
-                    adminState[chatId] = { step: 'menu' };
-                }
-            }
-
-            // --- NETWORK PUBLISH LOGIC FOR MOVIES ---
-            else if (data.startsWith('publish_network_push_') || data.startsWith('publish_network_nopush_')) {
-                const shouldPush = data.startsWith('publish_network_push_');
-                const tmdbIdFromCallback = data.split('_').pop();
-                const { movieDataToSave } = adminState[chatId];
-
-                if (!movieDataToSave?.tmdbId || movieDataToSave.tmdbId !== tmdbIdFromCallback) {
-                    bot.sendMessage(chatId, 'Error: Datos perdidos. Intenta de nuevo desde la búsqueda.');
-                    adminState[chatId] = { step: 'menu' };
-                    return;
-                }
-
-                try {
-                    // 1. Guardar en Backend
-                    await axios.post(`${RENDER_BACKEND_URL}/add-movie`, movieDataToSave);
-                    
-                    bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id });
-                    bot.sendMessage(chatId, `✅ "${movieDataToSave.title}" guardada. Iniciando distribución en RED GLOBAL...`);
-
-                    // 2. Notificación Push (si aplica)
-                    if (shouldPush) {
-                        await axios.post(`${RENDER_BACKEND_URL}/api/notify-new-content`, {
-                            title: "¡Nuevo Estreno!",
-                            body: `Ya puedes ver: ${movieDataToSave.title}`,
-                            imageUrl: movieDataToSave.poster_path ? `https://image.tmdb.org/t/p/w500${movieDataToSave.poster_path}` : null,
-                            tmdbId: movieDataToSave.tmdbId,
-                            mediaType: 'movie'
-                        });
-                    }
-
-                    const DEEPLINK_URL = `${RENDER_BACKEND_URL}/view/movie/${movieDataToSave.tmdbId}`;
-                    const CHANNEL_PRIVATE = process.env.TELEGRAM_CHANNEL_A_ID;
-
-                    // 3. Publicar en Canal Privado (A) - Diseño Premium
-                    if (CHANNEL_PRIVATE) {
-                        const stars = getStarString(movieDataToSave.vote_average);
-                        const qualityTag = getQualityTag(movieDataToSave.release_date);
-                        const shortOverview = truncateSynopsis(movieDataToSave.overview);
-                        const releaseYear = movieDataToSave.release_date ? `(${movieDataToSave.release_date.substring(0, 4)})` : '';
-
-                        const messagePrivate = `🎬 *${movieDataToSave.title}* ${releaseYear}\n` +
-                            `${stars}\n` +
-                            `${qualityTag}\n\n` +
-                            `_${shortOverview}_\n\n` +
-                            `🔗 Mírala ya aquí: [Toque aquí para ver](${DEEPLINK_URL})`;
-
-                        const sentMsgPrivate = await bot.sendPhoto(CHANNEL_PRIVATE, movieDataToSave.poster_path ? `https://image.tmdb.org/t/p/w500${movieDataToSave.poster_path}` : 'https://placehold.co/500x750?text=SALA+CINE', {
-                            caption: messagePrivate,
-                            parse_mode: 'Markdown',
-                            reply_markup: {
-                                inline_keyboard: [
-                                    [{ text: '📖 ¿Cómo ver la película?', callback_data: 'tutorial_how_to' }]
-                                ]
-                            }
-                        });
-
-                        // 4. Distribuir a Red Pública (Loop 1-10 + Legacy B)
-                        const channelUsername = CHANNEL_PRIVATE.replace('@', '');
-                        // Construir link al post privado (soporta canales privados -100 si se tuviera ID, o públicos con username)
-                        // Si es privado y no tiene username, esto fallaría sin un invite link específico, asumimos username o ID público para redirección
-                        const linkToPost = `https://t.me/${channelUsername}/${sentMsgPrivate.message_id}`;
-
-                        const publicChannels = [];
-                        if (process.env.TELEGRAM_CHANNEL_B_ID) publicChannels.push(process.env.TELEGRAM_CHANNEL_B_ID);
-                        for (let i = 1; i <= 10; i++) {
-                            const ch = process.env[`CHANNEL_PUBLIC_${i}`];
-                            if (ch) publicChannels.push(ch);
-                        }
-                        const uniquePublic = [...new Set(publicChannels)];
-
-                        if (uniquePublic.length > 0) {
-                            const messagePublic = `🍿 *ESTRENO YA DISPONIBLE* 🍿\n\n` +
-                                `🎬 *${movieDataToSave.title}* ${releaseYear}\n\n` +
-                                `📝 _${shortOverview}_\n\n` +
-                                `⚠️ _La película completa se encuentra en nuestro canal VIP._\n` +
-                                `👇 *VER PELÍCULA AQUÍ* 👇` +
-                                AD_SIGNATURE;
-
-                            let successCount = 0;
-                            for (const pubChannel of uniquePublic) {
-                                try {
-                                    await bot.sendPhoto(pubChannel, movieDataToSave.poster_path ? `https://image.tmdb.org/t/p/w500${movieDataToSave.poster_path}` : 'https://placehold.co/500x750?text=SALA+CINE', {
-                                        caption: messagePublic,
-                                        parse_mode: 'Markdown',
-                                        reply_markup: {
-                                            inline_keyboard: [
-                                                [{ text: '🚀 IR AL CANAL Y VER AHORA 🚀', url: linkToPost }]
-                                            ]
-                                        }
-                                    });
-                                    successCount++;
-                                } catch (e) { console.error(`Falló envío a ${pubChannel}`, e.message); }
-                            }
-                            bot.sendMessage(chatId, `📢 Éxito: Publicado en Privado + ${successCount} canales públicos.`);
-                        } else {
-                            bot.sendMessage(chatId, `📢 Publicado en Privado (No hay canales públicos configurados).`);
-                        }
-
-                    } else {
-                        bot.sendMessage(chatId, `⚠️ Error: Falta configurar TELEGRAM_CHANNEL_A_ID en .env`);
-                    }
-
-                } catch (error) {
-                    console.error("Error en publish_network_:", error.response ? error.response.data : error.message);
-                    bot.sendMessage(chatId, '❌ Error al guardar o enviar notificación.');
-                } finally {
-                    adminState[chatId] = { step: 'menu' };
-                }
-            }
-
-
-            else if (data.startsWith('publish_push_this_episode_')) {
-                const [_, __, ___, tmdbId, season, episode] = data.split('_');
-                const state = adminState[chatId];
-                const episodeData = state?.lastSavedEpisodeData;
-                if (!episodeData || episodeData.tmdbId !== tmdbId || episodeData.seasonNumber.toString() !== season || episodeData.episodeNumber.toString() !== episode) {
-                    bot.sendMessage(chatId, 'Error: Datos perdidos.'); adminState[chatId] = { step: 'menu' }; return;
-                }
-                bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id });
-                bot.sendMessage(chatId, `✅ Episodio S${season}E${episode} listo. Enviando notificación PUSH...`);
-                try {
-                    await axios.post(`${RENDER_BACKEND_URL}/api/notify-new-content`, {
-                        title: `¡Nuevo Episodio! ${episodeData.title}`,
-                        body: `Ya disponible: S${episodeData.seasonNumber}E${episodeData.episodeNumber}`,
-                        imageUrl: episodeData.poster_path ? `https://image.tmdb.org/t/p/w500${episodeData.poster_path}` : null,
-                        tmdbId: episodeData.tmdbId,
-                        mediaType: 'tv'
-                    });
-                    bot.sendMessage(chatId, `📲 Notificación PUSH y Publicación completadas.`);
-                } catch (error) {
-                    console.error("Error en publish_push_this_episode:", error.response ? error.response.data : error.message);
-                    bot.sendMessage(chatId, '❌ Error al enviar notificación.');
-                } finally {
-                    adminState[chatId] = { step: 'menu' };
-                }
-            }
-
-            // --- NETWORK PUBLISH LOGIC FOR SERIES ---
-            else if (data.startsWith('publish_network_push_series_') || data.startsWith('publish_network_nopush_series_')) {
-                const shouldPush = data.startsWith('publish_network_push_series_');
-                const parts = data.split('_');
-                // Format: publish_network_[push|nopush]_series_TMDBID_SEASON_EPISODE
-                // push: parts[4]=tmdb, [5]=s, [6]=e. nopush: parts[4]=tmdb...
-                const tmdbId = parts[4];
-                const season = parts[5];
-                const episode = parts[6];
-
-                const state = adminState[chatId];
-                const episodeData = state?.lastSavedEpisodeData;
-                if (!episodeData || episodeData.tmdbId !== tmdbId || episodeData.seasonNumber.toString() !== season || episodeData.episodeNumber.toString() !== episode) {
-                    bot.sendMessage(chatId, 'Error: Datos perdidos. Intenta de nuevo desde el episodio anterior.');
-                    adminState[chatId] = { step: 'menu' };
-                    return;
-                }
-                bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id });
-                bot.sendMessage(chatId, `✅ Episodio S${season}E${episode} listo. Iniciando distribución RED GLOBAL...`);
-
-                try {
-                    if (shouldPush) {
-                        await axios.post(`${RENDER_BACKEND_URL}/api/notify-new-content`, {
-                            title: `¡Nuevo Episodio! ${episodeData.title}`,
-                            body: `Ya disponible: S${episodeData.seasonNumber}E${episodeData.episodeNumber}`,
-                            imageUrl: episodeData.poster_path ? `https://image.tmdb.org/t/p/w500${episodeData.poster_path}` : null,
-                            tmdbId: episodeData.tmdbId,
-                            mediaType: 'tv'
-                        });
-                    }
-
-                    const DEEPLINK_URL = `${RENDER_BACKEND_URL}/view/tv/${episodeData.tmdbId}`;
-                    const CHANNEL_PRIVATE = process.env.TELEGRAM_CHANNEL_A_ID;
-
-                    if (CHANNEL_PRIVATE) {
-                        const shortOverview = truncateSynopsis(episodeData.overview);
-                        const messagePrivate = `📺 *¡NUEVO EPISODIO!* 📺\n\n` +
-                            `**${episodeData.title}**\n` +
-                            `Temporada ${episodeData.seasonNumber} - Episodio ${episodeData.episodeNumber}\n\n` +
-                            `_${shortOverview}_\n\n` +
-                            `🔗 Mírala ya aquí: [Toque aquí para ver](${DEEPLINK_URL})`;
-
-                        const sentMsgPrivate = await bot.sendPhoto(CHANNEL_PRIVATE, episodeData.poster_path ? `https://image.tmdb.org/t/p/w500${episodeData.poster_path}` : 'https://placehold.co/500x750?text=SALA+CINE', {
-                            caption: messagePrivate,
-                            parse_mode: 'Markdown',
-                            reply_markup: {
-                                inline_keyboard: [
-                                    [{ text: '📖 ¿Cómo ver la serie?', callback_data: 'tutorial_how_to' }]
-                                ]
-                            }
-                        });
-
-                        // Public Network Distribution
-                        const channelUsername = CHANNEL_PRIVATE.replace('@', '');
-                        const linkToPost = `https://t.me/${channelUsername}/${sentMsgPrivate.message_id}`;
-
-                        const publicChannels = [];
-                        if (process.env.TELEGRAM_CHANNEL_B_ID) publicChannels.push(process.env.TELEGRAM_CHANNEL_B_ID);
-                        for (let i = 1; i <= 10; i++) {
-                            const ch = process.env[`CHANNEL_PUBLIC_${i}`];
-                            if (ch) publicChannels.push(ch);
-                        }
-                        const uniquePublic = [...new Set(publicChannels)];
-
-                        if (uniquePublic.length > 0) {
-                            const messagePublic = `🍿 *NUEVO EPISODIO DISPONIBLE* 🍿\n\n` +
-                                `📺 *${episodeData.title}*\n` +
-                                `🔹 Temporada ${episodeData.seasonNumber} - Episodio ${episodeData.episodeNumber}\n\n` +
-                                `📝 _${shortOverview}_\n\n` +
-                                `⚠️ _Disponible ahora en nuestro canal VIP._\n\n` +
-                                `👇 *VER EPISODIO AQUÍ* 👇` +
-                                AD_SIGNATURE;
-
-                            for (const pubChannel of uniquePublic) {
-                                try {
-                                    await bot.sendPhoto(pubChannel, episodeData.poster_path ? `https://image.tmdb.org/t/p/w500${episodeData.poster_path}` : 'https://placehold.co/500x750?text=SALA+CINE', {
-                                        caption: messagePublic,
-                                        parse_mode: 'Markdown',
-                                        reply_markup: {
-                                            inline_keyboard: [
-                                                [{ text: '🚀 IR AL CANAL Y VER AHORA 🚀', url: linkToPost }]
-                                            ]
-                                        }
-                                    });
-                                } catch (e) { }
-                            }
-                            bot.sendMessage(chatId, `📢 Publicado en ambos canales correctamente.`);
-                        }
-                    }
-
-                } catch (error) {
-                    console.error("Error en network_series_publish:", error.response ? error.response.data : error.message);
-                    bot.sendMessage(chatId, '❌ Error al enviar notificación.');
-                } finally {
-                    adminState[chatId] = { step: 'menu' };
-                }
             }
 
             else if (data.startsWith('finish_series_')) {
