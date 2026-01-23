@@ -1,10 +1,6 @@
 const fs = require('fs');
 const path = require('path');
 
-// =============================================================================
-// HELPER FUNCTIONS FOR TEXT FORMATTING & DELAYS
-// =============================================================================
-
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 const truncateText = (text, maxLength = 200) => {
@@ -12,18 +8,15 @@ const truncateText = (text, maxLength = 200) => {
     if (text.length <= maxLength) return text;
     return text.substring(0, maxLength) + '...';
 };
-
-// Generador de Post para Canal Privado (A) - Diseño "Sexy"
 const generatePrivateCaption = (data, mediaType, deepLinkUrl) => {
     const title = data.title || data.name;
-    // Intentar obtener año
     let year = '';
     if (data.release_date) year = `(${data.release_date.substring(0, 4)})`;
     else if (data.first_air_date) year = `(${data.first_air_date.substring(0, 4)})`;
 
-    const synopsis = truncateText(data.overview, 250); // Cortar a ~3 líneas
+    const synopsis = truncateText(data.overview, 250); 
     
-    // Datos cosméticos hardcodeados como solicitado
+    // Datos cosméticos
     const quality = "1080p / 4K 💎"; 
     const lang = "Español Latino 🇲🇽 / Dual 🇺🇸";
 
@@ -42,8 +35,6 @@ const generatePrivateCaption = (data, mediaType, deepLinkUrl) => {
 
     return caption;
 };
-
-// Generador de Post para Canales Públicos (B-K) - Diseño Anti-Strike + Publicidad
 const generatePublicCaption = (data, mediaType) => {
     const title = data.title || data.name;
     let year = '';
@@ -67,13 +58,12 @@ const generatePublicCaption = (data, mediaType) => {
 };
 
 // =============================================================================
-// MAIN BOT INITIALIZATION
+// INICIALIZACIÓN DEL BOT
 // =============================================================================
 
 function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_ID, TMDB_API_KEY, RENDER_BACKEND_URL, axios, pinnedCache, sendNotificationToTopic, userCache) {
 
     // Lista de claves de entorno para canales públicos (B hasta K)
-    // El Canal A es el privado/principal
     const PUBLIC_CHANNEL_KEYS = [
         'TELEGRAM_CHANNEL_B_ID', 'TELEGRAM_CHANNEL_C_ID', 'TELEGRAM_CHANNEL_D_ID',
         'TELEGRAM_CHANNEL_E_ID', 'TELEGRAM_CHANNEL_F_ID', 'TELEGRAM_CHANNEL_G_ID',
@@ -148,20 +138,7 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_ID, TMDB_API_KEY
 
             if (chatId !== ADMIN_CHAT_ID) {
                 if (command === '/start' || command === '/ayuda') {
-                    const helpMessage = `👋 ¡Hola! Soy un Bot de Auto-Aceptación de Solicitudes.
-                    
-**Función Principal:**
-Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu canal o grupo privado.
-
-**¿Cómo configurarme?**
-1. Añádeme como administrador a tu canal o grupo.
-2. Otórgame el permiso: "**Administrar solicitudes de ingreso**". 
-3. ¡Listo! Aceptaré a los nuevos miembros y les enviaré un DM de bienvenida.
-
-*Comandos disponibles:*
-/ayuda - Muestra esta información.
-/contacto - Contactar con el desarrollador.
-`;
+                    const helpMessage = `👋 ¡Hola! Soy un Bot de Auto-Aceptación de Solicitudes.\n\n**Función Principal:**\nMe encargo de aceptar automáticamente a los usuarios que quieran unirse a tu canal o grupo privado.`;
                     bot.sendMessage(chatId, helpMessage, { parse_mode: 'Markdown' });
                     return;
                 }
@@ -511,10 +488,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
 
             if (data === 'public_help') {
                 bot.answerCallbackQuery(callbackQuery.id);
-                const helpMessage = `👋 ¡Hola! Soy un Bot de Auto-Aceptación de Solicitudes.
-                    
-**Función Principal:**
-Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu canal o grupo privado.`;
+                const helpMessage = `👋 ¡Hola! Soy un Bot de Auto-Aceptación de Solicitudes.`;
                 bot.sendMessage(chatId, helpMessage, { parse_mode: 'Markdown' });
                 return;
             }
@@ -532,9 +506,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
 
             bot.answerCallbackQuery(callbackQuery.id);
 
-            // -----------------------------------------------------------------
             // CMS ANNOUNCEMENTS
-            // -----------------------------------------------------------------
             if (data === 'cms_announcement_menu') {
                 const options = {
                     reply_markup: {
@@ -637,9 +609,6 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 bot.sendMessage(chatId, '❌ Operación cancelada.');
             }
 
-            // -----------------------------------------------------------------
-            // PREMIUM / MANUAL ACTIVATION
-            // -----------------------------------------------------------------
             else if (data.startsWith('act_man_')) {
                 const parts = data.split('_');
                 const userId = parts[2];
@@ -840,7 +809,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
             }
 
             // =================================================================
-            // NUEVO SISTEMA DE GUARDADO Y PUBLICACIÓN (PELÍCULAS)
+            // NUEVO SISTEMA DE GUARDADO Y PUBLICACIÓN (PELÍCULAS) - CON MENÚ DE 10 CANALES
             // =================================================================
             else if (data.startsWith('set_pinned_movie_')) {
                 const isPinned = data === 'set_pinned_movie_true';
@@ -882,7 +851,9 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                         }
                     }
 
-                    broadcastButtons.push([{ text: '🏁 Finalizar (Solo Guardar)', callback_data: 'back_to_menu' }]);
+                    broadcastButtons.push([{ text: '💾 Finalizar (Solo App)', callback_data: 'back_to_menu' }]);
+                    // MODO SILENCIO AGREGADO AQUI
+                    broadcastButtons.push([{ text: '🤫 Modo Silencio (Oculto)', callback_data: `save_silent_hidden_${movieData.tmdbId}` }]);
 
                     bot.editMessageText(`✅ **GUARDADO EXITOSO**\nEstado: ${pinnedStatus}\n\n📡 **PANEL DE DIFUSIÓN**\n¿Dónde quieres publicar este contenido?`, {
                         chat_id: chatId,
@@ -901,7 +872,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
             }
 
             // =================================================================
-            // NUEVO SISTEMA DE GUARDADO Y PUBLICACIÓN (SERIES)
+            // NUEVO SISTEMA DE GUARDADO Y PUBLICACIÓN (SERIES) - CON MENÚ DE 10 CANALES
             // =================================================================
             else if (data.startsWith('set_pinned_series_')) {
                 const isPinned = data === 'set_pinned_series_true';
@@ -974,7 +945,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
             }
 
             // =================================================================
-            // MANEJO DE DIFUSIÓN (BROADCAST HANDLERS)
+            // MANEJO DE DIFUSIÓN (BROADCAST HANDLERS) - LÓGICA CORE
             // =================================================================
 
             // 1. PUBLICAR EN TODOS (Cascada) - Películas
@@ -1019,9 +990,8 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                     return;
                 }
 
-                // Generar Link al Post de A (Requisito para botones de canales públicos)
-                const channelUsername = CHANNEL_A.replace('@', '').replace('-100', ''); // Ajuste simple, mejor si es username público
-                // Si es privado (-100...), el link es https://t.me/c/ID_SIN_-100/MSG_ID
+                // Generar Link al Post de A
+                const channelUsername = CHANNEL_A.replace('@', '').replace('-100', ''); 
                 let linkToPostA = '';
                 if (CHANNEL_A.startsWith('-100')) {
                     const cleanId = CHANNEL_A.substring(4);
@@ -1149,13 +1119,11 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 bot.sendMessage(chatId, `✅ Publicado en Canal Privado (A).`);
             }
 
-            // 4. CANAL INDIVIDUAL (Manual - Requiere enlace a A, si no existe A, enviamos a App)
+            // 4. CANAL INDIVIDUAL (Manual)
             else if (data.startsWith('bdcast_single_')) {
-                // Formato: bdcast_single_B_movie_12345
                 const parts = data.split('_');
                 const channelLabel = parts[2]; // B, C...
                 const type = parts[3]; // movie / series
-                // const tmdbId = parts[4];
 
                 const key = `TELEGRAM_CHANNEL_${channelLabel}_ID`;
                 const channelId = process.env[key];
@@ -1166,9 +1134,6 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 const captionPublic = generatePublicCaption(mediaData, type);
                 const posterUrl = mediaData.poster_path ? `https://image.tmdb.org/t/p/w500${mediaData.poster_path}` : 'https://placehold.co/500x750?text=SALA+CINE';
 
-                // NOTA: Al enviar individualmente a un canal público sin haber pasado por el proceso "Todo",
-                // no tenemos el ID del mensaje de A. Por seguridad, mandaremos al DeepLink de la App directamente
-                // o advertiremos. Para simplificar, mandaremos a la App Bridge Page.
                 const deepLinkUrl = type === 'movie' ? `${RENDER_BACKEND_URL}/view/movie/${mediaData.tmdbId}` : `${RENDER_BACKEND_URL}/view/tv/${mediaData.tmdbId}`;
 
                 await bot.sendPhoto(channelId, posterUrl, {
@@ -1181,6 +1146,27 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 bot.sendMessage(chatId, `✅ Publicado en Canal ${channelLabel}.`);
             }
 
+            // MODO SILENCIO RESTAURADO (Oculto)
+            else if (data.startsWith('save_silent_hidden_')) {
+                const tmdbId = data.split('_')[3];
+                // En este punto, ya se guardó la película en el paso anterior (set_pinned_movie).
+                // Necesitamos actualizar el registro para poner hideFromRecent: true
+                
+                try {
+                    // Nota: Asumimos que la lógica del backend permite update o re-save con hideFromRecent
+                    const { movieDataToSave } = adminState[chatId];
+                    if (movieDataToSave) {
+                        movieDataToSave.hideFromRecent = true;
+                        await axios.post(`${RENDER_BACKEND_URL}/add-movie`, movieDataToSave);
+                        bot.sendMessage(chatId, `✅ Película actualizada a MODO SILENCIO (Oculta en Recientes).`);
+                    } else {
+                         bot.sendMessage(chatId, `⚠️ No se pudo aplicar modo silencio (Datos no en memoria), pero ya está guardada.`);
+                    }
+                } catch (error) {
+                    bot.sendMessage(chatId, '❌ Error al actualizar a modo silencio.');
+                }
+                adminState[chatId] = { step: 'menu' };
+            }
 
             // =================================================================
             // FIN DE LÓGICA DE PUBLICACIÓN
