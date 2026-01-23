@@ -1122,10 +1122,23 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                     const CHANNEL_BIG_ID = process.env.TELEGRAM_CHANNEL_B_ID;
 
                     if (CHANNEL_SMALL) {
-                        const messageToSmall = `🎬 *¡PELÍCULA COMPLETA DISPONIBLE!* 🎬\n\n` +
-                            `**${movieDataToSave.title}**\n\n` +
-                            `${movieDataToSave.overview || 'Sin sinopsis.'}\n\n` +
-                            `_Toca el botón para ver en la App:_`;
+                        // 1. LÓGICA PARA RECORTAR SINOPSIS (Máximo 280 caracteres)
+                        const shortOverview = movieDataToSave.overview 
+                            ? (movieDataToSave.overview.length > 280 
+                                ? movieDataToSave.overview.substring(0, 280) + '...' 
+                                : movieDataToSave.overview)
+                            : 'Sin sinopsis disponible.';
+
+                        const messageToSmall = `🎬 *${movieDataToSave.title.toUpperCase()}*\n\n` +
+                            `📺 Calidad: Full HD\n` +
+                            `🗣 Idioma: Latino\n` +
+                            `⭐ Puntuación: ${movieDataToSave.vote_average ? movieDataToSave.vote_average.toFixed(1) : 'N/A'} / 10\n\n` +
+                            `📖 *Sinopsis:*\n` +
+                            `${shortOverview}\n\n` +
+                            `❓ ¿No sabes cómo verla?\n` +
+                            `📘 Tutorial paso a paso aquí:\n` +
+                            `👉 https://t.me/peliculascinedyala_1m/17\n\n` +
+                            `👇🏻 *MIRA AQUÍ LA PELÍCULA* 👇🏻`;
 
                         const sentMsgSmall = await bot.sendPhoto(CHANNEL_SMALL, movieDataToSave.poster_path ? `https://image.tmdb.org/t/p/w500${movieDataToSave.poster_path}` : 'https://placehold.co/500x750?text=SALA+CINE', {
                             caption: messageToSmall,
@@ -1152,6 +1165,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                                 `🎬 *${movieDataToSave.title}* ${releaseYear}\n\n` +
                                 `📝 _${overviewTeaser}_\n\n` +
                                 `⚠️ _Por temas de copyright, la película completa se encuentra en nuestro canal privado._\n\n` +
+                                `💼 *Publicidad:*@Dylan_1m_oficial @sala_cine_premiun\n\n` +
                                 `👇 *VER PELÍCULA AQUÍ* 👇`;
 
                             await bot.sendPhoto(CHANNEL_BIG_ID, movieDataToSave.poster_path ? `https://image.tmdb.org/t/p/w500${movieDataToSave.poster_path}` : 'https://placehold.co/500x750?text=SALA+CINE', {
@@ -1202,10 +1216,23 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                     const CHANNEL_BIG_ID = process.env.TELEGRAM_CHANNEL_B_ID;
 
                     if (CHANNEL_SMALL) {
-                        const messageToSmall = `🎬 *¡PELÍCULA COMPLETA DISPONIBLE!* 🎬\n\n` +
-                            `**${movieDataToSave.title}**\n\n` +
-                            `${movieDataToSave.overview || 'Sin sinopsis.'}\n\n` +
-                            `_Toca el botón para ver en la App:_`;
+                        // 1. LÓGICA PARA RECORTAR SINOPSIS (Máximo 280 caracteres)
+                        const shortOverview = movieDataToSave.overview 
+                            ? (movieDataToSave.overview.length > 280 
+                                ? movieDataToSave.overview.substring(0, 280) + '...' 
+                                : movieDataToSave.overview)
+                            : 'Sin sinopsis disponible.';
+
+                        const messageToSmall = `🎬 *${movieDataToSave.title.toUpperCase()}*\n\n` +
+                            `📺 Calidad: Full HD\n` +
+                            `🗣 Idioma: Latino\n` +
+                            `⭐ Puntuación: ${movieDataToSave.vote_average ? movieDataToSave.vote_average.toFixed(1) : 'N/A'} / 10\n\n` +
+                            `📖 *Sinopsis:*\n` +
+                            `${shortOverview}\n\n` +
+                            `❓ ¿No sabes cómo verla?\n` +
+                            `📘 Tutorial paso a paso aquí:\n` +
+                            `👉 https://t.me/peliculascinedyala_1m/17\n\n` +
+                            `👇🏻 *MIRA AQUÍ LA PELÍCULA* 👇🏻`;
 
                         const sentMsgSmall = await bot.sendPhoto(CHANNEL_SMALL, movieDataToSave.poster_path ? `https://image.tmdb.org/t/p/w500${movieDataToSave.poster_path}` : 'https://placehold.co/500x750?text=SALA+CINE', {
                             caption: messageToSmall,
@@ -1232,6 +1259,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                                 `🎬 *${movieDataToSave.title}* ${releaseYear}\n\n` +
                                 `📝 _${overviewTeaser}_\n\n` +
                                 `⚠️ _Por temas de copyright, la película completa se encuentra en nuestro canal privado._\n\n` +
+                                `💼 *Publicidad:*@Dylan_1m_oficial @sala_cine_premiun\n\n` +
                                 `👇 *VER PELÍCULA AQUÍ* 👇`;
 
                             await bot.sendPhoto(CHANNEL_BIG_ID, movieDataToSave.poster_path ? `https://image.tmdb.org/t/p/w500${movieDataToSave.poster_path}` : 'https://placehold.co/500x750?text=SALA+CINE', {
@@ -1310,16 +1338,32 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                         tmdbId: episodeData.tmdbId,
                         mediaType: 'tv'
                     });
+
+                    // MODIFICADO: URL APUNTA A LA BRIDGE PAGE
                     const DEEPLINK_URL = `${RENDER_BACKEND_URL}/view/tv/${episodeData.tmdbId}`;
                     
                     const CHANNEL_SMALL = process.env.TELEGRAM_CHANNEL_A_ID;
                     const CHANNEL_BIG_ID = process.env.TELEGRAM_CHANNEL_B_ID;
 
                     if (CHANNEL_SMALL) {
-                        const messageToSmall = `📺 *¡NUEVO EPISODIO EN SALA CINE!* 📺\n\n` +
-                            `**${episodeData.title}**\n` +
-                            `Temporada ${episodeData.seasonNumber} - Episodio ${episodeData.episodeNumber} ya disponible.\n\n` +
-                            `_Entra para verla ahora:_`;
+                        // 1. Cortamos la sinopsis del episodio
+                        const shortOverviewSeries = episodeData.overview 
+                            ? (episodeData.overview.length > 280 
+                                ? episodeData.overview.substring(0, 280) + '...' 
+                                : episodeData.overview)
+                            : '¡Un nuevo capítulo lleno de emoción te espera!';
+
+                        const messageToSmall = `🎬 *${episodeData.title.toUpperCase()}*\n` +
+                            `🔹 Temporada ${episodeData.seasonNumber} - Episodio ${episodeData.episodeNumber}\n\n` +
+                            `📺 Calidad: Full HD\n` +
+                            `🗣 Idioma: Latino\n` +
+                            `⭐ Puntuación: ${episodeData.vote_average ? episodeData.vote_average.toFixed(1) : 'N/A'} / 10\n\n` +
+                            `📖 *Sinopsis:*\n` +
+                            `${shortOverviewSeries}\n\n` +
+                            `❓ ¿No sabes cómo verla?\n` +
+                            `📘 Tutorial paso a paso aquí:\n` +
+                            `👉 https://t.me/peliculascinedyala_1m/17\n\n` +
+                            `👇🏻 *MIRA AQUÍ LA SERIE* 👇🏻`;
 
                         const sentMsgSmall = await bot.sendPhoto(CHANNEL_SMALL, episodeData.poster_path ? `https://image.tmdb.org/t/p/w500${episodeData.poster_path}` : 'https://placehold.co/500x750?text=SALA+CINE', {
                             caption: messageToSmall,
@@ -1346,6 +1390,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                                 `🔹 Temporada ${episodeData.seasonNumber} - Episodio ${episodeData.episodeNumber}\n\n` +
                                 `📝 _${overviewTeaser}_\n\n` +
                                 `⚠️ _Disponible ahora en nuestro canal de respaldo privado._\n\n` +
+                                `💼 *Publicidad:*@Dylan_1m_oficial @sala_cine_premiun\n\n` +
                                 `👇 *VER EPISODIO AQUÍ* 👇`;
 
                             await bot.sendPhoto(CHANNEL_BIG_ID, episodeData.poster_path ? `https://image.tmdb.org/t/p/w500${episodeData.poster_path}` : 'https://placehold.co/500x750?text=SALA+CINE', {
@@ -1394,10 +1439,24 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                     const CHANNEL_ID = process.env.TELEGRAM_CHANNEL_A_ID;
 
                     if (CHANNEL_ID) {
-                        const messageToChannel = `📺 *¡NUEVO EPISODIO EN SALA CINE!* 📺\n\n` +
-                            `**${episodeData.title}**\n` +
-                            `Temporada ${episodeData.seasonNumber} - Episodio ${episodeData.episodeNumber} ya disponible.\n\n` +
-                            `_Entra para verla ahora:_`;
+                        // 1. Cortamos la sinopsis del episodio
+                        const shortOverviewSeries = episodeData.overview 
+                            ? (episodeData.overview.length > 280 
+                                ? episodeData.overview.substring(0, 280) + '...' 
+                                : episodeData.overview)
+                            : '¡Un nuevo capítulo lleno de emoción te espera!';
+                        
+                        const messageToChannel = `🎬 *${episodeData.title.toUpperCase()}*\n` +
+                            `🔹 Temporada ${episodeData.seasonNumber} - Episodio ${episodeData.episodeNumber}\n\n` +
+                            `📺 Calidad: Full HD\n` +
+                            `🗣 Idioma: Latino\n` +
+                            `⭐ Puntuación: ${episodeData.vote_average ? episodeData.vote_average.toFixed(1) : 'N/A'} / 10\n\n` +
+                            `📖 *Sinopsis:*\n` +
+                            `${shortOverviewSeries}\n\n` +
+                            `❓ ¿No sabes cómo verla?\n` +
+                            `📘 Tutorial paso a paso aquí:\n` +
+                            `👉https://t.me/peliculascinedyala_1m/17\n\n` +
+                            `👇🏻 *MIRA AQUÍ LA SERIE* 👇🏻`;
 
                         await bot.sendPhoto(CHANNEL_ID, episodeData.poster_path ? `https://image.tmdb.org/t/p/w500${episodeData.poster_path}` : 'https://placehold.co/500x750?text=SALA+CINE', {
                             caption: messageToChannel,
