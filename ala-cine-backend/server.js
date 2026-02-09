@@ -713,24 +713,14 @@ app.get('/api/user/coins', verifyIdToken, countsCacheMiddleware, async (req, res
         res.status(500).json({ error: 'Error al obtener el balance.' });
     }
 });
-
-// =========================================================================
-// === OPTIMIZACIÓN: ESCRITURA DE MONEDAS (/api/user/coins) ===
-// =========================================================================
 app.post('/api/user/coins', verifyIdToken, async (req, res) => {
     const { uid } = req;
     const { amount } = req.body;
     if (typeof amount !== 'number' || amount === 0) {
         return res.status(400).json({ error: 'Cantidad inválida.' });
     }
-
-    // CASO 1: GANANCIA (Buffer - No escribe en Firebase inmediatamente)
     if (amount > 0) {
-        // 1. Agregar al buffer global
         coinWriteBuffer[uid] = (coinWriteBuffer[uid] || 0) + amount;
-
-        // 2. Actualizar UserCache (RAM) para que la UI responda rápido
-        // Si el usuario no está en caché, no pasa nada, se cargará actualizado en el siguiente /me
         const cachedUser = userCache.get(uid);
         let newDisplayBalance = 0;
         
@@ -739,14 +729,11 @@ app.post('/api/user/coins', verifyIdToken, async (req, res) => {
             userCache.set(uid, cachedUser); // Guardamos actualización
             newDisplayBalance = cachedUser.coins;
         } else {
-            // Si no está en caché, no sabemos el total real sin leer DB.
-            // Devolvemos 'pending' o 0, el cliente suele refrescar /me
             newDisplayBalance = amount; 
         }
 
         // Invalidar cachés cortas
         countsCache.del(`${uid}:/api/user/coins`);
-        // No invalidamos countsCache de /me porque ya actualizamos userCache arriba
 
         return res.status(200).json({ 
             message: 'Balance actualizado (Buffer).', 
@@ -1645,19 +1632,38 @@ app.get('/.well-known/assetlinks.json', (req, res) => {
 async function sendNotificationToTopic(title, body, imageUrl, tmdbId, mediaType, specificTopic) {
     // Si se pasa specificTopic se usa, sino por defecto 'new_content'
     const topic = specificTopic || 'new_content';
+    
+    // Payload de datos (lo que lee la app si está abierta)
     const dataPayload = {
         title: title, 
         body: body, 
         tmdbId: tmdbId ? tmdbId.toString() : '0', 
         mediaType: mediaType || 'general',
+        click_action: "FLUTTER_NOTIFICATION_CLICK", // Ayuda si tu app es Flutter/Android estándar
         ...(imageUrl && { imageUrl: imageUrl })
     };
+
+    // Estructura completa con 'notification' para forzar la visualización en segundo plano
     const message = {
-        topic: topic, data: dataPayload,
-        android: { priority: 'high' }
+        topic: topic, 
+        data: dataPayload,
+        notification: {
+            title: title,
+            body: body,
+            ...(imageUrl && { image: imageUrl })
+        },
+        android: { 
+            priority: 'high',
+            notification: {
+                sound: 'default',
+                priority: 'high',
+                channelId: 'high_importance_channel'
+            }
+        }
     };
+
     try {
-        console.log(`🚀 Intentando enviar notificación al topic '${topic}'... Payload:`, JSON.stringify(dataPayload));
+        console.log(`🚀 Intentando enviar notificación al topic '${topic}'...`);
         const response = await messaging.send(message);
         console.log('✅ Notificación FCM enviada exitosamente al topic:', response);
         return { success: true, message: `Notificación enviada al topic '${topic}'.`, response: response };
