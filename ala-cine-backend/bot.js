@@ -166,23 +166,39 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
             }
         }
 
-        else if (adminState[chatId] && adminState[chatId].step === 'awaiting_global_msg_text') {
+        // =========================================================================
+        // === CORRECCIÓN LÓGICA DE NOTIFICACIONES GLOBALES ===
+        // =========================================================================
+        
+        // PASO 1: Recibir el Título y pedir el Cuerpo
+        else if (adminState[chatId] && adminState[chatId].step === 'awaiting_global_msg_title') {
+            const titleInput = userText;
+            adminState[chatId].tempGlobalTitle = titleInput; // Guardamos temporalmente
+            adminState[chatId].step = 'awaiting_global_msg_body';
+            
+            bot.sendMessage(chatId, `✅ Título: *${titleInput}*\n\n📝 Ahora escribe el **MENSAJE (Cuerpo)** de la notificación:`, { parse_mode: 'Markdown' });
+        }
+
+        // PASO 2: Recibir el Cuerpo y ENVIAR (Usando el Topic Correcto)
+        else if (adminState[chatId] && adminState[chatId].step === 'awaiting_global_msg_body') {
             const messageBody = userText;
+            const titleToSend = adminState[chatId].tempGlobalTitle || "Aviso Importante";
 
             bot.sendMessage(chatId, '🚀 Enviando notificación a TODOS los usuarios...');
 
             try {
+                // AQUÍ ESTÁ LA MAGIA: Usamos 'new_content' para asegurar que llegue
                 const result = await sendNotificationToTopic(
-                    "📢 Aviso Importante",
-                    messageBody,
-                    null,
-                    '0',
-                    'general',
-                    'all'
+                    titleToSend,    // Título personalizado
+                    messageBody,    // Mensaje
+                    null,           // Sin imagen
+                    '0',            // ID 0 (General)
+                    'general',      // Tipo General
+                    'new_content'   // <--- TOPIC CORRECTO
                 );
 
                 if (result.success) {
-                    bot.sendMessage(chatId, '✅ Notificación global enviada con éxito.');
+                    bot.sendMessage(chatId, `✅ **Notificación enviada con éxito.**\n\n📢 Título: ${titleToSend}\n📝 Msj: ${messageBody}`, { parse_mode: 'Markdown' });
                 } else {
                     bot.sendMessage(chatId, `⚠️ Error al enviar: ${result.error}`);
                 }
@@ -193,6 +209,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 adminState[chatId] = { step: 'menu' };
             }
         }
+        // =========================================================================
 
         else if (adminState[chatId] && adminState[chatId].step === 'search_movie') {
             try {
@@ -609,8 +626,9 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
             }
 
             else if (data === 'send_global_msg') {
-                adminState[chatId] = { step: 'awaiting_global_msg_text' };
-                bot.sendMessage(chatId, "📝 Escribe el mensaje que deseas enviar a TODOS los usuarios (Notificación Push):");
+                // MODIFICADO: PIDE TÍTULO PRIMERO
+                adminState[chatId] = { step: 'awaiting_global_msg_title' };
+                bot.sendMessage(chatId, "📢 **NOTIFICACIÓN GLOBAL**\n\nPrimero, escribe el **TÍTULO** que aparecerá en la notificación:", { parse_mode: 'Markdown' });
             }
 
             else if (data === 'add_movie') {
