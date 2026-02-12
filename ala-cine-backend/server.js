@@ -1131,10 +1131,18 @@ app.post('/api/payments/google-sync', verifyIdToken, async (req, res) => {
     console.log(`[Google Billing] Procesando orden ${orderId} para usuario ${uid} - Producto: ${productId}`);
 
     // Determinar duración según el ID del producto (SKU)
-    // Se asume que los IDs contienen 'year', 'anual' o 'yearly' para planes anuales.
+    // Se ajusta a los IDs estrictos solicitados: salacine_premium_monthly (30) y salacine_premium_yearly (365)
     let daysToAdd = 30; // Default Mensual
-    if (productId.toLowerCase().includes('year') || productId.toLowerCase().includes('anual') || productId.toLowerCase().includes('yearly')) {
+
+    if (productId === 'salacine_premium_yearly') {
         daysToAdd = 365;
+    } else if (productId === 'salacine_premium_monthly') {
+        daysToAdd = 30;
+    } else {
+        // Fallback de seguridad por si envían IDs viejos o variantes
+        if (productId.toLowerCase().includes('year') || productId.toLowerCase().includes('anual')) {
+            daysToAdd = 365;
+        }
     }
 
     try {
