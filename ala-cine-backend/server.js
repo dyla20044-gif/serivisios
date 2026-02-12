@@ -1117,6 +1117,97 @@ app.post('/api/payments/request-manual', async (req, res) => {
     }
 });
 
+// =========================================================================
+// === NUEVA RUTA: SINCRONIZACIÓN GOOGLE PLAY BILLING ===
+// =========================================================================
+app.post('/api/payments/google-sync', verifyIdToken, async (req, res) => {
+    const { uid } = req;
+    const { purchaseToken, orderId, productId } = req.body;
+
+    // Validación básica
+    if (!uid) return res.status(401).json({ error: 'Usuario no autenticado.' });
+    if (!orderId || !productId) return res.status(400).json({ error: 'Datos de compra incompletos.' });
+
+    console.log(`[Google Billing] Procesando orden ${orderId} para usuario ${uid} - Producto: ${productId}`);
+
+    // Determinar duración según el ID del producto (SKU)
+    // Se asume que los IDs contienen 'year', 'anual' o 'yearly' para planes anuales.
+    let daysToAdd = 30; // Default Mensual
+    if (productId.toLowerCase().includes('year') || productId.toLowerCase().includes('anual') || productId.toLowerCase().includes('yearly')) {
+        daysToAdd = 365;
+    }
+
+    try {
+        const userRef = db.collection('users').doc(uid);
+
+        // Transacción para asegurar consistencia y evitar condiciones de carrera
+        const newExpiry = await db.runTransaction(async (transaction) => {
+            const userDoc = await transaction.get(userRef);
+            const now = new Date();
+            let currentExpiry = now;
+
+            if (userDoc.exists && userDoc.data().premiumExpiry) {
+                // Parsear fecha existente
+                const expiryData = userDoc.data().premiumExpiry;
+                let existingDate;
+                if (expiryData.toDate && typeof expiryData.toDate === 'function') { existingDate = expiryData.toDate(); }
+                else if (typeof expiryData === 'number') { existingDate = new Date(expiryData); }
+                else if (typeof expiryData === 'string') { existingDate = new Date(expiryData); }
+                
+                // Si ya es premium y no ha vencido, sumamos al final
+                if (existingDate && existingDate > now) {
+                    currentExpiry = existingDate;
+                }
+            }
+
+            // Calcular nueva fecha
+            const nextExpiry = new Date(currentExpiry);
+            nextExpiry.setDate(nextExpiry.getDate() + daysToAdd);
+
+            // Actualizar usuario en Firestore
+            transaction.set(userRef, {
+                isPro: true,
+                premiumExpiry: nextExpiry,
+                lastOrderId: orderId, 
+                lastPlatform: 'google_play',
+                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            }, { merge: true });
+
+            // Guardar registro de la transacción en colección separada (Logs)
+            const paymentLogRef = db.collection('payment_logs').doc(orderId);
+            transaction.set(paymentLogRef, {
+                uid: uid,
+                orderId: orderId,
+                productId: productId,
+                purchaseToken: purchaseToken || null,
+                daysAdded: daysToAdd,
+                timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                platform: 'google_play'
+            });
+
+            return nextExpiry;
+        });
+
+        // IMPORTANTE: Invalidar caché del usuario para reflejar el cambio inmediatamente
+        if (userCache) {
+            userCache.del(uid);
+            console.log(`[Google Billing] Caché de usuario ${uid} invalidada.`);
+        }
+        
+        console.log(`[Google Billing] Éxito. Nueva expiración para ${uid}: ${newExpiry.toISOString()}`);
+
+        res.status(200).json({
+            success: true,
+            message: 'Suscripción activada correctamente',
+            newExpiryDate: newExpiry.toISOString()
+        });
+
+    } catch (error) {
+        console.error('[Google Billing] Error crítico actualizando DB:', error);
+        res.status(500).json({ error: 'Error interno procesando el pago.' });
+    }
+});
+
 app.post('/api/rewards/request-diamond', verifyIdToken, async (req, res) => {
     const { uid, email } = req;
     const { gameId, diamonds, costInCoins } = req.body;
