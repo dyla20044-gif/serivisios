@@ -25,7 +25,6 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_ID, TMDB_API_KEY
                     ],
                     [{ text: '🔔 Ver Pedidos', callback_data: 'view_requests_menu' }],
                     [
-                        // Botón de Eventos ELIMINADO aquí
                         { text: 'Gestionar películas', callback_data: 'manage_movies' }
                     ],
                     [{ text: '📡 Gestionar Comunicados (App)', callback_data: 'cms_announcement_menu' }],
@@ -166,20 +165,14 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
             }
         }
 
-        // =========================================================================
-        // === CORRECCIÓN LÓGICA DE NOTIFICACIONES GLOBALES ===
-        // =========================================================================
-        
-        // PASO 1: Recibir el Título y pedir el Cuerpo
         else if (adminState[chatId] && adminState[chatId].step === 'awaiting_global_msg_title') {
             const titleInput = userText;
-            adminState[chatId].tempGlobalTitle = titleInput; // Guardamos temporalmente
+            adminState[chatId].tempGlobalTitle = titleInput;
             adminState[chatId].step = 'awaiting_global_msg_body';
             
             bot.sendMessage(chatId, `✅ Título: *${titleInput}*\n\n📝 Ahora escribe el **MENSAJE (Cuerpo)** de la notificación:`, { parse_mode: 'Markdown' });
         }
 
-        // PASO 2: Recibir el Cuerpo y ENVIAR (Usando el Topic Correcto)
         else if (adminState[chatId] && adminState[chatId].step === 'awaiting_global_msg_body') {
             const messageBody = userText;
             const titleToSend = adminState[chatId].tempGlobalTitle || "Aviso Importante";
@@ -187,14 +180,13 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
             bot.sendMessage(chatId, '🚀 Enviando notificación a TODOS los usuarios...');
 
             try {
-                // AQUÍ ESTÁ LA MAGIA: Usamos 'new_content' para asegurar que llegue
                 const result = await sendNotificationToTopic(
                     titleToSend,    // Título personalizado
                     messageBody,    // Mensaje
                     null,           // Sin imagen
                     '0',            // ID 0 (General)
                     'general',      // Tipo General
-                    'new_content'   // <--- TOPIC CORRECTO
+                    'new_content'   // Topic
                 );
 
                 if (result.success) {
@@ -209,11 +201,28 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 adminState[chatId] = { step: 'menu' };
             }
         }
-        // =========================================================================
 
+        // =========================================================================
+        // === BÚSQUEDA INTELIGENTE DE PELÍCULAS (Nombre + Año) ===
+        // =========================================================================
         else if (adminState[chatId] && adminState[chatId].step === 'search_movie') {
             try {
-                const searchUrl = `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(userText)}&language=es-ES`;
+                // LÓGICA INTELIGENTE: Detectar año al final (ej: "Avengers 2012")
+                let queryText = userText.trim();
+                let yearFilter = "";
+                
+                // Regex: Busca espacio + 4 dígitos al final del string
+                const yearMatch = queryText.match(/(.+?)\s+(\d{4})$/);
+                
+                if (yearMatch) {
+                    queryText = yearMatch[1]; // El nombre (ej: Avengers)
+                    yearFilter = `&year=${yearMatch[2]}`; // El año (ej: 2012)
+                    bot.sendMessage(chatId, `🔍 Buscando: "${queryText}" del año ${yearMatch[2]}...`);
+                }
+
+                // Construimos la URL con el año si existe
+                const searchUrl = `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(queryText)}&language=es-ES${yearFilter}`;
+                
                 const response = await axios.get(searchUrl);
                 const data = response.data;
                 if (data.results && data.results.length > 0) {
@@ -229,12 +238,30 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                         const options = { caption: message, parse_mode: 'Markdown', reply_markup: { inline_keyboard: buttons } };
                         bot.sendPhoto(chatId, posterUrl, options);
                     }
-                } else { bot.sendMessage(chatId, `No se encontraron resultados. Intenta de nuevo.`); }
+                } else { bot.sendMessage(chatId, `No se encontraron resultados para "${queryText}" ${yearFilter ? 'en ese año' : ''}.`); }
             } catch (error) { console.error("Error buscando en TMDB (movie):", error); bot.sendMessage(chatId, 'Error buscando. Intenta de nuevo.'); }
 
-        } else if (adminState[chatId] && adminState[chatId].step === 'search_series') {
+        } 
+        // =========================================================================
+        // === BÚSQUEDA INTELIGENTE DE SERIES (Nombre + Año) ===
+        // =========================================================================
+        else if (adminState[chatId] && adminState[chatId].step === 'search_series') {
             try {
-                const searchUrl = `https://api.themoviedb.org/3/search/tv?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(userText)}&language=es-ES`;
+                // LÓGICA INTELIGENTE: Detectar año al final
+                let queryText = userText.trim();
+                let yearFilter = "";
+
+                const yearMatch = queryText.match(/(.+?)\s+(\d{4})$/);
+
+                if (yearMatch) {
+                    queryText = yearMatch[1];
+                    // Para series en TMDB se usa 'first_air_date_year'
+                    yearFilter = `&first_air_date_year=${yearMatch[2]}`;
+                    bot.sendMessage(chatId, `🔍 Buscando serie: "${queryText}" del año ${yearMatch[2]}...`);
+                }
+
+                const searchUrl = `https://api.themoviedb.org/3/search/tv?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(queryText)}&language=es-ES${yearFilter}`;
+                
                 const response = await axios.get(searchUrl);
                 const data = response.data;
                 if (data.results && data.results.length > 0) {
@@ -250,7 +277,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                         const options = { caption: message, parse_mode: 'Markdown', reply_markup: { inline_keyboard: buttons } };
                         bot.sendPhoto(chatId, posterUrl, options);
                     }
-                } else { bot.sendMessage(chatId, `No se encontraron resultados. Intenta de nuevo.`); }
+                } else { bot.sendMessage(chatId, `No se encontraron resultados para "${queryText}" ${yearFilter ? 'en ese año' : ''}.`); }
             } catch (error) { console.error("Error buscando en TMDB (series):", error); bot.sendMessage(chatId, 'Error buscando. Intenta de nuevo.'); }
 
         } else if (adminState[chatId] && adminState[chatId].step === 'search_manage') {
@@ -304,8 +331,6 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 } else { bot.sendMessage(chatId, `No se encontraron resultados.`); }
             } catch (error) { console.error("Error buscando para eliminar:", error); bot.sendMessage(chatId, 'Error buscando.'); }
         }
-
-        // SECCIÓN DE EVENTOS ELIMINADA (awaiting_event_image, awaiting_event_description)
 
         else if (adminState[chatId] && adminState[chatId].step === 'awaiting_unified_link_movie') {
             const { selectedMedia } = adminState[chatId];
@@ -555,27 +580,20 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 bot.sendMessage(chatId, '❌ Operación cancelada.');
             }
 
-            // SECCIÓN "ACTIVACIÓN MANUAL PREMIUM" ELIMINADA (act_man_)
-
-            // SECCIÓN "IGNORAR PAGO MANUAL" ELIMINADA (ignore_payment_request)
-
             else if (data === 'send_global_msg') {
-                // MODIFICADO: PIDE TÍTULO PRIMERO
                 adminState[chatId] = { step: 'awaiting_global_msg_title' };
                 bot.sendMessage(chatId, "📢 **NOTIFICACIÓN GLOBAL**\n\nPrimero, escribe el **TÍTULO** que aparecerá en la notificación:", { parse_mode: 'Markdown' });
             }
 
             else if (data === 'add_movie') {
                 adminState[chatId] = { step: 'search_movie' };
-                bot.sendMessage(chatId, 'Escribe el nombre de la película a agregar.');
+                bot.sendMessage(chatId, 'Escribe el nombre de la película a agregar (Ej: "Avatar 2009").');
             }
             else if (data === 'add_series') {
                 adminState[chatId] = { step: 'search_series' };
-                bot.sendMessage(chatId, 'Escribe el nombre del serie a agregar.');
+                bot.sendMessage(chatId, 'Escribe el nombre del serie a agregar (Ej: "Dark 2017").');
             }
             
-            // SECCIÓN "EVENTOS" ELIMINADA (callback data 'eventos')
-
             else if (data === 'view_requests_menu') {
                 const options = {
                     reply_markup: {
@@ -1012,8 +1030,6 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 }
                 adminState[chatId] = { step: 'menu' };
             }
-            
-            // SECCIÓN "PEDIDOS DE DIAMANTES" ELIMINADA (diamond_completed_)
 
             else if (data.startsWith('save_only_')) {
                 const { movieDataToSave } = adminState[chatId];
