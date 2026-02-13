@@ -1,6 +1,5 @@
 const express = require('express');
 const bodyParser = require('body-parser');
-const paypal = require('paypal-rest-sdk');
 const TelegramBot = require('node-telegram-bot-api');
 const admin = require('firebase-admin');
 const axios = require('axios'); 
@@ -14,36 +13,21 @@ const NodeCache = require('node-cache');
 const fs = require('fs'); 
 const path = require('path'); 
 
-// --- CACHÉS ---
-// Cachés existentes
 const embedCache = new NodeCache({ stdTTL: 86400, checkperiod: 600 });
 const countsCache = new NodeCache({ stdTTL: 900, checkperiod: 120 });
 const tmdbCache = new NodeCache({ stdTTL: 86400, checkperiod: 3600 });
-
-// [OPTIMIZACIÓN] Cambiado a 1 hora (3600s) para balancear frescura y ahorro de lecturas DB
 const recentCache = new NodeCache({ stdTTL: 3600, checkperiod: 600 }); 
 const historyCache = new NodeCache({ stdTTL: 900, checkperiod: 120 });
 const localDetailsCache = new NodeCache({ stdTTL: 86400, checkperiod: 3600 }); 
-
-// --- NUEVAS CACHÉS OPTIMIZADAS (FASE 1 - CONTENIDO) ---
 const pinnedCache = new NodeCache({ stdTTL: 3600, checkperiod: 600 });
 const PINNED_CACHE_KEY = 'pinned_content_top';
-
 const kdramaCache = new NodeCache({ stdTTL: 3600, checkperiod: 600 });
 const KDRAMA_CACHE_KEY = 'kdrama_content_list';
-
-// Cache de Catálogo (1 hora es suficiente para ahorrar lecturas masivas)
 const catalogCache = new NodeCache({ stdTTL: 3600, checkperiod: 600 });
 const CATALOG_CACHE_KEY = 'full_catalog_list'; 
-
 const RECENT_CACHE_KEY = 'recent_content_main'; 
-
-// --- NUEVAS CACHÉS OPTIMIZADAS (FASE 2 - USUARIOS Y MONEDAS) ---
-// 1. Caché de Usuarios (RAM) - TTL AUMENTADO A 6 HORAS (21600s) PARA 20K USUARIOS
 const userCache = new NodeCache({ stdTTL: 21600, checkperiod: 1200 });
 
-// 2. Buffer de Escritura de Monedas (RAM)
-// Almacena { uid: cantidad_acumulada }
 let coinWriteBuffer = {};
 
 const app = express();
@@ -61,12 +45,6 @@ try {
 }
 const db = admin.firestore();
 const messaging = admin.messaging();
-
-paypal.configure({
-    'mode': process.env.PAYPAL_MODE || 'sandbox',
-    'client_id': process.env.PAYPAL_CLIENT_ID,
-    'client_secret': process.env.PAYPAL_CLIENT_SECRET
-});
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
 const RENDER_BACKEND_URL = process.env.RENDER_EXTERNAL_URL || 'https://serivisios.onrender.com';
@@ -112,20 +90,12 @@ app.use((req, res, next) => {
     next();
 });
 
-// =========================================================================
-// === INTEGRACIÓN NUEVO MÓDULO BRIDGE (LANDING PAGE) ===
-// =========================================================================
 try {
     require('./bridge.js')(app);
     console.log("✅ Módulo Bridge (Landing Page) cargado correctamente.");
 } catch (error) {
     console.warn("⚠️ Advertencia: No se pudo cargar bridge.js:", error.message);
 }
-// =========================================================================
-
-// =========================================================================
-// === SISTEMA DE BUFFER DE MONEDAS (OPTIMIZACIÓN DE ESCRITURA) ===
-// =========================================================================
 
 async function flushCoinBuffer() {
     const uids = Object.keys(coinWriteBuffer);
@@ -133,15 +103,13 @@ async function flushCoinBuffer() {
 
     console.log(`[Coin Buffer] Iniciando escritura en lote para ${uids.length} usuarios...`);
     
-    // Firestore Batch permite max 500 operaciones. Si hay más, habría que dividir.
     const batch = db.batch();
-    const uidsToFlush = uids.slice(0, 490); // Margen de seguridad
+    const uidsToFlush = uids.slice(0, 490);
 
     uidsToFlush.forEach(uid => {
         const amount = coinWriteBuffer[uid];
         if (amount !== 0) {
             const userRef = db.collection('users').doc(uid);
-            // Usamos increment para evitar conflictos de carrera
             batch.update(userRef, { 
                 coins: admin.firestore.FieldValue.increment(amount) 
             });
@@ -152,7 +120,6 @@ async function flushCoinBuffer() {
         await batch.commit();
         console.log(`[Coin Buffer] ✅ Escritura en lote exitosa. Buffer limpiado.`);
         
-        // Limpiar del buffer SOLO los que procesamos
         uidsToFlush.forEach(uid => {
             delete coinWriteBuffer[uid];
         });
@@ -161,10 +128,7 @@ async function flushCoinBuffer() {
     }
 }
 
-// Ejecutar flush cada 5 minutos (300,000 ms)
 setInterval(flushCoinBuffer, 300000);
-
-// =========================================================================
 
 async function verifyIdToken(req, res, next) {
     const authHeader = req.headers.authorization;
@@ -184,8 +148,6 @@ async function verifyIdToken(req, res, next) {
 
 function countsCacheMiddleware(req, res, next) {
     if (!req.uid) return next();
-    // NOTA: Mantenemos este middleware para compatibilidad, 
-    // pero la lógica principal de caché de usuario ahora está en /api/user/me
     const uid = req.uid;
     const route = req.path;
     const cacheKey = `${uid}:${route}`;
@@ -200,10 +162,6 @@ function countsCacheMiddleware(req, res, next) {
     req.cacheKey = cacheKey;
     next();
 }
-
-// =========================================================================
-// === NUEVOS ENDPOINTS CRÍTICOS (FASE 1) - DESTACADOS, K-DRAMAS, CATALOGO ===
-// =========================================================================
 
 app.get('/api/content/featured', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
@@ -274,14 +232,10 @@ app.get('/api/content/kdramas', async (req, res) => {
     }
 });
 
-// =========================================================================
-// === REFECTORIZACIÓN: CATÁLOGO HÍBRIDO (LOCAL + TMDB RELLENO) ===
-// =========================================================================
 app.get('/api/content/catalog', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
 
     const genre = req.query.genre;
-    // Generamos Key única por género. Si no hay género, usa la key general.
     const cacheKey = genre ? `catalog_genre_${genre}` : CATALOG_CACHE_KEY;
 
     const cachedCatalog = catalogCache.get(cacheKey);
@@ -294,7 +248,6 @@ app.get('/api/content/catalog', async (req, res) => {
         let combined = [];
 
         if (!genre) {
-            // --- CASO 1: Catálogo General (Sin Filtro) ---
             const movies = await mongoDb.collection('media_catalog').find({}).project(projection).sort({ addedAt: -1 }).limit(500).toArray();
             const series = await mongoDb.collection('series_catalog').find({}).project(projection).sort({ addedAt: -1 }).limit(500).toArray();
 
@@ -303,7 +256,6 @@ app.get('/api/content/catalog', async (req, res) => {
 
             combined = [...formattedMovies, ...formattedSeries].sort((a, b) => new Date(b.addedAt || 0) - new Date(a.addedAt || 0));
         } else {
-            // --- CASO 2: Filtrado por Género con Relleno TMDB ---
             const genreId = parseInt(genre);
             const query = { genres: genreId };
 
@@ -315,13 +267,11 @@ app.get('/api/content/catalog', async (req, res) => {
 
             combined = [...formattedMovies, ...formattedSeries].sort((a, b) => new Date(b.addedAt || 0) - new Date(a.addedAt || 0));
 
-            // Lógica de Relleno si hay menos de 18 items
             if (combined.length < 18) {
                 const needed = 18 - combined.length;
                 console.log(`[Catalog] Género ${genreId}: Faltan ${needed} items. Rellenando con TMDB...`);
                 
                 try {
-                    // Pedimos películas populares de ese género a TMDB
                     const tmdbUrl = `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}&with_genres=${genreId}&language=es-MX&sort_by=popularity.desc&include_adult=false&page=1`;
                     const resp = await axios.get(tmdbUrl);
                     const tmdbResults = resp.data.results || [];
@@ -333,7 +283,6 @@ app.get('/api/content/catalog', async (req, res) => {
                         if (addedCount >= needed) break;
                         const sId = String(item.id);
                         
-                        // Solo agregamos si no lo tenemos ya en local
                         if (!existingIds.has(sId)) {
                             combined.push({
                                 id: item.id,
@@ -344,8 +293,8 @@ app.get('/api/content/catalog', async (req, res) => {
                                 backdrop_path: item.backdrop_path,
                                 media_type: 'movie',
                                 isPinned: false,
-                                isLocal: false, // Marcado como NO local para que la UI sepa gestionarlo
-                                addedAt: new Date(0) // Fecha antigua para que aparezcan al final
+                                isLocal: false, 
+                                addedAt: new Date(0) 
                             });
                             existingIds.add(sId);
                             addedCount++;
@@ -353,12 +302,10 @@ app.get('/api/content/catalog', async (req, res) => {
                     }
                 } catch (tmdbError) {
                     console.error(`[Catalog] Error rellenando con TMDB: ${tmdbError.message}`);
-                    // Si falla TMDB, devolvemos lo que tengamos localmente
                 }
             }
         }
 
-        // Guardamos en caché (Key específica del género o general)
         catalogCache.set(cacheKey, combined);
         
         res.status(200).json({ 
@@ -373,9 +320,6 @@ app.get('/api/content/catalog', async (req, res) => {
 });
 
 
-// =========================================================================
-// === RUTA CRÍTICA: /api/content/local (LÓGICA HÍBRIDA REAL) ===
-// =========================================================================
 app.get('/api/content/local', verifyIdToken, async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
 
@@ -493,8 +437,6 @@ function formatLocalItem(item, type) {
     };
 }
 
-// =========================================================================
-
 app.get('/api/tmdb-proxy', async (req, res) => {
     const endpoint = req.query.endpoint;
     const query = req.query.query;
@@ -551,13 +493,16 @@ app.get('/api/content/recent', async (req, res) => {
             .sort({ addedAt: -1 })
             .limit(20)
             .toArray();
+            
         const seriesPromise = mongoDb.collection('series_catalog')
             .find({})
-            .project({ tmdbId: 1, name: 1, poster_path: 1, backdrop_path: 1, addedAt: 1 }) 
+            .project({ tmdbId: 1, name: 1, title: 1, poster_path: 1, backdrop_path: 1, addedAt: 1 }) 
             .sort({ addedAt: -1 })
             .limit(20)
             .toArray();
+            
         const [movies, series] = await Promise.all([moviesPromise, seriesPromise]);
+        
         const formattedMovies = movies.map(movie => ({
             id: movie.tmdbId,
             tmdbId: movie.tmdbId,
@@ -571,15 +516,17 @@ app.get('/api/content/recent', async (req, res) => {
         const formattedSeries = series.map(serie => ({
             id: serie.tmdbId,
             tmdbId: serie.tmdbId,
-            title: serie.name, 
+            title: serie.name || serie.title || "Serie Actualizada", 
             poster_path: serie.poster_path,
             backdrop_path: serie.backdrop_path,
             media_type: 'tv',
             addedAt: serie.addedAt ? new Date(serie.addedAt) : new Date(0)
         }));
+        
         const combinedResults = [...formattedMovies, ...formattedSeries];
         combinedResults.sort((a, b) => b.addedAt - a.addedAt);
-        const finalResults = combinedResults.slice(0, 20);
+        const finalResults = combinedResults;
+        
         recentCache.set(RECENT_CACHE_KEY, finalResults);
         
         res.status(200).json(finalResults);
@@ -590,21 +537,13 @@ app.get('/api/content/recent', async (req, res) => {
     }
 });
 
-// =========================================================================
-// === OPTIMIZACIÓN: RUTA DE USUARIO (/api/user/me) ===
-// =========================================================================
 app.get('/api/user/me', verifyIdToken, async (req, res) => {
     const { uid, email } = req;
     const usernameFromQuery = req.query.username;
     
-    // 1. Intentar leer de userCache (RAM)
     const cachedUser = userCache.get(uid);
     if (cachedUser) {
-        // console.log(`[User Cache HIT] Usuario ${uid} recuperado de RAM.`);
-        // Si hay algo en el buffer de monedas, lo aseguramos aquí (aunque ya debería estar sincronizado)
         if (coinWriteBuffer[uid]) {
-            // Nota: En teoría ya está actualizado en cache al momento del POST, 
-            // pero esto es doble seguridad visual.
             cachedUser.coins = Math.max(cachedUser.coins, cachedUser.coins); 
         }
         return res.status(200).json(cachedUser);
@@ -625,7 +564,6 @@ app.get('/api/user/me', verifyIdToken, async (req, res) => {
                 await userDocRef.update({ isPro: false });
             }
 
-            // Calcular monedas reales (DB + Buffer no guardado)
             const dbCoins = userData.coins || 0;
             const bufferedCoins = coinWriteBuffer[uid] || 0;
             const totalCoins = dbCoins + bufferedCoins;
@@ -635,12 +573,11 @@ app.get('/api/user/me', verifyIdToken, async (req, res) => {
                 email,
                 username: userData.username || email.split('@')[0],
                 flair: userData.flair || "👋",
-                coins: totalCoins, // Entregamos saldo real
+                coins: totalCoins, 
                 isPro: isPro,
                 renewalDate: renewalDate
             };
             
-            // Guardar en RAM
             userCache.set(uid, responseData);
             return res.status(200).json(responseData);
         } else {
@@ -678,7 +615,6 @@ app.put('/api/user/profile', verifyIdToken, async (req, res) => {
             flair: flair || ""
         });
         
-        // Invalidamos caché para forzar recarga con nuevos datos
         userCache.del(uid);
         
         res.status(200).json({ message: 'Perfil actualizado con éxito.' });
@@ -691,7 +627,6 @@ app.put('/api/user/profile', verifyIdToken, async (req, res) => {
 app.get('/api/user/coins', verifyIdToken, countsCacheMiddleware, async (req, res) => {
     const { uid, cacheKey } = req;
     
-    // Si tenemos al usuario en RAM Cache, sacamos las monedas de ahí directamente
     const cachedUser = userCache.get(uid);
     if (cachedUser) {
         return res.status(200).json({ coins: cachedUser.coins });
@@ -700,7 +635,6 @@ app.get('/api/user/coins', verifyIdToken, countsCacheMiddleware, async (req, res
     try {
         const userDocRef = db.collection('users').doc(uid);
         const docSnap = await userDocRef.get();
-        // Sumar buffer si existe
         const dbCoins = docSnap.exists ? (docSnap.data().coins || 0) : 0;
         const buffered = coinWriteBuffer[uid] || 0;
         
@@ -713,6 +647,7 @@ app.get('/api/user/coins', verifyIdToken, countsCacheMiddleware, async (req, res
         res.status(500).json({ error: 'Error al obtener el balance.' });
     }
 });
+
 app.post('/api/user/coins', verifyIdToken, async (req, res) => {
     const { uid } = req;
     const { amount } = req.body;
@@ -726,13 +661,12 @@ app.post('/api/user/coins', verifyIdToken, async (req, res) => {
         
         if (cachedUser) {
             cachedUser.coins += amount;
-            userCache.set(uid, cachedUser); // Guardamos actualización
+            userCache.set(uid, cachedUser); 
             newDisplayBalance = cachedUser.coins;
         } else {
             newDisplayBalance = amount; 
         }
 
-        // Invalidar cachés cortas
         countsCache.del(`${uid}:/api/user/coins`);
 
         return res.status(200).json({ 
@@ -741,39 +675,32 @@ app.post('/api/user/coins', verifyIdToken, async (req, res) => {
         });
     }
 
-    // CASO 2: GASTO (Negativo - Requiere validación estricta en DB)
     const userDocRef = db.collection('users').doc(uid);
     try {
         const newBalance = await db.runTransaction(async (transaction) => {
             const doc = await transaction.get(userDocRef);
             let currentCoins = doc.exists ? (doc.data().coins || 0) : 0;
             
-            // IMPORTANTE: Si el usuario tiene monedas en el buffer pendientes de guardar,
-            // deberíamos considerarlas para el gasto.
             const buffered = coinWriteBuffer[uid] || 0;
             const totalReal = currentCoins + buffered;
 
-            const finalBalance = totalReal + amount; // amount es negativo
+            const finalBalance = totalReal + amount; 
 
             if (finalBalance < 0) {
                 throw new Error("Saldo insuficiente");
             }
 
-            // Si gastamos, guardamos en BD el resultado final y limpiamos el buffer de este usuario
-            // para evitar doble contabilidad.
             if (!doc.exists) {
                  transaction.set(userDocRef, { coins: finalBalance }, { merge: true });
             } else {
                  transaction.update(userDocRef, { coins: finalBalance });
             }
             
-            // Limpiar buffer porque ya consolidamos todo en la transacción
             delete coinWriteBuffer[uid];
 
             return finalBalance;
         });
 
-        // Actualizar caché RAM con el nuevo saldo real
         const cachedUser = userCache.get(uid);
         if (cachedUser) {
             cachedUser.coins = newBalance;
@@ -1029,6 +956,7 @@ app.post('/api/user/likes', verifyIdToken, async (req, res) => {
         res.status(500).json({ error: 'Error al registrar el like.' });
     }
 });
+
 app.post('/api/rewards/redeem/premium', verifyIdToken, async (req, res) => {
     const { uid } = req;
     const { daysToAdd } = req.body; 
@@ -1063,7 +991,6 @@ app.post('/api/rewards/redeem/premium', verifyIdToken, async (req, res) => {
         
         await userDocRef.set({ isPro: true, premiumExpiry: newExpiryDate }, { merge: true });
         
-        // Invalidar caché de usuario para que vea su premium activo
         userCache.del(uid);
         
         res.status(200).json({ success: true, message: `Premium activado por ${days} días.`, expiryDate: newExpiryDate.toISOString() });
@@ -1073,20 +1000,14 @@ app.post('/api/rewards/redeem/premium', verifyIdToken, async (req, res) => {
     }
 });
 
-// =========================================================================
-// === NUEVA LÓGICA DE PAGOS MANUALES Y NOTIFICACIÓN AL BOT ===
-// =========================================================================
-
 app.post('/api/payments/request-manual', async (req, res) => {
     const { userId, username, planName, price } = req.body;
     
-    // Validaciones básicas
     if (!userId || !planName) {
         return res.status(400).json({ error: 'Faltan datos (userId, planName).' });
     }
 
-    // Determinar duración según el nombre del plan
-    let days = 30; // Default
+    let days = 30; 
     if (planName.includes('3 Meses')) {
         days = 90;
     } else if (planName.includes('Anual') || planName.includes('12 Meses')) {
@@ -1104,7 +1025,6 @@ app.post('/api/payments/request-manual', async (req, res) => {
             parse_mode: 'Markdown',
             reply_markup: { 
                 inline_keyboard: [
-                    // Enviamos userId y days en el callback_data
                     [{ text: '✅ Activar Ahora', callback_data: `act_man_${userId}_${days}` }],
                     [{ text: '❌ Ignorar', callback_data: 'ignore_payment_request' }]
                 ] 
@@ -1117,29 +1037,22 @@ app.post('/api/payments/request-manual', async (req, res) => {
     }
 });
 
-// =========================================================================
-// === NUEVA RUTA: SINCRONIZACIÓN GOOGLE PLAY BILLING ===
-// =========================================================================
 app.post('/api/payments/google-sync', verifyIdToken, async (req, res) => {
     const { uid } = req;
     const { purchaseToken, orderId, productId } = req.body;
 
-    // Validación básica
     if (!uid) return res.status(401).json({ error: 'Usuario no autenticado.' });
     if (!orderId || !productId) return res.status(400).json({ error: 'Datos de compra incompletos.' });
 
     console.log(`[Google Billing] Procesando orden ${orderId} para usuario ${uid} - Producto: ${productId}`);
 
-    // Determinar duración según el ID del producto (SKU)
-    // Se ajusta a los IDs estrictos solicitados: salacine_premium_monthly (30) y salacine_premium_yearly (365)
-    let daysToAdd = 30; // Default Mensual
+    let daysToAdd = 30; 
 
     if (productId === 'salacine_premium_yearly') {
         daysToAdd = 365;
     } else if (productId === 'salacine_premium_monthly') {
         daysToAdd = 30;
     } else {
-        // Fallback de seguridad por si envían IDs viejos o variantes
         if (productId.toLowerCase().includes('year') || productId.toLowerCase().includes('anual')) {
             daysToAdd = 365;
         }
@@ -1148,31 +1061,26 @@ app.post('/api/payments/google-sync', verifyIdToken, async (req, res) => {
     try {
         const userRef = db.collection('users').doc(uid);
 
-        // Transacción para asegurar consistencia y evitar condiciones de carrera
         const newExpiry = await db.runTransaction(async (transaction) => {
             const userDoc = await transaction.get(userRef);
             const now = new Date();
             let currentExpiry = now;
 
             if (userDoc.exists && userDoc.data().premiumExpiry) {
-                // Parsear fecha existente
                 const expiryData = userDoc.data().premiumExpiry;
                 let existingDate;
                 if (expiryData.toDate && typeof expiryData.toDate === 'function') { existingDate = expiryData.toDate(); }
                 else if (typeof expiryData === 'number') { existingDate = new Date(expiryData); }
                 else if (typeof expiryData === 'string') { existingDate = new Date(expiryData); }
                 
-                // Si ya es premium y no ha vencido, sumamos al final
                 if (existingDate && existingDate > now) {
                     currentExpiry = existingDate;
                 }
             }
 
-            // Calcular nueva fecha
             const nextExpiry = new Date(currentExpiry);
             nextExpiry.setDate(nextExpiry.getDate() + daysToAdd);
 
-            // Actualizar usuario en Firestore
             transaction.set(userRef, {
                 isPro: true,
                 premiumExpiry: nextExpiry,
@@ -1181,7 +1089,6 @@ app.post('/api/payments/google-sync', verifyIdToken, async (req, res) => {
                 updatedAt: admin.firestore.FieldValue.serverTimestamp()
             }, { merge: true });
 
-            // Guardar registro de la transacción en colección separada (Logs)
             const paymentLogRef = db.collection('payment_logs').doc(orderId);
             transaction.set(paymentLogRef, {
                 uid: uid,
@@ -1196,7 +1103,6 @@ app.post('/api/payments/google-sync', verifyIdToken, async (req, res) => {
             return nextExpiry;
         });
 
-        // IMPORTANTE: Invalidar caché del usuario para reflejar el cambio inmediatamente
         if (userCache) {
             userCache.del(uid);
             console.log(`[Google Billing] Caché de usuario ${uid} invalidada.`);
@@ -1549,7 +1455,6 @@ app.post('/add-movie', async (req, res) => {
                 vote_average: vote_average || 0,
                 isPinned: isPinned === true || isPinned === 'true',
                 origin_country: origin_country || [],
-                // [FIX] MOVIDO A $SET PARA ACTUALIZAR FECHA AL EDITAR/RE-SUBIR
                 addedAt: new Date() 
             }, 
             $setOnInsert: { tmdbId: cleanTmdbId, views: 0, likes: 0 } 
@@ -1571,7 +1476,6 @@ app.post('/add-movie', async (req, res) => {
         pinnedCache.del(PINNED_CACHE_KEY);
         kdramaCache.del(KDRAMA_CACHE_KEY);
         
-        // --- LIMPIEZA TOTAL DE CATÁLOGO PARA ACTUALIZAR TODOS LOS GÉNEROS ---
         catalogCache.flushAll();
 
         console.log(`[Cache] Cachés (Recent, Pinned, Kdrama, Catalog FLUSH) invalidadas por subida de película: ${title}`);
@@ -1606,8 +1510,6 @@ app.post('/add-series-episode', async (req, res) => {
                 [episodePath + '.proEmbedCode']: proEmbedCode,
                 [episodePath + '.addedAt']: new Date(),
                 
-                // [FIX CRÍTICO] ESTO ESTABA EN $setOnInsert, POR ESO NO SUBÍA AL TOP.
-                // AHORA AL ESTAR EN $SET, ACTUALIZA LA FECHA DE LA SERIE CADA VEZ QUE SUBES UN EPISODIO.
                 addedAt: new Date() 
             },
             $setOnInsert: { tmdbId: cleanTmdbId, views: 0, likes: 0 }
@@ -1628,7 +1530,6 @@ app.post('/add-series-episode', async (req, res) => {
         pinnedCache.del(PINNED_CACHE_KEY);
         kdramaCache.del(KDRAMA_CACHE_KEY);
         
-        // --- LIMPIEZA TOTAL DE CATÁLOGO ---
         catalogCache.flushAll();
         
         console.log(`[Cache] Cachés (Recent, Pinned, Kdrama, Catalog FLUSH) invalidadas por subida de episodio: S${seasonNumber}E${episodeNumber}`);
@@ -1658,7 +1559,6 @@ app.post('/delete-series-episode', async (req, res) => {
         embedCache.del(`embed-${cleanTmdbId}-${seasonNumber}-${episodeNumber}-pro`);
         embedCache.del(`embed-${cleanTmdbId}-${seasonNumber}-${episodeNumber}-free`);
         
-        // Limpiamos catálogo por si acaso
         catalogCache.flushAll();
 
         console.log(`[Delete] Episodio S${seasonNumber}E${episodeNumber} eliminado de ${cleanTmdbId}`);
@@ -1688,15 +1588,11 @@ app.post('/api/notify-new-content', async (req, res) => {
     }
 });
 
-// =========================================================================
-// === NUEVA RUTA PARA COMUNICADOS GLOBALES (CMS) ===
-// =========================================================================
 app.get('/api/announcement', (req, res) => {
     const filePath = path.join(__dirname, 'globalAnnouncement.json');
 
-    // Comprobar si el archivo existe
     if (!fs.existsSync(filePath)) {
-        return res.status(204).send(); // 204 No Content (No hay anuncio)
+        return res.status(204).send(); 
     }
 
     try {
@@ -1708,11 +1604,9 @@ app.get('/api/announcement', (req, res) => {
         return res.status(200).json(json);
     } catch (error) {
         console.error("Error leyendo anuncio global:", error);
-        // Si hay error leyendo el archivo, asumimos que no hay anuncio válido
         return res.status(204).send();
     }
 });
-// =========================================================================
 
 app.get('/api/app-update', (req, res) => {
     const updateInfo = { "latest_version_code": 12, "update_url": "https://play.google.com/store/apps/details?id=com.salacine.app&pcampaignid=web_share", "force_update": false, "update_message": "¡Nueva versión (1.5.2) de Sala Cine disponible! Incluye mejoras de rendimiento. Actualiza ahora." };
@@ -1729,20 +1623,17 @@ app.get('/.well-known/assetlinks.json', (req, res) => {
 });
 
 async function sendNotificationToTopic(title, body, imageUrl, tmdbId, mediaType, specificTopic) {
-    // Si se pasa specificTopic se usa, sino por defecto 'new_content'
     const topic = specificTopic || 'new_content';
     
-    // Payload de datos (lo que lee la app si está abierta)
     const dataPayload = {
         title: title, 
         body: body, 
         tmdbId: tmdbId ? tmdbId.toString() : '0', 
         mediaType: mediaType || 'general',
-        click_action: "FLUTTER_NOTIFICATION_CLICK", // Ayuda si tu app es Flutter/Android estándar
+        click_action: "FLUTTER_NOTIFICATION_CLICK", 
         ...(imageUrl && { imageUrl: imageUrl })
     };
 
-    // Estructura completa con 'notification' para forzar la visualización en segundo plano
     const message = {
         topic: topic, 
         data: dataPayload,
@@ -1777,8 +1668,8 @@ async function startServer() {
 
     initializeBot(
         bot,
-        db, // Firestore
-        mongoDb, // MongoDB
+        db, 
+        mongoDb, 
         adminState,
         ADMIN_CHAT_ID,
         TMDB_API_KEY,
@@ -1786,7 +1677,7 @@ async function startServer() {
         axios,
         pinnedCache,
         sendNotificationToTopic,
-        userCache // <--- AÑADIDO: userCache pasado como último argumento para limpieza manual
+        userCache 
     );
 
     app.listen(PORT, () => {
