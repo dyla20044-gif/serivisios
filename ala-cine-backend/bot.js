@@ -207,20 +207,18 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
         // =========================================================================
         else if (adminState[chatId] && adminState[chatId].step === 'search_movie') {
             try {
-                // LÓGICA INTELIGENTE: Detectar año al final (ej: "Avengers 2012")
+                // LÓGICA INTELIGENTE: Detectar año al final (ej: "Avatar 2009")
                 let queryText = userText.trim();
                 let yearFilter = "";
                 
-                // Regex: Busca espacio + 4 dígitos al final del string
                 const yearMatch = queryText.match(/(.+?)\s+(\d{4})$/);
                 
                 if (yearMatch) {
-                    queryText = yearMatch[1]; // El nombre (ej: Avengers)
-                    yearFilter = `&year=${yearMatch[2]}`; // El año (ej: 2012)
+                    queryText = yearMatch[1]; // El nombre
+                    yearFilter = `&year=${yearMatch[2]}`; // El año
                     bot.sendMessage(chatId, `🔍 Buscando: "${queryText}" del año ${yearMatch[2]}...`);
                 }
 
-                // Construimos la URL con el año si existe
                 const searchUrl = `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(queryText)}&language=es-ES${yearFilter}`;
                 
                 const response = await axios.get(searchUrl);
@@ -233,7 +231,15 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                         const posterUrl = item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : 'https://placehold.co/500x750?text=No+Poster';
                         const title = item.title || item.name;
                         const date = item.release_date || item.first_air_date;
-                        const message = `🎬 *${title}* (${date ? date.substring(0, 4) : 'N/A'})\n\n${item.overview || 'Sin sinopsis disponible.'}`;
+
+                        // --- CORRECCIÓN DE LONGITUD DE TEXTO ---
+                        let overview = item.overview || 'Sin sinopsis disponible.';
+                        if (overview.length > 800) {
+                            overview = overview.substring(0, 800) + '...';
+                        }
+                        // ---------------------------------------
+
+                        const message = `🎬 *${title}* (${date ? date.substring(0, 4) : 'N/A'})\n\n${overview}`;
                         let buttons = [[{ text: existingData ? '✅ Gestionar' : '✅ Agregar', callback_data: `${existingData ? 'manage_movie' : 'add_new_movie'}_${item.id}` }]];
                         const options = { caption: message, parse_mode: 'Markdown', reply_markup: { inline_keyboard: buttons } };
                         bot.sendPhoto(chatId, posterUrl, options);
@@ -247,7 +253,6 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
         // =========================================================================
         else if (adminState[chatId] && adminState[chatId].step === 'search_series') {
             try {
-                // LÓGICA INTELIGENTE: Detectar año al final
                 let queryText = userText.trim();
                 let yearFilter = "";
 
@@ -255,7 +260,6 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
 
                 if (yearMatch) {
                     queryText = yearMatch[1];
-                    // Para series en TMDB se usa 'first_air_date_year'
                     yearFilter = `&first_air_date_year=${yearMatch[2]}`;
                     bot.sendMessage(chatId, `🔍 Buscando serie: "${queryText}" del año ${yearMatch[2]}...`);
                 }
@@ -272,7 +276,15 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                         const posterUrl = item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : 'https://placehold.co/500x750?text=No+Poster';
                         const title = item.title || item.name;
                         const date = item.first_air_date;
-                        const message = `🎬 *${title}* (${date ? date.substring(0, 4) : 'N/A'})\n\n${item.overview || 'Sin sinopsis disponible.'}`;
+
+                        // --- CORRECCIÓN DE LONGITUD DE TEXTO ---
+                        let overview = item.overview || 'Sin sinopsis disponible.';
+                        if (overview.length > 800) {
+                            overview = overview.substring(0, 800) + '...';
+                        }
+                        // ---------------------------------------
+
+                        const message = `🎬 *${title}* (${date ? date.substring(0, 4) : 'N/A'})\n\n${overview}`;
                         let buttons = [[{ text: existingData ? '✅ Gestionar' : '✅ Agregar', callback_data: `${existingData ? 'manage_series' : 'add_new_series'}_${item.id}` }]];
                         const options = { caption: message, parse_mode: 'Markdown', reply_markup: { inline_keyboard: buttons } };
                         bot.sendPhoto(chatId, posterUrl, options);
@@ -292,7 +304,15 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                         const posterUrl = item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : 'https://placehold.co/500x750?text=No+Poster';
                         const title = item.title || item.name;
                         const date = item.release_date || item.first_air_date;
-                        const message = `🎬 *${title}* (${date ? date.substring(0, 4) : 'N/A'})\n\n${item.overview || 'Sin sinopsis.'}`;
+
+                        // --- CORRECCIÓN DE LONGITUD DE TEXTO ---
+                        let overview = item.overview || 'Sin sinopsis.';
+                        if (overview.length > 800) {
+                            overview = overview.substring(0, 800) + '...';
+                        }
+                        // ---------------------------------------
+
+                        const message = `🎬 *${title}* (${date ? date.substring(0, 4) : 'N/A'})\n\n${overview}`;
                         const callback_manage = item.media_type === 'movie' ? `manage_movie_${item.id}` : `manage_series_${item.id}`;
                         const options = {
                             caption: message, parse_mode: 'Markdown', reply_markup: {
@@ -318,7 +338,15 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                         const posterUrl = item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : 'https://placehold.co/500x750?text=No+Poster';
                         const title = item.title || item.name;
                         const date = item.release_date || item.first_air_date;
-                        const message = `🎬 *${title}* (${date ? date.substring(0, 4) : 'N/A'})\n\n${item.overview || 'Sin sinopsis.'}`;
+
+                        // --- CORRECCIÓN DE LONGITUD DE TEXTO ---
+                        let overview = item.overview || 'Sin sinopsis.';
+                        if (overview.length > 800) {
+                            overview = overview.substring(0, 800) + '...';
+                        }
+                        // ---------------------------------------
+
+                        const message = `🎬 *${title}* (${date ? date.substring(0, 4) : 'N/A'})\n\n${overview}`;
                         const options = {
                             caption: message, parse_mode: 'Markdown', reply_markup: {
                                 inline_keyboard: [[{
