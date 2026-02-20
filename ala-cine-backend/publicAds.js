@@ -3,8 +3,8 @@ const fs = require('fs');
 function initializePublicAds(bot, mongoDb, ADMIN_CHAT_ID) {
 
     // ✏️ IMÁGENES DE INTERFAZ (Reemplaza con tus links PNG/JPG)
-    const IMG_DASHBOARD = 'https://marketing4ecommerce.mx/wp-content/uploads/2022/12/Plantilla-3-Tops-1.jpeg';
-    const IMG_CANALES = 'https://propellerads.com/blog/wp-content/webp-express/webp-images/doc-root/blog/wp-content/uploads/2024/11/PropellerAds-Top-7-Ways-To-Promote-Telegram-Mini-Apps.jpg.webp';
+    const IMG_DASHBOARD = 'https://placehold.co/800x400/1e1e1e/ffffff?text=PANEL+DE+PUBLICIDAD';
+    const IMG_CANALES = 'https://placehold.co/800x400/0044cc/ffffff?text=NUESTRA+RED+DE+CANALES';
 
     const CANALES = {
         pequenos: [
@@ -45,10 +45,16 @@ function initializePublicAds(bot, mongoDb, ADMIN_CHAT_ID) {
         `⚠️ *INSTRUCCIONES:*\nUna vez realizado el pago, **envíame por aquí mismo la FOTO/CAPTURA del comprobante**.`;
 
     const adState = {};
+
+    // =====================================================================
+    // 1. DASHBOARD PRINCIPAL Y BOTONES
+    // =====================================================================
     bot.on('callback_query', async (query) => {
         const chatId = query.message.chat.id;
         const data = query.data;
-        const msgId = query.message.message_id;-
+        const msgId = query.message.message_id;
+
+        // --- ABRIR DASHBOARD ---
         if (data === 'ads_open_dashboard' || data === 'ads_back_main') {
             const user = await mongoDb.collection('ad_users').findOne({ userId: chatId });
             const activeAd = await mongoDb.collection('active_ads').findOne({ userId: chatId });
@@ -294,6 +300,10 @@ function initializePublicAds(bot, mongoDb, ADMIN_CHAT_ID) {
             bot.editMessageText(`✅ *PLAN ACTIVADO MANUALMENTE*\nSe le otorgó el plan ${PLANES[planCode].nombre}.`, { chat_id: ADMIN_CHAT_ID, message_id: msgId, parse_mode: 'Markdown' });
             return;
         }
+
+        // =====================================================================
+        // 3. ENVÍO DE LA PUBLICIDAD (USUARIO)
+        // =====================================================================
         
         if (data === 'ads_create_post') {
             const user = await mongoDb.collection('ad_users').findOne({ userId: chatId });
@@ -370,6 +380,10 @@ function initializePublicAds(bot, mongoDb, ADMIN_CHAT_ID) {
             delete adState[chatId]; 
         }
     });
+
+    // =====================================================================
+    // 4. RECEPCIÓN DE MENSAJES
+    // =====================================================================
     bot.on('message', async (msg) => {
         const chatId = msg.chat.id;
         const state = adState[chatId];
@@ -421,6 +435,10 @@ function initializePublicAds(bot, mongoDb, ADMIN_CHAT_ID) {
             });
         }
     });
+
+    // =====================================================================
+    // ⚙️ CRON JOB: BORRADO AUTOMÁTICO (Cada 15 min)
+    // =====================================================================
     setInterval(async () => {
         try {
             const now = Date.now();
