@@ -1,7 +1,11 @@
 const fs = require('fs');
 const path = require('path');
-const initializePublicAds = require('./publicAds');
+const initializePublicAds = require('./publicAds'); // 👈 LÍNEA AGREGADA: Importamos tu nuevo módulo de publicidad
+
 function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_ID, TMDB_API_KEY, RENDER_BACKEND_URL, axios, pinnedCache, sendNotificationToTopic, userCache) {
+
+    // 👈 LÍNEA AGREGADA: Iniciamos el módulo de publicidad pasándole la base de datos y tu ID de Admin
+    initializePublicAds(bot, mongoDb, ADMIN_CHAT_ID);
 
     bot.setMyCommands([
         { command: 'start', description: 'Reiniciar el bot y ver el menú principal' },
