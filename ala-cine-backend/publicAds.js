@@ -1,16 +1,29 @@
 const fs = require('fs');
 
 function initializePublicAds(bot, mongoDb, ADMIN_CHAT_ID) {
+    
+    // =====================================================================
+    // ✏️ MODIFICAR AQUÍ ✏️: CONFIGURACIÓN DE CONTACTO Y ENLACES
+    // =====================================================================
+    
+    // 1. Tu usuario de Telegram para que te contacten si hay dudas (sin el @)
     const OWNER_USERNAME = 'TuUsuarioDeTelegram'; 
+
+    // 2. Configuración de Canales
+    // Aquí el bot lee los IDs ocultos de Render (process.env.CH_PEQ_1, etc.)
+    // ✏️ Solo debes modificar el 'link' (pon tu enlace de invitación) y el 'name'
     const CANALES = {
         pequenos: [
             { id: process.env.CH_PEQ_1, link: 'https://t.me/+enlacePrivadoPeq1', name: 'Canal Random (60k)' }
+            // Si tienes más pequeños, agrégalos aquí abajo siguiendo el mismo formato
         ],
         grandes: [
             { id: process.env.CH_GRA_1, link: 'https://t.me/+enlacePrivadoGra1', name: 'Canal Cine (120k)' },
             { id: process.env.CH_GRA_2, link: 'https://t.me/+enlacePrivadoGra2', name: 'Canal Series (100k)' }
         ]
     };
+
+    // 3. Precios y Duraciones
     const PLANES = {
         basico: { nombre: "Plan Básico (1 Canal Pequeño)", precio: "$20 USD", horas: 30, tipo: "pequenos" },
         elite: { nombre: "Plan Élite (1 Canal Grande)", precio: "$35 USD", horas: 30, tipo: "grandes" },
@@ -76,6 +89,41 @@ function initializePublicAds(bot, mongoDb, ADMIN_CHAT_ID) {
         const chatId = query.message.chat.id;
         const data = query.data;
         const msgId = query.message.message_id;
+
+        // === ABRIR DASHBOARD DESDE EL MENÚ START ===
+        if (data === 'ads_open_dashboard') {
+            const user = await mongoDb.collection('ad_users').findOne({ userId: chatId });
+            
+            let statusText = "❌ Sin Plan Activo";
+            let planType = "Ninguno";
+            
+            if (user && user.postsDisponibles > 0) {
+                statusText = `✅ Tienes ${user.postsDisponibles} publicación(es) disponible(s)`;
+                planType = PLANES[user.planCode]?.nombre || "Desconocido";
+            } else if (user && user.postsDisponibles === 0) {
+                statusText = `⚠️ Agotaste tus publicaciones. Compra un nuevo plan.`;
+            }
+
+            const dashboardMsg = `📊 *PANEL DE ANUNCIANTES PRO*\n\n` +
+                `👤 *Usuario:* ${query.from.first_name}\n` +
+                `📈 *Estado:* ${statusText}\n` +
+                `💎 *Plan Actual:* ${planType}\n\n` +
+                `Llega a más de 300,000 personas reales en nuestra red.`;
+
+            // Usamos sendMessage en lugar de editMessageText porque venimos de un menú de bienvenida genérico
+            bot.sendMessage(chatId, dashboardMsg, {
+                parse_mode: 'Markdown',
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: '🛒 Ver Planes y Precios', callback_data: 'ads_view_plans' }],
+                        [{ text: '🚀 Enviar Mi Publicidad', callback_data: 'ads_create_post' }],
+                        [{ text: '📞 Contactar al Propietario', callback_data: 'ads_contact_owner' }]
+                    ]
+                }
+            });
+            bot.answerCallbackQuery(query.id);
+            return; // Salir de la función para no ejecutar los demás if
+        }
 
         if (data === 'ads_view_plans') {
             const textPlanes = `🔥 *SELECCIONA TU PAQUETE PUBLICITARIO*\n\n` +
