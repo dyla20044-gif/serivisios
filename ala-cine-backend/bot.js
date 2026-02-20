@@ -1,10 +1,10 @@
 const fs = require('fs');
 const path = require('path');
-const initializePublicAds = require('./publicAds'); // 👈 LÍNEA AGREGADA: Importamos tu nuevo módulo de publicidad
+const initializePublicAds = require('./publicAds'); // 👈 Importación del módulo de publicidad
 
 function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_ID, TMDB_API_KEY, RENDER_BACKEND_URL, axios, pinnedCache, sendNotificationToTopic, userCache) {
 
-    // 👈 LÍNEA AGREGADA: Iniciamos el módulo de publicidad pasándole la base de datos y tu ID de Admin
+    // 👈 Iniciamos el módulo de publicidad
     initializePublicAds(bot, mongoDb, ADMIN_CHAT_ID);
 
     bot.setMyCommands([
@@ -72,22 +72,19 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_ID, TMDB_API_KEY
             const command = userText.split(' ')[0];
 
             if (chatId !== ADMIN_CHAT_ID) {
+                // 👈 AQUÍ ACTUALIZAMOS EL MENÚ DE BIENVENIDA PARA USUARIOS PÚBLICOS
                 if (command === '/start' || command === '/ayuda') {
-                    const helpMessage = `👋 ¡Hola! Soy un Bot de Auto-Aceptación de Solicitudes.
+                    const helpMessage = `👋 ¡Hola! Bienvenido al bot oficial.\n\n🤖 **Gestión de Accesos:**\nSi enviaste una solicitud para unirte a nuestros canales privados, este bot te aceptará automáticamente en breve.\n\n📢 **Servicio de Publicidad:**\nSi eres creador de contenido o tienes un negocio, puedes pautar con nosotros y llegar a más de 300,000 personas en nuestra red de canales.`;
                     
-**Función Principal:**
-Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu canal o grupo privado.
-
-**¿Cómo configurarme?**
-1. Añádeme como administrador a tu canal o grupo.
-2. Otórgame el permiso: "**Administrar solicitudes de ingreso**". 
-3. ¡Listo! Aceptaré a los nuevos miembros y les enviaré un DM de bienvenida.
-
-*Comandos disponibles:*
-/ayuda - Muestra esta información.
-/contacto - Contactar con el desarrollador.
-`;
-                    bot.sendMessage(chatId, helpMessage, { parse_mode: 'Markdown' });
+                    bot.sendMessage(chatId, helpMessage, { 
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            inline_keyboard: [
+                                [{ text: '📢 Panel de Publicidad', callback_data: 'ads_open_dashboard' }],
+                                [{ text: '📞 Contactar Soporte', callback_data: 'public_contact' }]
+                            ]
+                        }
+                    });
                     return;
                 }
 
