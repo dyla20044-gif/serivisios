@@ -4,14 +4,14 @@ function initializePublicAds(bot, mongoDb, ADMIN_CHAT_ID) {
 
     // ✏️ IMÁGENES DE INTERFAZ (Reemplaza con tus links PNG/JPG)
     const IMG_DASHBOARD = 'https://marketing4ecommerce.mx/wp-content/uploads/2022/12/Plantilla-3-Tops-1.jpeg';
-    const IMG_CANALES = 'https://placehold.co/800x400/0044cc/ffffff?text=NUESTRA+RED+DE+CANALES';
+    const IMG_CANALES = 'https://nuteco.b-cdn.net/wp-content/uploads/2021/12/telegram-anuncios.jpg';
 
     const CANALES = {
         pequenos: [
-            { id: process.env.CH_PEQ_1, link: 'https://t.me/TuCanalPeq1', name: 'Canal Random (60k)' }
+            { id: process.env.CH_PEQ_1, link: 'https://t.me/TuCanalPeq1', name: 'calan de (60k)' }
         ],
         grandes: [
-            { id: process.env.CH_GRA_1, link: 'https://t.me/TuCanalGra1', name: 'Canal Cine (120k)' },
+            { id: process.env.CH_GRA_1, link: 'https://t.me/TuCanalGra1', name: 'canal de (120k)' },
             { id: process.env.CH_GRA_2, link: 'https://t.me/TuCanalGra2', name: 'Canal Series (100k)' }
         ]
     };
@@ -19,36 +19,32 @@ function initializePublicAds(bot, mongoDb, ADMIN_CHAT_ID) {
     const PLANES = {
         basico: { 
             id: "basico", nombre: "Plan Básico (1 Canal Peq.)", precio: "$20 USD", horas: 30, tipo: "pequenos", posts: 1,
-            imagen: "https://placehold.co/600x400/2ecc71/ffffff?text=PLAN+BASICO",
+            imagen: "https://i.ibb.co/p6f15vKC/Gemini-Generated-Image-h1ttpuh1ttpuh1tt.png",
             descripcion: "🚀 *PLAN BÁSICO*\n\nIdeal para empezar. Tu publicidad se enviará a *1 de nuestros canales pequeños*.\n\n🔹 *¿Qué incluye?*\n- Publicación en 1 canal de la red.\n- Tu anuncio estará visible por *30 horas*.\n- Formato libre: Imagen/Video + Texto + Enlaces.\n\n💵 *Inversión:* $20 USD"
         },
         elite: { 
             id: "elite", nombre: "Plan Élite (1 Canal Grande)", precio: "$35 USD", horas: 30, tipo: "grandes", posts: 1,
-            imagen: "https://placehold.co/600x400/e67e22/ffffff?text=PLAN+ELITE",
+            imagen: "https://i.ibb.co/p6f15vKC/Gemini-Generated-Image-h1ttpuh1ttpuh1tt.png",
             descripcion: "🔥 *PLAN ÉLITE*\n\nLlega a las masas. Tu anuncio será publicado en *1 de nuestros canales principales*.\n\n🔹 *¿Qué incluye?*\n- Publicación en 1 canal GRANDE.\n- Máxima visibilidad por *30 horas*.\n- Excelente para promocionar grupos o negocios.\n\n💵 *Inversión:* $35 USD"
         },
         combo: { 
             id: "combo", nombre: "👑 COMBO VIP (Todos)", precio: "$80 USD", horas: 48, tipo: "todos", posts: 1,
-            imagen: "https://placehold.co/600x400/8e44ad/ffffff?text=COMBO+VIP",
+            imagen: "https://i.ibb.co/bR32xHpw/Gemini-Generated-Image-qrqbqeqrqbqeqrqb.png",
             descripcion: "👑 *COMBO VIP*\n\nDominación total. Tu publicidad se disparará en *TODOS nuestros canales simultáneamente*.\n\n🔹 *¿Qué incluye?*\n- Publicación en TODOS los canales de la red.\n- Duración extendida: visible por *48 horas*.\n- Máximo impacto garantizado.\n\n💵 *Inversión:* $80 USD"
         },
         mensual: { 
             id: "mensual", nombre: "💎 PLAN MENSUAL PRO", precio: "$150 USD", horas: 48, tipo: "todos", posts: 15, 
-            imagen: "https://placehold.co/600x400/f1c40f/000000?text=PLAN+MENSUAL",
+            imagen: "https://i.ibb.co/bR32xHpw/Gemini-Generated-Image-qrqbqeqrqbqeqrqb.png",
             descripcion: "💎 *PLAN MENSUAL PRO*\n\nLa mejor inversión para creadores constantes. \n\n🔹 *¿Qué incluye?*\n- Acceso a TODOS los canales (Pequeños y Grandes).\n- *15 Publicaciones* disponibles al mes.\n- Cada publicación dura 48 horas.\n\n💵 *Inversión:* $150 USD / Mes"
         }
     };
 
     const METODOS_PAGO = `💳 *MÉTODOS DE PAGO DISPONIBLES*\n\n` +
-        `🟡 *BINANCE PAY*\nPay ID: \`123456789\`\nCorreo: \`tuemail@binance.com\`\n\n` +
-        `🔵 *PAYPAL*\nEnlace: \`paypal.me/TuUsuario\`\n\n` +
+        `🟡 *BINANCE PAY*\nPay ID: \`853699772\`\nUSDT TRC20: \`TPBbBjmtedKKst42MZCGbqNx4BhpuHDTHb\`\n\n` +
+        `🔵 *PAYPAL*\nEnlace: \`novispnible\`\n\n` +
         `⚠️ *INSTRUCCIONES:*\nUna vez realizado el pago, **envíame por aquí mismo la FOTO/CAPTURA del comprobante**.`;
 
     const adState = {};
-
-    // =====================================================================
-    // 1. DASHBOARD PRINCIPAL Y BOTONES
-    // =====================================================================
     bot.on('callback_query', async (query) => {
         const chatId = query.message.chat.id;
         const data = query.data;
@@ -116,8 +112,6 @@ function initializePublicAds(bot, mongoDb, ADMIN_CHAT_ID) {
             });
             return;
         }
-
-        // --- ESTADO DEL ANUNCIO (BARRA DE PROGRESO) ---
         if (data === 'ads_ad_status') {
             const activeAd = await mongoDb.collection('active_ads').findOne({ userId: chatId });
             
