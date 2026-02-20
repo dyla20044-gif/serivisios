@@ -1,10 +1,10 @@
 const fs = require('fs');
 const path = require('path');
-const initializePublicAds = require('./publicAds'); // 👈 Importación del módulo de publicidad
+const initializePublicAds = require('./publicAds'); // <-- LÍNEA AGREGADA: Conexión con el sistema de publicidad
 
 function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_ID, TMDB_API_KEY, RENDER_BACKEND_URL, axios, pinnedCache, sendNotificationToTopic, userCache) {
 
-    // 👈 Iniciamos el módulo de publicidad
+    // <-- LÍNEA AGREGADA: Inicializar el sistema de publicidad
     initializePublicAds(bot, mongoDb, ADMIN_CHAT_ID);
 
     bot.setMyCommands([
@@ -72,8 +72,8 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_ID, TMDB_API_KEY
             const command = userText.split(' ')[0];
 
             if (chatId !== ADMIN_CHAT_ID) {
-                // 👈 AQUÍ ACTUALIZAMOS EL MENÚ DE BIENVENIDA PARA USUARIOS PÚBLICOS
                 if (command === '/start' || command === '/ayuda') {
+                    // <-- LÍNEAS MODIFICADAS: Menú de bienvenida profesional para usuarios
                     const helpMessage = `👋 ¡Hola! Bienvenido al bot oficial.\n\n🤖 **Gestión de Accesos:**\nSi enviaste una solicitud para unirte a nuestros canales privados, este bot te aceptará automáticamente en breve.\n\n📢 **Servicio de Publicidad:**\nSi eres creador de contenido o tienes un negocio, puedes pautar con nosotros y llegar a más de 300,000 personas en nuestra red de canales.`;
                     
                     bot.sendMessage(chatId, helpMessage, { 
@@ -208,15 +208,14 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_ID, TMDB_API_KEY
         // =========================================================================
         else if (adminState[chatId] && adminState[chatId].step === 'search_movie') {
             try {
-                // LÓGICA INTELIGENTE: Detectar año al final (ej: "Avatar 2009")
                 let queryText = userText.trim();
                 let yearFilter = "";
                 
                 const yearMatch = queryText.match(/(.+?)\s+(\d{4})$/);
                 
                 if (yearMatch) {
-                    queryText = yearMatch[1]; // El nombre
-                    yearFilter = `&year=${yearMatch[2]}`; // El año
+                    queryText = yearMatch[1]; 
+                    yearFilter = `&year=${yearMatch[2]}`; 
                     bot.sendMessage(chatId, `🔍 Buscando: "${queryText}" del año ${yearMatch[2]}...`);
                 }
 
@@ -233,12 +232,10 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_ID, TMDB_API_KEY
                         const title = item.title || item.name;
                         const date = item.release_date || item.first_air_date;
 
-                        // --- CORRECCIÓN DE LONGITUD DE TEXTO ---
                         let overview = item.overview || 'Sin sinopsis disponible.';
                         if (overview.length > 800) {
                             overview = overview.substring(0, 800) + '...';
                         }
-                        // ---------------------------------------
 
                         const message = `🎬 *${title}* (${date ? date.substring(0, 4) : 'N/A'})\n\n${overview}`;
                         let buttons = [[{ text: existingData ? '✅ Gestionar' : '✅ Agregar', callback_data: `${existingData ? 'manage_movie' : 'add_new_movie'}_${item.id}` }]];
@@ -278,12 +275,10 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_ID, TMDB_API_KEY
                         const title = item.title || item.name;
                         const date = item.first_air_date;
 
-                        // --- CORRECCIÓN DE LONGITUD DE TEXTO ---
                         let overview = item.overview || 'Sin sinopsis disponible.';
                         if (overview.length > 800) {
                             overview = overview.substring(0, 800) + '...';
                         }
-                        // ---------------------------------------
 
                         const message = `🎬 *${title}* (${date ? date.substring(0, 4) : 'N/A'})\n\n${overview}`;
                         let buttons = [[{ text: existingData ? '✅ Gestionar' : '✅ Agregar', callback_data: `${existingData ? 'manage_series' : 'add_new_series'}_${item.id}` }]];
@@ -306,12 +301,10 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_ID, TMDB_API_KEY
                         const title = item.title || item.name;
                         const date = item.release_date || item.first_air_date;
 
-                        // --- CORRECCIÓN DE LONGITUD DE TEXTO ---
                         let overview = item.overview || 'Sin sinopsis.';
                         if (overview.length > 800) {
                             overview = overview.substring(0, 800) + '...';
                         }
-                        // ---------------------------------------
 
                         const message = `🎬 *${title}* (${date ? date.substring(0, 4) : 'N/A'})\n\n${overview}`;
                         const callback_manage = item.media_type === 'movie' ? `manage_movie_${item.id}` : `manage_series_${item.id}`;
@@ -340,12 +333,10 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_ID, TMDB_API_KEY
                         const title = item.title || item.name;
                         const date = item.release_date || item.first_air_date;
 
-                        // --- CORRECCIÓN DE LONGITUD DE TEXTO ---
                         let overview = item.overview || 'Sin sinopsis.';
                         if (overview.length > 800) {
                             overview = overview.substring(0, 800) + '...';
                         }
-                        // ---------------------------------------
 
                         const message = `🎬 *${title}* (${date ? date.substring(0, 4) : 'N/A'})\n\n${overview}`;
                         const options = {
@@ -499,6 +490,9 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 bot.sendMessage(chatId, 'Para soporte o dudas, puedes contactar al desarrollador en: @TuUsuarioDeTelegram');
                 return;
             }
+
+            // <-- LÍNEA AGREGADA: Permite que los botones de publicidad de los usuarios pasen sin ser bloqueados
+            if (data && data.startsWith('ads_')) return;
 
             if (chatId !== ADMIN_CHAT_ID) {
                 bot.answerCallbackQuery(callbackQuery.id, { text: 'No tienes permiso.', show_alert: true });
