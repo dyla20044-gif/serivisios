@@ -3,8 +3,8 @@ const fs = require('fs');
 function initializePublicAds(bot, mongoDb, ADMIN_CHAT_ID) {
 
     // ✏️ IMÁGENES DE INTERFAZ (Reemplaza con tus links PNG/JPG)
-    const IMG_DASHBOARD = 'https://placehold.co/800x400/1e1e1e/ffffff?text=PANEL+DE+PUBLICIDAD';
-    const IMG_CANALES = 'https://placehold.co/800x400/0044cc/ffffff?text=NUESTRA+RED+DE+CANALES';
+    const IMG_DASHBOARD = 'https://marketing4ecommerce.mx/wp-content/uploads/2022/12/Plantilla-3-Tops-1.jpeg';
+    const IMG_CANALES = 'https://propellerads.com/blog/wp-content/webp-express/webp-images/doc-root/blog/wp-content/uploads/2024/11/PropellerAds-Top-7-Ways-To-Promote-Telegram-Mini-Apps.jpg.webp';
 
     const CANALES = {
         pequenos: [
