@@ -18,12 +18,12 @@ function initializePublicAds(bot, mongoDb, ADMIN_CHAT_ID) {
     const PLANES = {
         basico: { 
             id: "basico", nombre: "Plan Básico (1 Canal Pequeño)", precio: "$20 USD", horas: 30, tipo: "pequenos", posts: 1,
-            imagen: "https://placehold.co/600x400/2a2a2a/ffffff?text=PLAN+BASICO",
+            imagen: "https://vilmanunez.com/wp-content/uploads/2020/07/Disen%CC%83o-sin-ti%CC%81tulo.png",
             descripcion: "🚀 *PLAN BÁSICO*\n\nIdeal para empezar. Tu publicidad se enviará a *1 de nuestros canales pequeños* (menos de 100,000 seguidores).\n\n🔹 *¿Qué incluye?*\n- Publicación en 1 canal de la red.\n- Tu anuncio estará visible por *30 horas*.\n- Formato libre: Imagen/Video + Texto + Enlaces.\n\n💵 *Inversión:* $20 USD"
         },
         elite: { 
             id: "elite", nombre: "Plan Élite (1 Canal Grande)", precio: "$35 USD", horas: 30, tipo: "grandes", posts: 1,
-            imagen: "https://placehold.co/600x400/ffaa00/ffffff?text=PLAN+ELITE",
+            imagen: "https://vilmanunez.com/wp-content/uploads/2020/07/Disen%CC%83o-sin-ti%CC%81tulo.png",
             descripcion: "🔥 *PLAN ÉLITE*\n\nLlega a las masas. Tu anuncio será publicado en *1 de nuestros canales principales* (más de 100,000 seguidores).\n\n🔹 *¿Qué incluye?*\n- Publicación en 1 canal GRANDE.\n- Máxima visibilidad por *30 horas*.\n- Excelente para promocionar grupos o negocios.\n\n💵 *Inversión:* $35 USD"
         },
         combo: { 
