@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-
+const initializePublicAds = require('./publicAds');
 function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_ID, TMDB_API_KEY, RENDER_BACKEND_URL, axios, pinnedCache, sendNotificationToTopic, userCache) {
 
     bot.setMyCommands([
