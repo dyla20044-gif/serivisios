@@ -2,104 +2,176 @@ const fs = require('fs');
 
 function initializePublicAds(bot, mongoDb, ADMIN_CHAT_ID) {
 
-    const OWNER_USERNAME = 'TuUsuarioDeTelegram'; 
+    // ✏️ IMÁGENES DE INTERFAZ (Reemplaza con tus links PNG/JPG)
+    const IMG_DASHBOARD = 'https://placehold.co/800x400/1e1e1e/ffffff?text=PANEL+DE+PUBLICIDAD';
+    const IMG_CANALES = 'https://placehold.co/800x400/0044cc/ffffff?text=NUESTRA+RED+DE+CANALES';
 
     const CANALES = {
         pequenos: [
-            { id: process.env.CH_PEQ_1, link: 'https://t.me/+enlacePrivadoPeq1', name: 'Canal Random (60k)' }
+            { id: process.env.CH_PEQ_1, link: 'https://t.me/TuCanalPeq1', name: 'Canal Random (60k)' }
         ],
         grandes: [
-            { id: process.env.CH_GRA_1, link: 'https://t.me/+enlacePrivadoGra1', name: 'Canal Cine (120k)' },
-            { id: process.env.CH_GRA_2, link: 'https://t.me/+enlacePrivadoGra2', name: 'Canal Series (100k)' }
+            { id: process.env.CH_GRA_1, link: 'https://t.me/TuCanalGra1', name: 'Canal Cine (120k)' },
+            { id: process.env.CH_GRA_2, link: 'https://t.me/TuCanalGra2', name: 'Canal Series (100k)' }
         ]
     };
 
-    // ✏️ AQUÍ PUEDES CAMBIAR LAS IMÁGENES DE CADA PLAN (Pon URLs de fotos reales)
     const PLANES = {
         basico: { 
-            id: "basico", nombre: "Plan Básico (1 Canal Pequeño)", precio: "$20 USD", horas: 30, tipo: "pequenos", posts: 1,
-            imagen: "https://vilmanunez.com/wp-content/uploads/2020/07/Disen%CC%83o-sin-ti%CC%81tulo.png",
-            descripcion: "🚀 *PLAN BÁSICO*\n\nIdeal para empezar. Tu publicidad se enviará a *1 de nuestros canales pequeños* (menos de 100,000 seguidores).\n\n🔹 *¿Qué incluye?*\n- Publicación en 1 canal de la red.\n- Tu anuncio estará visible por *30 horas*.\n- Formato libre: Imagen/Video + Texto + Enlaces.\n\n💵 *Inversión:* $20 USD"
+            id: "basico", nombre: "Plan Básico (1 Canal Peq.)", precio: "$20 USD", horas: 30, tipo: "pequenos", posts: 1,
+            imagen: "https://placehold.co/600x400/2ecc71/ffffff?text=PLAN+BASICO",
+            descripcion: "🚀 *PLAN BÁSICO*\n\nIdeal para empezar. Tu publicidad se enviará a *1 de nuestros canales pequeños*.\n\n🔹 *¿Qué incluye?*\n- Publicación en 1 canal de la red.\n- Tu anuncio estará visible por *30 horas*.\n- Formato libre: Imagen/Video + Texto + Enlaces.\n\n💵 *Inversión:* $20 USD"
         },
         elite: { 
             id: "elite", nombre: "Plan Élite (1 Canal Grande)", precio: "$35 USD", horas: 30, tipo: "grandes", posts: 1,
-            imagen: "https://vilmanunez.com/wp-content/uploads/2020/07/Disen%CC%83o-sin-ti%CC%81tulo.png",
-            descripcion: "🔥 *PLAN ÉLITE*\n\nLlega a las masas. Tu anuncio será publicado en *1 de nuestros canales principales* (más de 100,000 seguidores).\n\n🔹 *¿Qué incluye?*\n- Publicación en 1 canal GRANDE.\n- Máxima visibilidad por *30 horas*.\n- Excelente para promocionar grupos o negocios.\n\n💵 *Inversión:* $35 USD"
+            imagen: "https://placehold.co/600x400/e67e22/ffffff?text=PLAN+ELITE",
+            descripcion: "🔥 *PLAN ÉLITE*\n\nLlega a las masas. Tu anuncio será publicado en *1 de nuestros canales principales*.\n\n🔹 *¿Qué incluye?*\n- Publicación en 1 canal GRANDE.\n- Máxima visibilidad por *30 horas*.\n- Excelente para promocionar grupos o negocios.\n\n💵 *Inversión:* $35 USD"
         },
         combo: { 
-            id: "combo", nombre: "👑 COMBO VIP (Todos los Canales)", precio: "$80 USD", horas: 48, tipo: "todos", posts: 1,
-            imagen: "https://placehold.co/600x400/800080/ffffff?text=COMBO+VIP",
-            descripcion: "👑 *COMBO VIP*\n\nDominación total. Tu publicidad se disparará en *TODOS nuestros canales simultáneamente* (Pequeños y Grandes).\n\n🔹 *¿Qué incluye?*\n- Publicación en TODOS los canales de la red.\n- Duración extendida: visible por *48 horas*.\n- Máximo impacto y alcance masivo garantizado.\n\n💵 *Inversión:* $80 USD"
+            id: "combo", nombre: "👑 COMBO VIP (Todos)", precio: "$80 USD", horas: 48, tipo: "todos", posts: 1,
+            imagen: "https://placehold.co/600x400/8e44ad/ffffff?text=COMBO+VIP",
+            descripcion: "👑 *COMBO VIP*\n\nDominación total. Tu publicidad se disparará en *TODOS nuestros canales simultáneamente*.\n\n🔹 *¿Qué incluye?*\n- Publicación en TODOS los canales de la red.\n- Duración extendida: visible por *48 horas*.\n- Máximo impacto garantizado.\n\n💵 *Inversión:* $80 USD"
         },
         mensual: { 
-            id: "mensual", nombre: "💎 PLAN MENSUAL (1 Mes)", precio: "$150 USD", horas: 720, tipo: "todos", posts: 15, // Te da 15 posts al mes
-            imagen: "https://placehold.co/600x400/000000/ffd700?text=PLAN+MENSUAL",
-            descripcion: "💎 *PLAN MENSUAL PRO*\n\nLa mejor inversión para creadores constantes. Acceso al *COMBO VIP* durante todo el mes.\n\n🔹 *¿Qué incluye?*\n- Acceso a TODOS los canales.\n- 15 Publicaciones disponibles (Recomendado 1 cada 2 días).\n- Mayor rentabilidad a largo plazo.\n\n💵 *Inversión:* $150 USD / Mes"
+            id: "mensual", nombre: "💎 PLAN MENSUAL PRO", precio: "$150 USD", horas: 48, tipo: "todos", posts: 15, 
+            imagen: "https://placehold.co/600x400/f1c40f/000000?text=PLAN+MENSUAL",
+            descripcion: "💎 *PLAN MENSUAL PRO*\n\nLa mejor inversión para creadores constantes. \n\n🔹 *¿Qué incluye?*\n- Acceso a TODOS los canales (Pequeños y Grandes).\n- *15 Publicaciones* disponibles al mes.\n- Cada publicación dura 48 horas.\n\n💵 *Inversión:* $150 USD / Mes"
         }
     };
 
     const METODOS_PAGO = `💳 *MÉTODOS DE PAGO DISPONIBLES*\n\n` +
         `🟡 *BINANCE PAY*\nPay ID: \`123456789\`\nCorreo: \`tuemail@binance.com\`\n\n` +
         `🔵 *PAYPAL*\nEnlace: \`paypal.me/TuUsuario\`\n\n` +
-        `⚠️ *INSTRUCCIONES:*\nUna vez realizado el pago, **envíame por aquí mismo la FOTO/CAPTURA del comprobante**.\nTu anuncio será habilitado inmediatamente tras la verificación.`;
+        `⚠️ *INSTRUCCIONES:*\nUna vez realizado el pago, **envíame por aquí mismo la FOTO/CAPTURA del comprobante**.`;
 
     const adState = {};
-
-    // =====================================================================
-    // 1. DASHBOARD PRINCIPAL Y BOTONES
-    // =====================================================================
     bot.on('callback_query', async (query) => {
         const chatId = query.message.chat.id;
         const data = query.data;
-        const msgId = query.message.message_id;
-
-        // --- ABRIR DASHBOARD ---
+        const msgId = query.message.message_id;-
         if (data === 'ads_open_dashboard' || data === 'ads_back_main') {
             const user = await mongoDb.collection('ad_users').findOne({ userId: chatId });
+            const activeAd = await mongoDb.collection('active_ads').findOne({ userId: chatId });
             
             let statusText = "❌ Sin Plan Activo";
             let planType = "Ninguno";
-            
-            if (user && user.postsDisponibles > 0) {
+            let buttons = [];
+
+            // Lógica dinámica de botones según el estado del usuario
+            if (activeAd) {
+                statusText = `🟢 Anuncio en circulación`;
+                planType = PLANES[activeAd.planCode]?.nombre || "Desconocido";
+                buttons.push([{ text: '📊 Ver Estado de mi Anuncio', callback_data: 'ads_ad_status' }]);
+                if (user && user.postsDisponibles > 0) {
+                    buttons.push([{ text: `📝 Te quedan ${user.postsDisponibles} posts (Plan Mensual)`, callback_data: 'noop' }]);
+                }
+            } else if (user && user.postsDisponibles > 0) {
                 statusText = `✅ Tienes ${user.postsDisponibles} publicación(es) disponible(s)`;
                 planType = PLANES[user.planCode]?.nombre || "Desconocido";
-            }
-
-            const dashboardMsg = `📊 *PANEL DE ANUNCIANTES PRO*\n\n👤 *Usuario:* ${query.from.first_name}\n📈 *Estado:* ${statusText}\n💎 *Plan Actual:* ${planType}\n\nLlega a más de 300,000 personas reales en nuestra red.`;
-
-            // Limpieza visual: si venimos de un detalle (foto), borramos la foto. Si no, editamos el texto.
-            if (query.message.photo) {
-                bot.deleteMessage(chatId, msgId).catch(()=>{});
-                bot.sendMessage(chatId, dashboardMsg, {
-                    parse_mode: 'Markdown',
-                    reply_markup: {
-                        inline_keyboard: [
-                            [{ text: '🛒 Ver Planes y Precios', callback_data: 'ads_view_plans' }],
-                            [{ text: '🚀 Enviar Mi Publicidad', callback_data: 'ads_create_post' }]
-                        ]
-                    }
-                });
+                buttons.push([{ text: '🚀 Lanzar Mi Publicidad Ahora', callback_data: 'ads_create_post' }]);
+                // Damos la opción de renovar o cambiar de plan si lo desean
+                buttons.push([{ text: '🔄 Comprar otro Plan', callback_data: 'ads_view_plans' }]); 
             } else {
-                bot.editMessageText(dashboardMsg, {
-                    chat_id: chatId, message_id: msgId, parse_mode: 'Markdown',
-                    reply_markup: {
-                        inline_keyboard: [
-                            [{ text: '🛒 Ver Planes y Precios', callback_data: 'ads_view_plans' }],
-                            [{ text: '🚀 Enviar Mi Publicidad', callback_data: 'ads_create_post' }]
-                        ]
-                    }
-                });
+                buttons.push([{ text: '🛒 Ver Planes y Precios', callback_data: 'ads_view_plans' }]);
             }
+
+            buttons.push([{ text: '📢 Ver Nuestra Red de Canales', callback_data: 'ads_view_channels' }]);
+
+            const dashboardMsg = `📊 *CENTRO DE ANUNCIANTES PRO*\n\n👤 *Usuario:* ${query.from.first_name}\n📈 *Estado:* ${statusText}\n💎 *Plan Actual:* ${planType}\n\nLlega a miles de personas reales al instante. ¿Qué deseas hacer?`;
+
+            bot.deleteMessage(chatId, msgId).catch(()=>{});
+            bot.sendPhoto(chatId, IMG_DASHBOARD, {
+                caption: dashboardMsg,
+                parse_mode: 'Markdown',
+                reply_markup: { inline_keyboard: buttons }
+            });
+            bot.answerCallbackQuery(query.id);
+            return;
+        }
+
+        // --- VER CANALES DISPONIBLES ---
+        if (data === 'ads_view_channels') {
+            let msgCanales = `🌍 *NUESTRA RED DE CANALES*\n\nAquí tienes el listado de las comunidades donde tu anuncio será visto:\n\n*🔥 CANALES GRANDES (Planes Élite/VIP/Mensual)*\n`;
+            CANALES.grandes.forEach(c => msgCanales += `▪️ [${c.name}](${c.link})\n`);
+            
+            msgCanales += `\n*🚀 CANALES PEQUEÑOS (Planes Básico/VIP/Mensual)*\n`;
+            CANALES.pequenos.forEach(c => msgCanales += `▪️ [${c.name}](${c.link})\n`);
+
+            msgCanales += `\n_Todos nuestros canales cuentan con público 100% real y activo._`;
+
+            bot.deleteMessage(chatId, msgId).catch(()=>{});
+            bot.sendPhoto(chatId, IMG_CANALES, {
+                caption: msgCanales,
+                parse_mode: 'Markdown',
+                disable_web_page_preview: true,
+                reply_markup: {
+                    inline_keyboard: [[{ text: '⬅️ Volver al Panel', callback_data: 'ads_back_main' }]]
+                }
+            });
+            return;
+        }
+
+        // --- ESTADO DEL ANUNCIO (BARRA DE PROGRESO) ---
+        if (data === 'ads_ad_status') {
+            const activeAd = await mongoDb.collection('active_ads').findOne({ userId: chatId });
+            
+            if (!activeAd) {
+                bot.answerCallbackQuery(query.id, { text: "No tienes ningún anuncio activo en este momento.", show_alert: true });
+                return;
+            }
+
+            const now = Date.now();
+            const totalTime = activeAd.deleteAt - activeAd.createdAt;
+            const elapsedTime = now - activeAd.createdAt;
+            
+            let percent = Math.floor((elapsedTime / totalTime) * 100);
+            if (percent > 100) percent = 100;
+            if (percent < 0) percent = 0;
+
+            // Crear la barra de progreso (10 bloques)
+            const filledBlocks = Math.round(percent / 10);
+            const emptyBlocks = 10 - filledBlocks;
+            const progressBar = '█'.repeat(filledBlocks) + '░'.repeat(emptyBlocks);
+
+            // Calcular tiempo restante
+            const timeLeftMs = activeAd.deleteAt - now;
+            const hoursLeft = Math.floor(timeLeftMs / (1000 * 60 * 60));
+            const minutesLeft = Math.floor((timeLeftMs % (1000 * 60 * 60)) / (1000 * 60));
+
+            let linkText = "";
+            activeAd.publishedMessages.forEach((msg, index) => {
+                linkText += `🔗 [Ver Anuncio ${index + 1}](https://t.me/c/${msg.channelId.toString().replace('-100', '')}/${msg.messageId})\n`;
+            });
+
+            const statusMsg = `📡 *ESTADO DE TU CAMPAÑA*\n\n` +
+                              `📦 *Plan:* ${PLANES[activeAd.planCode].nombre}\n` +
+                              `⏱ *Progreso:* ${percent}%\n` +
+                              `[${progressBar}]\n\n` +
+                              `⏳ *Tiempo Restante:* ${hoursLeft} hrs y ${minutesLeft} min\n\n` +
+                              `*Enlaces directos:*\n${linkText}`;
+
+            // Si se actualiza, editamos para no parpadear la pantalla, si viene de otro lado, enviamos nuevo.
+            bot.deleteMessage(chatId, msgId).catch(()=>{});
+            bot.sendMessage(chatId, statusMsg, {
+                parse_mode: 'Markdown',
+                disable_web_page_preview: true,
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: '🔄 Actualizar Estado', callback_data: 'ads_ad_status' }],
+                        [{ text: '⬅️ Volver al Panel', callback_data: 'ads_back_main' }]
+                    ]
+                }
+            });
             bot.answerCallbackQuery(query.id);
             return;
         }
 
         // --- LISTA DE PLANES ---
         if (data === 'ads_view_plans') {
-            const textPlanes = `🔥 *SELECCIONA TU PAQUETE PUBLICITARIO*\n\nPresiona un plan para ver los detalles, qué incluye y los enlaces de ejemplo:`;
-
-            bot.editMessageText(textPlanes, {
-                chat_id: chatId, message_id: msgId, parse_mode: 'Markdown',
+            const textPlanes = `🔥 *SELECCIONA TU PAQUETE PUBLICITARIO*\n\nPresiona un plan para ver los detalles:`;
+            bot.deleteMessage(chatId, msgId).catch(()=>{});
+            bot.sendMessage(chatId, textPlanes, {
+                parse_mode: 'Markdown',
                 reply_markup: {
                     inline_keyboard: [
                         [{ text: `🟢 Básico (${PLANES.basico.precio})`, callback_data: 'ads_detail_basico' }],
@@ -113,14 +185,12 @@ function initializePublicAds(bot, mongoDb, ADMIN_CHAT_ID) {
             return;
         }
 
-        // --- VER DETALLE DE UN PLAN (Muestra Foto + Detalles) ---
+        // --- VER DETALLE DE UN PLAN ---
         if (data.startsWith('ads_detail_')) {
             const planCode = data.replace('ads_detail_', '');
             const plan = PLANES[planCode];
 
-            // Limpiamos el texto anterior para mandar la foto bien estructurada
             bot.deleteMessage(chatId, msgId).catch(()=>{});
-            
             bot.sendPhoto(chatId, plan.imagen, {
                 caption: plan.descripcion,
                 parse_mode: 'Markdown',
@@ -148,7 +218,7 @@ function initializePublicAds(bot, mongoDb, ADMIN_CHAT_ID) {
             return;
         }
 
-        // --- HABLAR CON UN ASESOR (CHAT Y ACTIVACIÓN DIRECTA) ---
+        // --- HABLAR CON UN ASESOR ---
         if (data.startsWith('ads_advisor_')) {
             const planCode = data.replace('ads_advisor_', '');
             const plan = PLANES[planCode];
@@ -156,21 +226,20 @@ function initializePublicAds(bot, mongoDb, ADMIN_CHAT_ID) {
             bot.answerCallbackQuery(query.id, { text: "Contactando asesor..." });
             
             bot.deleteMessage(chatId, msgId).catch(()=>{});
-            bot.sendMessage(chatId, `✅ *He notificado al administrador* que estás interesado en el *${plan.nombre}*.\n\nTe contactará pronto a tu chat privado. Si llegan a un acuerdo de pago o descuento, él activará tu plan directamente desde el sistema.`, { 
+            bot.sendMessage(chatId, `✅ *He notificado al administrador* que estás interesado en el *${plan.nombre}*.\n\nTe contactará pronto a tu chat privado.`, { 
                 parse_mode: 'Markdown',
                 reply_markup: { inline_keyboard: [[{ text: '⬅️ Volver al Panel', callback_data: 'ads_back_main' }]] }
             });
 
-            // Mensaje que te llega a ti (El ADMIN)
             const userLink = query.from.username ? `https://t.me/${query.from.username}` : `tg://user?id=${query.from.id}`;
-            const adminMsg = `🔔 *NUEVO CLIENTE INTERESADO*\n\n👤 Usuario: ${query.from.first_name}\n📦 Plan de interés: *${plan.nombre}*\n\nSi hablas con él y te transfiere o llegan a un acuerdo, presiona el botón de abajo para activarle el plan manualmente sin pedirle foto del recibo.`;
+            const adminMsg = `🔔 *NUEVO CLIENTE INTERESADO*\n\n👤 Usuario: ${query.from.first_name}\n📦 Plan: *${plan.nombre}*\n\nPresiona el botón para activarle el plan manualmente si ya te pagó.`;
 
             bot.sendMessage(ADMIN_CHAT_ID, adminMsg, {
                 parse_mode: 'Markdown',
                 reply_markup: {
                     inline_keyboard: [
                         [{ text: '💬 Hablar con el Usuario', url: userLink }],
-                        [{ text: `✅ Activarle ${plan.nombre} Ahora`, callback_data: `admin_ad_direct_approve_${chatId}_${planCode}` }]
+                        [{ text: `✅ Activarle ${plan.nombre}`, callback_data: `admin_ad_direct_approve_${chatId}_${planCode}` }]
                     ]
                 }
             });
@@ -178,10 +247,9 @@ function initializePublicAds(bot, mongoDb, ADMIN_CHAT_ID) {
         }
 
         // =====================================================================
-        // 2. LÓGICA DEL ADMINISTRADOR (TÚ)
+        // 2. LÓGICA DEL ADMINISTRADOR
         // =====================================================================
         
-        // --- APROBAR PAGO CON FOTO DE RECIBO ---
         if (data.startsWith('admin_ad_approve_') || data.startsWith('admin_ad_reject_')) {
             const parts = data.split('_');
             const action = parts[2]; 
@@ -199,13 +267,15 @@ function initializePublicAds(bot, mongoDb, ADMIN_CHAT_ID) {
                     { upsert: true }
                 );
 
-                bot.sendMessage(userId, `🎉 *¡PAGO APROBADO!*\n\nTu plan *${PLANES[planCode].nombre}* está activo.\nPresiona /start y entra al "📢 Panel de Publicidad" para publicar.`, { parse_mode: 'Markdown' });
-                bot.editMessageCaption(`✅ *PAGO APROBADO*\nPlan: ${PLANES[planCode].nombre}\nUsuario ID: ${userId}`, { chat_id: ADMIN_CHAT_ID, message_id: msgId, parse_mode: 'Markdown' });
+                bot.sendMessage(userId, `🎉 *¡PAGO APROBADO!*\n\nTu plan *${PLANES[planCode].nombre}* está activo.\nEntra al Panel de Publicidad para lanzar tu anuncio.`, { 
+                    parse_mode: 'Markdown',
+                    reply_markup: { inline_keyboard: [[{ text: 'Ir al Panel', callback_data: 'ads_open_dashboard' }]] }
+                });
+                bot.editMessageCaption(`✅ *PAGO APROBADO*\nPlan: ${PLANES[planCode].nombre}`, { chat_id: ADMIN_CHAT_ID, message_id: msgId, parse_mode: 'Markdown' });
             }
             return;
         }
 
-        // --- APROBAR DIRECTAMENTE TRAS HABLAR CON EL ASESOR (SIN FOTO) ---
         if (data.startsWith('admin_ad_direct_approve_')) {
             const parts = data.split('_');
             const userId = parseInt(parts[4]);
@@ -217,26 +287,34 @@ function initializePublicAds(bot, mongoDb, ADMIN_CHAT_ID) {
                 { upsert: true }
             );
 
-            bot.sendMessage(userId, `🎉 *¡TU PLAN HA SIDO ACTIVADO POR EL ASESOR!*\n\nTu plan *${PLANES[planCode].nombre}* está listo para usarse.\nTienes ${PLANES[planCode].posts} publicación(es) disponible(s).\n\nEscribe /start, entra al Panel de Publicidad y elige "🚀 Enviar Mi Publicidad".`, { parse_mode: 'Markdown' });
-            
-            bot.editMessageText(`✅ *PLAN ACTIVADO MANUALMENTE*\nSe le otorgó el plan ${PLANES[planCode].nombre} al usuario.`, { chat_id: ADMIN_CHAT_ID, message_id: msgId, parse_mode: 'Markdown' });
+            bot.sendMessage(userId, `🎉 *¡TU PLAN HA SIDO ACTIVADO!*\n\nTu plan *${PLANES[planCode].nombre}* está listo para usarse.`, { 
+                parse_mode: 'Markdown',
+                reply_markup: { inline_keyboard: [[{ text: 'Ir al Panel', callback_data: 'ads_open_dashboard' }]] }
+            });
+            bot.editMessageText(`✅ *PLAN ACTIVADO MANUALMENTE*\nSe le otorgó el plan ${PLANES[planCode].nombre}.`, { chat_id: ADMIN_CHAT_ID, message_id: msgId, parse_mode: 'Markdown' });
             return;
         }
-
-        // =====================================================================
-        // 3. ENVÍO DE LA PUBLICIDAD (USUARIO)
-        // =====================================================================
         
         if (data === 'ads_create_post') {
             const user = await mongoDb.collection('ad_users').findOne({ userId: chatId });
+            const activeAd = await mongoDb.collection('active_ads').findOne({ userId: chatId });
+
+            if (activeAd) {
+                bot.answerCallbackQuery(query.id, { text: "⚠️ Ya tienes un anuncio corriendo. Espera a que termine.", show_alert: true });
+                return;
+            }
+
             if (!user || user.postsDisponibles <= 0) {
-                bot.answerCallbackQuery(query.id, { text: "⚠️ No tienes un plan activo o ya usaste tu publicación.", show_alert: true });
+                bot.answerCallbackQuery(query.id, { text: "⚠️ No tienes un plan activo.", show_alert: true });
                 return;
             }
 
             adState[chatId] = { step: 'awaiting_ad_content', planCode: user.planCode };
             bot.deleteMessage(chatId, msgId).catch(()=>{});
-            bot.sendMessage(chatId, "📝 *¡Excelente!*\n\nEnvíame el contenido exacto de tu anuncio.\nPuedes enviar una foto con texto, un video, o solo texto.\n\n_Lo que envíes ahora será publicado tal cual en los canales._", { parse_mode: 'Markdown' });
+            bot.sendMessage(chatId, "📝 *¡Prepara tu anuncio!*\n\nEnvíame el contenido exacto (Foto + Texto, Video, o solo Texto).\n\n_Lo que envíes ahora será reenviado tal cual a nuestra red._", { 
+                parse_mode: 'Markdown',
+                reply_markup: { inline_keyboard: [[{ text: '❌ Cancelar', callback_data: 'ads_back_main' }]] }
+            });
             bot.answerCallbackQuery(query.id);
         }
 
@@ -244,7 +322,7 @@ function initializePublicAds(bot, mongoDb, ADMIN_CHAT_ID) {
             const state = adState[chatId];
             if (!state || !state.msgIdToCopy) return;
 
-            bot.editMessageText("🚀 Publicando anuncio en los canales, por favor espera...", { chat_id: chatId, message_id: msgId });
+            bot.editMessageText("🚀 Disparando tu anuncio a la red, por favor espera...", { chat_id: chatId, message_id: msgId });
 
             const planInfo = PLANES[state.planCode];
             let targetChannels = [];
@@ -254,7 +332,6 @@ function initializePublicAds(bot, mongoDb, ADMIN_CHAT_ID) {
             else if (planInfo.tipo === 'todos') targetChannels = [...CANALES.pequenos, ...CANALES.grandes];
 
             let publishedMessages = [];
-            let linkText = "🔗 *Puedes ver tu anuncio aquí:*\n";
             let publishSuccess = false;
 
             for (const channel of targetChannels) {
@@ -262,7 +339,6 @@ function initializePublicAds(bot, mongoDb, ADMIN_CHAT_ID) {
                 try {
                     const result = await bot.copyMessage(channel.id, chatId, state.msgIdToCopy);
                     publishedMessages.push({ channelId: channel.id, messageId: result.message_id });
-                    linkText += `👉 [Ver en ${channel.name}](${channel.link})\n`;
                     publishSuccess = true;
                 } catch (err) {
                     console.error(`Error copiando a canal ${channel.name}:`, err.message);
@@ -270,34 +346,36 @@ function initializePublicAds(bot, mongoDb, ADMIN_CHAT_ID) {
             }
 
             if (publishSuccess) {
-                const deleteAt = Date.now() + (planInfo.horas * 60 * 60 * 1000);
+                const now = Date.now();
+                const deleteAt = now + (planInfo.horas * 60 * 60 * 1000);
+                
+                // Guardamos el createdAt para poder calcular la barra de progreso
                 await mongoDb.collection('active_ads').insertOne({
-                    userId: chatId, planCode: state.planCode, deleteAt: deleteAt, publishedMessages: publishedMessages
+                    userId: chatId, planCode: state.planCode, createdAt: now, deleteAt: deleteAt, publishedMessages: publishedMessages
                 });
 
                 await mongoDb.collection('ad_users').updateOne(
                     { userId: chatId }, { $inc: { postsDisponibles: -1 } }
                 );
 
-                bot.sendMessage(chatId, `✅ *¡PUBLICACIÓN EXITOSA!*\n\nTu anuncio estará visible durante ${planInfo.horas} horas y luego se eliminará automáticamente.\n\n${linkText}`, { parse_mode: 'Markdown', disable_web_page_preview: true });
+                bot.deleteMessage(chatId, msgId).catch(()=>{});
+                bot.sendMessage(chatId, `✅ *¡LANZAMIENTO EXITOSO!*\n\nTu anuncio ya está visible. Puedes monitorear el tiempo restante desde el Panel.`, { 
+                    parse_mode: 'Markdown',
+                    reply_markup: { inline_keyboard: [[{ text: '📊 Ver Estado', callback_data: 'ads_ad_status' }]] }
+                });
             } else {
-                bot.sendMessage(chatId, `❌ Hubo un error al publicar. Verifica que el bot sea administrador en los canales y avisa al dueño.`);
+                bot.sendMessage(chatId, `❌ Hubo un error al publicar. Avisa al soporte.`);
             }
 
             delete adState[chatId]; 
         }
     });
-
-    // =====================================================================
-    // 4. RECEPCIÓN DE MENSAJES (FOTOS, COMPROBANTES, ETC)
-    // =====================================================================
     bot.on('message', async (msg) => {
         const chatId = msg.chat.id;
         const state = adState[chatId];
 
         if (!state) return;
 
-        // --- Recibiendo comprobante de pago ---
         if (state.step === 'awaiting_receipt') {
             if (!msg.photo && !msg.document) {
                 bot.sendMessage(chatId, "⚠️ Debes enviar una *FOTO* o archivo de tu comprobante.", { parse_mode: 'Markdown' });
@@ -307,13 +385,11 @@ function initializePublicAds(bot, mongoDb, ADMIN_CHAT_ID) {
             const planCode = state.plan;
             delete adState[chatId]; 
 
-            bot.sendMessage(chatId, "⏳ Comprobante enviado al administrador. Se revisará en breve.\nSi todo está correcto, te avisaremos por aquí.");
+            bot.sendMessage(chatId, "⏳ Comprobante en revisión. Te notificaremos pronto.");
 
             const fileId = msg.photo ? msg.photo[msg.photo.length - 1].file_id : msg.document.file_id;
-            const caption = `💰 *NUEVO PAGO RECIBIDO*\n\nUsuario: ${msg.from.first_name} (@${msg.from.username || 'Sin_User'})\nID: ${chatId}\nPlan: *${PLANES[planCode].nombre}*`;
-
             bot.sendPhoto(ADMIN_CHAT_ID, fileId, {
-                caption: caption,
+                caption: `💰 *PAGO RECIBIDO*\n\nUsuario: ${msg.from.first_name}\nID: ${chatId}\nPlan: *${PLANES[planCode].nombre}*`,
                 parse_mode: 'Markdown',
                 reply_markup: {
                     inline_keyboard: [
@@ -326,18 +402,18 @@ function initializePublicAds(bot, mongoDb, ADMIN_CHAT_ID) {
             });
         }
 
-        // --- Recibiendo contenido del anuncio ---
         else if (state.step === 'awaiting_ad_content') {
             if (msg.text && msg.text.startsWith('/')) return; 
 
             adState[chatId].msgIdToCopy = msg.message_id;
             adState[chatId].step = 'confirm_publish';
 
-            bot.sendMessage(chatId, "👀 **Revisa arriba.**\n¿Ese es el anuncio final que deseas publicar en los canales?", {
+            bot.sendMessage(chatId, "👀 **Revisa tu anuncio arriba.**\n¿Confirmas que deseas enviarlo a la red?", {
+                parse_mode: 'Markdown',
                 reply_markup: {
                     inline_keyboard: [
                         [{ text: '✅ SÍ, PUBLICAR AHORA', callback_data: 'ads_publish_confirm' }],
-                        [{ text: '🔄 No, volver a enviar', callback_data: 'ads_create_post' }],
+                        [{ text: '🔄 Enviar de nuevo', callback_data: 'ads_create_post' }],
                         [{ text: '❌ Cancelar', callback_data: 'ads_open_dashboard' }]
                     ]
                 },
@@ -345,10 +421,6 @@ function initializePublicAds(bot, mongoDb, ADMIN_CHAT_ID) {
             });
         }
     });
-
-    // =====================================================================
-    // ⚙️ CRON JOB: BORRADO AUTOMÁTICO (Cada 30 min)
-    // =====================================================================
     setInterval(async () => {
         try {
             const now = Date.now();
@@ -359,10 +431,13 @@ function initializePublicAds(bot, mongoDb, ADMIN_CHAT_ID) {
                     try { await bot.deleteMessage(msgData.channelId, msgData.messageId); } catch (err) {}
                 }
                 await mongoDb.collection('active_ads').deleteOne({ _id: ad._id });
-                bot.sendMessage(ad.userId, "⏱ *Tu anuncio ha completado su tiempo contratado y ha sido retirado automáticamente.* ¡Gracias por preferirnos!", { parse_mode: 'Markdown' }).catch(()=>{});
+                bot.sendMessage(ad.userId, "⏱ *Tu anuncio ha finalizado.* La publicación fue retirada de los canales automáticamente.\n\n¡Gracias por tu confianza, te esperamos de vuelta!", { 
+                    parse_mode: 'Markdown',
+                    reply_markup: { inline_keyboard: [[{ text: 'Renovar Plan', callback_data: 'ads_open_dashboard' }]]}
+                }).catch(()=>{});
             }
         } catch (error) { console.error("Error Cron Ads:", error); }
-    }, 30 * 60 * 1000); 
+    }, 15 * 60 * 1000); // Revisión cada 15 minutos para ser más precisos
 }
 
 module.exports = initializePublicAds;
