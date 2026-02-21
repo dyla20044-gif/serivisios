@@ -4,43 +4,29 @@ const fs = require('fs');
 const delay = ms => new Promise(res => setTimeout(res, ms));
 
 function initializePublicAds(bot, mongoDb, ADMIN_CHAT_ID) {
-
-    // ✏️ IMÁGENES DE INTERFAZ (Reemplaza con tus links PNG/JPG si deseas)
     const IMG_DASHBOARD = 'https://marketing4ecommerce.mx/wp-content/uploads/2022/12/Plantilla-3-Tops-1.jpeg';
     const IMG_CANALES = 'https://nuteco.b-cdn.net/wp-content/uploads/2021/12/telegram-anuncios.jpg';
-
-    // =====================================================================
-    // ✏️ CONFIGURACIÓN DE CANALES (Enlazado a variables de entorno de Render)
-    // =====================================================================
-    // El filtro ".filter(c => c.id)" evita que el bot se rompa si agregas un canal 
-    // aquí pero olvidas crear la variable en Render.
-    
     const CANALES = {
         pequenos: [
             { id: process.env.CH_PEQ_1, link: 'https://t.me/tu_enlace1', name: 'Canal Pelis (60k)' },
             { id: process.env.CH_PEQ_2, link: 'https://t.me/tu_enlace2', name: 'Canal Anime (45k)' },
-            { id: process.env.CH_PEQ_3, link: 'https://t.me/tu_enlace3', name: 'Canal Memes (30k)' },
-    
-        ].filter(c => c.id), // <- Filtro de seguridad vital
+            { id: process.env.CH_PEQ_3, link: 'https://t.me/tu_enlace3', name: 'Canal Memes (30k)' }
+        ].filter(c => c.id), // <- Filtro de seguridad
 
         grandes: [
             { id: process.env.CH_GRA_1, link: 'https://t.me/+dpOprbZD6fFjMjhh', name: 'Canal Principal (120k)' },
-            { id: process.env.CH_GRA_2, link: 'https://t.me/+C8xLlSwkqSc3ZGU5', name: 'Canal Series Premium (100k)' },
-            
-            // ➕ ¿CÓMO AGREGAR MÁS CANALES GRANDES?
-            // Sigue el mismo proceso que arriba, pero usando variables como CH_GRA_3, CH_GRA_4, etc.
-            
-            // { id: process.env.CH_GRA_3, link: 'https://t.me/tu_enlace_g3', name: 'Canal Vip (90k)' },
-            // { id: process.env.CH_GRA_4, link: 'https://t.me/tu_enlace_g4', name: 'Canal Extra Vip (85k)' },
-        ].filter(c => c.id) // <- Filtro de seguridad vital
+            { id: process.env.CH_GRA_2, link: 'https://t.me/+C8xLlSwkqSc3ZGU5', name: 'Canal Series Premium (100k)' }
+        ].filter(c => c.id) // <- Filtro de seguridad
     };
 
+    // =====================================================================
     // ✏️ CONFIGURACIÓN DE PLANES
+    // =====================================================================
     const PLANES = {
         basico_1: { 
             id: "basico_1", nombre: "Básico (1 Canal Peq.)", precio: "$20 USD", horas: 30, tipo: "pequenos_single", posts: 1, refrescos: 1,
             imagen: "https://i.ibb.co/p6f15vKC/Gemini-Generated-Image-h1ttpuh1ttpuh1tt.png",
-            descripcion: "🚀 *PLAN BÁSICO*\n\nElige *1 canal pequeño* de nuestra red.\n\n🔹 *¿Qué incluye?*\n- Publicación en 1 canal a tu elección.\n- Duración: *30 horas*.\n- 🔄 *1 Refresco* (Puedes republicarlo para subirlo de posición).\n\n💵 *Inversión:* $20 USD"
+            descripcion: "🚀 *PLAN BÁSICO*\n\nElige *1 canal pequeño* de nuestra red.\n\n🔹 *¿Qué incluye?*\n- Publicación en 1 canal a tu elección.\n- Duración: *30 horas*.\n- 🔄 *1 Refresco*.\n\n💵 *Inversión:* $20 USD"
         },
         basico_todos: { 
             id: "basico_todos", nombre: "Mega Básico (Todos Peq.)", precio: "$30 USD", horas: 30, tipo: "pequenos_all", posts: 1, refrescos: 1,
@@ -82,7 +68,8 @@ function initializePublicAds(bot, mongoDb, ADMIN_CHAT_ID) {
         // ==========================================
         if (data === 'ads_open_dashboard' || data === 'ads_back_main') {
             const user = await mongoDb.collection('ad_users').findOne({ userId: chatId });
-            const activeAd = await mongoDb.collection('active_ads').findOne({ userId: chatId });
+            // Obtenemos el anuncio más reciente (si tiene varios corriendo)
+            const activeAd = await mongoDb.collection('active_ads').findOne({ userId: chatId }, { sort: { createdAt: -1 } });
             
             let statusText = "❌ Sin Plan Activo";
             let planType = "Ninguno";
@@ -90,7 +77,9 @@ function initializePublicAds(bot, mongoDb, ADMIN_CHAT_ID) {
 
             if (activeAd) {
                 statusText = `🟢 Anuncio en circulación`;
-                planType = PLANES[activeAd.planCode]?.nombre || "Desconocido";
+                // FIX: El '?.nombre ||' evita que crashee si es un plan antiguo
+                planType = PLANES[activeAd.planCode]?.nombre || "Plan Anterior"; 
+                
                 buttons.push([{ text: '📊 Ver Estado de mi Anuncio', callback_data: 'ads_ad_status' }]);
                 
                 if (activeAd.refrescos > 0) {
@@ -98,11 +87,14 @@ function initializePublicAds(bot, mongoDb, ADMIN_CHAT_ID) {
                 }
 
                 if (user && user.postsDisponibles > 0) {
-                    buttons.push([{ text: `📝 Te quedan ${user.postsDisponibles} posts (Mensual)`, callback_data: 'noop' }]);
+                    buttons.push([{ text: `🚀 Lanzar Otro Anuncio (${user.postsDisponibles} disp)`, callback_data: 'ads_create_post' }]);
                 }
+                // FIX: Siempre permitimos comprar más, incluso si hay un anuncio activo
+                buttons.push([{ text: '🛒 Comprar Nuevo Plan', callback_data: 'ads_view_plans' }]);
+                
             } else if (user && user.postsDisponibles > 0) {
                 statusText = `✅ Tienes ${user.postsDisponibles} publicación(es) disponible(s)`;
-                planType = PLANES[user.planCode]?.nombre || "Desconocido";
+                planType = PLANES[user.planCode]?.nombre || "Plan Anterior";
                 buttons.push([{ text: '🚀 Lanzar Mi Publicidad Ahora', callback_data: 'ads_create_post' }]);
                 buttons.push([{ text: '🔄 Comprar otro Plan', callback_data: 'ads_view_plans' }]); 
             } else {
@@ -152,10 +144,10 @@ function initializePublicAds(bot, mongoDb, ADMIN_CHAT_ID) {
         }
 
         // ==========================================
-        // 3. ESTADO DEL ANUNCIO Y REFRESCO (BUMP)
+        // 3. ESTADO DEL ANUNCIO Y REFRESCO
         // ==========================================
         if (data === 'ads_ad_status') {
-            const activeAd = await mongoDb.collection('active_ads').findOne({ userId: chatId });
+            const activeAd = await mongoDb.collection('active_ads').findOne({ userId: chatId }, { sort: { createdAt: -1 } });
             if (!activeAd) return bot.answerCallbackQuery(query.id, { text: "No tienes anuncios activos.", show_alert: true });
 
             const now = Date.now();
@@ -175,7 +167,10 @@ function initializePublicAds(bot, mongoDb, ADMIN_CHAT_ID) {
                 linkText += `🔗 [Ver Anuncio ${index + 1}](https://t.me/c/${msg.channelId.toString().replace('-100', '')}/${msg.messageId})\n`;
             });
 
-            const statusMsg = `📡 *ESTADO DE TU CAMPAÑA*\n\n📦 *Plan:* ${PLANES[activeAd.planCode].nombre}\n⏱ *Progreso:* ${percent}%\n[${progressBar}]\n\n⏳ *Tiempo Restante:* ${hoursLeft} hrs y ${minutesLeft} min\n🔄 *Refrescos Disp:* ${activeAd.refrescos}\n\n*Tus Enlaces:*\n${linkText}`;
+            // FIX: Evitamos el crash si el plan es antiguo
+            const nombrePlan = PLANES[activeAd.planCode]?.nombre || "Plan Anterior";
+
+            const statusMsg = `📡 *ESTADO DE TU CAMPAÑA MÁS RECIENTE*\n\n📦 *Plan:* ${nombrePlan}\n⏱ *Progreso:* ${percent}%\n[${progressBar}]\n\n⏳ *Tiempo Restante:* ${hoursLeft} hrs y ${minutesLeft} min\n🔄 *Refrescos Disp:* ${activeAd.refrescos || 0}\n\n*Tus Enlaces:*\n${linkText}`;
 
             bot.deleteMessage(chatId, msgId).catch(()=>{});
             bot.sendMessage(chatId, statusMsg, {
@@ -206,10 +201,12 @@ function initializePublicAds(bot, mongoDb, ADMIN_CHAT_ID) {
         }
 
         if (data === 'ads_do_refresh') {
-            const activeAd = await mongoDb.collection('active_ads').findOne({ userId: chatId });
-            if (!activeAd || activeAd.refrescos <= 0) return bot.answerCallbackQuery(query.id, { text: "No tienes refrescos disponibles.", show_alert: true });
+            const activeAd = await mongoDb.collection('active_ads').findOne({ userId: chatId }, { sort: { createdAt: -1 } });
+            if (!activeAd || !activeAd.refrescos || activeAd.refrescos <= 0) {
+                return bot.answerCallbackQuery(query.id, { text: "No tienes refrescos disponibles.", show_alert: true });
+            }
 
-            bot.editMessageCaption("🔄 Refrescando tu anuncio en la red, por favor espera...", { chat_id: chatId, message_id: msgId });
+            bot.editMessageCaption("🔄 Refrescando tu anuncio en la red, por favor espera...", { chat_id: chatId, message_id: msgId }).catch(()=>{});
 
             let newPublishedMessages = [];
             let publishSuccess = false;
@@ -294,12 +291,17 @@ function initializePublicAds(bot, mongoDb, ADMIN_CHAT_ID) {
         // ==========================================
         if (data === 'ads_create_post') {
             const user = await mongoDb.collection('ad_users').findOne({ userId: chatId });
-            const activeAd = await mongoDb.collection('active_ads').findOne({ userId: chatId });
-
-            if (activeAd) return bot.answerCallbackQuery(query.id, { text: "⚠️ Ya tienes un anuncio corriendo.", show_alert: true });
-            if (!user || user.postsDisponibles <= 0) return bot.answerCallbackQuery(query.id, { text: "⚠️ No tienes un plan activo.", show_alert: true });
+            
+            // FIX: Ya no bloqueamos si tiene un anuncio activo, para que pueda usar múltiples
+            if (!user || user.postsDisponibles <= 0) return bot.answerCallbackQuery(query.id, { text: "⚠️ No tienes publicaciones disponibles. ¡Compra un plan!", show_alert: true });
 
             const planInfo = PLANES[user.planCode];
+            
+            // Si el planCode que tiene guardado ya no existe, le pedimos que contacte a soporte
+            if (!planInfo) {
+                return bot.answerCallbackQuery(query.id, { text: "⚠️ Tu plan es de una versión antigua. Contacta a soporte o compra uno nuevo.", show_alert: true });
+            }
+
             adState[chatId] = { step: 'awaiting_ad_content', planCode: user.planCode };
 
             if (planInfo.tipo === 'pequenos_single' || planInfo.tipo === 'grandes_single') {
@@ -350,7 +352,7 @@ function initializePublicAds(bot, mongoDb, ADMIN_CHAT_ID) {
             const state = adState[chatId];
             if (!state || !state.msgIdToCopy) return;
 
-            bot.editMessageText("🚀 Disparando tu anuncio... Esto puede tomar unos segundos.", { chat_id: chatId, message_id: msgId });
+            bot.editMessageText("🚀 Disparando tu anuncio... Esto puede tomar unos segundos.", { chat_id: chatId, message_id: msgId }).catch(()=>{});
 
             const planInfo = PLANES[state.planCode];
             let targetChannels = [];
@@ -411,7 +413,7 @@ function initializePublicAds(bot, mongoDb, ADMIN_CHAT_ID) {
             
             if (action === 'reject') {
                 bot.sendMessage(userId, "❌ *Tu comprobante ha sido rechazado.* Contacta al soporte.", { parse_mode: 'Markdown' });
-                bot.editMessageCaption("❌ *PAGO RECHAZADO*", { chat_id: ADMIN_CHAT_ID, message_id: msgId, parse_mode: 'Markdown' });
+                bot.editMessageCaption("❌ *PAGO RECHAZADO*", { chat_id: ADMIN_CHAT_ID, message_id: msgId, parse_mode: 'Markdown' }).catch(()=>{});
             } 
             else if (action === 'approve') {
                 await mongoDb.collection('ad_users').updateOne(
@@ -422,7 +424,7 @@ function initializePublicAds(bot, mongoDb, ADMIN_CHAT_ID) {
                 bot.sendMessage(userId, `🎉 *¡PAGO APROBADO!*\n\nTu plan *${PLANES[planCode].nombre}* está activo.`, { 
                     parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: 'Ir al Panel', callback_data: 'ads_open_dashboard' }]] }
                 });
-                bot.editMessageCaption(`✅ *PAGO APROBADO*\nPlan: ${PLANES[planCode].nombre}`, { chat_id: ADMIN_CHAT_ID, message_id: msgId, parse_mode: 'Markdown' });
+                bot.editMessageCaption(`✅ *PAGO APROBADO*\nPlan: ${PLANES[planCode].nombre}`, { chat_id: ADMIN_CHAT_ID, message_id: msgId, parse_mode: 'Markdown' }).catch(()=>{});
             }
             return;
         }
@@ -435,7 +437,8 @@ function initializePublicAds(bot, mongoDb, ADMIN_CHAT_ID) {
             let botonesAdmin = [];
 
             actives.forEach(ad => {
-                botonesAdmin.push([{ text: `❌ Eliminar Ad de ID: ${ad.userId}`, callback_data: `admin_force_cancel_${ad.userId}` }]);
+                const planName = PLANES[ad.planCode]?.nombre || "Plan Antiguo";
+                botonesAdmin.push([{ text: `❌ Cancelar Ad de: ${ad.userId} (${planName})`, callback_data: `admin_force_cancel_${ad.userId}` }]);
             });
             botonesAdmin.push([{ text: '⬅️ Volver', callback_data: 'ads_open_dashboard' }]);
 
@@ -451,7 +454,7 @@ function initializePublicAds(bot, mongoDb, ADMIN_CHAT_ID) {
                 for (const msgData of activeAd.publishedMessages) {
                     try { await bot.deleteMessage(msgData.channelId, msgData.messageId); } catch(e){}
                 }
-                await mongoDb.collection('active_ads').deleteOne({ userId: targetUserId });
+                await mongoDb.collection('active_ads').deleteOne({ _id: activeAd._id });
                 
                 bot.answerCallbackQuery(query.id, { text: "Anuncio eliminado correctamente.", show_alert: true });
                 bot.sendMessage(targetUserId, "🚫 *TU ANUNCIO FUE CANCELADO* por el administrador.", { parse_mode: 'Markdown' });
