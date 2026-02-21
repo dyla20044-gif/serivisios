@@ -8,9 +8,9 @@ function initializePublicAds(bot, mongoDb, ADMIN_CHAT_ID) {
     const IMG_CANALES = 'https://nuteco.b-cdn.net/wp-content/uploads/2021/12/telegram-anuncios.jpg';
     const CANALES = {
         pequenos: [
-            { id: process.env.CH_PEQ_1, link: 'https://t.me/tu_enlace1', name: 'Canal Pelis (60k)' },
-            { id: process.env.CH_PEQ_2, link: 'https://t.me/tu_enlace2', name: 'Canal Anime (45k)' },
-            { id: process.env.CH_PEQ_3, link: 'https://t.me/tu_enlace3', name: 'Canal Memes (30k)' }
+            { id: process.env.CH_PEQ_1, link: 'https://t.me/+V_dSWxm2rtdhNDNh', name: 'Canal Pelis (60k)' },
+            { id: process.env.CH_PEQ_2, link: 'https://t.me/+L4PH6Uxpa0E4ZGFh', name: 'Canal Anime (30k)' },
+            { id: process.env.CH_PEQ_3, link: 'https://t.me/+aDirTKZ7YLszMDEx', name: 'Canal Memes (10k)' }
         ].filter(c => c.id), // <- Filtro de seguridad
 
         grandes: [
