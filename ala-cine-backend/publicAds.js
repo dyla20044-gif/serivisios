@@ -8,11 +8,11 @@ function initializePublicAds(bot, mongoDb, ADMIN_CHAT_ID) {
 
     const CANALES = {
         pequenos: [
-            { id: process.env.CH_PEQ_1, link: 'https://t.me/TuCanalPeq1', name: 'calan de (60k)' }
+            { id: process.env.CH_PEQ_1, link: 'https://t.me/+V_dSWxm2rtdhNDNh', name: 'calan de (60k)' }
         ],
         grandes: [
-            { id: process.env.CH_GRA_1, link: 'https://t.me/TuCanalGra1', name: 'canal de (120k)' },
-            { id: process.env.CH_GRA_2, link: 'https://t.me/TuCanalGra2', name: 'Canal Series (100k)' }
+            { id: process.env.CH_GRA_1, link: 'https://t.me/+dpOprbZD6fFjMjhh', name: 'canal de (120k)' },
+            { id: process.env.CH_GRA_2, link: 'https://t.me/+C8xLlSwkqSc3ZGU5', name: 'Canal Series (100k)' }
         ]
     };
 
