@@ -1,10 +1,8 @@
 const fs = require('fs');
 const path = require('path');
-const initializePublicAds = require('./publicAds'); // <-- LÍNEA AGREGADA: Conexión con el sistema de publicidad
+const initializePublicAds = require('./publicAds');
 
 function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_ID, TMDB_API_KEY, RENDER_BACKEND_URL, axios, pinnedCache, sendNotificationToTopic, userCache) {
-
-    // <-- LÍNEA AGREGADA: Inicializar el sistema de publicidad
     initializePublicAds(bot, mongoDb, ADMIN_CHAT_ID);
 
     bot.setMyCommands([
@@ -1059,7 +1057,10 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 if (!movieDataToSave?.tmdbId) { bot.sendMessage(chatId, 'Error: Datos perdidos.'); adminState[chatId] = { step: 'menu' }; return; }
                 await axios.post(`${RENDER_BACKEND_URL}/add-movie`, movieDataToSave);
                 bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id });
-                bot.sendMessage(chatId, `✅ "${movieDataToSave.title}" guardada solo en la app.`);
+                // <-- MODIFICADO: Agregado teclado para subir otra
+                bot.sendMessage(chatId, `✅ "${movieDataToSave.title}" guardada solo en la app.`, {
+                    reply_markup: { inline_keyboard: [[{ text: '🎬 Subir otra Película', callback_data: 'add_movie' }, { text: '📺 Subir otra Serie', callback_data: 'add_series' }]] }
+                });
                 adminState[chatId] = { step: 'menu' };
             }
 
@@ -1070,7 +1071,11 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 try {
                     await axios.post(`${RENDER_BACKEND_URL}/add-movie`, movieDataToSave);
                     bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id });
-                    bot.sendMessage(chatId, `✅ *${movieDataToSave.title}* guardada en MODO SILENCIO.`, { parse_mode: 'Markdown' });
+                    // <-- MODIFICADO: Agregado teclado para subir otra
+                    bot.sendMessage(chatId, `✅ *${movieDataToSave.title}* guardada en MODO SILENCIO.`, {
+                        parse_mode: 'Markdown',
+                        reply_markup: { inline_keyboard: [[{ text: '🎬 Subir otra Película', callback_data: 'add_movie' }, { text: '📺 Subir otra Serie', callback_data: 'add_series' }]] }
+                    });
                 } catch (error) {
                     bot.sendMessage(chatId, '❌ Error al guardar.');
                 } finally {
@@ -1162,9 +1167,15 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                                     ]
                                 }
                             });
-                            bot.sendMessage(chatId, `📢 Publicado en Canal Pequeño (@${channelUsername}) Y Canal Grande correctamente.`);
+                            // <-- MODIFICADO: Agregado teclado para subir otra
+                            bot.sendMessage(chatId, `📢 Publicado en Canal Pequeño (@${channelUsername}) Y Canal Grande correctamente.`, {
+                                reply_markup: { inline_keyboard: [[{ text: '🎬 Subir otra Película', callback_data: 'add_movie' }, { text: '📺 Subir otra Serie', callback_data: 'add_series' }]] }
+                            });
                         } else {
-                            bot.sendMessage(chatId, `📢 Publicado solo en Canal Pequeño (Falta configurar Canal B).`);
+                            // <-- MODIFICADO: Agregado teclado para subir otra
+                            bot.sendMessage(chatId, `📢 Publicado solo en Canal Pequeño (Falta configurar Canal B).`, {
+                                reply_markup: { inline_keyboard: [[{ text: '🎬 Subir otra Película', callback_data: 'add_movie' }, { text: '📺 Subir otra Serie', callback_data: 'add_series' }]] }
+                            });
                         }
                     } else {
                         bot.sendMessage(chatId, `⚠️ Error: Falta configurar TELEGRAM_CHANNEL_A_ID en .env`);
@@ -1255,9 +1266,15 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                                     ]
                                 }
                             });
-                            bot.sendMessage(chatId, `📢 Éxito: Publicado en Canal A (Link App) y Canal B (Redirección).`);
+                            // <-- MODIFICADO: Agregado teclado para subir otra
+                            bot.sendMessage(chatId, `📢 Éxito: Publicado en Canal A (Link App) y Canal B (Redirección).`, {
+                                reply_markup: { inline_keyboard: [[{ text: '🎬 Subir otra Película', callback_data: 'add_movie' }, { text: '📺 Subir otra Serie', callback_data: 'add_series' }]] }
+                            });
                         } else {
-                            bot.sendMessage(chatId, `📢 Publicado solo en Canal A (Falta configurar Canal B).`);
+                            // <-- MODIFICADO: Agregado teclado para subir otra
+                            bot.sendMessage(chatId, `📢 Publicado solo en Canal A (Falta configurar Canal B).`, {
+                                reply_markup: { inline_keyboard: [[{ text: '🎬 Subir otra Película', callback_data: 'add_movie' }, { text: '📺 Subir otra Serie', callback_data: 'add_series' }]] }
+                            });
                         }
 
                     } else {
@@ -1289,7 +1306,10 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                         tmdbId: episodeData.tmdbId,
                         mediaType: 'tv'
                     });
-                    bot.sendMessage(chatId, `📲 Notificación PUSH y Publicación completadas.`);
+                    // <-- MODIFICADO: Agregado teclado para subir otra
+                    bot.sendMessage(chatId, `📲 Notificación PUSH y Publicación completadas.`, {
+                        reply_markup: { inline_keyboard: [[{ text: '🎬 Subir otra Película', callback_data: 'add_movie' }, { text: '📺 Subir otra Serie', callback_data: 'add_series' }]] }
+                    });
                 } catch (error) {
                     console.error("Error en publish_push_this_episode:", error.response ? error.response.data : error.message);
                     bot.sendMessage(chatId, '❌ Error al enviar notificación.');
@@ -1385,7 +1405,10 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                                     ]
                                 }
                             });
-                            bot.sendMessage(chatId, `📢 Publicado en ambos canales correctamente.`);
+                            // <-- MODIFICADO: Agregado teclado para subir otra
+                            bot.sendMessage(chatId, `📢 Publicado en ambos canales correctamente.`, {
+                                reply_markup: { inline_keyboard: [[{ text: '🎬 Subir otra Película', callback_data: 'add_movie' }, { text: '📺 Subir otra Serie', callback_data: 'add_series' }]] }
+                            });
                         }
                     }
 
@@ -1450,7 +1473,10 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                                 ]
                             }
                         });
-                        bot.sendMessage(chatId, `📢 Mensaje enviado al canal público.`);
+                        // <-- MODIFICADO: Agregado teclado para subir otra
+                        bot.sendMessage(chatId, `📢 Mensaje enviado al canal público.`, {
+                            reply_markup: { inline_keyboard: [[{ text: '🎬 Subir otra Película', callback_data: 'add_movie' }, { text: '📺 Subir otra Serie', callback_data: 'add_series' }]] }
+                        });
                     }
 
                 } catch (error) {
@@ -1462,7 +1488,10 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
             }
             else if (data.startsWith('finish_series_')) {
                 bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id }).catch(() => { });
-                bot.sendMessage(chatId, '✅ Proceso finalizado. Volviendo al menú.');
+                // <-- MODIFICADO: Agregado teclado para subir otra
+                bot.sendMessage(chatId, '✅ Proceso finalizado. Volviendo al menú.', {
+                    reply_markup: { inline_keyboard: [[{ text: '🎬 Subir otra Película', callback_data: 'add_movie' }, { text: '📺 Subir otra Serie', callback_data: 'add_series' }]] }
+                });
                 adminState[chatId] = { step: 'menu' };
             }
 
