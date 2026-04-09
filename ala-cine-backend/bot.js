@@ -137,27 +137,15 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_ID, TMDB_API_KEY
                     return;
                 }
                 adminState[chatId].tempAnnouncement.actionUrl = userText;
+                
+                // MODIFICADO: Preguntar si es importante para ignorar caché
+                adminState[chatId].step = 'cms_await_visibility';
 
-                const ann = adminState[chatId].tempAnnouncement;
-                let mediaDisplay = `🔗 **Media:** [Ver Link](${ann.mediaUrl})`;
-                if (ann.mediaType === 'text') mediaDisplay = "📄 **Tipo:** Solo Texto";
-
-                const summary = `📢 *RESUMEN DEL ANUNCIO*\n\n` +
-                    `🎬 **Tipo:** ${ann.mediaType}\n` +
-                    `${mediaDisplay}\n` +
-                    `📌 **Título:** ${ann.title}\n` +
-                    `📝 **Cuerpo:** ${ann.message}\n` +
-                    `🔘 **Botón:** ${ann.buttonText}\n` +
-                    `🚀 **Acción:** [Ver Link](${ann.actionUrl})`;
-
-                adminState[chatId].step = 'cms_confirm_save';
-
-                bot.sendMessage(chatId, summary, {
-                    parse_mode: 'Markdown',
+                bot.sendMessage(chatId, '✅ URL de Acción Guardada.\n\n⚠️ **¿Este anuncio es Importante (Ignorar Caché)?**\nSi eliges "Sí", se forzará a la App a mostrarlo como nuevo, ignorando su caché interna.', {
                     reply_markup: {
                         inline_keyboard: [
-                            [{ text: '✅ PUBLICAR AHORA', callback_data: 'cms_save_confirm' }],
-                            [{ text: '❌ Cancelar', callback_data: 'cms_cancel' }]
+                            [{ text: 'Sí, mostrar siempre', callback_data: 'cms_vis_true' }],
+                            [{ text: 'No, anuncio normal', callback_data: 'cms_vis_false' }]
                         ]
                     }
                 });
@@ -545,6 +533,42 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                     bot.sendMessage(chatId, `✅ Formato: ${type.toUpperCase()}.\n\n🔗 Envía la **URL** directa ${tipoMsg}:`);
                 }
             }
+            
+            // MODIFICADO: Nuevo manejador de callbacks para la opción de Siempre Visible
+            else if (data === 'cms_vis_true' || data === 'cms_vis_false') {
+                const isAlwaysVisible = data === 'cms_vis_true';
+                adminState[chatId].tempAnnouncement.siempreVisible = isAlwaysVisible;
+                
+                const ann = adminState[chatId].tempAnnouncement;
+                let mediaDisplay = `🔗 **Media:** [Ver Link](${ann.mediaUrl})`;
+                if (ann.mediaType === 'text') mediaDisplay = "📄 **Tipo:** Solo Texto";
+
+                const visibilityText = isAlwaysVisible ? '✅ Sí (Ignora Caché)' : '❌ No (Normal)';
+
+                const summary = `📢 *RESUMEN DEL ANUNCIO*\n\n` +
+                    `🎬 **Tipo:** ${ann.mediaType}\n` +
+                    `${mediaDisplay}\n` +
+                    `📌 **Título:** ${ann.title}\n` +
+                    `📝 **Cuerpo:** ${ann.message}\n` +
+                    `🔘 **Botón:** ${ann.buttonText}\n` +
+                    `🚀 **Acción:** [Ver Link](${ann.actionUrl})\n` +
+                    `🔥 **Siempre Visible:** ${visibilityText}`;
+
+                adminState[chatId].step = 'cms_confirm_save';
+
+                // Ocultar botones anteriores
+                bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id }).catch(() => {});
+                
+                bot.sendMessage(chatId, summary, {
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: '✅ PUBLICAR AHORA', callback_data: 'cms_save_confirm' }],
+                            [{ text: '❌ Cancelar', callback_data: 'cms_cancel' }]
+                        ]
+                    }
+                });
+            }
 
             else if (data === 'cms_delete_current') {
                 const filePath = path.join(__dirname, 'globalAnnouncement.json');
@@ -571,12 +595,14 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 const filePath = path.join(__dirname, 'globalAnnouncement.json');
 
                 try {
+                    // MODIFICADO: Incluir siempreVisible en el JSON guardado
                     let jsonToSave = {
                         id: Date.now().toString(),
                         title: announcement.title,
                         message: announcement.message,
                         btnText: announcement.buttonText,
-                        actionUrl: announcement.actionUrl
+                        actionUrl: announcement.actionUrl,
+                        siempreVisible: announcement.siempreVisible || false
                     };
 
                     if (announcement.mediaType === 'video') {
