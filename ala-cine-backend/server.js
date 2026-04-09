@@ -491,14 +491,14 @@ app.get('/api/content/recent', async (req, res) => {
             .find({ hideFromRecent: { $ne: true } }) 
             .project({ tmdbId: 1, title: 1, poster_path: 1, backdrop_path: 1, addedAt: 1 })
             .sort({ addedAt: -1 })
-            .limit(20)
+            .limit(50)
             .toArray();
             
         const seriesPromise = mongoDb.collection('series_catalog')
             .find({})
             .project({ tmdbId: 1, name: 1, title: 1, poster_path: 1, backdrop_path: 1, addedAt: 1 }) 
             .sort({ addedAt: -1 })
-            .limit(20)
+            .limit(50)
             .toArray();
             
         const [movies, series] = await Promise.all([moviesPromise, seriesPromise]);
@@ -1601,6 +1601,11 @@ app.get('/api/announcement', (req, res) => {
             return res.status(204).send();
         }
         const json = JSON.parse(data);
+        
+        if (json.siempreVisible === true) {
+            json.id = Date.now().toString();
+        }
+        
         return res.status(200).json(json);
     } catch (error) {
         console.error("Error leyendo anuncio global:", error);
