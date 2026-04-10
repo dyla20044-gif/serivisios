@@ -422,9 +422,13 @@ app.get('/api/content/local', verifyIdToken, async (req, res) => {
     }
 });
 
+// MODIFICADO: Adaptar el id a entero de forma segura extrayendo números, evitando NaN en "manual_123"
 function formatLocalItem(item, type) {
+    let numericId = parseInt(String(item.tmdbId).replace(/\D/g, ''));
+    if (isNaN(numericId)) numericId = Date.now(); // Fallback si no hay números
+
     return {
-        id: parseInt(item.tmdbId),
+        id: numericId, // Evita devolver NaN a la app
         tmdbId: item.tmdbId,
         title: item.title || item.name,
         name: item.name || item.title,
@@ -1431,15 +1435,17 @@ app.post('/api/increment-likes', async (req, res) => {
     } catch (error) { console.error("Error increment-likes:", error); res.status(500).json({ error: "Error interno." }); }
 });
 
+// MODIFICADO: Agregada la extracción de la variable "links"
 app.post('/add-movie', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "BD no disponible." });
     try {
-        const { tmdbId, title, poster_path, freeEmbedCode, proEmbedCode, isPremium, overview, hideFromRecent, genres, release_date, popularity, vote_average, isPinned, origin_country } = req.body;
+        const { tmdbId, title, poster_path, freeEmbedCode, proEmbedCode, isPremium, overview, hideFromRecent, genres, release_date, popularity, vote_average, isPinned, origin_country, links } = req.body;
         
         if (!tmdbId) return res.status(400).json({ error: 'tmdbId requerido.' });
         
         const cleanTmdbId = String(tmdbId).trim();
 
+        // MODIFICADO: Agregado links al $set
         const updateQuery = { 
             $set: { 
                 title, 
@@ -1455,6 +1461,7 @@ app.post('/add-movie', async (req, res) => {
                 vote_average: vote_average || 0,
                 isPinned: isPinned === true || isPinned === 'true',
                 origin_country: origin_country || [],
+                links: links || [],
                 addedAt: new Date() 
             }, 
             $setOnInsert: { tmdbId: cleanTmdbId, views: 0, likes: 0 } 
