@@ -2,8 +2,9 @@ const fs = require('fs');
 const path = require('path');
 const initializePublicAds = require('./publicAds');
 
-function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_ID, TMDB_API_KEY, RENDER_BACKEND_URL, axios, pinnedCache, sendNotificationToTopic, userCache) {
-    initializePublicAds(bot, mongoDb, ADMIN_CHAT_ID);
+function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_IDS, TMDB_API_KEY, RENDER_BACKEND_URL, axios, pinnedCache, sendNotificationToTopic, userCache) {
+    // Pasamos el administrador principal a los anuncios para no romper ese módulo
+    initializePublicAds(bot, mongoDb, ADMIN_CHAT_IDS[0]);
 
     bot.setMyCommands([
         { command: 'start', description: 'Reiniciar el bot y ver el menú principal' },
@@ -14,7 +15,7 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_ID, TMDB_API_KEY
 
     bot.onText(/\/start|\/subir/, (msg) => {
         const chatId = msg.chat.id;
-        if (chatId !== ADMIN_CHAT_ID) {
+        if (!ADMIN_CHAT_IDS.includes(chatId)) {
             return;
         }
         adminState[chatId] = { step: 'menu' };
@@ -43,7 +44,7 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_ID, TMDB_API_KEY
         const hasLinks = msg.entities && msg.entities.some(
             e => e.type === 'url' || e.type === 'text_link' || e.type === 'mention'
         );
-        const isNotAdmin = msg.from.id !== ADMIN_CHAT_ID;
+        const isNotAdmin = !ADMIN_CHAT_IDS.includes(msg.from.id);
 
         if (hasLinks && isNotAdmin) {
             try {
@@ -70,7 +71,7 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_ID, TMDB_API_KEY
         if (userText.startsWith('/')) {
             const command = userText.split(' ')[0];
 
-            if (chatId !== ADMIN_CHAT_ID) {
+            if (!ADMIN_CHAT_IDS.includes(chatId)) {
                 if (command === '/start' || command === '/ayuda') {
                     const helpMessage = `👋 ¡Hola! Bienvenido al bot oficial.\n\n🤖 **Gestión de Accesos:**\nSi enviaste una solicitud para unirte a nuestros canales privados, este bot te aceptará automáticamente en breve.\n\n📢 **Servicio de Publicidad:**\nSi eres creador de contenido o tienes un negocio, puedes pautar con nosotros y llegar a más de 300,000 personas en nuestra red de canales.`;
                     
@@ -93,7 +94,7 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_ID, TMDB_API_KEY
             }
         }
 
-        if (chatId !== ADMIN_CHAT_ID) {
+        if (!ADMIN_CHAT_IDS.includes(chatId)) {
             if (userText.startsWith('/')) {
                 bot.sendMessage(chatId, 'Lo siento, no tienes permiso para usar este comando.');
             }
@@ -541,7 +542,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
 
             if (data && data.startsWith('ads_')) return;
 
-            if (chatId !== ADMIN_CHAT_ID) {
+            if (!ADMIN_CHAT_IDS.includes(chatId)) {
                 bot.answerCallbackQuery(callbackQuery.id, { text: 'No tienes permiso.', show_alert: true });
                 return;
             }
