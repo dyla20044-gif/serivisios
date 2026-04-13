@@ -49,7 +49,15 @@ const messaging = admin.messaging();
 const token = process.env.TELEGRAM_BOT_TOKEN;
 const RENDER_BACKEND_URL = process.env.RENDER_EXTERNAL_URL || 'https://serivisios.onrender.com';
 const bot = new TelegramBot(token);
-const ADMIN_CHAT_ID = parseInt(process.env.ADMIN_CHAT_ID, 10);
+
+// Modificación: Leer array de IDs de Administradores
+const ADMIN_CHAT_ID_PRIMARY = parseInt(process.env.ADMIN_CHAT_ID, 10);
+const ADMIN_CHAT_ID_2 = process.env.ADMIN_CHAT_ID_2 ? parseInt(process.env.ADMIN_CHAT_ID_2, 10) : null;
+const ADMIN_CHAT_IDS = [ADMIN_CHAT_ID_PRIMARY];
+if (ADMIN_CHAT_ID_2 && !isNaN(ADMIN_CHAT_ID_2)) {
+    ADMIN_CHAT_IDS.push(ADMIN_CHAT_ID_2);
+}
+
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
 
 let GLOBAL_STREAMING_ACTIVE = true;
@@ -422,13 +430,12 @@ app.get('/api/content/local', verifyIdToken, async (req, res) => {
     }
 });
 
-// MODIFICADO: Adaptar el id a entero de forma segura extrayendo números, evitando NaN en "manual_123"
 function formatLocalItem(item, type) {
     let numericId = parseInt(String(item.tmdbId).replace(/\D/g, ''));
-    if (isNaN(numericId)) numericId = Date.now(); // Fallback si no hay números
+    if (isNaN(numericId)) numericId = Date.now(); 
 
     return {
-        id: numericId, // Evita devolver NaN a la app
+        id: numericId, 
         tmdbId: item.tmdbId,
         title: item.title || item.name,
         name: item.name || item.title,
@@ -1025,19 +1032,25 @@ app.post('/api/payments/request-manual', async (req, res) => {
                     `💰 *Precio:* ${price}`;
 
     try {
-        await bot.sendMessage(ADMIN_CHAT_ID, message, {
-            parse_mode: 'Markdown',
-            reply_markup: { 
-                inline_keyboard: [
-                    [{ text: '✅ Activar Ahora', callback_data: `act_man_${userId}_${days}` }],
-                    [{ text: '❌ Ignorar', callback_data: 'ignore_payment_request' }]
-                ] 
+        for (const adminId of ADMIN_CHAT_IDS) {
+            try {
+                await bot.sendMessage(adminId, message, {
+                    parse_mode: 'Markdown',
+                    reply_markup: { 
+                        inline_keyboard: [
+                            [{ text: '✅ Activar Ahora', callback_data: `act_man_${userId}_${days}` }],
+                            [{ text: '❌ Ignorar', callback_data: 'ignore_payment_request' }]
+                        ] 
+                    }
+                });
+            } catch (err) {
+                console.error(`Error enviando a admin ${adminId}:`, err);
             }
-        });
-        res.status(200).json({ success: true, message: 'Solicitud enviada al administrador.' });
+        }
+        res.status(200).json({ success: true, message: 'Solicitud enviada a los administradores.' });
     } catch (error) {
         console.error("Error enviando solicitud de pago al bot:", error);
-        res.status(500).json({ error: 'Error al notificar al administrador.' });
+        res.status(500).json({ error: 'Error al notificar a los administradores.' });
     }
 });
 
@@ -1139,16 +1152,22 @@ app.post('/api/rewards/request-diamond', verifyIdToken, async (req, res) => {
                     `*Producto:* ${diamonds} Diamantes\n` +
                     `*Costo:* ${costInCoins} 🪙`;
     try {
-        await bot.sendPhoto(ADMIN_CHAT_ID, "https://i.ibb.co/L6TqT2V/ff-100.png", {
-            caption: message, 
-            parse_mode: 'Markdown',
-            reply_markup: { 
-                inline_keyboard: [
-                    [{ text: '✅ Marcar como Recargado', callback_data: `diamond_completed_${gameId}` }]
-                ] 
+        for (const adminId of ADMIN_CHAT_IDS) {
+            try {
+                await bot.sendPhoto(adminId, "https://i.ibb.co/L6TqT2V/ff-100.png", {
+                    caption: message, 
+                    parse_mode: 'Markdown',
+                    reply_markup: { 
+                        inline_keyboard: [
+                            [{ text: '✅ Marcar como Recargado', callback_data: `diamond_completed_${gameId}` }]
+                        ] 
+                    }
+                });
+            } catch (err) {
+                console.error(`Error enviando a admin ${adminId}:`, err);
             }
-        });
-        res.status(200).json({ message: 'Solicitud de diamantes enviada al administrador.' });
+        }
+        res.status(200).json({ message: 'Solicitud de diamantes enviada a los administradores.' });
     } catch (error) {
         console.error("Error al procesar la solicitud de diamantes:", error);
         res.status(500).json({ error: 'Error al enviar la notificación de diamantes.' });
@@ -1236,10 +1255,16 @@ app.post('/request-movie', async (req, res) => {
                             `*Nivel:* ${priorityText}\n\n` +
                             `Se ha registrado/actualizado en la base de datos de pedidos.`;
             
-            await bot.sendPhoto(ADMIN_CHAT_ID, posterUrl, {
-                caption: message, parse_mode: 'Markdown',
-                reply_markup: { inline_keyboard: [[{ text: '✅ Gestionar (Subir ahora)', callback_data: `solicitud_${tmdbId}` }]] }
-            });
+            for (const adminId of ADMIN_CHAT_IDS) {
+                try {
+                    await bot.sendPhoto(adminId, posterUrl, {
+                        caption: message, parse_mode: 'Markdown',
+                        reply_markup: { inline_keyboard: [[{ text: '✅ Gestionar (Subir ahora)', callback_data: `solicitud_${tmdbId}` }]] }
+                    });
+                } catch (err) {
+                    console.error(`Error enviando a admin ${adminId}:`, err);
+                }
+            }
         }
 
         res.status(200).json({ message: 'Solicitud guardada correctamente.' });
@@ -1435,7 +1460,6 @@ app.post('/api/increment-likes', async (req, res) => {
     } catch (error) { console.error("Error increment-likes:", error); res.status(500).json({ error: "Error interno." }); }
 });
 
-// MODIFICADO: Agregada la extracción de la variable "links"
 app.post('/add-movie', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "BD no disponible." });
     try {
@@ -1445,7 +1469,6 @@ app.post('/add-movie', async (req, res) => {
         
         const cleanTmdbId = String(tmdbId).trim();
 
-        // MODIFICADO: Agregado links al $set
         const updateQuery = { 
             $set: { 
                 title, 
@@ -1683,7 +1706,7 @@ async function startServer() {
         db, 
         mongoDb, 
         adminState,
-        ADMIN_CHAT_ID,
+        ADMIN_CHAT_IDS, // <-- AQUÍ PASAMOS EL ARRAY
         TMDB_API_KEY,
         RENDER_BACKEND_URL,
         axios,
