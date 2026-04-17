@@ -120,7 +120,7 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_IDS, TMDB_API_KE
         }
     }
 
-    // Función auxiliar para enviar el Resumen Final Elegante
+    // Función auxiliar para enviar el Resumen Final Elegante (MODIFICADA PARA CARGA CONTINUA)
     async function sendFinalSummary(chatId, title, isMovie = true, promptMsgId = null) {
         try {
             const now = new Date();
@@ -134,20 +134,24 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_IDS, TMDB_API_KE
             const summaryText = `✅ **¡SUBIDA EXITOSA!** ✅\n` +
                                 `━━━━━━━━━━━━━━━━━━━━━━\n` +
                                 `${icon} *${typeText}:* ${title}\n` +
+                                `✨ *Estado:* ¡Ya está disponible en la app!\n` +
                                 `💰 *Ganancia registrada:* (Actualizada por servidor)\n` +
                                 `💵 *Saldo Total de Hoy:* $${todayEarned.toFixed(2)} USD\n` +
                                 `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-                                `¿Qué deseas hacer ahora?`;
+                                `¿Qué deseas subir ahora?`;
+
+            const continuousKeyboard = isMovie ? [
+                [{ text: '🎬 Subir otra Película', callback_data: 'add_movie' }],
+                [{ text: '📺 Subir una Serie', callback_data: 'add_series' }]
+            ] : [
+                [{ text: '📺 Subir otra Serie', callback_data: 'add_series' }],
+                [{ text: '🎬 Subir una Película', callback_data: 'add_movie' }]
+            ];
 
             const options = {
                 parse_mode: 'Markdown',
                 reply_markup: {
-                    inline_keyboard: [
-                        [
-                            { text: '➕ Subir otra', callback_data: isMovie ? 'add_movie' : 'add_series' },
-                            { text: '🏠 Menú Principal', callback_data: 'back_to_menu' }
-                        ]
-                    ]
+                    inline_keyboard: continuousKeyboard
                 }
             };
 
@@ -160,7 +164,14 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_IDS, TMDB_API_KE
             }
         } catch (err) {
             console.error("Error al enviar resumen final:", err);
-            bot.sendMessage(chatId, `✅ Subida exitosa.\n\n¿Qué deseas hacer ahora?`, { reply_markup: { inline_keyboard: [[{ text: '🏠 Menú Principal', callback_data: 'back_to_menu' }]] } });
+            const fallbackKeyboard = isMovie ? [
+                [{ text: '🎬 Subir otra Película', callback_data: 'add_movie' }],
+                [{ text: '📺 Subir una Serie', callback_data: 'add_series' }]
+            ] : [
+                [{ text: '📺 Subir otra Serie', callback_data: 'add_series' }],
+                [{ text: '🎬 Subir una Película', callback_data: 'add_movie' }]
+            ];
+            bot.sendMessage(chatId, `✅ **¡SUBIDA EXITOSA!**\n\n${title} ya está disponible en la app.\n\n¿Qué deseas subir ahora?`, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: fallbackKeyboard } });
         }
     }
 
@@ -1431,7 +1442,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 if (!movieDataToSave?.tmdbId) { bot.sendMessage(chatId, 'Error: Datos perdidos.'); adminState[chatId] = { step: 'menu' }; return; }
                 await axios.post(`${RENDER_BACKEND_URL}/add-movie`, movieDataToSave);
                 await sendFinalSummary(chatId, movieDataToSave.title, true, msg.message_id);
-                adminState[chatId] = { step: 'menu' };
+                // El adminState se dejará tal cual. Al pulsar "add_movie" o "add_series" en el summary, se sobrescribirá de todas formas.
             }
 
             else if (data.startsWith('save_silent_hidden_')) {
@@ -1444,8 +1455,6 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                     await sendFinalSummary(chatId, movieDataToSave.title + " (Oculta)", true, msg.message_id);
                 } catch (error) {
                     bot.sendMessage(chatId, '❌ Error al guardar.');
-                } finally {
-                    adminState[chatId] = { step: 'menu' };
                 }
             }
 
@@ -1539,8 +1548,6 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 } catch (error) {
                     console.error("Error en save_publish_push_channel_:", error.response ? error.response.data : error.message);
                     bot.sendMessage(chatId, '❌ Error al guardar o enviar notificación.');
-                } finally {
-                    adminState[chatId] = { step: 'menu' };
                 }
             }
 
@@ -1625,8 +1632,6 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 } catch (error) {
                     console.error("Error en save_publish_channel_no_push_:", error.response ? error.response.data : error.message);
                     bot.sendMessage(chatId, '❌ Error al guardar o publicar.');
-                } finally {
-                    adminState[chatId] = { step: 'menu' };
                 }
             }
 
@@ -1651,8 +1656,6 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 } catch (error) {
                     console.error("Error en publish_push_this_episode:", error.response ? error.response.data : error.message);
                     bot.sendMessage(chatId, '❌ Error al enviar notificación.');
-                } finally {
-                    adminState[chatId] = { step: 'menu' };
                 }
             }
 
@@ -1747,8 +1750,6 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 } catch (error) {
                     console.error("Error en publish_push_channel_this_episode:", error.response ? error.response.data : error.message);
                     bot.sendMessage(chatId, '❌ Error al enviar notificación.');
-                } finally {
-                    adminState[chatId] = { step: 'menu' };
                 }
             }
 
@@ -1806,13 +1807,27 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 } catch (error) {
                     console.error("Error en publish_channel_no_push_series:", error.response ? error.response.data : error.message);
                     bot.sendMessage(chatId, '❌ Error al publicar.');
-                } finally {
-                    adminState[chatId] = { step: 'menu' };
                 }
             }
             
+            // MODIFICADO PARA LA CARGA CONTINUA AL FINALIZAR UNA SERIE
             else if (data.startsWith('finish_series_')) {
-                bot.editMessageText('✅ Proceso de serie finalizado.', { chat_id: chatId, message_id: msg.message_id, reply_markup: { inline_keyboard: [[{ text: '🏠 Volver al Menú', callback_data: 'back_to_menu' }]] } }).catch(()=>{});
+                const state = adminState[chatId];
+                const seriesTitle = state?.selectedSeries?.name || state?.lastSavedEpisodeData?.title || 'La serie';
+                
+                const finalMsg = `✅ **¡Proceso de serie finalizado!**\n\n📺 *${seriesTitle}* ya está disponible en la app.\n\n¿Qué deseas subir ahora?`;
+                bot.editMessageText(finalMsg, { 
+                    chat_id: chatId, 
+                    message_id: msg.message_id, 
+                    parse_mode: 'Markdown',
+                    reply_markup: { 
+                        inline_keyboard: [
+                            [{ text: '📺 Subir otra Serie', callback_data: 'add_series' }],
+                            [{ text: '🎬 Subir una Película', callback_data: 'add_movie' }]
+                        ] 
+                    } 
+                }).catch(()=>{});
+                // Lo devolvemos al menú por defecto para que no quede en el aire si deciden no pulsar nada.
                 adminState[chatId] = { step: 'menu' };
             }
 
