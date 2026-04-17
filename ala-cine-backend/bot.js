@@ -19,27 +19,97 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_IDS, TMDB_API_KE
             return;
         }
         adminState[chatId] = { step: 'menu' };
-        const options = {
-            reply_markup: {
-                inline_keyboard: [
-                    [
-                        { text: 'Agregar películas', callback_data: 'add_movie' },
-                        { text: 'Agregar series', callback_data: 'add_series' }
-                    ],
-                    [{ text: '📁 Subida Manual (Propio)', callback_data: 'add_manual_movie' }],
-                    [{ text: '🔔 Ver Pedidos', callback_data: 'view_requests_menu' }],
-                    [{ text: '💰 Mis Ganancias', callback_data: 'view_earnings' }], // NUEVO BOTÓN
-                    [
-                        { text: 'Gestionar películas', callback_data: 'manage_movies' }
-                    ],
-                    [{ text: '📡 Gestionar Comunicados (App)', callback_data: 'cms_announcement_menu' }],
-                    [{ text: '📢 Enviar Notificación Global', callback_data: 'send_global_msg' }],
-                    [{ text: 'Eliminar película', callback_data: 'delete_movie' }]
-                ]
-            }
-        };
-        bot.sendMessage(chatId, '¡Hola! ¿Qué quieres hacer hoy?', options);
+        
+        // Construcción dinámica del menú
+        const inline_keyboard = [
+            [
+                { text: '🎬 Agregar películas', callback_data: 'add_movie' },
+                { text: '📺 Agregar series', callback_data: 'add_series' }
+            ],
+            [{ text: '📁 Subida Manual (Propio)', callback_data: 'add_manual_movie' }],
+            [{ text: '🔔 Ver Pedidos', callback_data: 'view_requests_menu' }],
+            [{ text: '💰 Mis Ganancias', callback_data: 'view_earnings' }]
+        ];
+
+        // Lógica Super-Admin: Solo el Admin 1 ve el botón para revisar al Admin 2
+        if (chatId === ADMIN_CHAT_IDS[0] && ADMIN_CHAT_IDS.length > 1) {
+            inline_keyboard.push([{ text: '📊 Ver Ganancias Admin 2', callback_data: 'view_admin2_earnings' }]);
+        }
+
+        inline_keyboard.push(
+            [{ text: '📡 Gestionar Comunicados (App)', callback_data: 'cms_announcement_menu' }],
+            [{ text: '📢 Enviar Notificación Global', callback_data: 'send_global_msg' }],
+            [{ text: '🗑️ Eliminar película/serie', callback_data: 'delete_movie' }]
+        );
+
+        const options = { reply_markup: { inline_keyboard } };
+        bot.sendMessage(chatId, `¡Hola ${msg.from.first_name || 'Admin'}! ¿Qué quieres hacer hoy?`, options);
     });
+
+    // Función auxiliar para renderizar el panel de ganancias
+    async function showEarningsPanel(targetUploaderId, uploaderName, requestChatId) {
+        bot.sendMessage(requestChatId, '⏳ Calculando estadísticas financieras...');
+                
+        const now = new Date();
+        const dayId = now.toISOString().split('T')[0];
+        const monthId = dayId.substring(0, 7);
+
+        try {
+            const historicalStats = await mongoDb.collection('uploader_revenue').aggregate([
+                { $match: { uploaderId: targetUploaderId } },
+                { $group: {
+                    _id: null,
+                    totalEarned: { $sum: "$earned" },
+                    totalMovies: { $sum: { $cond: [{ $eq: ["$mediaType", "movie"] }, 1, 0] } },
+                    totalEpisodes: { $sum: { $cond: [{ $eq: ["$mediaType", "tv"] }, 1, 0] } }
+                }}
+            ]).toArray();
+
+            const hist = historicalStats[0] || { totalEarned: 0, totalMovies: 0, totalEpisodes: 0 };
+
+            const todayStats = await mongoDb.collection('uploader_daily_stats').findOne({ uploaderId: targetUploaderId, dayId });
+            const todayEarned = todayStats?.today_earned || 0;
+
+            const monthlyDocs = await mongoDb.collection('uploader_daily_stats')
+                .find({ uploaderId: targetUploaderId, monthId })
+                .toArray();
+            const monthEarned = monthlyDocs.reduce((sum, doc) => sum + (doc.today_earned || 0), 0);
+
+            const msgEarnings = `📊 *REPORTE FINANCIERO UPLOADER* 📊\n` +
+                                `━━━━━━━━━━━━━━━━━━━━━━\n` +
+                                `👤 *Usuario:* \`${uploaderName}\`\n` +
+                                `🆔 *ID:* \`${targetUploaderId}\`\n\n` +
+                                `💰 *INGRESOS ACTUALES*\n` +
+                                `├ 💵 *Hoy:* $${todayEarned.toFixed(2)} USD\n` +
+                                `└ 📅 *Este Mes:* $${monthEarned.toFixed(2)} USD\n\n` +
+                                `📈 *ESTADÍSTICAS HISTÓRICAS*\n` +
+                                `├ 🏆 *Total Generado:* $${hist.totalEarned.toFixed(2)} USD\n` +
+                                `├ 🎬 *Películas Subidas:* ${hist.totalMovies}\n` +
+                                `└ 📺 *Episodios Subidos:* ${hist.totalEpisodes}\n\n` +
+                                `🚀 *LÍMITES DE CUENTA*\n` +
+                                `├ ⏱️ *Diario:* $10.00 USD\n` +
+                                `└ 🗓️ *Mensual:* $200.00 USD\n` +
+                                `━━━━━━━━━━━━━━━━━━━━━━\n` +
+                                `💳 *INFORMACIÓN DE PAGOS:*\n` +
+                                `Las fechas de corte son del *21 al 25* de cada mes.\n` +
+                                `👉 Solicita tu retiro con: @Dylan_1m_oficial`;
+
+            // Imagen motivadora para el panel (puedes cambiar la URL por tu propio banner)
+            const bannerUrl = 'https://i.ibb.co/Nd24c62C/Gemini-Generated-Image-49psui49psui49ps-Photoroom.png'; // <-- EDITABLE
+
+            bot.sendPhoto(requestChatId, bannerUrl, { 
+                caption: msgEarnings, 
+                parse_mode: 'Markdown' 
+            }).catch(e => {
+                // Fallback en caso de que la imagen falle
+                bot.sendMessage(requestChatId, msgEarnings, { parse_mode: 'Markdown' });
+            });
+
+        } catch (error) {
+            console.error("Error al consultar ganancias desde bot.js:", error);
+            bot.sendMessage(requestChatId, '❌ Ocurrió un error al consultar la base de datos de ganancias.');
+        }
+    }
 
     bot.on('message', async (msg) => {
         const hasLinks = msg.entities && msg.entities.some(
@@ -206,7 +276,7 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_IDS, TMDB_API_KE
                 vote_average: 10,
                 origin_country: ["LOCAL"],
                 isPinned: false,
-                uploaderId: chatId // ADDED FOR REVENUE
+                uploaderId: chatId 
             };
 
             adminState[chatId].step = 'awaiting_pinned_choice_movie';
@@ -339,38 +409,6 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_IDS, TMDB_API_KE
                 } else { bot.sendMessage(chatId, `No se encontraron resultados para "${queryText}" ${yearFilter ? 'en ese año' : ''}.`); }
             } catch (error) { console.error("Error buscando en TMDB (series):", error); bot.sendMessage(chatId, 'Error buscando. Intenta de nuevo.'); }
 
-        } else if (adminState[chatId] && adminState[chatId].step === 'search_manage') {
-            try {
-                const searchUrl = `https://api.themoviedb.org/3/search/multi?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(userText)}&language=es-ES`;
-                const response = await axios.get(searchUrl);
-                const data = response.data;
-                if (data.results?.length > 0) {
-                    const results = data.results.slice(0, 5).filter(m => m.media_type === 'movie' || m.media_type === 'tv');
-                    if (results.length === 0) { bot.sendMessage(chatId, `No se encontraron películas o series.`); return; }
-                    for (const item of results) {
-                        const posterUrl = item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : 'https://placehold.co/500x750?text=No+Poster';
-                        const title = item.title || item.name;
-                        const date = item.release_date || item.first_air_date;
-
-                        let overview = item.overview || 'Sin sinopsis.';
-                        if (overview.length > 800) {
-                            overview = overview.substring(0, 800) + '...';
-                        }
-
-                        const message = `🎬 *${title}* (${date ? date.substring(0, 4) : 'N/A'})\n\n${overview}`;
-                        const callback_manage = item.media_type === 'movie' ? `manage_movie_${item.id}` : `manage_series_${item.id}`;
-                        const options = {
-                            caption: message, parse_mode: 'Markdown', reply_markup: {
-                                inline_keyboard: [[{
-                                    text: '✅ Gestionar Este', callback_data: callback_manage
-                                }]]
-                            }
-                        };
-                        bot.sendPhoto(chatId, posterUrl, options);
-                    }
-                } else { bot.sendMessage(chatId, `No se encontraron resultados.`); }
-            } catch (error) { console.error("Error buscando para gestion:", error); bot.sendMessage(chatId, 'Error buscando.'); }
-
         } else if (adminState[chatId] && adminState[chatId].step === 'search_delete') {
             try {
                 const searchUrl = `https://api.themoviedb.org/3/search/multi?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(userText)}&language=es-ES`;
@@ -433,7 +471,7 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_IDS, TMDB_API_KE
                 vote_average: selectedMedia.vote_average,
                 origin_country: selectedMedia.origin_country || [],
                 isPinned: false,
-                uploaderId: chatId // ADDED FOR REVENUE
+                uploaderId: chatId 
             };
 
             adminState[chatId].step = 'awaiting_pinned_choice_movie';
@@ -482,7 +520,7 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_IDS, TMDB_API_KE
                 vote_average: selectedSeries.vote_average,
                 origin_country: selectedSeries.origin_country || [],
                 isPinned: false,
-                uploaderId: chatId // ADDED FOR REVENUE
+                uploaderId: chatId 
             };
 
             adminState[chatId].step = 'awaiting_pinned_choice_series';
@@ -555,59 +593,17 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
 
             // --- LÓGICA DE GANANCIAS ---
             if (data === 'view_earnings') {
-                bot.sendMessage(chatId, '⏳ Calculando tus estadísticas de ganancias...');
-                
-                const now = new Date();
-                const dayId = now.toISOString().split('T')[0];
-                const monthId = dayId.substring(0, 7);
-
-                try {
-                    // Histórico general
-                    const historicalStats = await mongoDb.collection('uploader_revenue').aggregate([
-                        { $match: { uploaderId: chatId } },
-                        { $group: {
-                            _id: null,
-                            totalEarned: { $sum: "$earned" },
-                            totalMovies: { $sum: { $cond: [{ $eq: ["$mediaType", "movie"] }, 1, 0] } },
-                            totalEpisodes: { $sum: { $cond: [{ $eq: ["$mediaType", "tv"] }, 1, 0] } }
-                        }}
-                    ]).toArray();
-
-                    const hist = historicalStats[0] || { totalEarned: 0, totalMovies: 0, totalEpisodes: 0 };
-
-                    // Hoy
-                    const todayStats = await mongoDb.collection('uploader_daily_stats').findOne({ uploaderId: chatId, dayId });
-                    const todayEarned = todayStats?.today_earned || 0;
-
-                    // Mes
-                    const monthlyDocs = await mongoDb.collection('uploader_daily_stats')
-                        .find({ uploaderId: chatId, monthId })
-                        .toArray();
-                    const monthEarned = monthlyDocs.reduce((sum, doc) => sum + (doc.today_earned || 0), 0);
-
-                    const msgEarnings = `📊 *PANEL DE GANANCIAS (UPLOADER)* 📊\n\n` +
-                                        `👤 *Usuario:* \`${chatId}\`\n\n` +
-                                        `💰 *Ganancias de Hoy:* $${todayEarned.toFixed(2)} USD\n` +
-                                        `📅 *Ganancias del Mes:* $${monthEarned.toFixed(2)} USD\n` +
-                                        `🏆 *Ganancias Históricas:* $${hist.totalEarned.toFixed(2)} USD\n\n` +
-                                        `🎬 *Contenido Subido (Total):*\n` +
-                                        `• Películas: ${hist.totalMovies}\n` +
-                                        `• Episodios: ${hist.totalEpisodes}\n` +
-                                        `• Total General: ${hist.totalMovies + hist.totalEpisodes}\n\n` +
-                                        `⚠️ *Límites de tu Cuenta:*\n` +
-                                        `• Tope Diario: $10.00 USD\n` +
-                                        `• Tope Mensual: $200.00 USD\n\n` +
-                                        `💳 *INFORMACIÓN DE PAGOS:*\n` +
-                                        `Los pagos se calculan y envían de manera mensual.\n` +
-                                        `Las fechas de corte y envío de fondos son del *21 al 25 de cada mes*.\n\n` +
-                                        `Para solicitar tu retiro de ganancias, comunícate directamente con el administrador para procesar tu pago de forma rápida y profesional:\n` +
-                                        `👉 Escribe a: @Dylan_1m_oficial`;
-
-                    bot.sendMessage(chatId, msgEarnings, { parse_mode: 'Markdown' });
-
-                } catch (error) {
-                    console.error("Error al consultar ganancias desde bot.js:", error);
-                    bot.sendMessage(chatId, '❌ Ocurrió un error al consultar la base de datos de ganancias.');
+                const uploaderName = msg.chat.first_name || msg.chat.username || "Admin";
+                await showEarningsPanel(chatId, uploaderName, chatId);
+                return;
+            }
+            
+            // --- NUEVO: Super Admin viendo ganancias del Admin 2 ---
+            if (data === 'view_admin2_earnings') {
+                if (ADMIN_CHAT_IDS.length > 1) {
+                    await showEarningsPanel(ADMIN_CHAT_IDS[1], "Admin Secundario", chatId);
+                } else {
+                    bot.sendMessage(chatId, "⚠️ No hay un Admin 2 configurado en las variables de entorno.");
                 }
                 return;
             }
@@ -1179,14 +1175,11 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 bot.sendMessage(chatId, `✏️ Editando enlace para ID: ${tmdbId}.\n\n🔗 Envía el nuevo enlace ahora:`);
             }
 
-            else if (data === 'manage_movies') {
-                adminState[chatId] = { step: 'search_manage' };
-                bot.sendMessage(chatId, 'Escribe el nombre del contenido a gestionar.');
-            }
             else if (data === 'delete_movie') {
                 adminState[chatId] = { step: 'search_delete' };
                 bot.sendMessage(chatId, 'Escribe el nombre del contenido a ELIMINAR.');
             }
+            
             else if (data.startsWith('delete_confirm_')) {
                 const [_, __, tmdbId, mediaType] = data.split('_');
                 let collectionName = '';
@@ -1788,7 +1781,6 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
             bot.sendMessage(chatId, 'Error al obtener los detalles de la serie desde TMDB.');
         }
     }
-
 }
 
 module.exports = initializeBot;
