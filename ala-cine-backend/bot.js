@@ -28,6 +28,7 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_IDS, TMDB_API_KE
                     ],
                     [{ text: '📁 Subida Manual (Propio)', callback_data: 'add_manual_movie' }],
                     [{ text: '🔔 Ver Pedidos', callback_data: 'view_requests_menu' }],
+                    [{ text: '💰 Mis Ganancias', callback_data: 'view_earnings' }], // NUEVO BOTÓN
                     [
                         { text: 'Gestionar películas', callback_data: 'manage_movies' }
                     ],
@@ -204,7 +205,8 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_IDS, TMDB_API_KE
                 popularity: 100,
                 vote_average: 10,
                 origin_country: ["LOCAL"],
-                isPinned: false
+                isPinned: false,
+                uploaderId: chatId // ADDED FOR REVENUE
             };
 
             adminState[chatId].step = 'awaiting_pinned_choice_movie';
@@ -430,7 +432,8 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_IDS, TMDB_API_KE
                 popularity: selectedMedia.popularity,
                 vote_average: selectedMedia.vote_average,
                 origin_country: selectedMedia.origin_country || [],
-                isPinned: false
+                isPinned: false,
+                uploaderId: chatId // ADDED FOR REVENUE
             };
 
             adminState[chatId].step = 'awaiting_pinned_choice_movie';
@@ -478,7 +481,8 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_IDS, TMDB_API_KE
                 popularity: selectedSeries.popularity,
                 vote_average: selectedSeries.vote_average,
                 origin_country: selectedSeries.origin_country || [],
-                isPinned: false
+                isPinned: false,
+                uploaderId: chatId // ADDED FOR REVENUE
             };
 
             adminState[chatId].step = 'awaiting_pinned_choice_series';
@@ -548,6 +552,65 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
             }
 
             bot.answerCallbackQuery(callbackQuery.id);
+
+            // --- LÓGICA DE GANANCIAS ---
+            if (data === 'view_earnings') {
+                bot.sendMessage(chatId, '⏳ Calculando tus estadísticas de ganancias...');
+                
+                const now = new Date();
+                const dayId = now.toISOString().split('T')[0];
+                const monthId = dayId.substring(0, 7);
+
+                try {
+                    // Histórico general
+                    const historicalStats = await mongoDb.collection('uploader_revenue').aggregate([
+                        { $match: { uploaderId: chatId } },
+                        { $group: {
+                            _id: null,
+                            totalEarned: { $sum: "$earned" },
+                            totalMovies: { $sum: { $cond: [{ $eq: ["$mediaType", "movie"] }, 1, 0] } },
+                            totalEpisodes: { $sum: { $cond: [{ $eq: ["$mediaType", "tv"] }, 1, 0] } }
+                        }}
+                    ]).toArray();
+
+                    const hist = historicalStats[0] || { totalEarned: 0, totalMovies: 0, totalEpisodes: 0 };
+
+                    // Hoy
+                    const todayStats = await mongoDb.collection('uploader_daily_stats').findOne({ uploaderId: chatId, dayId });
+                    const todayEarned = todayStats?.today_earned || 0;
+
+                    // Mes
+                    const monthlyDocs = await mongoDb.collection('uploader_daily_stats')
+                        .find({ uploaderId: chatId, monthId })
+                        .toArray();
+                    const monthEarned = monthlyDocs.reduce((sum, doc) => sum + (doc.today_earned || 0), 0);
+
+                    const msgEarnings = `📊 *PANEL DE GANANCIAS (UPLOADER)* 📊\n\n` +
+                                        `👤 *Usuario:* \`${chatId}\`\n\n` +
+                                        `💰 *Ganancias de Hoy:* $${todayEarned.toFixed(2)} USD\n` +
+                                        `📅 *Ganancias del Mes:* $${monthEarned.toFixed(2)} USD\n` +
+                                        `🏆 *Ganancias Históricas:* $${hist.totalEarned.toFixed(2)} USD\n\n` +
+                                        `🎬 *Contenido Subido (Total):*\n` +
+                                        `• Películas: ${hist.totalMovies}\n` +
+                                        `• Episodios: ${hist.totalEpisodes}\n` +
+                                        `• Total General: ${hist.totalMovies + hist.totalEpisodes}\n\n` +
+                                        `⚠️ *Límites de tu Cuenta:*\n` +
+                                        `• Tope Diario: $10.00 USD\n` +
+                                        `• Tope Mensual: $30.00 USD\n\n` +
+                                        `💳 *INFORMACIÓN DE PAGOS:*\n` +
+                                        `Los pagos se calculan y envían de manera mensual.\n` +
+                                        `Las fechas de corte y envío de fondos son del *21 al 25 de cada mes*.\n\n` +
+                                        `Para solicitar tu retiro de ganancias, comunícate directamente con el administrador para procesar tu pago de forma rápida y profesional:\n` +
+                                        `👉 Escribe a: @Dylan_1m_oficial`;
+
+                    bot.sendMessage(chatId, msgEarnings, { parse_mode: 'Markdown' });
+
+                } catch (error) {
+                    console.error("Error al consultar ganancias desde bot.js:", error);
+                    bot.sendMessage(chatId, '❌ Ocurrió un error al consultar la base de datos de ganancias.');
+                }
+                return;
+            }
 
             if (data === 'cms_announcement_menu') {
                 const options = {
