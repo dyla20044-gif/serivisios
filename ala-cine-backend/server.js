@@ -66,7 +66,7 @@ const BUILD_ID_UNDER_REVIEW = 19;
 const MONGO_URI = process.env.MONGO_URI;
 const MONGO_DB_NAME = process.env.MONGO_DB_NAME || 'sala_cine';
 
-// Configuración de Costos y Límites (Admin 2)
+// Configuración de Costos y Límites (Admins)
 const REVENUE_SETTINGS = {
     estreno_peli: 1.00, // USD
     catalogo_peli: 0.50, // USD
@@ -113,7 +113,23 @@ async function connectToMongo() {
 const adminState = {};
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
+
+// --- NUEVO: SISTEMA DE ALERTA DE TRÁFICO ---
+let trafficCount = 0;
+let lastTrafficAlert = 0;
+const TRAFFIC_THRESHOLD = 300; // Peticiones por minuto para considerar tráfico alto
+setInterval(() => { trafficCount = 0; }, 60000);
+
 app.use((req, res, next) => {
+    trafficCount++;
+    // Si hay tráfico alto y ha pasado al menos 1 hora desde la última notificación
+    if (trafficCount > TRAFFIC_THRESHOLD && (Date.now() - lastTrafficAlert > 3600000)) {
+        lastTrafficAlert = Date.now();
+        if (ADMIN_CHAT_ID_2) {
+            bot.sendMessage(ADMIN_CHAT_ID_2, '🔥 ¡Tráfico alto detectado ahora! El CPM está subiendo. ¡Es el momento ideal para subir contenido y maximizar ganancias! 🚀');
+        }
+    }
+
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, DELETE');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -177,24 +193,15 @@ async function verifyIdToken(req, res, next) {
     }
 }
 
-// Middleware para verificar que la solicitud provenga del Bot o Admin autenticado (seguridad interna)
 function verifyInternalAdmin(req, res, next) {
-    // 1. Verificar si viene con Token de Firebase válido (Admin autenticado en App Web/CMS)
     if (req.uid) {
-        // Podrías verificar en Firestore si este UID tiene rol 'admin'
-        // Por simplicidad ahora asumimos que si tiene token válido es admin potencial,
-        // pero lo ideal es chequear ADMIN_CHAT_IDS si tienes mapeo UID <-> TelegramID
         return next();
     }
 
-    // 2. Verificar cabecera de seguridad secreta (para llamadas directas desde localhost/bot)
     const internalToken = req.headers['x-salacine-internal-token'];
     if (internalToken && internalToken === process.env.INTERNAL_SECURITY_TOKEN) {
         return next();
     }
-
-    // 3. Verificar IP (si el bot y server están en la misma red, ej: Render internal network)
-    // Esto es más complejo de configurar, usaremos la opción 2 como principal.
 
     return res.status(403).json({ error: "Acceso denegado. Autenticación de administrador requerida." });
 }
@@ -216,14 +223,17 @@ function countsCacheMiddleware(req, res, next) {
     next();
 }
 
-// --- FUNCIONES AUXILIARES DE GANANCIAS (ADMIN 2) ---
+// --- FUNCIONES AUXILIARES DE GANANCIAS ---
 
 /**
- * Calcula y registra la ganancia para el uploader (Admin 2)
+ * Calcula y registra la ganancia para el uploader (Modificado para soportar ambos admins)
  */
 async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title, season = null, episode = null }) {
-    if (!mongoDb || !ADMIN_CHAT_ID_2 || parseInt(uploaderId) !== ADMIN_CHAT_ID_2) {
-        return { appliedRevenue: 0, status: 'skipped_not_admin2' };
+    const uploaderNum = parseInt(uploaderId);
+
+    // Permitimos a cualquier ID dentro de ADMIN_CHAT_IDS (Admin 1 y Admin 2)
+    if (!mongoDb || isNaN(uploaderNum) || !ADMIN_CHAT_IDS.includes(uploaderNum)) {
+        return { appliedRevenue: 0, status: 'skipped_not_admin' };
     }
 
     // Evitar duplicados (ej: re-subir una película o mismo episodio)
@@ -273,10 +283,10 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
         }
 
         // --- LÓGICA DE LÍMITES ---
-        // Usamos findOneAndUpdate upsert para manejo atómico de estadísticas diarias/mensuales
+        // Usamos findOneAndUpdate upsert para manejo atómico de estadísticas diarias/mensuales por uploader
         
         const statsUpdate = {
-            $setOnInsert: { uploaderId: ADMIN_CHAT_ID_2, dayId, monthId },
+            $setOnInsert: { uploaderId: uploaderNum, dayId, monthId },
             $inc: { 
                 today_raw_potential: basePrice,
                 today_content_count: 1,
@@ -285,7 +295,7 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
         };
 
         const statsResult = await mongoDb.collection(COLL_DAILY_STATS).findOneAndUpdate(
-            { uploaderId: ADMIN_CHAT_ID_2, dayId },
+            { uploaderId: uploaderNum, dayId },
             statsUpdate,
             { upsert: true, returnDocument: 'after' }
         );
@@ -294,7 +304,7 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
 
         // Calcular acumulado mensual (sumando días del mes actual)
         const monthlyDocs = await mongoDb.collection(COLL_DAILY_STATS)
-            .find({ uploaderId: ADMIN_CHAT_ID_2, monthId })
+            .find({ uploaderId: uploaderNum, monthId })
             .project({ today_earned: 1 })
             .toArray();
         
@@ -302,6 +312,7 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
 
         let finalEarned = 0;
         let limitReached = false;
+        let status = '';
 
         // Verificar límite Mensual primero
         if (currentMonthEarned >= REVENUE_SETTINGS.limit_monthly) {
@@ -309,10 +320,8 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
             limitReached = true;
             status = 'limit_monthly_reached';
         }
-        // Verificar límite Diario (suma de lo ya ganado hoy + precio base actual)
+        // Verificar límite Diario
         else if ((dailyStats.today_earned || 0) + basePrice > REVENUE_SETTINGS.limit_daily) {
-            // Podría ser un pago parcial para llegar justo a los $10, pero la regla dice $0 si sube MÁS.
-            // Asumimos $0 si la subida actual excede el tope.
             finalEarned = 0; 
             limitReached = true;
             status = 'limit_daily_reached';
@@ -331,7 +340,7 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
 
         // Registrar registro individual de ganancia
         const revenueRecord = {
-            uploaderId: ADMIN_CHAT_ID_2,
+            uploaderId: uploaderNum,
             tmdbId: tmdbId.toString(),
             mediaType,
             title,
@@ -348,7 +357,7 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
 
         await mongoDb.collection(COLL_REVENUE).insertOne(revenueRecord);
 
-        console.log(`[Revenue] ${status} for ${title}. Earned: $${finalEarned} (Base: $${basePrice}). Today: $${(dailyStats.today_earned || 0) + finalEarned}`);
+        console.log(`[Revenue] ${status} for ${title} (Uploader: ${uploaderNum}). Earned: $${finalEarned} (Base: $${basePrice}). Today: $${(dailyStats.today_earned || 0) + finalEarned}`);
         
         return { appliedRevenue: finalEarned, status };
 
@@ -1833,11 +1842,14 @@ app.post('/delete-series-episode', async (req, res) => {
     }
 });
 
-// --- ENDPOINT DE ESTADÍSTICAS PARA BOT (ADMIN 2) ---
+// --- ENDPOINT DE ESTADÍSTICAS PARA BOT ---
 
 app.get('/api/admin/uploader-stats', verifyIdToken, verifyInternalAdmin, async (req, res) => {
-    if (!mongoDb || !ADMIN_CHAT_ID_2) {
-        return res.status(503).json({ error: "Servicio de estadísticas no disponible." });
+    // Permite que un admin consulte las estadísticas de otro especificando el ID por query string
+    const targetUploaderId = parseInt(req.query.uploaderId) || parseInt(req.uid) || ADMIN_CHAT_ID_2;
+
+    if (!mongoDb || isNaN(targetUploaderId)) {
+        return res.status(503).json({ error: "Servicio de estadísticas no disponible o ID inválido." });
     }
 
     const now = new Date();
@@ -1847,7 +1859,7 @@ app.get('/api/admin/uploader-stats', verifyIdToken, verifyInternalAdmin, async (
     try {
         // 1. Totales Históricos
         const historicalStats = await mongoDb.collection(COLL_REVENUE).aggregate([
-            { $match: { uploaderId: ADMIN_CHAT_ID_2 } },
+            { $match: { uploaderId: targetUploaderId } },
             { $group: {
                 _id: null,
                 totalEarned: { $sum: "$earned" },
@@ -1860,19 +1872,19 @@ app.get('/api/admin/uploader-stats', verifyIdToken, verifyInternalAdmin, async (
 
         const hist = historicalStats[0] || { totalEarned: 0, totalMovies: 0, totalEpisodes: 0, totalEstrenos: 0, totalCatalogos: 0 };
 
-        // 2. Estadísticas de Hoy (desde COLL_DAILY_STATS para eficiencia)
-        const todayStats = await mongoDb.collection(COLL_DAILY_STATS).findOne({ uploaderId: ADMIN_CHAT_ID_2, dayId });
+        // 2. Estadísticas de Hoy
+        const todayStats = await mongoDb.collection(COLL_DAILY_STATS).findOne({ uploaderId: targetUploaderId, dayId });
         
-        // 3. Estadísticas del Mes (sumando días)
+        // 3. Estadísticas del Mes
         const monthlyDocs = await mongoDb.collection(COLL_DAILY_STATS)
-            .find({ uploaderId: ADMIN_CHAT_ID_2, monthId })
+            .find({ uploaderId: targetUploaderId, monthId })
             .toArray();
 
         const monthEarned = monthlyDocs.reduce((sum, doc) => sum + (doc.today_earned || 0), 0);
         const monthCount = monthlyDocs.reduce((sum, doc) => sum + (doc.today_content_count || 0), 0);
         
         const responseData = {
-            uploaderId: ADMIN_CHAT_ID_2,
+            uploaderId: targetUploaderId,
             currency: "USD",
             limits: {
                 daily: REVENUE_SETTINGS.limit_daily,
@@ -1882,7 +1894,7 @@ app.get('/api/admin/uploader-stats', verifyIdToken, verifyInternalAdmin, async (
                 date: dayId,
                 earned: todayStats?.today_earned || 0,
                 contentCount: todayStats?.today_content_count || 0,
-                potentialRaw: todayStats?.today_raw_potential || 0, // Lo que hubiera ganado sin límite
+                potentialRaw: todayStats?.today_raw_potential || 0, 
                 limitReached: (todayStats?.today_earned || 0) >= REVENUE_SETTINGS.limit_daily
             },
             month: {
@@ -2008,6 +2020,16 @@ async function sendNotificationToTopic(title, body, imageUrl, tmdbId, mediaType,
     }
 }
 
+// --- RECORDATORIO CRON PARA MAXIMIZAR GANANCIAS ---
+cron.schedule('0 18 * * *', () => {
+    if (ADMIN_CHAT_ID_2) {
+        bot.sendMessage(ADMIN_CHAT_ID_2, '🔥 ¡Empieza la hora pico! El CPM está subiendo. ¡Es el momento ideal para subir contenido y maximizar ganancias! 🚀💰');
+    }
+}, {
+    scheduled: true,
+    timezone: "America/Guayaquil"
+});
+
 async function startServer() {
     await connectToMongo();
 
@@ -2016,7 +2038,7 @@ async function startServer() {
         db, 
         mongoDb, 
         adminState,
-        ADMIN_CHAT_IDS, // <-- AQUÍ PASAMOS EL ARRAY
+        ADMIN_CHAT_IDS, 
         TMDB_API_KEY,
         RENDER_BACKEND_URL,
         axios,
