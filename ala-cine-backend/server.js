@@ -226,10 +226,11 @@ function countsCacheMiddleware(req, res, next) {
 // --- FUNCIONES AUXILIARES DE GANANCIAS ---
 
 /**
- * Calcula y registra la ganancia para el uploader (Modificado para soportar ambos admins)
+ * Calcula y registra la ganancia para el uploader (Soporta ambos admins, corrige tipos, usa findOne/updateOne, implementa tasas dinámicas)
  */
 async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title, season = null, episode = null }) {
-    const uploaderNum = parseInt(uploaderId);
+    // 1. Corrección de Tipos: Parsear como Number de forma segura
+    const uploaderNum = Number(uploaderId);
 
     // Permitimos a cualquier ID dentro de ADMIN_CHAT_IDS (Admin 1 y Admin 2)
     if (!mongoDb || isNaN(uploaderNum) || !ADMIN_CHAT_IDS.includes(uploaderNum)) {
@@ -282,25 +283,10 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
             basePrice = REVENUE_SETTINGS.episodio_serie;
         }
 
-        // --- LÓGICA DE LÍMITES ---
-        // Usamos findOneAndUpdate upsert para manejo atómico de estadísticas diarias/mensuales por uploader
-        
-        const statsUpdate = {
-            $setOnInsert: { uploaderId: uploaderNum, dayId, monthId },
-            $inc: { 
-                today_raw_potential: basePrice,
-                today_content_count: 1,
-                [`month_${contentType}_count`]: 1 // Ej: month_estreno_count
-            }
-        };
-
-        const statsResult = await mongoDb.collection(COLL_DAILY_STATS).findOneAndUpdate(
-            { uploaderId: uploaderNum, dayId },
-            statsUpdate,
-            { upsert: true, returnDocument: 'after' }
-        );
-
-        const dailyStats = statsResult.value;
+        // --- LÓGICA DE LÍMITES Y TASAS DINÁMICAS ---
+        // 2. Usar findOne para obtener el estado actual y evitar bugs de findOneAndUpdate
+        let dailyStats = await mongoDb.collection(COLL_DAILY_STATS).findOne({ uploaderId: uploaderNum, dayId });
+        let currentDaily = dailyStats ? (dailyStats.today_earned || 0) : 0;
 
         // Calcular acumulado mensual (sumando días del mes actual)
         const monthlyDocs = await mongoDb.collection(COLL_DAILY_STATS)
@@ -313,6 +299,7 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
         let finalEarned = 0;
         let limitReached = false;
         let status = '';
+        let rateApplied = "100%";
 
         // Verificar límite Mensual primero
         if (currentMonthEarned >= REVENUE_SETTINGS.limit_monthly) {
@@ -320,21 +307,53 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
             limitReached = true;
             status = 'limit_monthly_reached';
         }
-        // Verificar límite Diario
-        else if ((dailyStats.today_earned || 0) + basePrice > REVENUE_SETTINGS.limit_daily) {
+        // Verificar límite Diario absoluto
+        else if (currentDaily >= REVENUE_SETTINGS.limit_daily) {
             finalEarned = 0; 
             limitReached = true;
             status = 'limit_daily_reached';
         } else {
-            finalEarned = basePrice;
+            // 3. Sistema de Tasa Dinámica
+            let currentBase = basePrice;
+            if (currentDaily >= 9.00) {
+                currentBase = basePrice * 0.25;
+                rateApplied = "25%";
+            } else if (currentDaily >= 7.00) {
+                currentBase = basePrice * 0.50;
+                rateApplied = "50%";
+            }
+
+            // Asegurar que no se pase del tope máximo diario
+            if (currentDaily + currentBase > REVENUE_SETTINGS.limit_daily) {
+                finalEarned = REVENUE_SETTINGS.limit_daily - currentDaily;
+            } else {
+                finalEarned = currentBase;
+            }
             status = 'applied';
         }
 
-        // Si se ganó algo, actualizar el total ganado de hoy en las estadísticas atómicamente
-        if (finalEarned > 0) {
+        // Guardar estadísticas actualizadas
+        if (!dailyStats) {
+            await mongoDb.collection(COLL_DAILY_STATS).insertOne({
+                uploaderId: uploaderNum,
+                dayId,
+                monthId,
+                today_raw_potential: basePrice,
+                today_content_count: 1,
+                [`month_${contentType}_count`]: 1,
+                today_earned: finalEarned
+            });
+        } else {
             await mongoDb.collection(COLL_DAILY_STATS).updateOne(
                 { _id: dailyStats._id },
-                { $inc: { today_earned: finalEarned } }
+                { 
+                    $inc: { 
+                        today_raw_potential: basePrice,
+                        today_content_count: 1,
+                        [`month_${contentType}_count`]: 1,
+                        today_earned: finalEarned 
+                    } 
+                }
             );
         }
 
@@ -357,8 +376,29 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
 
         await mongoDb.collection(COLL_REVENUE).insertOne(revenueRecord);
 
-        console.log(`[Revenue] ${status} for ${title} (Uploader: ${uploaderNum}). Earned: $${finalEarned} (Base: $${basePrice}). Today: $${(dailyStats.today_earned || 0) + finalEarned}`);
+        console.log(`[Revenue] ${status} for ${title} (Uploader: ${uploaderNum}). Earned: $${finalEarned} (Base: $${basePrice}, Tasa: ${rateApplied}). Today: $${(currentDaily + finalEarned).toFixed(2)}`);
         
+        // 4. Feedback Interactivo al Administrador vía Telegram
+        if (finalEarned > 0 || limitReached) {
+            let msg = `💰 *Ganancia Registrada:* $${finalEarned.toFixed(2)}\n`;
+            msg += `🎬 *Contenido:* ${title}\n`;
+            msg += `📈 *Acumulado Hoy:* $${(currentDaily + finalEarned).toFixed(2)} / $${REVENUE_SETTINGS.limit_daily.toFixed(2)}\n`;
+            
+            if (limitReached && finalEarned === 0) {
+                msg = `⛔ *Límite Alcanzado:*\n🎬 *Contenido:* ${title}\nYa has alcanzado el límite máximo diario o mensual. No se añadieron fondos por este contenido.`;
+            } else if (rateApplied !== "100%") {
+                msg += `\n⚠️ *Aviso:* Estás en la Zona de Tasa Reducida (pago al ${rateApplied}).`;
+            } else if (currentDaily + finalEarned >= 7.00 && currentDaily < 7.00) {
+                msg += `\n⚠️ *Aviso:* ¡Has cruzado el umbral de los $7.00! Tus próximas subidas se pagarán al 50%.`;
+            }
+
+            try {
+                bot.sendMessage(uploaderNum, msg, { parse_mode: 'Markdown' });
+            } catch (err) {
+                console.error("[Revenue] Error enviando notificación de ganancia por Telegram:", err);
+            }
+        }
+
         return { appliedRevenue: finalEarned, status };
 
     } catch (error) {
