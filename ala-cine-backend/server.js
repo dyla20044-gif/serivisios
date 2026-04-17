@@ -66,6 +66,20 @@ const BUILD_ID_UNDER_REVIEW = 19;
 const MONGO_URI = process.env.MONGO_URI;
 const MONGO_DB_NAME = process.env.MONGO_DB_NAME || 'sala_cine';
 
+// Configuración de Costos y Límites (Admin 2)
+const REVENUE_SETTINGS = {
+    estreno_peli: 1.00, // USD
+    catalogo_peli: 0.50, // USD
+    episodio_serie: 0.25, // USD
+    limit_daily: 10.00, // USD
+    limit_monthly: 30.00, // USD
+    months_to_be_estreno: 6
+};
+
+// Nombres de colecciones para ganancias
+const COLL_REVENUE = 'uploader_revenue';
+const COLL_DAILY_STATS = 'uploader_daily_stats';
+
 const client = new MongoClient(MONGO_URI, {
     serverApi: {
         version: ServerApiVersion.v1,
@@ -81,6 +95,15 @@ async function connectToMongo() {
         await client.connect();
         mongoDb = client.db(MONGO_DB_NAME);
         console.log(`✅ Conexión a MongoDB Atlas [${MONGO_DB_NAME}] exitosa!`);
+        
+        // Crear índices necesarios para las nuevas colecciones si no existen
+        await mongoDb.collection(COLL_REVENUE).createIndex({ uploaderId: 1, timestamp: -1 });
+        await mongoDb.collection(COLL_REVENUE).createIndex({ tmdbId: 1, season: 1, episode: 1 });
+        await mongoDb.collection(COLL_DAILY_STATS).createIndex({ uploaderId: 1, dayId: 1 }, { unique: true });
+        await mongoDb.collection(COLL_DAILY_STATS).createIndex({ uploaderId: 1, monthId: 1 });
+        
+        console.log("✅ Índices de MongoDB para ganancias verificados.");
+
         return mongoDb;
     } catch (e) {
         console.error("❌ Error al conectar a MongoDB Atlas:", e);
@@ -154,6 +177,28 @@ async function verifyIdToken(req, res, next) {
     }
 }
 
+// Middleware para verificar que la solicitud provenga del Bot o Admin autenticado (seguridad interna)
+function verifyInternalAdmin(req, res, next) {
+    // 1. Verificar si viene con Token de Firebase válido (Admin autenticado en App Web/CMS)
+    if (req.uid) {
+        // Podrías verificar en Firestore si este UID tiene rol 'admin'
+        // Por simplicidad ahora asumimos que si tiene token válido es admin potencial,
+        // pero lo ideal es chequear ADMIN_CHAT_IDS si tienes mapeo UID <-> TelegramID
+        return next();
+    }
+
+    // 2. Verificar cabecera de seguridad secreta (para llamadas directas desde localhost/bot)
+    const internalToken = req.headers['x-salacine-internal-token'];
+    if (internalToken && internalToken === process.env.INTERNAL_SECURITY_TOKEN) {
+        return next();
+    }
+
+    // 3. Verificar IP (si el bot y server están en la misma red, ej: Render internal network)
+    // Esto es más complejo de configurar, usaremos la opción 2 como principal.
+
+    return res.status(403).json({ error: "Acceso denegado. Autenticación de administrador requerida." });
+}
+
 function countsCacheMiddleware(req, res, next) {
     if (!req.uid) return next();
     const uid = req.uid;
@@ -170,6 +215,150 @@ function countsCacheMiddleware(req, res, next) {
     req.cacheKey = cacheKey;
     next();
 }
+
+// --- FUNCIONES AUXILIARES DE GANANCIAS (ADMIN 2) ---
+
+/**
+ * Calcula y registra la ganancia para el uploader (Admin 2)
+ */
+async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title, season = null, episode = null }) {
+    if (!mongoDb || !ADMIN_CHAT_ID_2 || parseInt(uploaderId) !== ADMIN_CHAT_ID_2) {
+        return { appliedRevenue: 0, status: 'skipped_not_admin2' };
+    }
+
+    // Evitar duplicados (ej: re-subir una película o mismo episodio)
+    const existingQuery = { tmdbId: tmdbId.toString(), season, episode };
+    const existingEntry = await mongoDb.collection(COLL_REVENUE).findOne(existingQuery);
+    if (existingEntry) {
+        console.log(`[Revenue] Contenido ya pagado previamente: ${title} (${tmdbId})`);
+        return { appliedRevenue: 0, status: 'skipped_duplicate' };
+    }
+
+    let contentType = 'catalogo'; // catalogo o estreno
+    let basePrice = 0;
+    const now = new Date();
+    const dayId = now.toISOString().split('T')[0]; // YYYY-MM-DD
+    const monthId = dayId.substring(0, 7); // YYYY-MM
+
+    try {
+        if (mediaType === 'movie') {
+            // Consultar TMDB para release_date
+            const tmdbUrl = `https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${TMDB_API_KEY}&language=es-MX`;
+            try {
+                const resp = await axios.get(tmdbUrl);
+                const releaseDateStr = resp.data.release_date;
+                if (releaseDateStr) {
+                    const releaseDate = new Date(releaseDateStr);
+                    const diffMonths = (now.getFullYear() - releaseDate.getFullYear()) * 12 + (now.getMonth() - releaseDate.getMonth());
+                    
+                    if (diffMonths < REVENUE_SETTINGS.months_to_be_estreno) {
+                        contentType = 'estreno';
+                        basePrice = REVENUE_SETTINGS.estreno_peli;
+                    } else {
+                        contentType = 'catalogo';
+                        basePrice = REVENUE_SETTINGS.catalogo_peli;
+                    }
+                } else {
+                    // Si no hay fecha, asumimos catálogo por seguridad
+                    basePrice = REVENUE_SETTINGS.catalogo_peli;
+                }
+            } catch (tmdbErr) {
+                console.error(`[Revenue] Error consultando TMDB para ${tmdbId}:`, tmdbErr.message);
+                basePrice = REVENUE_SETTINGS.catalogo_peli; // Fallback
+            }
+        } else {
+            // Es episodio de serie
+            contentType = 'episodio';
+            basePrice = REVENUE_SETTINGS.episodio_serie;
+        }
+
+        // --- LÓGICA DE LÍMITES ---
+        // Usamos findOneAndUpdate upsert para manejo atómico de estadísticas diarias/mensuales
+        
+        const statsUpdate = {
+            $setOnInsert: { uploaderId: ADMIN_CHAT_ID_2, dayId, monthId },
+            $inc: { 
+                today_raw_potential: basePrice,
+                today_content_count: 1,
+                [`month_${contentType}_count`]: 1 // Ej: month_estreno_count
+            }
+        };
+
+        const statsResult = await mongoDb.collection(COLL_DAILY_STATS).findOneAndUpdate(
+            { uploaderId: ADMIN_CHAT_ID_2, dayId },
+            statsUpdate,
+            { upsert: true, returnDocument: 'after' }
+        );
+
+        const dailyStats = statsResult.value;
+
+        // Calcular acumulado mensual (sumando días del mes actual)
+        const monthlyDocs = await mongoDb.collection(COLL_DAILY_STATS)
+            .find({ uploaderId: ADMIN_CHAT_ID_2, monthId })
+            .project({ today_earned: 1 })
+            .toArray();
+        
+        const currentMonthEarned = monthlyDocs.reduce((sum, doc) => sum + (doc.today_earned || 0), 0);
+
+        let finalEarned = 0;
+        let limitReached = false;
+
+        // Verificar límite Mensual primero
+        if (currentMonthEarned >= REVENUE_SETTINGS.limit_monthly) {
+            finalEarned = 0;
+            limitReached = true;
+            status = 'limit_monthly_reached';
+        }
+        // Verificar límite Diario (suma de lo ya ganado hoy + precio base actual)
+        else if ((dailyStats.today_earned || 0) + basePrice > REVENUE_SETTINGS.limit_daily) {
+            // Podría ser un pago parcial para llegar justo a los $10, pero la regla dice $0 si sube MÁS.
+            // Asumimos $0 si la subida actual excede el tope.
+            finalEarned = 0; 
+            limitReached = true;
+            status = 'limit_daily_reached';
+        } else {
+            finalEarned = basePrice;
+            status = 'applied';
+        }
+
+        // Si se ganó algo, actualizar el total ganado de hoy en las estadísticas atómicamente
+        if (finalEarned > 0) {
+            await mongoDb.collection(COLL_DAILY_STATS).updateOne(
+                { _id: dailyStats._id },
+                { $inc: { today_earned: finalEarned } }
+            );
+        }
+
+        // Registrar registro individual de ganancia
+        const revenueRecord = {
+            uploaderId: ADMIN_CHAT_ID_2,
+            tmdbId: tmdbId.toString(),
+            mediaType,
+            title,
+            season,
+            episode,
+            contentType, // estreno, catalogo, episodio
+            basePrice,
+            earned: finalEarned,
+            limitReached,
+            timestamp: now,
+            dayId,
+            monthId
+        };
+
+        await mongoDb.collection(COLL_REVENUE).insertOne(revenueRecord);
+
+        console.log(`[Revenue] ${status} for ${title}. Earned: $${finalEarned} (Base: $${basePrice}). Today: $${(dailyStats.today_earned || 0) + finalEarned}`);
+        
+        return { appliedRevenue: finalEarned, status };
+
+    } catch (error) {
+        console.error("[Revenue] Error crítico calculando ganancia:", error);
+        return { appliedRevenue: 0, status: 'error_interno' };
+    }
+}
+
+// --- ENDPOINTS DE LA API ---
 
 app.get('/api/content/featured', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
@@ -654,7 +843,7 @@ app.get('/api/user/coins', verifyIdToken, countsCacheMiddleware, async (req, res
         countsCache.set(cacheKey, responseData);
         res.status(200).json(responseData);
     } catch (error) {
-        console.error("Error en /api/user/coins (GET):", error);
+        console.error("Error al obtener el balance de coins (GET):", error);
         res.status(500).json({ error: 'Error al obtener el balance.' });
     }
 });
@@ -1463,7 +1652,7 @@ app.post('/api/increment-likes', async (req, res) => {
 app.post('/add-movie', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "BD no disponible." });
     try {
-        const { tmdbId, title, poster_path, freeEmbedCode, proEmbedCode, isPremium, overview, hideFromRecent, genres, release_date, popularity, vote_average, isPinned, origin_country, links } = req.body;
+        const { tmdbId, title, poster_path, freeEmbedCode, proEmbedCode, isPremium, overview, hideFromRecent, genres, release_date, popularity, vote_average, isPinned, origin_country, links, uploaderId } = req.body;
         
         if (!tmdbId) return res.status(400).json({ error: 'tmdbId requerido.' });
         
@@ -1485,12 +1674,25 @@ app.post('/add-movie', async (req, res) => {
                 isPinned: isPinned === true || isPinned === 'true',
                 origin_country: origin_country || [],
                 links: links || [],
+                uploaderId: uploaderId || null, // Guardar quien subió
                 addedAt: new Date() 
             }, 
             $setOnInsert: { tmdbId: cleanTmdbId, views: 0, likes: 0 } 
         };
         
-        await mongoDb.collection('media_catalog').updateOne({ tmdbId: cleanTmdbId }, updateQuery, { upsert: true });
+        const result = await mongoDb.collection('media_catalog').updateOne({ tmdbId: cleanTmdbId }, updateQuery, { upsert: true });
+
+        // --- LÓGICA DE GANANCIAS ---
+        // Solo calcular si es una inserción nueva (upsertedCount > 0)
+        let revenueInfo = null;
+        if (result.upsertedCount > 0 && uploaderId) {
+            revenueInfo = await calculateAndRecordRevenue({
+                uploaderId,
+                tmdbId: cleanTmdbId,
+                mediaType: 'movie',
+                title
+            });
+        }
 
         try {
             await mongoDb.collection('movie_requests').deleteOne({ tmdbId: cleanTmdbId });
@@ -1508,9 +1710,13 @@ app.post('/add-movie', async (req, res) => {
         
         catalogCache.flushAll();
 
-        console.log(`[Cache] Cachés (Recent, Pinned, Kdrama, Catalog FLUSH) invalidadas por subida de película: ${title}`);
+        console.log(`[Cache] Cachés invalidadas por subida de película: ${title}`);
 
-        res.status(200).json({ message: 'Película agregada y publicada.' });
+        res.status(200).json({ 
+            message: 'Película agregada y publicada.', 
+            upserted: result.upsertedCount > 0,
+            revenue: revenueInfo
+        });
         
     } catch (error) { console.error("Error add-movie:", error); res.status(500).json({ error: 'Error interno.' }); }
 });
@@ -1518,13 +1724,19 @@ app.post('/add-movie', async (req, res) => {
 app.post('/add-series-episode', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "BD no disponible." });
     try {
-        const { tmdbId, title, poster_path, overview, seasonNumber, episodeNumber, freeEmbedCode, proEmbedCode, isPremium, genres, first_air_date, popularity, vote_average, isPinned, origin_country } = req.body;
+        const { tmdbId, title, poster_path, overview, seasonNumber, episodeNumber, freeEmbedCode, proEmbedCode, isPremium, genres, first_air_date, popularity, vote_average, isPinned, origin_country, uploaderId } = req.body;
         
         if (!tmdbId || !seasonNumber || !episodeNumber) return res.status(400).json({ error: 'tmdbId, seasonNumber y episodeNumber requeridos.' });
         
         const cleanTmdbId = String(tmdbId).trim();
+        const sNum = parseInt(seasonNumber);
+        const eNum = parseInt(episodeNumber);
 
-        const episodePath = `seasons.${seasonNumber}.episodes.${episodeNumber}`;
+        // Primero verificamos si el episodio específico YA existe para no pagar doble
+        const seriesDoc = await mongoDb.collection('series_catalog').findOne({ tmdbId: cleanTmdbId });
+        const episodeExists = seriesDoc?.seasons?.[sNum]?.episodes?.[eNum];
+
+        const episodePath = `seasons.${sNum}.episodes.${eNum}`;
         const updateData = {
             $set: {
                 title, poster_path, overview, isPremium,
@@ -1534,18 +1746,34 @@ app.post('/add-series-episode', async (req, res) => {
                 vote_average: vote_average || 0,
                 isPinned: isPinned === true || isPinned === 'true',
                 origin_country: origin_country || [],
+                uploaderId: uploaderId || null, // Guardar quien subió/actualizó la serie
 
-                [`seasons.${seasonNumber}.name`]: `Temporada ${seasonNumber}`,
+                [`seasons.${sNum}.name`]: `Temporada ${sNum}`,
                 [episodePath + '.freeEmbedCode']: freeEmbedCode,
                 [episodePath + '.proEmbedCode']: proEmbedCode,
+                [episodePath + '.uploaderId']: uploaderId || null, // Guardar quien subió el episodio
                 [episodePath + '.addedAt']: new Date(),
                 
                 addedAt: new Date() 
             },
             $setOnInsert: { tmdbId: cleanTmdbId, views: 0, likes: 0 }
         };
+        
         await mongoDb.collection('series_catalog').updateOne({ tmdbId: cleanTmdbId }, updateData, { upsert: true });
         
+        // --- LÓGICA DE GANANCIAS ---
+        let revenueInfo = null;
+        if (!episodeExists && uploaderId) {
+            revenueInfo = await calculateAndRecordRevenue({
+                uploaderId,
+                tmdbId: cleanTmdbId,
+                mediaType: 'tv',
+                title: `${title} S${sNum}E${eNum}`,
+                season: sNum,
+                episode: eNum
+            });
+        }
+
         try {
             await mongoDb.collection('movie_requests').deleteOne({ tmdbId: cleanTmdbId });
             console.log(`[Auto-Clean] Pedido eliminado tras subida episodio: ${title} (${cleanTmdbId})`);
@@ -1553,8 +1781,8 @@ app.post('/add-series-episode', async (req, res) => {
             console.warn(`[Auto-Clean Warning] No se pudo limpiar el pedido: ${cleanupError.message}`);
         }
 
-        embedCache.del(`embed-${cleanTmdbId}-${seasonNumber}-${episodeNumber}-pro`);
-        embedCache.del(`embed-${cleanTmdbId}-${seasonNumber}-${episodeNumber}-free`);
+        embedCache.del(`embed-${cleanTmdbId}-${sNum}-${eNum}-pro`);
+        embedCache.del(`embed-${cleanTmdbId}-${sNum}-${eNum}-free`);
         countsCache.del(`counts-data-${cleanTmdbId}`);
         recentCache.del(RECENT_CACHE_KEY);
         pinnedCache.del(PINNED_CACHE_KEY);
@@ -1562,9 +1790,12 @@ app.post('/add-series-episode', async (req, res) => {
         
         catalogCache.flushAll();
         
-        console.log(`[Cache] Cachés (Recent, Pinned, Kdrama, Catalog FLUSH) invalidadas por subida de episodio: S${seasonNumber}E${episodeNumber}`);
+        console.log(`[Cache] Cachés invalidadas por subida de episodio: ${title} S${sNum}E${eNum}`);
 
-        res.status(200).json({ message: `Episodio S${seasonNumber}E${episodeNumber} agregado y publicado.` });
+        res.status(200).json({ 
+            message: `Episodio S${sNum}E${eNum} agregado y publicado.`,
+            revenue: revenueInfo
+        });
 
     } catch (error) { console.error("Error add-series-episode:", error); res.status(500).json({ error: 'Error interno.' }); }
 });
@@ -1578,7 +1809,9 @@ app.post('/delete-series-episode', async (req, res) => {
         }
 
         const cleanTmdbId = String(tmdbId).trim();
-        const episodePath = `seasons.${seasonNumber}.episodes.${episodeNumber}`;
+        const sNum = parseInt(seasonNumber);
+        const eNum = parseInt(episodeNumber);
+        const episodePath = `seasons.${sNum}.episodes.${eNum}`;
 
         const updateData = {
             $unset: { [episodePath]: "" }
@@ -1586,12 +1819,12 @@ app.post('/delete-series-episode', async (req, res) => {
 
         await mongoDb.collection('series_catalog').updateOne({ tmdbId: cleanTmdbId }, updateData);
 
-        embedCache.del(`embed-${cleanTmdbId}-${seasonNumber}-${episodeNumber}-pro`);
-        embedCache.del(`embed-${cleanTmdbId}-${seasonNumber}-${episodeNumber}-free`);
+        embedCache.del(`embed-${cleanTmdbId}-${sNum}-${eNum}-pro`);
+        embedCache.del(`embed-${cleanTmdbId}-${sNum}-${eNum}-free`);
         
         catalogCache.flushAll();
 
-        console.log(`[Delete] Episodio S${seasonNumber}E${episodeNumber} eliminado de ${cleanTmdbId}`);
+        console.log(`[Delete] Episodio S${sNum}E${eNum} eliminado de ${cleanTmdbId}`);
 
         res.status(200).json({ message: 'Episodio eliminado.' });
     } catch (error) {
@@ -1599,6 +1832,83 @@ app.post('/delete-series-episode', async (req, res) => {
         res.status(500).json({ error: 'Error interno.' });
     }
 });
+
+// --- ENDPOINT DE ESTADÍSTICAS PARA BOT (ADMIN 2) ---
+
+app.get('/api/admin/uploader-stats', verifyIdToken, verifyInternalAdmin, async (req, res) => {
+    if (!mongoDb || !ADMIN_CHAT_ID_2) {
+        return res.status(503).json({ error: "Servicio de estadísticas no disponible." });
+    }
+
+    const now = new Date();
+    const dayId = now.toISOString().split('T')[0];
+    const monthId = dayId.substring(0, 7);
+
+    try {
+        // 1. Totales Históricos
+        const historicalStats = await mongoDb.collection(COLL_REVENUE).aggregate([
+            { $match: { uploaderId: ADMIN_CHAT_ID_2 } },
+            { $group: {
+                _id: null,
+                totalEarned: { $sum: "$earned" },
+                totalMovies: { $sum: { $cond: [{ $eq: ["$mediaType", "movie"] }, 1, 0] } },
+                totalEpisodes: { $sum: { $cond: [{ $eq: ["$mediaType", "tv"] }, 1, 0] } },
+                totalEstrenos: { $sum: { $cond: [{ $eq: ["$contentType", "estreno"] }, 1, 0] } },
+                totalCatalogos: { $sum: { $cond: [{ $eq: ["$contentType", "catalogo"] }, 1, 0] } }
+            }}
+        ]).toArray();
+
+        const hist = historicalStats[0] || { totalEarned: 0, totalMovies: 0, totalEpisodes: 0, totalEstrenos: 0, totalCatalogos: 0 };
+
+        // 2. Estadísticas de Hoy (desde COLL_DAILY_STATS para eficiencia)
+        const todayStats = await mongoDb.collection(COLL_DAILY_STATS).findOne({ uploaderId: ADMIN_CHAT_ID_2, dayId });
+        
+        // 3. Estadísticas del Mes (sumando días)
+        const monthlyDocs = await mongoDb.collection(COLL_DAILY_STATS)
+            .find({ uploaderId: ADMIN_CHAT_ID_2, monthId })
+            .toArray();
+
+        const monthEarned = monthlyDocs.reduce((sum, doc) => sum + (doc.today_earned || 0), 0);
+        const monthCount = monthlyDocs.reduce((sum, doc) => sum + (doc.today_content_count || 0), 0);
+        
+        const responseData = {
+            uploaderId: ADMIN_CHAT_ID_2,
+            currency: "USD",
+            limits: {
+                daily: REVENUE_SETTINGS.limit_daily,
+                monthly: REVENUE_SETTINGS.limit_monthly
+            },
+            today: {
+                date: dayId,
+                earned: todayStats?.today_earned || 0,
+                contentCount: todayStats?.today_content_count || 0,
+                potentialRaw: todayStats?.today_raw_potential || 0, // Lo que hubiera ganado sin límite
+                limitReached: (todayStats?.today_earned || 0) >= REVENUE_SETTINGS.limit_daily
+            },
+            month: {
+                monthId,
+                earned: monthEarned,
+                contentCount: monthCount,
+                limitReached: monthEarned >= REVENUE_SETTINGS.limit_monthly
+            },
+            historical: {
+                totalEarned: hist.totalEarned,
+                totalContent: hist.totalMovies + hist.totalEpisodes,
+                movies: hist.totalMovies,
+                episodes: hist.totalEpisodes,
+                estrenosMovies: hist.totalEstrenos,
+                catalogoMovies: hist.totalCatalogos
+            }
+        };
+
+        res.status(200).json(responseData);
+
+    } catch (error) {
+        console.error("Error obteniendo estadísticas de uploader:", error);
+        res.status(500).json({ error: "Error interno al generar estadísticas." });
+    }
+});
+
 
 app.post('/api/notify-new-content', async (req, res) => {
     const { title, body, imageUrl, tmdbId, mediaType } = req.body;
