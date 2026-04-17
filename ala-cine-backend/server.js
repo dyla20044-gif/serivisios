@@ -1487,6 +1487,7 @@ app.get('/api/streaming-status', (req, res) => {
     console.log(`[Status Check] Usuario normal. Devolviendo estado global: ${GLOBAL_STREAMING_ACTIVE}`);
     res.status(200).json({ isStreamingActive: GLOBAL_STREAMING_ACTIVE });
 });
+
 app.get('/api/get-movie-data', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
     const { id } = req.query;
@@ -1658,6 +1659,9 @@ app.post('/api/increment-likes', async (req, res) => {
     } catch (error) { console.error("Error increment-likes:", error); res.status(500).json({ error: "Error interno." }); }
 });
 
+// ==========================================
+// 💡 AQUÍ ESTÁ EL CAMBIO PRINCIPAL PARA PELÍCULAS
+// ==========================================
 app.post('/add-movie', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "BD no disponible." });
     try {
@@ -1666,6 +1670,11 @@ app.post('/add-movie', async (req, res) => {
         if (!tmdbId) return res.status(400).json({ error: 'tmdbId requerido.' });
         
         const cleanTmdbId = String(tmdbId).trim();
+
+        // 1. Buscamos cómo estaba la película ANTES de actualizarla
+        const docAnterior = await mongoDb.collection('media_catalog').findOne({ tmdbId: cleanTmdbId });
+        // 2. Verificamos si era un "documento fantasma" (es decir, existía por las vistas pero no tenía enlaces reales)
+        const eraFantasma = !docAnterior || !(docAnterior.freeEmbedCode || docAnterior.proEmbedCode);
 
         const updateQuery = { 
             $set: { 
@@ -1683,7 +1692,7 @@ app.post('/add-movie', async (req, res) => {
                 isPinned: isPinned === true || isPinned === 'true',
                 origin_country: origin_country || [],
                 links: links || [],
-                uploaderId: uploaderId || null, // Guardar quien subió
+                uploaderId: uploaderId || null, 
                 addedAt: new Date() 
             }, 
             $setOnInsert: { tmdbId: cleanTmdbId, views: 0, likes: 0 } 
@@ -1691,10 +1700,10 @@ app.post('/add-movie', async (req, res) => {
         
         const result = await mongoDb.collection('media_catalog').updateOne({ tmdbId: cleanTmdbId }, updateQuery, { upsert: true });
 
-        // --- LÓGICA DE GANANCIAS ---
-        // Solo calcular si es una inserción nueva (upsertedCount > 0)
+        // --- LÓGICA DE GANANCIAS CORREGIDA ---
         let revenueInfo = null;
-        if (result.upsertedCount > 0 && uploaderId) {
+        // Paga si no existía en absoluto, O si existía pero era un documento fantasma (sin links)
+        if (eraFantasma && uploaderId) {
             revenueInfo = await calculateAndRecordRevenue({
                 uploaderId,
                 tmdbId: cleanTmdbId,
@@ -1730,6 +1739,9 @@ app.post('/add-movie', async (req, res) => {
     } catch (error) { console.error("Error add-movie:", error); res.status(500).json({ error: 'Error interno.' }); }
 });
 
+// ==========================================
+// 💡 AQUÍ ESTÁ EL CAMBIO PRINCIPAL PARA SERIES
+// ==========================================
 app.post('/add-series-episode', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "BD no disponible." });
     try {
@@ -1741,9 +1753,11 @@ app.post('/add-series-episode', async (req, res) => {
         const sNum = parseInt(seasonNumber);
         const eNum = parseInt(episodeNumber);
 
-        // Primero verificamos si el episodio específico YA existe para no pagar doble
+        // Primero verificamos si el episodio específico YA existe con enlaces para no pagar doble
         const seriesDoc = await mongoDb.collection('series_catalog').findOne({ tmdbId: cleanTmdbId });
-        const episodeExists = seriesDoc?.seasons?.[sNum]?.episodes?.[eNum];
+        const epData = seriesDoc?.seasons?.[sNum]?.episodes?.[eNum];
+        // Comprueba específicamente si ya tenía los enlaces configurados
+        const episodeTeniaLinks = epData && (epData.freeEmbedCode || epData.proEmbedCode);
 
         const episodePath = `seasons.${sNum}.episodes.${eNum}`;
         const updateData = {
@@ -1755,12 +1769,12 @@ app.post('/add-series-episode', async (req, res) => {
                 vote_average: vote_average || 0,
                 isPinned: isPinned === true || isPinned === 'true',
                 origin_country: origin_country || [],
-                uploaderId: uploaderId || null, // Guardar quien subió/actualizó la serie
+                uploaderId: uploaderId || null, 
 
                 [`seasons.${sNum}.name`]: `Temporada ${sNum}`,
                 [episodePath + '.freeEmbedCode']: freeEmbedCode,
                 [episodePath + '.proEmbedCode']: proEmbedCode,
-                [episodePath + '.uploaderId']: uploaderId || null, // Guardar quien subió el episodio
+                [episodePath + '.uploaderId']: uploaderId || null, 
                 [episodePath + '.addedAt']: new Date(),
                 
                 addedAt: new Date() 
@@ -1770,9 +1784,10 @@ app.post('/add-series-episode', async (req, res) => {
         
         await mongoDb.collection('series_catalog').updateOne({ tmdbId: cleanTmdbId }, updateData, { upsert: true });
         
-        // --- LÓGICA DE GANANCIAS ---
+        // --- LÓGICA DE GANANCIAS CORREGIDA ---
         let revenueInfo = null;
-        if (!episodeExists && uploaderId) {
+        // Solo pagamos si NO tenía enlaces antes
+        if (!episodeTeniaLinks && uploaderId) {
             revenueInfo = await calculateAndRecordRevenue({
                 uploaderId,
                 tmdbId: cleanTmdbId,
