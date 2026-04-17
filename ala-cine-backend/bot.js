@@ -601,7 +601,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                                         `Los pagos se calculan y envían de manera mensual.\n` +
                                         `Las fechas de corte y envío de fondos son del *21 al 25 de cada mes*.\n\n` +
                                         `Para solicitar tu retiro de ganancias, comunícate directamente con el administrador para procesar tu pago de forma rápida y profesional:\n` +
-                                        `👉 Escribe a: @Dylan_1m_oficial ;
+                                        `👉 Escribe a: @Dylan_1m_oficial`;
 
                     bot.sendMessage(chatId, msgEarnings, { parse_mode: 'Markdown' });
 
