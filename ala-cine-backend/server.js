@@ -378,26 +378,7 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
 
         console.log(`[Revenue] ${status} for ${title} (Uploader: ${uploaderNum}). Earned: $${finalEarned} (Base: $${basePrice}, Tasa: ${rateApplied}). Today: $${(currentDaily + finalEarned).toFixed(2)}`);
         
-        // 4. Feedback Interactivo al Administrador vía Telegram
-        if (finalEarned > 0 || limitReached) {
-            let msg = `💰 *Ganancia Registrada:* $${finalEarned.toFixed(2)}\n`;
-            msg += `🎬 *Contenido:* ${title}\n`;
-            msg += `📈 *Acumulado Hoy:* $${(currentDaily + finalEarned).toFixed(2)} / $${REVENUE_SETTINGS.limit_daily.toFixed(2)}\n`;
-            
-            if (limitReached && finalEarned === 0) {
-                msg = `⛔ *Límite Alcanzado:*\n🎬 *Contenido:* ${title}\nYa has alcanzado el límite máximo diario o mensual. No se añadieron fondos por este contenido.`;
-            } else if (rateApplied !== "100%") {
-                msg += `\n⚠️ *Aviso:* Estás en la Zona de Tasa Reducida (pago al ${rateApplied}).`;
-            } else if (currentDaily + finalEarned >= 7.00 && currentDaily < 7.00) {
-                msg += `\n⚠️ *Aviso:* ¡Has cruzado el umbral de los $7.00! Tus próximas subidas se pagarán al 50%.`;
-            }
-
-            try {
-                bot.sendMessage(uploaderNum, msg, { parse_mode: 'Markdown' });
-            } catch (err) {
-                console.error("[Revenue] Error enviando notificación de ganancia por Telegram:", err);
-            }
-        }
+        // 4. Feedback Interactivo (Eliminado según solicitud para evitar spam en cada subida)
 
         return { appliedRevenue: finalEarned, status };
 
