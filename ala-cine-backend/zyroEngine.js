@@ -1,9 +1,123 @@
 const axios = require('axios');
 const cheerio = require('cheerio'); // Motor de Scraping para búsquedas universales
+const { URLSearchParams } = require('url'); // Necesario para enviar datos a DDG Lite
 
 module.exports = function(app, getDb, cache, TMDB_API_KEY) {
 
-    // --- NUEVO ENDPOINT: HOME DINÁMICO ---
+    // --- NUEVO ENDPOINT: DEEP SCRAPING ---
+    app.get('/api/analyze-media', async (req, res) => {
+        const { url } = req.query;
+
+        if (!url) {
+            return res.status(400).json({ error: "Falta el parámetro 'url'" });
+        }
+
+        // Sistema de Caché (30 minutos = 1800 segundos)
+        const cacheKey = `zyro_deep_scrape_${Buffer.from(url).toString('base64')}`;
+        const cachedResult = cache.get(cacheKey);
+
+        if (cachedResult) {
+            console.log(`[ZYRO] Sirviendo análisis profundo desde caché para: ${url}`);
+            return res.json(cachedResult);
+        }
+
+        try {
+            // Rotación básica de User-Agents
+            const userAgents = [
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15',
+                'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
+            ];
+            const randomUserAgent = userAgents[Math.floor(Math.random() * userAgents.length)];
+
+            // Fetch del HTML
+            const scrapeRes = await axios.get(url, {
+                headers: {
+                    'User-Agent': randomUserAgent,
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+                    'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8'
+                },
+                timeout: 15000
+            });
+
+            const html = scrapeRes.data;
+            const $ = cheerio.load(html);
+
+            let temporadasCount = 0;
+            let capitulos = [];
+            let fuentes_extra = [];
+
+            // Lógica de Extracción: Temporadas
+            const textoBody = $('body').text().toLowerCase();
+            const seasonMatches = textoBody.match(/temporada\s*\d+|season\s*\d+/g);
+            
+            if (seasonMatches) {
+                const temporadasUnicas = new Set(seasonMatches.map(s => s.trim()));
+                temporadasCount = temporadasUnicas.size;
+            } else {
+                temporadasCount = $('select option:contains("Temporada"), ul.seasons li, div.season-tab').length;
+            }
+
+            // Lógica de Extracción: Capítulos
+            $('a, li, div.episode, div.capitulo').each((index, element) => {
+                const el = $(element);
+                const texto = el.text().trim();
+                const lowerTexto = texto.toLowerCase();
+                let href = el.attr('href') || el.find('a').attr('href');
+
+                const pareceCapitulo = /cap[íi]tulo\s*\d+|episodio\s*\d+|\d+x\d+|e\d+/i.test(lowerTexto);
+
+                if (pareceCapitulo && href) {
+                    try {
+                        const absoluteUrl = new URL(href, url).href;
+                        if (!capitulos.some(c => c.url_del_capitulo === absoluteUrl)) {
+                            capitulos.push({
+                                nombre: texto.substring(0, 50),
+                                url_del_capitulo: absoluteUrl
+                            });
+                        }
+                    } catch (e) {}
+                }
+            });
+
+            // Lógica de Extracción: Enlaces de Video y Fuentes Extra
+            const videoRegex = /(https?:\/\/[^\s"'<>]+?\.(m3u8|mp4))/gi;
+            const videoMatches = html.match(videoRegex) || [];
+            videoMatches.forEach(v => fuentes_extra.push(v));
+
+            $('iframe').each((i, el) => {
+                const src = $(el).attr('src');
+                if (src) {
+                    const lowerSrc = src.toLowerCase();
+                    if (lowerSrc.includes('fembed') || lowerSrc.includes('vidoza') || 
+                        lowerSrc.includes('ok.ru') || lowerSrc.includes('streamtape') ||
+                        lowerSrc.includes('voe.sx') || lowerSrc.includes('dood')) {
+                        fuentes_extra.push(src);
+                    }
+                }
+            });
+
+            fuentes_extra = [...new Set(fuentes_extra)];
+
+            const respuestaAnalisis = {
+                temporadas: temporadasCount > 0 ? temporadasCount : 1,
+                capitulos: capitulos,
+                fuentes_extra: fuentes_extra
+            };
+
+            cache.set(cacheKey, respuestaAnalisis, 1800);
+            res.json(respuestaAnalisis);
+
+        } catch (error) {
+            console.error(`[ZYRO] Error en Deep Scraping para ${url}:`, error.message);
+            res.status(500).json({ 
+                error: "No se pudo analizar la URL proporcionada.",
+                detalles: error.message 
+            });
+        }
+    });
+
+    // --- ENDPOINT ORIGINAL: HOME DINÁMICO ---
     app.get('/api/zyro-home', async (req, res) => {
         const cacheKey = 'zyro_home_data';
         const cachedResult = cache.get(cacheKey);
@@ -85,11 +199,10 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
     // --- ENDPOINT ORIGINAL MODIFICADO: BÚSQUEDA Y PAGINACIÓN ---
     app.get('/api/zyro-search', async (req, res) => {
         const { query } = req.query;
-        const page = parseInt(req.query.page) || 1; // PAGINACIÓN AÑADIDA
+        const page = parseInt(req.query.page) || 1; 
         
         if (!query) return res.status(400).json({ error: "Falta el parámetro 'query'" });
 
-        // SISTEMA DE CACHÉ ACTUALIZADO CON PÁGINA
         const cacheKey = `zyro_universal_${query.toLowerCase().trim()}_p${page}`;
         const cachedResult = cache.get(cacheKey);
         
@@ -107,7 +220,7 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
             let tituloOficial = query;
             let anioEstreno = null;
 
-            // 2. BUSCAR EN TMDB (Aplica paginación)
+            // 2. BUSCAR EN TMDB
             try {
                 const tmdbRes = await axios.get(`https://api.themoviedb.org/3/search/multi?api_key=${TMDB_API_KEY}&language=es-ES&query=${encodeURIComponent(query)}&page=${page}`);
                 const results = tmdbRes.data.results;
@@ -119,7 +232,7 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
                         anio: (r.release_date || r.first_air_date || '').split('-')[0]
                     }));
 
-                    if (page === 1) { // Metadata principal solo en la primera página
+                    if (page === 1) { 
                         const bestMatch = results.find(r => r.media_type === 'movie' || r.media_type === 'tv');
                         
                         if (bestMatch) {
@@ -157,7 +270,7 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
                 };
             }
 
-            // 4. PROVEEDORES OFICIALES (Solo página 1)
+            // 4. PROVEEDORES OFICIALES
             if (tmdbId && page === 1) {
                 try {
                     const providersRes = await axios.get(`https://api.themoviedb.org/3/${mediaType}/${tmdbId}/watch/providers?api_key=${TMDB_API_KEY}`);
@@ -182,7 +295,7 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
                 }
             }
 
-            // 5. EL BUSCADOR UNIVERSAL (Mejora de extracción de imágenes)
+            // 5. EL BUSCADOR UNIVERSAL (Mejorado con DDG Lite y sufijos)
             try {
                 const userAgents = [
                     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -190,62 +303,66 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
                 ];
                 const randomUserAgent = userAgents[Math.floor(Math.random() * userAgents.length)];
 
-                const scraperRes = await axios.get(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`, {
+                // Generación automática de términos
+                const terminosExtra = "ver online gratis latino cuevana pelisplus";
+                const queryModificado = `${query} ${terminosExtra}`;
+
+                const formData = new URLSearchParams();
+                formData.append('q', queryModificado);
+                if (page > 1) {
+                    const skip = (page - 1) * 20;
+                    formData.append('s', skip.toString());
+                }
+
+                const scraperRes = await axios.post(`https://lite.duckduckgo.com/lite/`, formData.toString(), {
                     headers: {
                         'User-Agent': randomUserAgent,
                         'Accept': 'text/html,application/xhtml+xml',
-                        'Accept-Language': 'es-ES,es;q=0.9'
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'Origin': 'https://lite.duckduckgo.com',
+                        'Referer': 'https://lite.duckduckgo.com/'
                     },
                     timeout: 15000
                 });
 
                 const $ = cheerio.load(scraperRes.data);
-                const startIndex = (page - 1) * 10; // Offset rudimentario
                 
-                $('.result').each((index, element) => {
-                    if (index < startIndex) return true;
+                $('tr').each((index, element) => {
                     if (enlacesFinales.length >= 15 * page) return false; 
 
-                    const rawTitle = $(element).find('.result__title a').text().trim();
-                    const rawUrl = $(element).find('.result__title a').attr('href');
-                    const snippet = $(element).find('.result__snippet').text().trim();
+                    const resultCell = $(element).find('td.result-snippet');
+                    const titleElement = $(element).prev('tr').find('a.result-url'); 
                     
-                    // Extracción de imagen web si está disponible
-                    let imgIcon = $(element).find('.result__icon__img').attr('src');
-                    if (imgIcon && imgIcon.startsWith('//')) imgIcon = 'https:' + imgIcon;
+                    const rawTitle = titleElement.text().trim();
+                    const rawUrl = titleElement.attr('href');
+                    const snippet = resultCell.text().trim();
 
-                    if (rawTitle && rawUrl) {
-                        let cleanUrl = rawUrl;
-                        if (rawUrl.includes('uddg=')) {
-                            try {
-                                const urlObj = new URL(rawUrl.startsWith('//') ? `https:${rawUrl}` : rawUrl);
-                                const uddgParam = urlObj.searchParams.get('uddg');
-                                if (uddgParam) cleanUrl = decodeURIComponent(uddgParam);
-                            } catch (e) {}
-                        }
-
-                        if (!cleanUrl.startsWith('http')) return true;
-
+                    if (rawTitle && rawUrl && rawUrl.startsWith('http')) {
                         let dominio = 'Web';
-                        try { dominio = new URL(cleanUrl).hostname.replace('www.', ''); } catch (e) {}
+                        try { 
+                            const urlObj = new URL(rawUrl);
+                            dominio = urlObj.hostname.replace('www.', ''); 
+                        } catch (e) {}
+
+                        const imgIcon = `https://icon.horse/icon/${dominio}`;
 
                         enlacesFinales.push({
                             sitioWeb: dominio,
                             titulo: rawTitle,
-                            descripcion: snippet || 'Resultado de la web abierta.',
-                            calidad: 'Web',
-                            urlDestino: cleanUrl,
-                            categoria: 'Navegación',
-                            favicon: imgIcon || null,
+                            descripcion: snippet || `Resultado optimizado para ver "${query}" gratis.`,
+                            calidad: 'Web Scraping',
+                            urlDestino: rawUrl,
+                            categoria: 'Fuentes Alternativas',
+                            favicon: imgIcon,
                             isPremium: false
                         });
                     }
                 });
             } catch (scrapeError) {
-                console.log(`[ZYRO] Scraping web falló para "${query}":`, scrapeError.message);
+                console.log(`[ZYRO] Scraping DDG Lite falló para "${query}":`, scrapeError.message);
             }
 
-            // 6. BUSCAR EN TU MONGODB (Solo en página 1)
+            // 6. BUSCAR EN TU MONGODB
             if (page === 1) {
                 const db = getDb();
                 if (db) {
