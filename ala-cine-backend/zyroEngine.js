@@ -1,13 +1,41 @@
 const axios = require('axios');
-const cheerio = require('cheerio'); // Motor de Scraping para búsquedas universales
+const cheerio = require('cheerio'); 
 
 module.exports = function(app, getDb, cache, TMDB_API_KEY) {
+
+    // 1. NUEVO ENDPOINT: Para cargar el Home de la App (Estrenos)
+    app.get('/api/zyro-home', async (req, res) => {
+        const cacheKey = 'zyro_home_estrenos';
+        const cachedResult = cache.get(cacheKey);
+        if (cachedResult) return res.json(cachedResult);
+
+        try {
+            // Buscamos las películas actualmente en cines usando TMDB
+            const tmdbRes = await axios.get(`https://api.themoviedb.org/3/movie/now_playing?api_key=${TMDB_API_KEY}&language=es-ES&page=1`);
+            
+            const estrenos = tmdbRes.data.results.slice(0, 10).map(movie => ({
+                id: movie.id,
+                titulo: movie.title,
+                // Extraemos el año de la fecha de lanzamiento para el subtitulo
+                subtitulo: movie.release_date ? movie.release_date.substring(0, 4) : '2026',
+                posterPath: movie.poster_path ? `https://image.tmdb.org/t/p/w500${movie.poster_path}` : 'https://via.placeholder.com/500x750?text=Sin+Imagen'
+            }));
+
+            cache.set(cacheKey, estrenos, 3600); // Guardar en caché 1 hora
+            res.json(estrenos);
+        } catch (error) {
+            console.error("[ZYRO] Error obteniendo estrenos:", error.message);
+            res.status(500).json([]);
+        }
+    });
+
+    // 2. ENDPOINT PRINCIPAL: Búsqueda y Categorías
     app.get('/api/zyro-search', async (req, res) => {
         const { query } = req.query;
         if (!query) return res.status(400).json({ error: "Falta el parámetro 'query'" });
 
-        // 1. SISTEMA DE CACHÉ (Evita saturar la web, TMDB y tu Base de Datos)
-        const cacheKey = `zyro_universal_${query.toLowerCase().trim()}`;
+        const queryLower = query.toLowerCase().trim();
+        const cacheKey = `zyro_universal_${queryLower}`;
         const cachedResult = cache.get(cacheKey);
         
         if (cachedResult) {
@@ -16,20 +44,56 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
         }
 
         try {
+            // A. INTERCEPTAR BÚSQUEDAS POR CATEGORÍA
+            const generosMap = {
+                "acción": 28, "ciencia ficción": 878, "terror": 27, 
+                "comedia": 35, "drama": 18, "animación": 16
+            };
+
+            if (queryLower.startsWith("películas de ")) {
+                const generoStr = queryLower.replace("películas de ", "").trim();
+                const genreId = generosMap[generoStr];
+
+                if (genreId) {
+                    // Buscar en TMDB por género
+                    const discoverRes = await axios.get(`https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}&language=es-ES&with_genres=${genreId}&sort_by=popularity.desc`);
+                    
+                    const sugerencias = discoverRes.data.results.slice(0, 15).map(m => ({
+                        imagen: m.poster_path ? `https://image.tmdb.org/t/p/w500${m.poster_path}` : 'https://via.placeholder.com/500x750',
+                        titulo: m.title,
+                        anio: m.release_date ? m.release_date.substring(0, 4) : ''
+                    }));
+
+                    const respuestaCategoria = {
+                        metadata: {
+                            titulo: `Explorando: ${generoStr.toUpperCase()}`,
+                            descripcion: `Las mejores películas de ${generoStr} seleccionadas para ti.`,
+                            poster: null,
+                            tipo: "category"
+                        },
+                        sugerencias: sugerencias,
+                        enlaces: []
+                    };
+                    cache.set(cacheKey, respuestaCategoria, 3600);
+                    return res.json(respuestaCategoria);
+                }
+            }
+
+            // B. FLUJO NORMAL DE BÚSQUEDA UNIVERSAL
             let metadata = null;
             let enlacesFinales = [];
             let tmdbId = null;
             let mediaType = 'movie';
             let tituloOficial = query;
+            let sugerenciasAsociadas = [];
 
-            // 2. BUSCAR EN TMDB (Prioridad para Películas o Series)
+            // Buscar en TMDB para Metadata
             try {
                 const tmdbRes = await axios.get(`https://api.themoviedb.org/3/search/multi?api_key=${TMDB_API_KEY}&language=es-ES&query=${encodeURIComponent(query)}`);
                 const results = tmdbRes.data.results;
 
                 if (results && results.length > 0) {
                     const bestMatch = results.find(r => r.media_type === 'movie' || r.media_type === 'tv');
-                    
                     if (bestMatch) {
                         tmdbId = bestMatch.id;
                         mediaType = bestMatch.media_type || 'movie';
@@ -42,171 +106,108 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
                             tipo: mediaType,
                             descripcion: bestMatch.overview || "Sin sinopsis disponible."
                         };
+
+                        // Obtener sugerencias similares basadas en esta película/serie
+                        const similarRes = await axios.get(`https://api.themoviedb.org/3/${mediaType}/${tmdbId}/similar?api_key=${TMDB_API_KEY}&language=es-ES`);
+                        sugerenciasAsociadas = similarRes.data.results.slice(0, 6).map(m => ({
+                            imagen: m.poster_path ? `https://image.tmdb.org/t/p/w500${m.poster_path}` : 'https://via.placeholder.com/500x750',
+                            titulo: m.title || m.name,
+                            anio: (m.release_date || m.first_air_date || '').substring(0, 4)
+                        }));
                     }
                 }
             } catch (tmdbError) {
-                console.log("[ZYRO] TMDB no detectó película/serie o falló:", tmdbError.message);
-                // No detenemos la ejecución, pasamos a la búsqueda web
+                console.log("[ZYRO] TMDB falló:", tmdbError.message);
             }
 
-            // 3. METADATA GENÉRICO (Fallback si no es película/serie)
             if (!metadata) {
-                metadata = {
-                    tmdb_id: null,
-                    titulo: query,
-                    poster: null, 
-                    tipo: 'web_search',
-                    descripcion: `Resultados universales de la red para: "${query}"`
-                };
+                metadata = { tmdb_id: null, titulo: query, poster: null, tipo: 'web_search', descripcion: `Resultados universales de la red para: "${query}"` };
             }
 
-            // 4. BUSCAR EN TU MONGODB (Enlaces personalizados de la comunidad)
+            // Buscar en tu MongoDB
             const db = getDb();
             if (db) {
-                const dbQuery = { 
-                    $or: [ { titulo_pelicula: { $regex: new RegExp(query, "i") } } ] 
-                };
-                if (tmdbId) {
-                    dbQuery.$or.push({ tmdb_id: tmdbId });
-                }
+                const dbQuery = { $or: [ { titulo_pelicula: { $regex: new RegExp(query, "i") } } ] };
+                if (tmdbId) dbQuery.$or.push({ tmdb_id: tmdbId });
 
                 try {
                     const customLinks = await db.collection('zyro_custom_links').find(dbQuery).toArray();
                     customLinks.forEach(link => {
                         enlacesFinales.push({
-                            sitioWeb: link.sitioWeb,
-                            titulo: link.titulo,
-                            descripcion: link.descripcion,
-                            calidad: link.calidad,
-                            urlDestino: link.urlDestino,
-                            categoria: link.categoria || "Comunidad"
+                            sitioWeb: link.sitioWeb, titulo: link.titulo, descripcion: link.descripcion,
+                            calidad: link.calidad, urlDestino: link.urlDestino, categoria: link.categoria || "Comunidad"
                         });
                     });
-                } catch(dbErr) {
-                    console.error("[ZYRO] Error en la base de datos:", dbErr.message);
-                }
+                } catch(dbErr) { console.error("[ZYRO] Error BD:", dbErr.message); }
             }
 
-            // 5. PROVEEDORES OFICIALES (TMDB Watch Providers)
+            // Proveedores Oficiales
             if (tmdbId) {
                 try {
                     const providersRes = await axios.get(`https://api.themoviedb.org/3/${mediaType}/${tmdbId}/watch/providers?api_key=${TMDB_API_KEY}`);
                     const ecProviders = providersRes.data.results.EC || providersRes.data.results.US || providersRes.data.results.ES || {}; 
-                    
                     if (ecProviders.flatrate) {
                         ecProviders.flatrate.forEach(provider => {
                             const domain = provider.provider_name.toLowerCase().replace(/\s+/g, '') + ".com";
                             enlacesFinales.push({
-                                sitioWeb: domain,
-                                titulo: `Ver en ${provider.provider_name}`,
+                                sitioWeb: domain, titulo: `Ver en ${provider.provider_name}`,
                                 descripcion: `Disponible oficialmente en ${provider.provider_name}.`,
-                                calidad: "Premium",
-                                urlDestino: ecProviders.link || `https://www.google.com/search?q=${encodeURIComponent(tituloOficial)}+en+${provider.provider_name}`,
+                                calidad: "Premium", urlDestino: ecProviders.link || `https://www.google.com/search?q=${encodeURIComponent(tituloOficial)}+en+${provider.provider_name}`,
                                 categoria: "Fuentes Oficiales"
                             });
                         });
                     }
-                } catch (providerError) {
-                    console.log("[ZYRO] Error obteniendo proveedores:", providerError.message);
-                }
+                } catch (providerError) {}
             }
 
-            // 6. EL BUSCADOR UNIVERSAL (Scraping Inteligente Anti-Bloqueos)
+            // Scraping DuckDuckGo (Universal)
             try {
-                // Lista de User-Agents modernos para evadir bloqueos de Render/DuckDuckGo
-                const userAgents = [
-                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15',
-                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0',
-                    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
-                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Edge/120.0.0.0 Safari/537.36'
-                ];
-                const randomUserAgent = userAgents[Math.floor(Math.random() * userAgents.length)];
-
-                // Timeout configurado a 15 segundos exactos
                 const scraperRes = await axios.get(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`, {
-                    headers: {
-                        'User-Agent': randomUserAgent,
-                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                        'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8'
-                    },
-                    timeout: 15000 // 15 segundos máximo
+                    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
+                    timeout: 15000
                 });
-
                 const $ = cheerio.load(scraperRes.data);
-                
-                // Extraemos hasta 15 resultados
                 $('.result').each((index, element) => {
                     if (index >= 15) return false; 
-
                     const rawTitle = $(element).find('.result__title a').text().trim();
                     const rawUrl = $(element).find('.result__title a').attr('href');
                     const snippet = $(element).find('.result__snippet').text().trim();
 
                     if (rawTitle && rawUrl) {
-                        // Limpieza de URL para WebView (Desencriptar uddg)
                         let cleanUrl = rawUrl;
                         if (rawUrl.includes('uddg=')) {
                             try {
                                 const urlObj = new URL(rawUrl.startsWith('//') ? `https:${rawUrl}` : rawUrl);
                                 const uddgParam = urlObj.searchParams.get('uddg');
-                                if (uddgParam) {
-                                    cleanUrl = decodeURIComponent(uddgParam);
-                                }
-                            } catch (e) {
-                                // Mantenemos la rawUrl si falla el parseo
-                            }
+                                if (uddgParam) cleanUrl = decodeURIComponent(uddgParam);
+                            } catch (e) {}
                         }
-
-                        // Evitar enlaces internos extraños o relativos
                         if (!cleanUrl.startsWith('http')) return true;
-
-                        // Extraer el dominio limpio
                         let dominio = 'Web';
-                        try {
-                            dominio = new URL(cleanUrl).hostname.replace('www.', '');
-                        } catch (e) {}
+                        try { dominio = new URL(cleanUrl).hostname.replace('www.', ''); } catch (e) {}
 
-                        // Insertamos en el formato estricto JSON
                         enlacesFinales.push({
-                            sitioWeb: dominio,
-                            titulo: rawTitle,
-                            descripcion: snippet || 'Resultado de la web abierta.',
-                            calidad: 'Web',
-                            urlDestino: cleanUrl,
-                            categoria: 'Navegación'
+                            sitioWeb: dominio, titulo: rawTitle, descripcion: snippet || 'Resultado de la web abierta.',
+                            calidad: 'Web', urlDestino: cleanUrl, categoria: 'Navegación'
                         });
                     }
                 });
             } catch (scrapeError) {
-                // Fallback seguro: Si el scraping falla o hace timeout, avisamos en consola pero NO tumbamos la app
-                console.log(`[ZYRO] Scraping web falló o excedió timeout de 15s para "${query}":`, scrapeError.message);
+                console.log(`[ZYRO] Scraping falló para "${query}"`);
             }
 
-            // 7. EMPAQUETAR Y ENVIAR A ANDROID (Estructura Estricta)
             const respuestaFinal = {
                 metadata: metadata,
+                sugerencias: sugerenciasAsociadas, // Añadimos sugerencias dinámicas basadas en la búsqueda
                 enlaces: enlacesFinales
             };
 
-            // Guardar en caché por 1 hora
             cache.set(cacheKey, respuestaFinal, 3600);
-
             res.json(respuestaFinal);
 
         } catch (error) {
-            console.error("[ZYRO] Error crítico procesando búsqueda:", error);
-            // Respuesta fallback en caso de error general para que la UI no colapse
-            res.status(500).json({ 
-                metadata: {
-                    tmdb_id: null,
-                    titulo: query,
-                    poster: null,
-                    tipo: "error",
-                    descripcion: "Hubo un problema procesando la búsqueda."
-                },
-                enlaces: [] 
-            });
+            console.error("[ZYRO] Error crítico:", error);
+            res.status(500).json({ metadata: { tmdb_id: null, titulo: query, tipo: "error", descripcion: "Error procesando búsqueda." }, enlaces: [] });
         }
     });
 };
