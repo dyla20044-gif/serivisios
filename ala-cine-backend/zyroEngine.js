@@ -1,6 +1,6 @@
 const axios = require('axios');
 const cheerio = require('cheerio'); // Motor de Scraping para búsquedas universales
-const { URLSearchParams } = require('url'); // Necesario para enviar datos a DDG Lite
+const { URLSearchParams } = require('url');
 
 module.exports = function(app, getDb, cache, TMDB_API_KEY) {
 
@@ -12,7 +12,6 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
             return res.status(400).json({ error: "Falta el parámetro 'url'" });
         }
 
-        // Sistema de Caché (30 minutos = 1800 segundos)
         const cacheKey = `zyro_deep_scrape_${Buffer.from(url).toString('base64')}`;
         const cachedResult = cache.get(cacheKey);
 
@@ -22,7 +21,6 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
         }
 
         try {
-            // Rotación básica de User-Agents
             const userAgents = [
                 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15',
@@ -30,7 +28,6 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
             ];
             const randomUserAgent = userAgents[Math.floor(Math.random() * userAgents.length)];
 
-            // Fetch del HTML
             const scrapeRes = await axios.get(url, {
                 headers: {
                     'User-Agent': randomUserAgent,
@@ -47,7 +44,6 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
             let capitulos = [];
             let fuentes_extra = [];
 
-            // Lógica de Extracción: Temporadas
             const textoBody = $('body').text().toLowerCase();
             const seasonMatches = textoBody.match(/temporada\s*\d+|season\s*\d+/g);
             
@@ -58,7 +54,6 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
                 temporadasCount = $('select option:contains("Temporada"), ul.seasons li, div.season-tab').length;
             }
 
-            // Lógica de Extracción: Capítulos
             $('a, li, div.episode, div.capitulo').each((index, element) => {
                 const el = $(element);
                 const texto = el.text().trim();
@@ -71,16 +66,12 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
                     try {
                         const absoluteUrl = new URL(href, url).href;
                         if (!capitulos.some(c => c.url_del_capitulo === absoluteUrl)) {
-                            capitulos.push({
-                                nombre: texto.substring(0, 50),
-                                url_del_capitulo: absoluteUrl
-                            });
+                            capitulos.push({ nombre: texto.substring(0, 50), url_del_capitulo: absoluteUrl });
                         }
                     } catch (e) {}
                 }
             });
 
-            // Lógica de Extracción: Enlaces de Video y Fuentes Extra
             const videoRegex = /(https?:\/\/[^\s"'<>]+?\.(m3u8|mp4))/gi;
             const videoMatches = html.match(videoRegex) || [];
             videoMatches.forEach(v => fuentes_extra.push(v));
@@ -105,15 +96,18 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
                 fuentes_extra: fuentes_extra
             };
 
-            cache.set(cacheKey, respuestaAnalisis, 1800);
+            // Solo cachear por 30 mins si encontró al menos capítulos o fuentes. Si falló, cachea 30 segs.
+            if (capitulos.length > 0 || fuentes_extra.length > 0) {
+                cache.set(cacheKey, respuestaAnalisis, 1800);
+            } else {
+                cache.set(cacheKey, respuestaAnalisis, 30);
+            }
+            
             res.json(respuestaAnalisis);
 
         } catch (error) {
             console.error(`[ZYRO] Error en Deep Scraping para ${url}:`, error.message);
-            res.status(500).json({ 
-                error: "No se pudo analizar la URL proporcionada.",
-                detalles: error.message 
-            });
+            res.status(500).json({ error: "No se pudo analizar la URL proporcionada.", detalles: error.message });
         }
     });
 
@@ -128,7 +122,6 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
         }
 
         try {
-            // 1. Estrenos (Now Playing)
             const estrenosRes = await axios.get(`https://api.themoviedb.org/3/movie/now_playing?api_key=${TMDB_API_KEY}&language=es-ES&page=1`);
             const estrenos = estrenosRes.data.results.slice(0, 10).map(m => ({
                 id: m.id,
@@ -138,7 +131,6 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
                 tipo: 'movie'
             }));
 
-            // 2. Tendencias (Trending General)
             const tendenciasRes = await axios.get(`https://api.themoviedb.org/3/trending/all/day?api_key=${TMDB_API_KEY}&language=es-ES`);
             const tendencias = tendenciasRes.data.results.slice(0, 10).map(t => ({
                 id: t.id,
@@ -148,17 +140,14 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
                 tipo: t.media_type
             }));
 
-            // 3. Carrusel Temático Automatizado (Basado en el mes actual)
             const currentMonth = new Date().getMonth(); 
             let themeName = 'Destacados del Mes';
-            let genreId = 28; // Acción por defecto
+            let genreId = 28; 
 
-            if (currentMonth === 9) { // Octubre - Terror
-                themeName = 'Especial de Halloween';
-                genreId = 27; 
-            } else if (currentMonth === 11) { // Diciembre - Familiar
-                themeName = 'Especial Navideño';
-                genreId = 10751; 
+            if (currentMonth === 9) { 
+                themeName = 'Especial de Halloween'; genreId = 27; 
+            } else if (currentMonth === 11) { 
+                themeName = 'Especial Navideño'; genreId = 10751; 
             }
 
             const tematicoRes = await axios.get(`https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}&language=es-ES&with_genres=${genreId}&sort_by=popularity.desc&page=1`);
@@ -172,7 +161,6 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
                 }))
             };
 
-            // 4. Categorías Dinámicas Básicas
             const categorias = [
                 { titulo: "Acción", query: "Películas de Acción", color: "0xFFE91E63" },
                 { titulo: "Terror", query: "Películas de Terror", color: "0xFFFF5722" },
@@ -180,14 +168,8 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
                 { titulo: "Comedia", query: "Películas de Comedia", color: "0xFF00BCD4" }
             ];
 
-            const respuestaFinal = {
-                estrenos,
-                tendencias,
-                carruselTematico,
-                categorias
-            };
-
-            cache.set(cacheKey, respuestaFinal, 3600); // Caché de 1 hora
+            const respuestaFinal = { estrenos, tendencias, carruselTematico, categorias };
+            cache.set(cacheKey, respuestaFinal, 3600); 
             res.json(respuestaFinal);
 
         } catch (error) {
@@ -295,7 +277,7 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
                 }
             }
 
-            // 5. EL BUSCADOR UNIVERSAL (Mejorado con DDG Lite y sufijos)
+            // 5. EL BUSCADOR UNIVERSAL (Cambiado a BING para evitar bloqueos del servidor)
             try {
                 const userAgents = [
                     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -303,39 +285,31 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
                 ];
                 const randomUserAgent = userAgents[Math.floor(Math.random() * userAgents.length)];
 
-                // Generación automática de términos
-                const terminosExtra = "ver online gratis latino cuevana pelisplus";
-                const queryModificado = `${query} ${terminosExtra}`;
+                // Generación automática de términos más limpios
+                const queryModificado = `${query} ver online gratis latino pelicula serie`;
 
-                const formData = new URLSearchParams();
-                formData.append('q', queryModificado);
-                if (page > 1) {
-                    const skip = (page - 1) * 20;
-                    formData.append('s', skip.toString());
-                }
+                // Paginación en Bing (el parámetro 'first' indica desde qué resultado iniciar)
+                const startIndex = (page - 1) * 10 + 1;
+                const bingUrl = `https://www.bing.com/search?q=${encodeURIComponent(queryModificado)}&first=${startIndex}`;
 
-                const scraperRes = await axios.post(`https://lite.duckduckgo.com/lite/`, formData.toString(), {
+                const scraperRes = await axios.get(bingUrl, {
                     headers: {
                         'User-Agent': randomUserAgent,
                         'Accept': 'text/html,application/xhtml+xml',
-                        'Content-Type': 'application/x-www-form-urlencoded',
-                        'Origin': 'https://lite.duckduckgo.com',
-                        'Referer': 'https://lite.duckduckgo.com/'
+                        'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8'
                     },
                     timeout: 15000
                 });
 
                 const $ = cheerio.load(scraperRes.data);
                 
-                $('tr').each((index, element) => {
+                $('.b_algo').each((index, element) => {
                     if (enlacesFinales.length >= 15 * page) return false; 
 
-                    const resultCell = $(element).find('td.result-snippet');
-                    const titleElement = $(element).prev('tr').find('a.result-url'); 
-                    
+                    const titleElement = $(element).find('h2 a'); 
                     const rawTitle = titleElement.text().trim();
                     const rawUrl = titleElement.attr('href');
-                    const snippet = resultCell.text().trim();
+                    const snippet = $(element).find('.b_caption p, .b_algoSlug').text().trim();
 
                     if (rawTitle && rawUrl && rawUrl.startsWith('http')) {
                         let dominio = 'Web';
@@ -359,7 +333,7 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
                     }
                 });
             } catch (scrapeError) {
-                console.log(`[ZYRO] Scraping DDG Lite falló para "${query}":`, scrapeError.message);
+                console.log(`[ZYRO] Scraping BING falló para "${query}":`, scrapeError.message);
             }
 
             // 6. BUSCAR EN TU MONGODB
@@ -396,7 +370,15 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
                 paginaActual: page
             };
 
-            cache.set(cacheKey, respuestaFinal, 3600);
+            // FIX DEL CACHÉ: Si no encontró enlaces, solo cachea por 30 segundos (así vuelve a intentar pronto).
+            // Si sí encontró enlaces exitosamente, lo cachea por 1 hora (3600 segs).
+            if (enlacesFinales.length > 0) {
+                cache.set(cacheKey, respuestaFinal, 3600);
+            } else {
+                console.log(`[ZYRO] Búsqueda vacía para "${query}". Cacheando solo por 30 segs.`);
+                cache.set(cacheKey, respuestaFinal, 30);
+            }
+            
             res.json(respuestaFinal);
 
         } catch (error) {
