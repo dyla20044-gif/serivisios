@@ -12,6 +12,7 @@ const cron = require('node-cron');
 const NodeCache = require('node-cache');
 const fs = require('fs'); 
 const path = require('path'); 
+const initZyroEngine = require('./zyroEngine.js');
 
 const embedCache = new NodeCache({ stdTTL: 86400, checkperiod: 600 });
 const countsCache = new NodeCache({ stdTTL: 900, checkperiod: 120 });
@@ -27,6 +28,7 @@ const catalogCache = new NodeCache({ stdTTL: 3600, checkperiod: 600 });
 const CATALOG_CACHE_KEY = 'full_catalog_list'; 
 const RECENT_CACHE_KEY = 'recent_content_main'; 
 const userCache = new NodeCache({ stdTTL: 21600, checkperiod: 1200 });
+const zyroCache = new NodeCache({ stdTTL: 3600, checkperiod: 600 });
 
 let coinWriteBuffer = {};
 
@@ -68,11 +70,11 @@ const MONGO_DB_NAME = process.env.MONGO_DB_NAME || 'sala_cine';
 
 // Configuración de Costos y Límites (Admins)
 const REVENUE_SETTINGS = {
-    estreno_peli: 1.00, // USD
-    catalogo_peli: 0.50, // USD
-    episodio_serie: 0.25, // USD
-    limit_daily: 10.00, // USD
-    limit_monthly: 30.00, // USD
+    estreno_peli: 1.00,
+    catalogo_peli: 0.50,
+    episodio_serie: 0.25,
+    limit_daily: 10.00,
+    limit_monthly: 30.00,
     months_to_be_estreno: 6
 };
 
@@ -114,15 +116,14 @@ const adminState = {};
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// --- NUEVO: SISTEMA DE ALERTA DE TRÁFICO ---
+// SISTEMA DE ALERTA DE TRÁFICO
 let trafficCount = 0;
 let lastTrafficAlert = 0;
-const TRAFFIC_THRESHOLD = 300; // Peticiones por minuto para considerar tráfico alto
+const TRAFFIC_THRESHOLD = 300; 
 setInterval(() => { trafficCount = 0; }, 60000);
 
 app.use((req, res, next) => {
     trafficCount++;
-    // Si hay tráfico alto y ha pasado al menos 1 hora desde la última notificación
     if (trafficCount > TRAFFIC_THRESHOLD && (Date.now() - lastTrafficAlert > 3600000)) {
         lastTrafficAlert = Date.now();
         if (ADMIN_CHAT_ID_2) {
@@ -223,21 +224,18 @@ function countsCacheMiddleware(req, res, next) {
     next();
 }
 
-// --- FUNCIONES AUXILIARES DE GANANCIAS ---
+// FUNCIONES AUXILIARES DE GANANCIAS
 
 /**
- * Calcula y registra la ganancia para el uploader (Soporta ambos admins, corrige tipos, usa findOne/updateOne, implementa tasas dinámicas)
+ * Calcula y registra la ganancia para el uploader
  */
 async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title, season = null, episode = null }) {
-    // 1. Corrección de Tipos: Parsear como Number de forma segura
     const uploaderNum = Number(uploaderId);
 
-    // Permitimos a cualquier ID dentro de ADMIN_CHAT_IDS (Admin 1 y Admin 2)
     if (!mongoDb || isNaN(uploaderNum) || !ADMIN_CHAT_IDS.includes(uploaderNum)) {
         return { appliedRevenue: 0, status: 'skipped_not_admin' };
     }
 
-    // Evitar duplicados (ej: re-subir una película o mismo episodio)
     const existingQuery = { tmdbId: tmdbId.toString(), season, episode };
     const existingEntry = await mongoDb.collection(COLL_REVENUE).findOne(existingQuery);
     if (existingEntry) {
@@ -245,15 +243,14 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
         return { appliedRevenue: 0, status: 'skipped_duplicate' };
     }
 
-    let contentType = 'catalogo'; // catalogo o estreno
+    let contentType = 'catalogo';
     let basePrice = 0;
     const now = new Date();
-    const dayId = now.toISOString().split('T')[0]; // YYYY-MM-DD
-    const monthId = dayId.substring(0, 7); // YYYY-MM
+    const dayId = now.toISOString().split('T')[0];
+    const monthId = dayId.substring(0, 7);
 
     try {
         if (mediaType === 'movie') {
-            // Consultar TMDB para release_date
             const tmdbUrl = `https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${TMDB_API_KEY}&language=es-MX`;
             try {
                 const resp = await axios.get(tmdbUrl);
@@ -270,25 +267,21 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
                         basePrice = REVENUE_SETTINGS.catalogo_peli;
                     }
                 } else {
-                    // Si no hay fecha, asumimos catálogo por seguridad
                     basePrice = REVENUE_SETTINGS.catalogo_peli;
                 }
             } catch (tmdbErr) {
                 console.error(`[Revenue] Error consultando TMDB para ${tmdbId}:`, tmdbErr.message);
-                basePrice = REVENUE_SETTINGS.catalogo_peli; // Fallback
+                basePrice = REVENUE_SETTINGS.catalogo_peli; 
             }
         } else {
-            // Es episodio de serie
             contentType = 'episodio';
             basePrice = REVENUE_SETTINGS.episodio_serie;
         }
 
-        // --- LÓGICA DE LÍMITES Y TASAS DINÁMICAS ---
-        // 2. Usar findOne para obtener el estado actual y evitar bugs de findOneAndUpdate
+        // LÓGICA DE LÍMITES Y TASAS DINÁMICAS
         let dailyStats = await mongoDb.collection(COLL_DAILY_STATS).findOne({ uploaderId: uploaderNum, dayId });
         let currentDaily = dailyStats ? (dailyStats.today_earned || 0) : 0;
 
-        // Calcular acumulado mensual (sumando días del mes actual)
         const monthlyDocs = await mongoDb.collection(COLL_DAILY_STATS)
             .find({ uploaderId: uploaderNum, monthId })
             .project({ today_earned: 1 })
@@ -301,19 +294,16 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
         let status = '';
         let rateApplied = "100%";
 
-        // Verificar límite Mensual primero
         if (currentMonthEarned >= REVENUE_SETTINGS.limit_monthly) {
             finalEarned = 0;
             limitReached = true;
             status = 'limit_monthly_reached';
         }
-        // Verificar límite Diario absoluto
         else if (currentDaily >= REVENUE_SETTINGS.limit_daily) {
             finalEarned = 0; 
             limitReached = true;
             status = 'limit_daily_reached';
         } else {
-            // 3. Sistema de Tasa Dinámica
             let currentBase = basePrice;
             if (currentDaily >= 9.00) {
                 currentBase = basePrice * 0.25;
@@ -323,7 +313,6 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
                 rateApplied = "50%";
             }
 
-            // Asegurar que no se pase del tope máximo diario
             if (currentDaily + currentBase > REVENUE_SETTINGS.limit_daily) {
                 finalEarned = REVENUE_SETTINGS.limit_daily - currentDaily;
             } else {
@@ -332,7 +321,6 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
             status = 'applied';
         }
 
-        // Guardar estadísticas actualizadas
         if (!dailyStats) {
             await mongoDb.collection(COLL_DAILY_STATS).insertOne({
                 uploaderId: uploaderNum,
@@ -357,7 +345,6 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
             );
         }
 
-        // Registrar registro individual de ganancia
         const revenueRecord = {
             uploaderId: uploaderNum,
             tmdbId: tmdbId.toString(),
@@ -365,7 +352,7 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
             title,
             season,
             episode,
-            contentType, // estreno, catalogo, episodio
+            contentType, 
             basePrice,
             earned: finalEarned,
             limitReached,
@@ -378,8 +365,6 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
 
         console.log(`[Revenue] ${status} for ${title} (Uploader: ${uploaderNum}). Earned: $${finalEarned} (Base: $${basePrice}, Tasa: ${rateApplied}). Today: $${(currentDaily + finalEarned).toFixed(2)}`);
         
-        // 4. Feedback Interactivo (Eliminado según solicitud para evitar spam en cada subida)
-
         return { appliedRevenue: finalEarned, status };
 
     } catch (error) {
@@ -388,7 +373,7 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
     }
 }
 
-// --- ENDPOINTS DE LA API ---
+// ENDPOINTS DE LA API
 
 app.get('/api/content/featured', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
@@ -545,7 +530,6 @@ app.get('/api/content/catalog', async (req, res) => {
         res.status(500).json({ error: "Error interno al obtener catálogo." });
     }
 });
-
 
 app.get('/api/content/local', verifyIdToken, async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
@@ -1680,9 +1664,7 @@ app.post('/api/increment-likes', async (req, res) => {
     } catch (error) { console.error("Error increment-likes:", error); res.status(500).json({ error: "Error interno." }); }
 });
 
-// ==========================================
-// 💡 AQUÍ ESTÁ EL CAMBIO PRINCIPAL PARA PELÍCULAS
-// ==========================================
+// 💡 CAMBIO PRINCIPAL PARA PELÍCULAS
 app.post('/add-movie', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "BD no disponible." });
     try {
@@ -1692,9 +1674,7 @@ app.post('/add-movie', async (req, res) => {
         
         const cleanTmdbId = String(tmdbId).trim();
 
-        // 1. Buscamos cómo estaba la película ANTES de actualizarla
         const docAnterior = await mongoDb.collection('media_catalog').findOne({ tmdbId: cleanTmdbId });
-        // 2. Verificamos si era un "documento fantasma" (es decir, existía por las vistas pero no tenía enlaces reales)
         const eraFantasma = !docAnterior || !(docAnterior.freeEmbedCode || docAnterior.proEmbedCode);
 
         const updateQuery = { 
@@ -1721,9 +1701,7 @@ app.post('/add-movie', async (req, res) => {
         
         const result = await mongoDb.collection('media_catalog').updateOne({ tmdbId: cleanTmdbId }, updateQuery, { upsert: true });
 
-        // --- LÓGICA DE GANANCIAS CORREGIDA ---
         let revenueInfo = null;
-        // Paga si no existía en absoluto, O si existía pero era un documento fantasma (sin links)
         if (eraFantasma && uploaderId) {
             revenueInfo = await calculateAndRecordRevenue({
                 uploaderId,
@@ -1760,9 +1738,7 @@ app.post('/add-movie', async (req, res) => {
     } catch (error) { console.error("Error add-movie:", error); res.status(500).json({ error: 'Error interno.' }); }
 });
 
-// ==========================================
-// 💡 AQUÍ ESTÁ EL CAMBIO PRINCIPAL PARA SERIES
-// ==========================================
+// 💡 CAMBIO PRINCIPAL PARA SERIES
 app.post('/add-series-episode', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "BD no disponible." });
     try {
@@ -1774,10 +1750,8 @@ app.post('/add-series-episode', async (req, res) => {
         const sNum = parseInt(seasonNumber);
         const eNum = parseInt(episodeNumber);
 
-        // Primero verificamos si el episodio específico YA existe con enlaces para no pagar doble
         const seriesDoc = await mongoDb.collection('series_catalog').findOne({ tmdbId: cleanTmdbId });
         const epData = seriesDoc?.seasons?.[sNum]?.episodes?.[eNum];
-        // Comprueba específicamente si ya tenía los enlaces configurados
         const episodeTeniaLinks = epData && (epData.freeEmbedCode || epData.proEmbedCode);
 
         const episodePath = `seasons.${sNum}.episodes.${eNum}`;
@@ -1805,9 +1779,7 @@ app.post('/add-series-episode', async (req, res) => {
         
         await mongoDb.collection('series_catalog').updateOne({ tmdbId: cleanTmdbId }, updateData, { upsert: true });
         
-        // --- LÓGICA DE GANANCIAS CORREGIDA ---
         let revenueInfo = null;
-        // Solo pagamos si NO tenía enlaces antes
         if (!episodeTeniaLinks && uploaderId) {
             revenueInfo = await calculateAndRecordRevenue({
                 uploaderId,
@@ -1878,10 +1850,9 @@ app.post('/delete-series-episode', async (req, res) => {
     }
 });
 
-// --- ENDPOINT DE ESTADÍSTICAS PARA BOT ---
+// ENDPOINT DE ESTADÍSTICAS PARA BOT
 
 app.get('/api/admin/uploader-stats', verifyIdToken, verifyInternalAdmin, async (req, res) => {
-    // Permite que un admin consulte las estadísticas de otro especificando el ID por query string
     const targetUploaderId = parseInt(req.query.uploaderId) || parseInt(req.uid) || ADMIN_CHAT_ID_2;
 
     if (!mongoDb || isNaN(targetUploaderId)) {
@@ -1893,7 +1864,6 @@ app.get('/api/admin/uploader-stats', verifyIdToken, verifyInternalAdmin, async (
     const monthId = dayId.substring(0, 7);
 
     try {
-        // 1. Totales Históricos
         const historicalStats = await mongoDb.collection(COLL_REVENUE).aggregate([
             { $match: { uploaderId: targetUploaderId } },
             { $group: {
@@ -1908,10 +1878,8 @@ app.get('/api/admin/uploader-stats', verifyIdToken, verifyInternalAdmin, async (
 
         const hist = historicalStats[0] || { totalEarned: 0, totalMovies: 0, totalEpisodes: 0, totalEstrenos: 0, totalCatalogos: 0 };
 
-        // 2. Estadísticas de Hoy
         const todayStats = await mongoDb.collection(COLL_DAILY_STATS).findOne({ uploaderId: targetUploaderId, dayId });
         
-        // 3. Estadísticas del Mes
         const monthlyDocs = await mongoDb.collection(COLL_DAILY_STATS)
             .find({ uploaderId: targetUploaderId, monthId })
             .toArray();
@@ -2056,7 +2024,7 @@ async function sendNotificationToTopic(title, body, imageUrl, tmdbId, mediaType,
     }
 }
 
-// --- RECORDATORIO CRON PARA MAXIMIZAR GANANCIAS ---
+// RECORDATORIO CRON PARA MAXIMIZAR GANANCIAS
 cron.schedule('0 18 * * *', () => {
     if (ADMIN_CHAT_ID_2) {
         bot.sendMessage(ADMIN_CHAT_ID_2, '🔥 ¡Empieza la hora pico! El CPM está subiendo. ¡Es el momento ideal para subir contenido y maximizar ganancias! 🚀💰');
@@ -2082,6 +2050,8 @@ async function startServer() {
         sendNotificationToTopic,
         userCache 
     );
+
+    initZyroEngine(app, () => mongoDb, zyroCache, TMDB_API_KEY);
 
     app.listen(PORT, () => {
         console.log(`🚀 Servidor de backend Sala Cine iniciado en puerto ${PORT}`);
