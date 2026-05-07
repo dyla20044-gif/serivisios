@@ -22,13 +22,12 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
             let mediaType = 'movie';
             let tituloOficial = query;
 
-            // 2. BUSCAR EN TMDB (Solo para detectar si es Película o Serie)
+            // 2. BUSCAR EN TMDB (Prioridad para Películas o Series)
             try {
                 const tmdbRes = await axios.get(`https://api.themoviedb.org/3/search/multi?api_key=${TMDB_API_KEY}&language=es-ES&query=${encodeURIComponent(query)}`);
                 const results = tmdbRes.data.results;
 
                 if (results && results.length > 0) {
-                    // Solo tomamos el resultado si TMDB está SEGURO de que es una peli o serie
                     const bestMatch = results.find(r => r.media_type === 'movie' || r.media_type === 'tv');
                     
                     if (bestMatch) {
@@ -47,9 +46,10 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
                 }
             } catch (tmdbError) {
                 console.log("[ZYRO] TMDB no detectó película/serie o falló:", tmdbError.message);
+                // No detenemos la ejecución, pasamos a la búsqueda web
             }
 
-            // 3. METADATA GENÉRICO (Para búsquedas como "Facebook", "Noticias", etc.)
+            // 3. METADATA GENÉRICO (Fallback si no es película/serie)
             if (!metadata) {
                 metadata = {
                     tmdb_id: null,
@@ -60,7 +60,7 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
                 };
             }
 
-            // 4. BUSCAR EN TU MONGODB (Solo buscará si es una película/serie que tengas guardada)
+            // 4. BUSCAR EN TU MONGODB (Enlaces personalizados de la comunidad)
             const db = getDb();
             if (db) {
                 const dbQuery = { 
@@ -87,7 +87,7 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
                 }
             }
 
-            // 5. PROVEEDORES OFICIALES (Solo si es película/serie con TMDB ID)
+            // 5. PROVEEDORES OFICIALES (TMDB Watch Providers)
             if (tmdbId) {
                 try {
                     const providersRes = await axios.get(`https://api.themoviedb.org/3/${mediaType}/${tmdbId}/watch/providers?api_key=${TMDB_API_KEY}`);
@@ -111,21 +111,31 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
                 }
             }
 
-            // 6. EL BUSCADOR UNIVERSAL (Scraping Inteligente sin filtros ocultos)
+            // 6. EL BUSCADOR UNIVERSAL (Scraping Inteligente Anti-Bloqueos)
             try {
-                // Buscamos EXACTAMENTE lo que el usuario escribió (Ej: "Facebook login")
+                // Lista de User-Agents modernos para evadir bloqueos de Render/DuckDuckGo
+                const userAgents = [
+                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15',
+                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0',
+                    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Edge/120.0.0.0 Safari/537.36'
+                ];
+                const randomUserAgent = userAgents[Math.floor(Math.random() * userAgents.length)];
+
+                // Timeout configurado a 15 segundos exactos
                 const scraperRes = await axios.get(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`, {
                     headers: {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36',
+                        'User-Agent': randomUserAgent,
                         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
                         'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8'
                     },
-                    timeout: 8000 // 8 segundos para asegurar que la web responda
+                    timeout: 15000 // 15 segundos máximo
                 });
 
                 const $ = cheerio.load(scraperRes.data);
                 
-                // Extraemos hasta 15 resultados para dar buena variedad de navegación
+                // Extraemos hasta 15 resultados
                 $('.result').each((index, element) => {
                     if (index >= 15) return false; 
 
@@ -134,7 +144,7 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
                     const snippet = $(element).find('.result__snippet').text().trim();
 
                     if (rawTitle && rawUrl) {
-                        // Limpiar la URL de protección (Desencriptar el uddg de DuckDuckGo)
+                        // Limpieza de URL para WebView (Desencriptar uddg)
                         let cleanUrl = rawUrl;
                         if (rawUrl.includes('uddg=')) {
                             try {
@@ -144,17 +154,20 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
                                     cleanUrl = decodeURIComponent(uddgParam);
                                 }
                             } catch (e) {
-                                // Fallback silencioso
+                                // Mantenemos la rawUrl si falla el parseo
                             }
                         }
 
-                        // Extraer el dominio para que se vea limpio en la UI de Android
+                        // Evitar enlaces internos extraños o relativos
+                        if (!cleanUrl.startsWith('http')) return true;
+
+                        // Extraer el dominio limpio
                         let dominio = 'Web';
                         try {
                             dominio = new URL(cleanUrl).hostname.replace('www.', '');
                         } catch (e) {}
 
-                        // Insertamos CUALQUIER resultado web
+                        // Insertamos en el formato estricto JSON
                         enlacesFinales.push({
                             sitioWeb: dominio,
                             titulo: rawTitle,
@@ -166,10 +179,11 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
                     }
                 });
             } catch (scrapeError) {
-                console.log(`[ZYRO] El scraping web falló para "${query}":`, scrapeError.message);
+                // Fallback seguro: Si el scraping falla o hace timeout, avisamos en consola pero NO tumbamos la app
+                console.log(`[ZYRO] Scraping web falló o excedió timeout de 15s para "${query}":`, scrapeError.message);
             }
 
-            // 7. EMPAQUETAR Y ENVIAR A ANDROID
+            // 7. EMPAQUETAR Y ENVIAR A ANDROID (Estructura Estricta)
             const respuestaFinal = {
                 metadata: metadata,
                 enlaces: enlacesFinales
@@ -182,7 +196,17 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
 
         } catch (error) {
             console.error("[ZYRO] Error crítico procesando búsqueda:", error);
-            res.status(500).json({ error: "Error interno del servidor ZYRO" });
+            // Respuesta fallback en caso de error general para que la UI no colapse
+            res.status(500).json({ 
+                metadata: {
+                    tmdb_id: null,
+                    titulo: query,
+                    poster: null,
+                    tipo: "error",
+                    descripcion: "Hubo un problema procesando la búsqueda."
+                },
+                enlaces: [] 
+            });
         }
     });
 };
