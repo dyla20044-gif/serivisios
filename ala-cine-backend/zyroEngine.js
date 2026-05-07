@@ -44,6 +44,7 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
             let capitulos = [];
             let fuentes_extra = [];
 
+            // 1. Contar Temporadas
             const textoBody = $('body').text().toLowerCase();
             const seasonMatches = textoBody.match(/temporada\s*\d+|season\s*\d+/g);
             
@@ -54,12 +55,14 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
                 temporadasCount = $('select option:contains("Temporada"), ul.seasons li, div.season-tab').length;
             }
 
+            // 2. Extraer Capítulos
             $('a, li, div.episode, div.capitulo').each((index, element) => {
                 const el = $(element);
                 const texto = el.text().trim();
                 const lowerTexto = texto.toLowerCase();
                 let href = el.attr('href') || el.find('a').attr('href');
 
+                // Busca patrones de capítulos (Capítulo 1, Episodio 2, 1x01, E01, etc.)
                 const pareceCapitulo = /cap[íi]tulo\s*\d+|episodio\s*\d+|\d+x\d+|e\d+/i.test(lowerTexto);
 
                 if (pareceCapitulo && href) {
@@ -72,6 +75,7 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
                 }
             });
 
+            // 3. Extraer Fuentes de Video
             const videoRegex = /(https?:\/\/[^\s"'<>]+?\.(m3u8|mp4))/gi;
             const videoMatches = html.match(videoRegex) || [];
             videoMatches.forEach(v => fuentes_extra.push(v));
@@ -96,7 +100,7 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
                 fuentes_extra: fuentes_extra
             };
 
-            // Solo cachear por 30 mins si encontró al menos capítulos o fuentes. Si falló, cachea 30 segs.
+            // Caché: 30 mins (1800s) si hay éxito, 30s si falló o no encontró nada útil
             if (capitulos.length > 0 || fuentes_extra.length > 0) {
                 cache.set(cacheKey, respuestaAnalisis, 1800);
             } else {
@@ -202,7 +206,7 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
             let tituloOficial = query;
             let anioEstreno = null;
 
-            // 2. BUSCAR EN TMDB
+            // 1. BUSCAR EN TMDB
             try {
                 const tmdbRes = await axios.get(`https://api.themoviedb.org/3/search/multi?api_key=${TMDB_API_KEY}&language=es-ES&query=${encodeURIComponent(query)}&page=${page}`);
                 const results = tmdbRes.data.results;
@@ -240,7 +244,7 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
                 console.log("[ZYRO] TMDB falló:", tmdbError.message);
             }
 
-            // 3. METADATA GENÉRICO (Fallback)
+            // 2. METADATA GENÉRICO (Fallback)
             if (!metadata && page === 1) {
                 metadata = {
                     tmdb_id: null,
@@ -252,7 +256,7 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
                 };
             }
 
-            // 4. PROVEEDORES OFICIALES
+            // 3. PROVEEDORES OFICIALES
             if (tmdbId && page === 1) {
                 try {
                     const providersRes = await axios.get(`https://api.themoviedb.org/3/${mediaType}/${tmdbId}/watch/providers?api_key=${TMDB_API_KEY}`);
@@ -277,66 +281,76 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
                 }
             }
 
-            // 5. EL BUSCADOR UNIVERSAL (Cambiado a BING para evitar bloqueos del servidor)
+            // 4. EL BUSCADOR UNIVERSAL (SearXNG con Rotación)
             try {
-                const userAgents = [
-                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15'
+                const searxInstances = [
+                    'https://searx.tiekoetter.com',
+                    'https://priv.au',
+                    'https://searxng.site',
+                    'https://searxng.website',
+                    'https://searx.oloke.xyz',
+                    'https://searxng.deggo.fyi',
+                    'https://opnxng.com'
                 ];
-                const randomUserAgent = userAgents[Math.floor(Math.random() * userAgents.length)];
 
-                // Generación automática de términos más limpios
+                // Sufijos optimizados para resultados de streaming
                 const queryModificado = `${query} ver online gratis latino pelicula serie`;
+                let searxExito = false;
 
-                // Paginación en Bing (el parámetro 'first' indica desde qué resultado iniciar)
-                const startIndex = (page - 1) * 10 + 1;
-                const bingUrl = `https://www.bing.com/search?q=${encodeURIComponent(queryModificado)}&first=${startIndex}`;
+                for (const instancia of searxInstances) {
+                    if (searxExito) break; // Si ya se obtuvo respuesta, salir del loop
+                    if (enlacesFinales.length >= 15 * page) break;
 
-                const scraperRes = await axios.get(bingUrl, {
-                    headers: {
-                        'User-Agent': randomUserAgent,
-                        'Accept': 'text/html,application/xhtml+xml',
-                        'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8'
-                    },
-                    timeout: 15000
-                });
-
-                const $ = cheerio.load(scraperRes.data);
-                
-                $('.b_algo').each((index, element) => {
-                    if (enlacesFinales.length >= 15 * page) return false; 
-
-                    const titleElement = $(element).find('h2 a'); 
-                    const rawTitle = titleElement.text().trim();
-                    const rawUrl = titleElement.attr('href');
-                    const snippet = $(element).find('.b_caption p, .b_algoSlug').text().trim();
-
-                    if (rawTitle && rawUrl && rawUrl.startsWith('http')) {
-                        let dominio = 'Web';
-                        try { 
-                            const urlObj = new URL(rawUrl);
-                            dominio = urlObj.hostname.replace('www.', ''); 
-                        } catch (e) {}
-
-                        const imgIcon = `https://icon.horse/icon/${dominio}`;
-
-                        enlacesFinales.push({
-                            sitioWeb: dominio,
-                            titulo: rawTitle,
-                            descripcion: snippet || `Resultado optimizado para ver "${query}" gratis.`,
-                            calidad: 'Web Scraping',
-                            urlDestino: rawUrl,
-                            categoria: 'Fuentes Alternativas',
-                            favicon: imgIcon,
-                            isPremium: false
+                    try {
+                        const searxUrl = `${instancia}/search?q=${encodeURIComponent(queryModificado)}&format=json&pageno=${page}&language=es`;
+                        
+                        const scraperRes = await axios.get(searxUrl, {
+                            timeout: 6000, // Timeout corto para iterar rápido si el server está saturado
+                            headers: {
+                                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                                'Accept': 'application/json'
+                            }
                         });
+
+                        const resultados = scraperRes.data.results;
+                        
+                        if (resultados && resultados.length > 0) {
+                            resultados.forEach(res => {
+                                if (enlacesFinales.length >= 15 * page) return;
+
+                                let dominio = 'Web';
+                                try { 
+                                    const urlObj = new URL(res.url);
+                                    dominio = urlObj.hostname.replace('www.', ''); 
+                                } catch (e) {}
+
+                                const imgIcon = `https://icon.horse/icon/${dominio}`;
+
+                                enlacesFinales.push({
+                                    sitioWeb: dominio,
+                                    titulo: res.title || "Resultado Web",
+                                    descripcion: res.content || `Resultado optimizado para ver "${query}" gratis.`,
+                                    calidad: 'SearXNG',
+                                    urlDestino: res.url,
+                                    categoria: 'Fuentes Alternativas',
+                                    favicon: imgIcon,
+                                    isPremium: false
+                                });
+                            });
+                            
+                            searxExito = true;
+                            console.log(`[ZYRO] SearXNG Scraping exitoso en la instancia: ${instancia}`);
+                        }
+                    } catch (instanciaError) {
+                        console.log(`[ZYRO] SearXNG falló en ${instancia}:`, instanciaError.message);
+                        // Continúa automáticamente a la siguiente instancia
                     }
-                });
+                }
             } catch (scrapeError) {
-                console.log(`[ZYRO] Scraping BING falló para "${query}":`, scrapeError.message);
+                console.log(`[ZYRO] Fallo crítico en el motor SearXNG para "${query}":`, scrapeError.message);
             }
 
-            // 6. BUSCAR EN TU MONGODB
+            // 5. BUSCAR EN TU MONGODB
             if (page === 1) {
                 const db = getDb();
                 if (db) {
@@ -362,7 +376,7 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
                 }
             }
 
-            // 7. EMPAQUETAR Y ENVIAR A ANDROID
+            // 6. EMPAQUETAR Y ENVIAR A ANDROID
             const respuestaFinal = {
                 metadata: page === 1 ? metadata : null,
                 sugerencias: sugerencias,
@@ -370,13 +384,12 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
                 paginaActual: page
             };
 
-            // FIX DEL CACHÉ: Si no encontró enlaces, solo cachea por 30 segundos (así vuelve a intentar pronto).
-            // Si sí encontró enlaces exitosamente, lo cachea por 1 hora (3600 segs).
+            // FIX DEL CACHÉ: 60 segundos si falla, 1 hora (3600 segs) si encuentra enlaces
             if (enlacesFinales.length > 0) {
                 cache.set(cacheKey, respuestaFinal, 3600);
             } else {
-                console.log(`[ZYRO] Búsqueda vacía para "${query}". Cacheando solo por 30 segs.`);
-                cache.set(cacheKey, respuestaFinal, 30);
+                console.log(`[ZYRO] Búsqueda vacía para "${query}". Cacheando solo por 60 segs.`);
+                cache.set(cacheKey, respuestaFinal, 60);
             }
             
             res.json(respuestaFinal);
