@@ -1,10 +1,10 @@
 const axios = require('axios');
-const cheerio = require('cheerio'); 
+const cheerio = require('cheerio'); // Motor de Scraping para búsquedas universales
 const { URLSearchParams } = require('url');
 
 module.exports = function(app, getDb, cache, TMDB_API_KEY) {
 
-    // --- ENDPOINT ORIGINAL: DEEP SCRAPING ---
+    // --- ENDPOINT INTACTO: DEEP SCRAPING ---
     app.get('/api/analyze-media', async (req, res) => {
         const { url } = req.query;
 
@@ -44,7 +44,6 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
             let capitulos = [];
             let fuentes_extra = [];
 
-            // 1. Contar Temporadas
             const textoBody = $('body').text().toLowerCase();
             const seasonMatches = textoBody.match(/temporada\s*\d+|season\s*\d+/g);
             
@@ -55,14 +54,12 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
                 temporadasCount = $('select option:contains("Temporada"), ul.seasons li, div.season-tab').length;
             }
 
-            // 2. Extraer Capítulos
             $('a, li, div.episode, div.capitulo').each((index, element) => {
                 const el = $(element);
                 const texto = el.text().trim();
                 const lowerTexto = texto.toLowerCase();
                 let href = el.attr('href') || el.find('a').attr('href');
 
-                // Busca patrones de capítulos (Capítulo 1, Episodio 2, 1x01, E01, etc.)
                 const pareceCapitulo = /cap[íi]tulo\s*\d+|episodio\s*\d+|\d+x\d+|e\d+/i.test(lowerTexto);
 
                 if (pareceCapitulo && href) {
@@ -75,7 +72,6 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
                 }
             });
 
-            // 3. Extraer Fuentes de Video
             const videoRegex = /(https?:\/\/[^\s"'<>]+?\.(m3u8|mp4))/gi;
             const videoMatches = html.match(videoRegex) || [];
             videoMatches.forEach(v => fuentes_extra.push(v));
@@ -100,7 +96,6 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
                 fuentes_extra: fuentes_extra
             };
 
-            // Caché: 30 mins (1800s) si hay éxito, 30s si falló o no encontró nada útil
             if (capitulos.length > 0 || fuentes_extra.length > 0) {
                 cache.set(cacheKey, respuestaAnalisis, 1800);
             } else {
@@ -115,7 +110,7 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
         }
     });
 
-    // --- ENDPOINT ORIGINAL: HOME DINÁMICO ---
+    // --- ENDPOINT INTACTO: HOME DINÁMICO ---
     app.get('/api/zyro-home', async (req, res) => {
         const cacheKey = 'zyro_home_data';
         const cachedResult = cache.get(cacheKey);
@@ -182,7 +177,7 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
         }
     });
 
-    // --- NUEVO ENDPOINT: RECIBIR Y GUARDAR SCRAPING DISTRIBUIDO (ANDROID) ---
+    // --- ENDPOINT RESTAURADO: GUARDAR SCRAPING DISTRIBUIDO (ANDROID) ---
     app.post('/api/zyro-save-scrape', async (req, res) => {
         const { query, enlaces } = req.body;
 
@@ -197,7 +192,6 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
             const queryNormalizada = query.toLowerCase().trim();
             const searchCacheCol = db.collection('zyro_search_cache');
 
-            // Actualiza o inserta (Upsert) los datos raspados por la comunidad
             await searchCacheCol.updateOne(
                 { query: queryNormalizada },
                 {
@@ -212,7 +206,7 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
             );
 
             console.log(`[ZYRO CROWDSOURCING] Nuevos datos guardados por la comunidad para: "${query}"`);
-            res.status(200).json({ success: true, message: "Datos guardados correctamente en la colmena." });
+            res.status(200).json({ success: true, message: "Datos guardados correctamente." });
 
         } catch (error) {
             console.error("[ZYRO CROWDSOURCING] Error guardando datos:", error.message);
@@ -220,7 +214,7 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
         }
     });
 
-    // --- ENDPOINT ORIGINAL MODIFICADO: BÚSQUEDA HÍBRIDA (CON CROWDSOURCING) ---
+    // --- ENDPOINT INTELIGENTE: BÚSQUEDA HÍBRIDA (FILTRO DE INTENCIÓN) ---
     app.get('/api/zyro-search', async (req, res) => {
         const { query } = req.query;
         const page = parseInt(req.query.page) || 1; 
@@ -231,12 +225,11 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
         const cachedResult = cache.get(cacheKey);
         
         if (cachedResult) {
-            console.log(`[ZYRO] Sirviendo desde RAM caché: ${query} (Página ${page})`);
+            console.log(`[ZYRO] Sirviendo desde caché: ${query} (Página ${page})`);
             return res.json(cachedResult);
         }
 
         try {
-            const db = getDb();
             let metadata = null;
             let enlacesFinales = [];
             let sugerencias = [];
@@ -244,13 +237,17 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
             let mediaType = 'movie';
             let tituloOficial = query;
             let anioEstreno = null;
+            
+            // LA MAGIA: El semáforo de intención
+            let isMovieIntent = false; 
 
-            // 1. BUSCAR METADATOS EN TMDB
+            // 1. BUSCAR EN TMDB Y EVALUAR INTENCIÓN
             try {
                 const tmdbRes = await axios.get(`https://api.themoviedb.org/3/search/multi?api_key=${TMDB_API_KEY}&language=es-ES&query=${encodeURIComponent(query)}&page=${page}`);
                 const results = tmdbRes.data.results;
 
                 if (results && results.length > 0) {
+                    // Filtramos sugerencias solo si son películas o series (ignoramos actores aquí)
                     sugerencias = results.filter(r => r.media_type === 'movie' || r.media_type === 'tv').map(r => ({
                         titulo: r.title || r.name,
                         imagen: r.poster_path ? `https://image.tmdb.org/t/p/w500${r.poster_path}` : 'https://via.placeholder.com/500x750?text=Sin+Poster',
@@ -261,6 +258,8 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
                         const bestMatch = results.find(r => r.media_type === 'movie' || r.media_type === 'tv');
                         
                         if (bestMatch) {
+                            // SI ES UNA PELÍCULA/SERIE: Activamos Modo Cine
+                            isMovieIntent = true;
                             tmdbId = bestMatch.id;
                             mediaType = bestMatch.media_type || 'movie';
                             tituloOficial = bestMatch.title || bestMatch.name;
@@ -280,22 +279,23 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
                     }
                 }
             } catch (tmdbError) {
-                console.log("[ZYRO] TMDB falló:", tmdbError.message);
+                console.log("[ZYRO] TMDB falló o no conectó:", tmdbError.message);
             }
 
-            // 2. METADATA GENÉRICO (Fallback)
+            // 2. METADATA GENÉRICO (Modo Google Profesional)
             if (!metadata && page === 1) {
                 metadata = {
                     tmdb_id: null,
                     titulo: query,
                     poster: null, 
                     tipo: 'web_search',
-                    descripcion: `Resultados universales de la red para: "${query}"`,
+                    descripcion: `Explorando resultados de la web para: "${query}"`,
                     anio: null
                 };
             }
 
-            // 3. ENLACES MANUALES (zyro_custom_links) - MÁXIMA PRIORIDAD
+            // 3. ENLACES MANUALES DE TU DB (Siempre Máxima Prioridad)
+            const db = getDb();
             if (db && page === 1) {
                 try {
                     const dbQuery = { $or: [ { titulo_pelicula: { $regex: new RegExp(query, "i") } } ] };
@@ -306,7 +306,7 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
                         enlacesFinales.push({
                             sitioWeb: link.sitioWeb,
                             titulo: link.titulo,
-                            descripcion: link.descripcion || "Enlace destacado y verificado.",
+                            descripcion: link.descripcion || "Enlace destacado y verificado por ZYRO.",
                             calidad: link.calidad || "Premium",
                             urlDestino: link.urlDestino,
                             categoria: link.categoria || "Destacado",
@@ -318,7 +318,7 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
                 }
             }
 
-            // 4. SMART CACHE DE LA COMUNIDAD (Scraping Distribuido desde MongoDB)
+            // 4. SMART CACHE DE LA COMUNIDAD
             if (db && page === 1) {
                 try {
                     const safeQuery = query.toLowerCase().trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -337,8 +337,8 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
                 }
             }
 
-            // 5. PROVEEDORES OFICIALES
-            if (tmdbId && page === 1) {
+            // 5. PROVEEDORES OFICIALES (Solo si es Película/Serie)
+            if (isMovieIntent && tmdbId && page === 1) {
                 try {
                     const providersRes = await axios.get(`https://api.themoviedb.org/3/${mediaType}/${tmdbId}/watch/providers?api_key=${TMDB_API_KEY}`);
                     const ecProviders = providersRes.data.results.EC || providersRes.data.results.US || providersRes.data.results.ES || {}; 
@@ -349,7 +349,7 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
                             enlacesFinales.push({
                                 sitioWeb: domain,
                                 titulo: `Ver en ${provider.provider_name}`,
-                                descripcion: `Disponible oficialmente en ${provider.provider_name}.`,
+                                descripcion: `Disponible oficialmente en plataforma.`,
                                 calidad: "Oficial",
                                 urlDestino: ecProviders.link || `https://www.google.com/search?q=${encodeURIComponent(tituloOficial)}+en+${provider.provider_name}`,
                                 categoria: "Fuentes Oficiales",
@@ -362,9 +362,8 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
                 }
             }
 
-            // 6. SCRAPING DESDE EL SERVIDOR (Fallback: Solo si la comunidad aún no ha aportado datos)
+            // 6. SCRAPING DESDE EL SERVIDOR (Fallback si la comunidad no ha enviado datos)
             if (enlacesFinales.length < 5) {
-                console.log(`[ZYRO] Pocos resultados para "${query}". Iniciando motor SearXNG en servidor...`);
                 try {
                     const searxInstances = [
                         'https://searx.tiekoetter.com',
@@ -376,7 +375,12 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
                         'https://opnxng.com'
                     ];
 
-                    const queryModificado = `${query} ver online gratis latino pelicula serie`;
+                    // EL FILTRO DE INTENCIÓN APLICADO AL SCRAPER
+                    // Si es película pirata, añade palabras clave. Si es búsqueda web normal, busca limpio.
+                    const queryModificado = isMovieIntent 
+                        ? `${query} ver online gratis latino pelicula serie` 
+                        : query;
+
                     let searxExito = false;
 
                     for (const instancia of searxInstances) {
@@ -411,20 +415,21 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
                                     enlacesFinales.push({
                                         sitioWeb: dominio,
                                         titulo: res.title || "Resultado Web",
-                                        descripcion: res.content || `Resultado optimizado para ver "${query}" gratis.`,
-                                        calidad: 'SearXNG',
+                                        // La descripción también se adapta de forma profesional
+                                        descripcion: res.content || (isMovieIntent ? `Enlace optimizado para ver contenido.` : `Resultado web para ${query}.`),
+                                        calidad: isMovieIntent ? 'SearXNG' : 'Web',
                                         urlDestino: res.url,
-                                        categoria: 'Fuentes Alternativas',
+                                        categoria: isMovieIntent ? 'Fuentes Alternativas' : 'Resultados Universales',
                                         favicon: imgIcon,
                                         isPremium: false
                                     });
                                 });
                                 
                                 searxExito = true;
-                                console.log(`[ZYRO] SearXNG Scraping exitoso en la instancia: ${instancia}`);
+                                console.log(`[ZYRO] Scraping exitoso en la instancia: ${instancia} (Modo Cine: ${isMovieIntent})`);
                             }
                         } catch (instanciaError) {
-                            // Continúa a la siguiente instancia
+                            // Continúa a la siguiente instancia si esta falla
                         }
                     }
                 } catch (scrapeError) {
@@ -440,9 +445,8 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
                 paginaActual: page
             };
 
-            // FIX DEL CACHÉ: 60 segundos si falla, 1 hora (3600 segs) si encuentra enlaces
             if (enlacesFinales.length > 0) {
-                cache.set(cacheKey, respuestaFinal, 3600);
+                cache.set(cacheKey, respuestaFinal, 3600); // Guardar en caché 1 hora
             } else {
                 console.log(`[ZYRO] Búsqueda vacía para "${query}". Cacheando solo por 60 segs.`);
                 cache.set(cacheKey, respuestaFinal, 60);
@@ -453,7 +457,7 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
         } catch (error) {
             console.error("[ZYRO] Error crítico procesando búsqueda híbrida:", error);
             res.status(500).json({ 
-                metadata: page === 1 ? { tmdb_id: null, titulo: query, tipo: "error", descripcion: "Error interno." } : null,
+                metadata: page === 1 ? { tmdb_id: null, titulo: query, tipo: "error", descripcion: "Error interno del buscador." } : null,
                 sugerencias: [], enlaces: [], paginaActual: page 
             });
         }
