@@ -281,34 +281,45 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
                 }
             }
 
-            // 4. EL BUSCADOR UNIVERSAL (SearXNG con Rotación)
+            // 4. EL BUSCADOR UNIVERSAL (SearXNG con Rotación y Camuflaje Avanzado)
             try {
                 const searxInstances = [
+                    'https://searx.be', 
+                    'https://search.mdosch.de',
                     'https://searx.tiekoetter.com',
-                    'https://priv.au',
-                    'https://searxng.site',
-                    'https://searxng.website',
-                    'https://searx.oloke.xyz',
-                    'https://searxng.deggo.fyi',
-                    'https://opnxng.com'
+                    'https://searx.work',
+                    'https://opnxng.com',
+                    'https://priv.au'
                 ];
 
-                // Sufijos optimizados para resultados de streaming
+                // Pool de User-Agents más modernos y variados
+                const userAgents = [
+                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+                    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3 Safari/605.1.15',
+                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0'
+                ];
+
                 const queryModificado = `${query} ver online gratis latino pelicula serie`;
                 let searxExito = false;
 
                 for (const instancia of searxInstances) {
-                    if (searxExito) break; // Si ya se obtuvo respuesta, salir del loop
-                    if (enlacesFinales.length >= 15 * page) break;
+                    if (searxExito || enlacesFinales.length >= 15 * page) break;
 
                     try {
+                        const randomUserAgent = userAgents[Math.floor(Math.random() * userAgents.length)];
                         const searxUrl = `${instancia}/search?q=${encodeURIComponent(queryModificado)}&format=json&pageno=${page}&language=es`;
                         
                         const scraperRes = await axios.get(searxUrl, {
-                            timeout: 6000, // Timeout corto para iterar rápido si el server está saturado
+                            timeout: 3500, // Timeout más corto (3.5s) para no hacer esperar al WebView si una bloquea
                             headers: {
-                                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                                'Accept': 'application/json'
+                                'User-Agent': randomUserAgent,
+                                'Accept': 'application/json, text/plain, */*',
+                                'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8',
+                                'Referer': 'https://www.google.com/',
+                                'DNT': '1', // Do Not Track (simula usuario real preocupado por privacidad)
+                                'Sec-Fetch-Dest': 'empty',
+                                'Sec-Fetch-Mode': 'cors',
+                                'Sec-Fetch-Site': 'cross-site'
                             }
                         });
 
@@ -342,12 +353,13 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
                             console.log(`[ZYRO] SearXNG Scraping exitoso en la instancia: ${instancia}`);
                         }
                     } catch (instanciaError) {
-                        console.log(`[ZYRO] SearXNG falló en ${instancia}:`, instanciaError.message);
-                        // Continúa automáticamente a la siguiente instancia
+                        // Logueamos solo el código de error para no saturar tu terminal de MongoDB
+                        const status = instanciaError.response ? instanciaError.response.status : 'Timeout/Error de red';
+                        console.log(`[ZYRO] SearXNG falló en ${instancia}: Error ${status}`);
                     }
                 }
             } catch (scrapeError) {
-                console.log(`[ZYRO] Fallo crítico en el motor SearXNG para "${query}":`, scrapeError.message);
+                console.log(`[ZYRO] Fallo crítico en el bloque SearXNG para "${query}":`, scrapeError.message);
             }
 
             // 5. BUSCAR EN TU MONGODB
