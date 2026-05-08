@@ -1,10 +1,10 @@
 const axios = require('axios');
-const cheerio = require('cheerio'); // Motor de Scraping para búsquedas universales
+const cheerio = require('cheerio'); // Se mantiene para el análisis profundo de media
 const { URLSearchParams } = require('url');
 
 module.exports = function(app, getDb, cache, TMDB_API_KEY) {
 
-    // --- ENDPOINT INTACTO: DEEP SCRAPING ---
+    // --- ENDPOINT: DEEP SCRAPING ---
     app.get('/api/analyze-media', async (req, res) => {
         const { url } = req.query;
 
@@ -44,6 +44,7 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
             let capitulos = [];
             let fuentes_extra = [];
 
+            // 1. Contar Temporadas
             const textoBody = $('body').text().toLowerCase();
             const seasonMatches = textoBody.match(/temporada\s*\d+|season\s*\d+/g);
             
@@ -54,12 +55,14 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
                 temporadasCount = $('select option:contains("Temporada"), ul.seasons li, div.season-tab').length;
             }
 
+            // 2. Extraer Capítulos
             $('a, li, div.episode, div.capitulo').each((index, element) => {
                 const el = $(element);
                 const texto = el.text().trim();
                 const lowerTexto = texto.toLowerCase();
                 let href = el.attr('href') || el.find('a').attr('href');
 
+                // Busca patrones de capítulos (Capítulo 1, Episodio 2, 1x01, E01, etc.)
                 const pareceCapitulo = /cap[íi]tulo\s*\d+|episodio\s*\d+|\d+x\d+|e\d+/i.test(lowerTexto);
 
                 if (pareceCapitulo && href) {
@@ -72,6 +75,7 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
                 }
             });
 
+            // 3. Extraer Fuentes de Video
             const videoRegex = /(https?:\/\/[^\s"'<>]+?\.(m3u8|mp4))/gi;
             const videoMatches = html.match(videoRegex) || [];
             videoMatches.forEach(v => fuentes_extra.push(v));
@@ -96,6 +100,7 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
                 fuentes_extra: fuentes_extra
             };
 
+            // Caché: 30 mins (1800s) si hay éxito, 30s si falló o no encontró nada útil
             if (capitulos.length > 0 || fuentes_extra.length > 0) {
                 cache.set(cacheKey, respuestaAnalisis, 1800);
             } else {
@@ -110,7 +115,7 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
         }
     });
 
-    // --- ENDPOINT INTACTO: HOME DINÁMICO ---
+    // --- ENDPOINT: HOME DINÁMICO ---
     app.get('/api/zyro-home', async (req, res) => {
         const cacheKey = 'zyro_home_data';
         const cachedResult = cache.get(cacheKey);
@@ -177,44 +182,40 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
         }
     });
 
-    // --- ENDPOINT RESTAURADO: GUARDAR SCRAPING DISTRIBUIDO (ANDROID) ---
+    // --- NUEVO ENDPOINT: ALIMENTACIÓN DEL CACHÉ COMUNITARIO ---
     app.post('/api/zyro-save-scrape', async (req, res) => {
         const { query, enlaces } = req.body;
-
-        if (!query || !enlaces || !Array.isArray(enlaces) || enlaces.length === 0) {
-            return res.status(400).json({ error: "Datos de scraping inválidos o vacíos." });
+        
+        if (!query || !enlaces || !Array.isArray(enlaces)) {
+            return res.status(400).json({ error: "Datos de scraping inválidos" });
         }
 
+        const db = getDb();
+        if (!db) return res.status(500).json({ error: "Sin conexión a la base de datos" });
+
         try {
-            const db = getDb();
-            if (!db) return res.status(500).json({ error: "No hay conexión a la base de datos." });
+            const scrapeData = {
+                query: query.toLowerCase().trim(),
+                enlaces: enlaces,
+                fecha_actualizacion: new Date()
+            };
 
-            const queryNormalizada = query.toLowerCase().trim();
-            const searchCacheCol = db.collection('zyro_search_cache');
-
-            await searchCacheCol.updateOne(
-                { query: queryNormalizada },
-                {
-                    $set: {
-                        query: queryNormalizada,
-                        enlaces: enlaces,
-                        fecha_actualizacion: new Date(),
-                        fuente: "Comunidad Android ZYRO"
-                    }
-                },
+            // Guarda o actualiza los datos obtenidos por los Headless WebViews de los clientes
+            await db.collection('zyro_community_cache').updateOne(
+                { query: scrapeData.query },
+                { $set: scrapeData },
                 { upsert: true }
             );
 
-            console.log(`[ZYRO CROWDSOURCING] Nuevos datos guardados por la comunidad para: "${query}"`);
-            res.status(200).json({ success: true, message: "Datos guardados correctamente." });
-
+            console.log(`[ZYRO] Caché comunitario actualizado silenciosamente para: "${query}"`);
+            res.status(200).json({ message: "Scraping integrado a la colmena con éxito" });
         } catch (error) {
-            console.error("[ZYRO CROWDSOURCING] Error guardando datos:", error.message);
-            res.status(500).json({ error: "Error interno del servidor al guardar el caché." });
+            console.error("[ZYRO] Error guardando scraping comunitario:", error.message);
+            res.status(500).json({ error: "Error de sincronización con la base de datos" });
         }
     });
 
-    // --- ENDPOINT INTELIGENTE: BÚSQUEDA HÍBRIDA (FILTRO DE INTENCIÓN) ---
+    // --- ENDPOINT MODIFICADO: BÚSQUEDA HÍBRIDA ---
     app.get('/api/zyro-search', async (req, res) => {
         const { query } = req.query;
         const page = parseInt(req.query.page) || 1; 
@@ -225,7 +226,7 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
         const cachedResult = cache.get(cacheKey);
         
         if (cachedResult) {
-            console.log(`[ZYRO] Sirviendo desde caché: ${query} (Página ${page})`);
+            console.log(`[ZYRO] Sirviendo desde caché híbrido: ${query} (Página ${page})`);
             return res.json(cachedResult);
         }
 
@@ -237,17 +238,13 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
             let mediaType = 'movie';
             let tituloOficial = query;
             let anioEstreno = null;
-            
-            // LA MAGIA: El semáforo de intención
-            let isMovieIntent = false; 
 
-            // 1. BUSCAR EN TMDB Y EVALUAR INTENCIÓN
+            // 1. BUSCAR EN TMDB (El Semáforo de Metadata)
             try {
                 const tmdbRes = await axios.get(`https://api.themoviedb.org/3/search/multi?api_key=${TMDB_API_KEY}&language=es-ES&query=${encodeURIComponent(query)}&page=${page}`);
                 const results = tmdbRes.data.results;
 
                 if (results && results.length > 0) {
-                    // Filtramos sugerencias solo si son películas o series (ignoramos actores aquí)
                     sugerencias = results.filter(r => r.media_type === 'movie' || r.media_type === 'tv').map(r => ({
                         titulo: r.title || r.name,
                         imagen: r.poster_path ? `https://image.tmdb.org/t/p/w500${r.poster_path}` : 'https://via.placeholder.com/500x750?text=Sin+Poster',
@@ -258,8 +255,6 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
                         const bestMatch = results.find(r => r.media_type === 'movie' || r.media_type === 'tv');
                         
                         if (bestMatch) {
-                            // SI ES UNA PELÍCULA/SERIE: Activamos Modo Cine
-                            isMovieIntent = true;
                             tmdbId = bestMatch.id;
                             mediaType = bestMatch.media_type || 'movie';
                             tituloOficial = bestMatch.title || bestMatch.name;
@@ -279,66 +274,23 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
                     }
                 }
             } catch (tmdbError) {
-                console.log("[ZYRO] TMDB falló o no conectó:", tmdbError.message);
+                console.log("[ZYRO] TMDB falló en metadata:", tmdbError.message);
             }
 
-            // 2. METADATA GENÉRICO (Modo Google Profesional)
+            // 2. METADATA GENÉRICO (Fallback Web)
             if (!metadata && page === 1) {
                 metadata = {
                     tmdb_id: null,
                     titulo: query,
                     poster: null, 
                     tipo: 'web_search',
-                    descripcion: `Explorando resultados de la web para: "${query}"`,
+                    descripcion: `Resultados universales de la red para: "${query}"`,
                     anio: null
                 };
             }
 
-            // 3. ENLACES MANUALES DE TU DB (Siempre Máxima Prioridad)
-            const db = getDb();
-            if (db && page === 1) {
-                try {
-                    const dbQuery = { $or: [ { titulo_pelicula: { $regex: new RegExp(query, "i") } } ] };
-                    if (tmdbId) dbQuery.$or.push({ tmdb_id: tmdbId });
-
-                    const customLinks = await db.collection('zyro_custom_links').find(dbQuery).toArray();
-                    customLinks.reverse().forEach(link => {
-                        enlacesFinales.push({
-                            sitioWeb: link.sitioWeb,
-                            titulo: link.titulo,
-                            descripcion: link.descripcion || "Enlace destacado y verificado por ZYRO.",
-                            calidad: link.calidad || "Premium",
-                            urlDestino: link.urlDestino,
-                            categoria: link.categoria || "Destacado",
-                            isPremium: true 
-                        });
-                    });
-                } catch(dbErr) {
-                    console.error("[ZYRO] Error obteniendo Custom Links:", dbErr.message);
-                }
-            }
-
-            // 4. SMART CACHE DE LA COMUNIDAD
-            if (db && page === 1) {
-                try {
-                    const safeQuery = query.toLowerCase().trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                    const fuzzyPattern = safeQuery.split('').join('.?'); 
-                    
-                    const cachedDbScrape = await db.collection('zyro_search_cache').findOne({
-                        query: { $regex: new RegExp(fuzzyPattern, 'i') }
-                    });
-
-                    if (cachedDbScrape && cachedDbScrape.enlaces && cachedDbScrape.enlaces.length > 0) {
-                        console.log(`[ZYRO] Smart Cache hit (Datos de la comunidad) para: "${query}"`);
-                        enlacesFinales.push(...cachedDbScrape.enlaces);
-                    }
-                } catch(err) {
-                    console.log("[ZYRO] Error buscando en caché de la comunidad:", err.message);
-                }
-            }
-
-            // 5. PROVEEDORES OFICIALES (Solo si es Película/Serie)
-            if (isMovieIntent && tmdbId && page === 1) {
+            // 3. PROVEEDORES OFICIALES PREMIUM
+            if (tmdbId && page === 1) {
                 try {
                     const providersRes = await axios.get(`https://api.themoviedb.org/3/${mediaType}/${tmdbId}/watch/providers?api_key=${TMDB_API_KEY}`);
                     const ecProviders = providersRes.data.results.EC || providersRes.data.results.US || providersRes.data.results.ES || {}; 
@@ -349,7 +301,7 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
                             enlacesFinales.push({
                                 sitioWeb: domain,
                                 titulo: `Ver en ${provider.provider_name}`,
-                                descripcion: `Disponible oficialmente en plataforma.`,
+                                descripcion: `Disponible oficialmente en ${provider.provider_name}.`,
                                 calidad: "Oficial",
                                 urlDestino: ecProviders.link || `https://www.google.com/search?q=${encodeURIComponent(tituloOficial)}+en+${provider.provider_name}`,
                                 categoria: "Fuentes Oficiales",
@@ -358,106 +310,64 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
                         });
                     }
                 } catch (providerError) {
-                    console.log("[ZYRO] Error obteniendo proveedores:", providerError.message);
+                    console.log("[ZYRO] Error obteniendo proveedores oficiales:", providerError.message);
                 }
             }
 
-            // 6. SCRAPING DESDE EL SERVIDOR (Fallback si la comunidad no ha enviado datos)
-            if (enlacesFinales.length < 5) {
-                try {
-                    const searxInstances = [
-                        'https://searx.tiekoetter.com',
-                        'https://priv.au',
-                        'https://searxng.site',
-                        'https://searxng.website',
-                        'https://searx.oloke.xyz',
-                        'https://searxng.deggo.fyi',
-                        'https://opnxng.com'
-                    ];
+            // 4. BUSCAR EN TU MONGODB (ENLACES CUSTOMIZADOS)
+            if (page === 1) {
+                const db = getDb();
+                if (db) {
+                    const dbQuery = { $or: [ { titulo_pelicula: { $regex: new RegExp(query, "i") } } ] };
+                    if (tmdbId) dbQuery.$or.push({ tmdb_id: tmdbId });
 
-                    // EL FILTRO DE INTENCIÓN APLICADO AL SCRAPER
-                    // Si es película pirata, añade palabras clave. Si es búsqueda web normal, busca limpio.
-                    const queryModificado = isMovieIntent 
-                        ? `${query} ver online gratis latino pelicula serie` 
-                        : query;
-
-                    let searxExito = false;
-
-                    for (const instancia of searxInstances) {
-                        if (searxExito) break; 
-                        if (enlacesFinales.length >= 15 * page) break;
-
-                        try {
-                            const searxUrl = `${instancia}/search?q=${encodeURIComponent(queryModificado)}&format=json&pageno=${page}&language=es`;
-                            
-                            const scraperRes = await axios.get(searxUrl, {
-                                timeout: 6000, 
-                                headers: {
-                                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                                    'Accept': 'application/json'
-                                }
+                    try {
+                        const customLinks = await db.collection('zyro_custom_links').find(dbQuery).toArray();
+                        customLinks.reverse().forEach(link => {
+                            enlacesFinales.unshift({
+                                sitioWeb: link.sitioWeb,
+                                titulo: link.titulo,
+                                descripcion: link.descripcion || "Enlace destacado y verificado.",
+                                calidad: link.calidad || "Premium",
+                                urlDestino: link.urlDestino,
+                                categoria: link.categoria || "Destacado",
+                                isPremium: true 
                             });
-
-                            const resultados = scraperRes.data.results;
-                            
-                            if (resultados && resultados.length > 0) {
-                                resultados.forEach(res => {
-                                    if (enlacesFinales.length >= 15 * page) return;
-
-                                    let dominio = 'Web';
-                                    try { 
-                                        const urlObj = new URL(res.url);
-                                        dominio = urlObj.hostname.replace('www.', ''); 
-                                    } catch (e) {}
-
-                                    const imgIcon = `https://icon.horse/icon/${dominio}`;
-
-                                    enlacesFinales.push({
-                                        sitioWeb: dominio,
-                                        titulo: res.title || "Resultado Web",
-                                        // La descripción también se adapta de forma profesional
-                                        descripcion: res.content || (isMovieIntent ? `Enlace optimizado para ver contenido.` : `Resultado web para ${query}.`),
-                                        calidad: isMovieIntent ? 'SearXNG' : 'Web',
-                                        urlDestino: res.url,
-                                        categoria: isMovieIntent ? 'Fuentes Alternativas' : 'Resultados Universales',
-                                        favicon: imgIcon,
-                                        isPremium: false
-                                    });
-                                });
-                                
-                                searxExito = true;
-                                console.log(`[ZYRO] Scraping exitoso en la instancia: ${instancia} (Modo Cine: ${isMovieIntent})`);
-                            }
-                        } catch (instanciaError) {
-                            // Continúa a la siguiente instancia si esta falla
-                        }
+                        });
+                    } catch(dbErr) {
+                        console.error("[ZYRO] Error consultando custom_links en MongoDB:", dbErr.message);
                     }
-                } catch (scrapeError) {
-                    console.log(`[ZYRO] Fallo crítico en el motor SearXNG para "${query}":`, scrapeError.message);
                 }
             }
 
-            // 7. EMPAQUETAR Y ENVIAR A ANDROID
+            // SCRAPING DE SEARXNG / BING ELIMINADO PARA PROTEGER IPs DEL DATACENTER.
+            // Los resultados orgánicos web ahora se generarán en vivo a través del 
+            // Headless WebView en la app del usuario (ZyroScraper.kt).
+
+            // 5. EMPAQUETAR Y ENVIAR AL CLIENTE
             const respuestaFinal = {
                 metadata: page === 1 ? metadata : null,
                 sugerencias: sugerencias,
-                enlaces: enlacesFinales,
+                enlaces: enlacesFinales, // Contiene SOLO enlaces Premium y Oficiales en este paso
                 paginaActual: page
             };
 
+            // Caché reducido a 60 segundos si no hay enlaces. Esto permite que el cliente Android
+            // envíe los resultados del Headless WebView a la caché de la comunidad, 
+            // y la siguiente petición encuentre los datos frescos rápidamente.
             if (enlacesFinales.length > 0) {
-                cache.set(cacheKey, respuestaFinal, 3600); // Guardar en caché 1 hora
+                cache.set(cacheKey, respuestaFinal, 3600);
             } else {
-                console.log(`[ZYRO] Búsqueda vacía para "${query}". Cacheando solo por 60 segs.`);
+                console.log(`[ZYRO] Delegando búsqueda a cliente Android para: "${query}".`);
                 cache.set(cacheKey, respuestaFinal, 60);
             }
             
             res.json(respuestaFinal);
 
         } catch (error) {
-            console.error("[ZYRO] Error crítico procesando búsqueda híbrida:", error);
+            console.error("[ZYRO] Error crítico en arquitectura de búsqueda híbrida:", error);
             res.status(500).json({ 
-                metadata: page === 1 ? { tmdb_id: null, titulo: query, tipo: "error", descripcion: "Error interno del buscador." } : null,
+                metadata: page === 1 ? { tmdb_id: null, titulo: query, tipo: "error", descripcion: "Fallo de conexión híbrida." } : null,
                 sugerencias: [], enlaces: [], paginaActual: page 
             });
         }
