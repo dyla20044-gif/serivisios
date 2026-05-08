@@ -1,5 +1,5 @@
 const axios = require('axios');
-const cheerio = require('cheerio'); // Motor de Scraping para búsquedas universales
+const cheerio = require('cheerio');
 const { URLSearchParams } = require('url');
 
 module.exports = function(app, getDb, cache, TMDB_API_KEY) {
@@ -44,7 +44,6 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
             let capitulos = [];
             let fuentes_extra = [];
 
-            // 1. Contar Temporadas
             const textoBody = $('body').text().toLowerCase();
             const seasonMatches = textoBody.match(/temporada\s*\d+|season\s*\d+/g);
             
@@ -55,14 +54,12 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
                 temporadasCount = $('select option:contains("Temporada"), ul.seasons li, div.season-tab').length;
             }
 
-            // 2. Extraer Capítulos
             $('a, li, div.episode, div.capitulo').each((index, element) => {
                 const el = $(element);
                 const texto = el.text().trim();
                 const lowerTexto = texto.toLowerCase();
                 let href = el.attr('href') || el.find('a').attr('href');
 
-                // Busca patrones de capítulos (Capítulo 1, Episodio 2, 1x01, E01, etc.)
                 const pareceCapitulo = /cap[íi]tulo\s*\d+|episodio\s*\d+|\d+x\d+|e\d+/i.test(lowerTexto);
 
                 if (pareceCapitulo && href) {
@@ -75,7 +72,6 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
                 }
             });
 
-            // 3. Extraer Fuentes de Video
             const videoRegex = /(https?:\/\/[^\s"'<>]+?\.(m3u8|mp4))/gi;
             const videoMatches = html.match(videoRegex) || [];
             videoMatches.forEach(v => fuentes_extra.push(v));
@@ -100,7 +96,6 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
                 fuentes_extra: fuentes_extra
             };
 
-            // Caché: 30 mins (1800s) si hay éxito, 30s si falló o no encontró nada útil
             if (capitulos.length > 0 || fuentes_extra.length > 0) {
                 cache.set(cacheKey, respuestaAnalisis, 1800);
             } else {
@@ -281,85 +276,72 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
                 }
             }
 
-            // 4. EL BUSCADOR UNIVERSAL (SearXNG con Rotación y Camuflaje Avanzado)
+            // 4. EL BUSCADOR UNIVERSAL (Reemplazado por DuckDuckGo HTML)
             try {
-                const searxInstances = [
-                    'https://searx.be', 
-                    'https://search.mdosch.de',
-                    'https://searx.tiekoetter.com',
-                    'https://searx.work',
-                    'https://opnxng.com',
-                    'https://priv.au'
-                ];
-
-                // Pool de User-Agents más modernos y variados
-                const userAgents = [
-                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-                    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3 Safari/605.1.15',
-                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0'
-                ];
-
                 const queryModificado = `${query} ver online gratis latino pelicula serie`;
-                let searxExito = false;
+                const ddgUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(queryModificado)}`;
+                
+                const scraperRes = await axios.get(ddgUrl, {
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                        'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8',
+                        'Referer': 'https://duckduckgo.com/'
+                    },
+                    timeout: 8000
+                });
 
-                for (const instancia of searxInstances) {
-                    if (searxExito || enlacesFinales.length >= 15 * page) break;
+                const $ = cheerio.load(scraperRes.data);
+                let resultadosExtraidos = 0;
 
-                    try {
-                        const randomUserAgent = userAgents[Math.floor(Math.random() * userAgents.length)];
-                        const searxUrl = `${instancia}/search?q=${encodeURIComponent(queryModificado)}&format=json&pageno=${page}&language=es`;
-                        
-                        const scraperRes = await axios.get(searxUrl, {
-                            timeout: 3500, // Timeout más corto (3.5s) para no hacer esperar al WebView si una bloquea
-                            headers: {
-                                'User-Agent': randomUserAgent,
-                                'Accept': 'application/json, text/plain, */*',
-                                'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8',
-                                'Referer': 'https://www.google.com/',
-                                'DNT': '1', // Do Not Track (simula usuario real preocupado por privacidad)
-                                'Sec-Fetch-Dest': 'empty',
-                                'Sec-Fetch-Mode': 'cors',
-                                'Sec-Fetch-Site': 'cross-site'
-                            }
-                        });
+                $('.result').each((i, el) => {
+                    if (enlacesFinales.length >= 15 * page) return false;
 
-                        const resultados = scraperRes.data.results;
-                        
-                        if (resultados && resultados.length > 0) {
-                            resultados.forEach(res => {
-                                if (enlacesFinales.length >= 15 * page) return;
+                    const titleEl = $(el).find('.result__title a');
+                    const titulo = titleEl.text().trim();
+                    let rawUrl = titleEl.attr('href');
+                    const descripcion = $(el).find('.result__snippet').text().trim();
 
-                                let dominio = 'Web';
-                                try { 
-                                    const urlObj = new URL(res.url);
-                                    dominio = urlObj.hostname.replace('www.', ''); 
-                                } catch (e) {}
-
-                                const imgIcon = `https://icon.horse/icon/${dominio}`;
-
-                                enlacesFinales.push({
-                                    sitioWeb: dominio,
-                                    titulo: res.title || "Resultado Web",
-                                    descripcion: res.content || `Resultado optimizado para ver "${query}" gratis.`,
-                                    calidad: 'SearXNG',
-                                    urlDestino: res.url,
-                                    categoria: 'Fuentes Alternativas',
-                                    favicon: imgIcon,
-                                    isPremium: false
-                                });
-                            });
-                            
-                            searxExito = true;
-                            console.log(`[ZYRO] SearXNG Scraping exitoso en la instancia: ${instancia}`);
+                    if (titulo && rawUrl) {
+                        // DuckDuckGo a veces envuelve la URL real en una redirección
+                        if (rawUrl.includes('uddg=')) {
+                            try {
+                                const urlParam = new URL(rawUrl, 'https://duckduckgo.com').searchParams.get('uddg');
+                                if (urlParam) rawUrl = decodeURIComponent(urlParam);
+                            } catch(e) {}
                         }
-                    } catch (instanciaError) {
-                        // Logueamos solo el código de error para no saturar tu terminal de MongoDB
-                        const status = instanciaError.response ? instanciaError.response.status : 'Timeout/Error de red';
-                        console.log(`[ZYRO] SearXNG falló en ${instancia}: Error ${status}`);
+
+                        if (rawUrl.startsWith('http')) {
+                            let dominio = 'Web';
+                            try { 
+                                const urlObj = new URL(rawUrl);
+                                dominio = urlObj.hostname.replace('www.', ''); 
+                            } catch (e) {}
+
+                            const imgIcon = `https://icon.horse/icon/${dominio}`;
+
+                            enlacesFinales.push({
+                                sitioWeb: dominio,
+                                titulo: titulo,
+                                descripcion: descripcion || `Resultado para ver "${query}".`,
+                                calidad: 'DuckDuckGo',
+                                urlDestino: rawUrl,
+                                categoria: 'Fuentes Alternativas',
+                                favicon: imgIcon,
+                                isPremium: false
+                            });
+                            resultadosExtraidos++;
+                        }
                     }
+                });
+                
+                if (resultadosExtraidos > 0) {
+                    console.log(`[ZYRO] Scraping exitoso en DuckDuckGo. Enlaces obtenidos: ${resultadosExtraidos}`);
+                } else {
+                    console.log(`[ZYRO] DuckDuckGo no devolvió enlaces útiles para "${query}".`);
                 }
             } catch (scrapeError) {
-                console.log(`[ZYRO] Fallo crítico en el bloque SearXNG para "${query}":`, scrapeError.message);
+                console.log(`[ZYRO] Fallo en DuckDuckGo para "${query}":`, scrapeError.message);
             }
 
             // 5. BUSCAR EN TU MONGODB
@@ -396,7 +378,6 @@ module.exports = function(app, getDb, cache, TMDB_API_KEY) {
                 paginaActual: page
             };
 
-            // FIX DEL CACHÉ: 60 segundos si falla, 1 hora (3600 segs) si encuentra enlaces
             if (enlacesFinales.length > 0) {
                 cache.set(cacheKey, respuestaFinal, 3600);
             } else {
