@@ -1416,6 +1416,7 @@ app.get('/app/details/:tmdbId', (req, res) => {
     res.send(htmlResponse);
 });
 
+// AQUI ESTÁ EL ENDPOINT DE PEDIDOS (NUEVO PEDIDO)
 app.post('/request-movie', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
 
@@ -1478,18 +1479,21 @@ app.post('/request-movie', async (req, res) => {
     }
 });
 
+// AQUI ESTÁ EL ENDPOINT CORREGIDO DE PEDIDOS
 app.get('/api/requests/fulfilled', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
     try {
-        const fulfilledRequests = await mongoDb.collection('movie_requests')
-            .find({ status: 'subido' })
-            .sort({ fulfilledAt: -1 })
-            .limit(20)
+        // CAMBIO: Quitamos el filtro { status: 'subido' } para traer TODOS los pedidos (pendientes y subidos)
+        // Y los ordenamos directamente por votos (los más pedidos primero)
+        const allRequests = await mongoDb.collection('movie_requests')
+            .find({}) 
+            .sort({ votes: -1, fulfilledAt: -1 }) // Ordena de más pedidos a menos pedidos
+            .limit(50) // Aumentamos el límite para que alcance a llenar ambos carruseles
             .toArray();
-        res.status(200).json(fulfilledRequests);
+        res.status(200).json(allRequests);
     } catch (error) {
         console.error("Error en /api/requests/fulfilled:", error);
-        res.status(500).json({ error: "Error interno al obtener pedidos completados." });
+        res.status(500).json({ error: "Error interno al obtener pedidos." });
     }
 });
 
@@ -1931,8 +1935,6 @@ app.get('/api/admin/uploader-stats', verifyIdToken, verifyInternalAdmin, async (
             historical: {
                 totalEarned: hist.totalEarned,
                 totalContent: hist.totalMovies + hist.totalEpisodes,
-                movies: hist.totalMovies,
-                episodes: hist.totalEpisodes,
                 estrenosMovies: hist.totalEstrenos,
                 catalogoMovies: hist.totalCatalogos
             }
