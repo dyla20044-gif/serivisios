@@ -1009,13 +1009,13 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 let titleMsg = '';
 
                 if (filterType === 'ultra') {
-                    query = { latestPriority: { $in: ['immediate', 'premium'] } };
+                    query = { latestPriority: { $in: ['immediate', 'premium'] }, status: { $ne: 'subido' } };
                     titleMsg = '🚀 Pedidos Ultra Rápidos (Immediate/Premium)';
                 } else if (filterType === 'fast') {
-                    query = { latestPriority: 'fast' };
+                    query = { latestPriority: 'fast', status: { $ne: 'subido' } };
                     titleMsg = '⚡ Pedidos Rápidos (Fast)';
                 } else if (filterType === 'regular') {
-                    query = { latestPriority: 'regular' };
+                    query = { latestPriority: 'regular', status: { $ne: 'subido' } };
                     titleMsg = '📅 Pedidos Regulares';
                 }
 
