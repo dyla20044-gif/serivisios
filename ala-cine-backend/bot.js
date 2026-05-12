@@ -13,6 +13,21 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_IDS, TMDB_API_KE
         { command: 'pedidos', description: 'Ver la lista de películas solicitadas por los usuarios' }
     ]);
 
+    // Función auxiliar para limpiar el caché en vivo de forma segura (Hub Dinámico)
+    const clearLiveCache = () => {
+        try {
+            if (typeof global !== 'undefined' && global.ctx && global.ctx.caches && global.ctx.caches.liveCache) {
+                global.ctx.caches.liveCache.del('current_live_feed');
+                console.log("[Bot] liveCache limpiado (vía global.ctx).");
+            } else if (typeof ctx !== 'undefined' && ctx.caches && ctx.caches.liveCache) {
+                ctx.caches.liveCache.del('current_live_feed');
+                console.log("[Bot] liveCache limpiado (vía ctx local).");
+            }
+        } catch (e) {
+            console.warn("[Bot] Excepción intentando limpiar liveCache:", e.message);
+        }
+    };
+
     // Función auxiliar para generar el menú principal
     function getMainMenuKeyboard(chatId) {
         const inline_keyboard = [
@@ -30,8 +45,9 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_IDS, TMDB_API_KE
             if (ADMIN_CHAT_IDS.length > 1) {
                 inline_keyboard.push([{ text: '📊 Ver Ganancias Admin 2', callback_data: 'view_admin2_earnings' }]);
             }
-            // NUEVO BOTÓN: Gestionar Saldo (Bonos)
+            // Botones exclusivos Super-Admin
             inline_keyboard.push([{ text: '💰 Gestionar Saldo (Bonos)', callback_data: 'manage_bonus_menu' }]);
+            inline_keyboard.push([{ text: '📡 Gestionar Hub Especial', callback_data: 'manage_special_hub' }]); // NUEVO BOTÓN
         }
 
         inline_keyboard.push(
@@ -120,7 +136,7 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_IDS, TMDB_API_KE
         }
     }
 
-    // Función auxiliar para enviar el Resumen Final Elegante (MODIFICADA PARA CARGA CONTINUA)
+    // Función auxiliar para enviar el Resumen Final Elegante
     async function sendFinalSummary(chatId, title, isMovie = true, promptMsgId = null) {
         try {
             const now = new Date();
@@ -237,6 +253,106 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_IDS, TMDB_API_KE
         }
 
         if (userText.startsWith('/')) {
+            return;
+        }
+
+        // --- FLUJO WIZARD: HUB ESPECIAL (Super Admin) ---
+        if (adminState[chatId] && adminState[chatId].step && adminState[chatId].step.startsWith('hub_')) {
+            if (chatId !== ADMIN_CHAT_IDS[0]) return; // Refuerzo de seguridad
+
+            const step = adminState[chatId].step;
+
+            if (step === 'hub_hero_title') {
+                adminState[chatId].tempHubData.title = userText;
+                adminState[chatId].step = 'hub_hero_image';
+                bot.sendMessage(chatId, '✅ Título guardado.\n\n🖼️ Ingresa la **URL de la imagen** de portada/banner (16:9):', { parse_mode: 'Markdown' });
+            }
+            else if (step === 'hub_hero_image') {
+                if (!userText.startsWith('http')) { bot.sendMessage(chatId, '❌ Envía una URL válida.'); return; }
+                adminState[chatId].tempHubData.image = userText;
+                adminState[chatId].step = 'hub_hero_video';
+                bot.sendMessage(chatId, '✅ Imagen guardada.\n\n🔗 Ingresa la **URL del video** o transmisión (.m3u8 o .mp4):', { parse_mode: 'Markdown' });
+            }
+            else if (step === 'hub_hero_video') {
+                if (!userText.startsWith('http')) { bot.sendMessage(chatId, '❌ Envía una URL válida.'); return; }
+                adminState[chatId].tempHubData.video = userText;
+                adminState[chatId].step = 'hub_hero_viewers';
+                bot.sendMessage(chatId, '✅ Video guardado.\n\n👁️ Ingresa la cantidad BASE de **espectadores simulados** (Ej: 3500):', { parse_mode: 'Markdown' });
+            }
+            else if (step === 'hub_hero_viewers') {
+                const viewers = parseInt(userText.trim()) || 0;
+                adminState[chatId].tempHubData.viewers = viewers;
+                
+                bot.sendMessage(chatId, '⏳ Guardando Evento Principal en el servidor...', { parse_mode: 'Markdown' });
+                
+                const heroData = adminState[chatId].tempHubData;
+                const updateObj = {
+                    "config.mainTitle": "CONTENIDO EN VIVO",
+                    "config.navOverride": { text: "En Vivo", icon: "fa-broadcast-tower" },
+                    heroEvent: {
+                        title: heroData.title,
+                        imageUrl: heroData.image,
+                        videoUrl: heroData.video,
+                        viewers: heroData.viewers,
+                        statusLabel: "ESPERANDO ACCESO",
+                        btnText: "VER ANUNCIO (30s) PARA DESBLOQUEAR EL STREAM COMPLETO",
+                        description: "Contenido exclusivo en vivo."
+                    }
+                };
+                
+                try {
+                    await mongoDb.collection('live_feed_config').updateOne(
+                        { _id: 'main_feed' },
+                        { $set: updateObj },
+                        { upsert: true }
+                    );
+                    clearLiveCache();
+                    bot.sendMessage(chatId, '✅ **¡Evento Principal configurado con éxito!**', { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '🏠 Menú Principal', callback_data: 'back_to_menu' }]] } });
+                } catch(e) {
+                    console.error("Error guardando Hub Hero:", e);
+                    bot.sendMessage(chatId, '❌ Ocurrió un error al guardar el evento principal.');
+                }
+                adminState[chatId] = { step: 'menu' };
+            }
+            else if (step === 'hub_sec_title') {
+                adminState[chatId].tempHubData.title = userText;
+                adminState[chatId].step = 'hub_sec_image';
+                bot.sendMessage(chatId, '✅ Título guardado.\n\n🖼️ Ingresa la **URL de la imagen** para esta tarjeta (16:9):', { parse_mode: 'Markdown' });
+            }
+            else if (step === 'hub_sec_image') {
+                if (!userText.startsWith('http')) { bot.sendMessage(chatId, '❌ Envía una URL válida.'); return; }
+                adminState[chatId].tempHubData.image = userText;
+                adminState[chatId].step = 'hub_sec_viewers';
+                bot.sendMessage(chatId, '✅ Imagen guardada.\n\n👁️ Ingresa la cantidad BASE de **espectadores** para esta tarjeta:', { parse_mode: 'Markdown' });
+            }
+            else if (step === 'hub_sec_viewers') {
+                const viewers = parseInt(userText.trim()) || 0;
+                adminState[chatId].tempHubData.viewers = viewers;
+                
+                bot.sendMessage(chatId, '⏳ Guardando Tarjeta Secundaria...', { parse_mode: 'Markdown' });
+                
+                const secData = adminState[chatId].tempHubData;
+                const newSecEvent = {
+                    id: Date.now().toString(),
+                    title: secData.title,
+                    imageUrl: secData.image,
+                    viewers: secData.viewers
+                };
+                
+                try {
+                    await mongoDb.collection('live_feed_config').updateOne(
+                        { _id: 'main_feed' },
+                        { $push: { secondaryEvents: newSecEvent } },
+                        { upsert: true }
+                    );
+                    clearLiveCache();
+                    bot.sendMessage(chatId, '✅ **¡Tarjeta Secundaria agregada con éxito!**', { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '🏠 Menú Principal', callback_data: 'back_to_menu' }]] } });
+                } catch(e) {
+                    console.error("Error guardando Hub Secundario:", e);
+                    bot.sendMessage(chatId, '❌ Ocurrió un error al guardar la tarjeta secundaria.');
+                }
+                adminState[chatId] = { step: 'menu' };
+            }
             return;
         }
 
@@ -769,6 +885,66 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
             }
 
             bot.answerCallbackQuery(callbackQuery.id);
+
+            // --- LÓGICA DEL HUB ESPECIAL (SUPER-ADMIN ONLY) ---
+            if (data.startsWith('hub_')) {
+                if (chatId !== ADMIN_CHAT_IDS[0]) {
+                    bot.answerCallbackQuery(callbackQuery.id, { text: '🔒 Acceso denegado. Solo el Admin Principal.', show_alert: true });
+                    return;
+                }
+                
+                if (data === 'hub_activate') {
+                    await mongoDb.collection('live_feed_config').updateOne({ _id: 'main_feed' }, { $set: { "config.isActive": true } }, { upsert: true });
+                    clearLiveCache();
+                    bot.editMessageText('🟢 **Hub Dinámico ACTIVADO**\n\nEl feed en vivo ya es visible en la app.', { chat_id: chatId, message_id: msg.message_id, parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '⬅️ Volver', callback_data: 'manage_special_hub' }]] } }).catch(()=>{});
+                    return;
+                }
+                
+                if (data === 'hub_deactivate') {
+                    await mongoDb.collection('live_feed_config').updateOne({ _id: 'main_feed' }, { $set: { "config.isActive": false } }, { upsert: true });
+                    clearLiveCache();
+                    bot.editMessageText('🔴 **Hub Dinámico DESACTIVADO**\n\nLa app volvió a la normalidad.', { chat_id: chatId, message_id: msg.message_id, parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '⬅️ Volver', callback_data: 'manage_special_hub' }]] } }).catch(()=>{});
+                    return;
+                }
+                
+                if (data === 'hub_clear_secondary') {
+                    await mongoDb.collection('live_feed_config').updateOne({ _id: 'main_feed' }, { $set: { secondaryEvents: [] } }, { upsert: true });
+                    clearLiveCache();
+                    bot.editMessageText('🧹 **Tarjetas Secundarias Vaciadas**\n\nSe limpió el listado secundario exitosamente.', { chat_id: chatId, message_id: msg.message_id, parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '⬅️ Volver', callback_data: 'manage_special_hub' }]] } }).catch(()=>{});
+                    return;
+                }
+
+                if (data === 'hub_config_hero') {
+                    adminState[chatId] = { step: 'hub_hero_title', tempHubData: {}, promptMessageId: msg.message_id };
+                    bot.editMessageText('✏️ **Configurar Evento Principal (Hero)**\n\n📝 Ingresa el **título** del evento principal (Ej: SUNSET BEATS LIVE: DJ KAIO):', { chat_id: chatId, message_id: msg.message_id, parse_mode: 'Markdown' }).catch(()=>{});
+                    return;
+                }
+
+                if (data === 'hub_add_secondary') {
+                    adminState[chatId] = { step: 'hub_sec_title', tempHubData: {}, promptMessageId: msg.message_id };
+                    bot.editMessageText('➕ **Agregar Tarjeta Secundaria**\n\n📝 Ingresa el **título** para la tarjeta secundaria:', { chat_id: chatId, message_id: msg.message_id, parse_mode: 'Markdown' }).catch(()=>{});
+                    return;
+                }
+            }
+            
+            if (data === 'manage_special_hub') {
+                if (chatId !== ADMIN_CHAT_IDS[0]) return;
+                bot.editMessageText('📡 **Gestor del Hub Especial (Feed en Vivo)**\n\nSelecciona una opción a continuación:', {
+                    chat_id: chatId,
+                    message_id: msg.message_id,
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: '🟢 Activar Hub', callback_data: 'hub_activate' }, { text: '🔴 Desactivar Hub', callback_data: 'hub_deactivate' }],
+                            [{ text: '✏️ Configurar Evento Principal (Hero)', callback_data: 'hub_config_hero' }],
+                            [{ text: '➕ Agregar Tarjeta Secundaria', callback_data: 'hub_add_secondary' }],
+                            [{ text: '🧹 Vaciar Tarjetas Secundarias', callback_data: 'hub_clear_secondary' }],
+                            [{ text: '⬅️ Volver', callback_data: 'back_to_menu' }]
+                        ]
+                    }
+                }).catch(()=>{});
+                return;
+            }
 
             // --- VOLVER AL MENÚ PRINCIPAL ---
             if (data === 'back_to_menu') {
@@ -1442,7 +1618,6 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 if (!movieDataToSave?.tmdbId) { bot.sendMessage(chatId, 'Error: Datos perdidos.'); adminState[chatId] = { step: 'menu' }; return; }
                 await axios.post(`${RENDER_BACKEND_URL}/add-movie`, movieDataToSave);
                 await sendFinalSummary(chatId, movieDataToSave.title, true, msg.message_id);
-                // El adminState se dejará tal cual. Al pulsar "add_movie" o "add_series" en el summary, se sobrescribirá de todas formas.
             }
 
             else if (data.startsWith('save_silent_hidden_')) {
@@ -1810,7 +1985,6 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 }
             }
             
-            // MODIFICADO PARA LA CARGA CONTINUA AL FINALIZAR UNA SERIE
             else if (data.startsWith('finish_series_')) {
                 const state = adminState[chatId];
                 const seriesTitle = state?.selectedSeries?.name || state?.lastSavedEpisodeData?.title || 'La serie';
@@ -1827,7 +2001,6 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                         ] 
                     } 
                 }).catch(()=>{});
-                // Lo devolvemos al menú por defecto para que no quede en el aire si deciden no pulsar nada.
                 adminState[chatId] = { step: 'menu' };
             }
 
