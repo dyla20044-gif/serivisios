@@ -1478,6 +1478,21 @@ app.post('/request-movie', async (req, res) => {
     }
 });
 
+app.get('/api/requests/fulfilled', async (req, res) => {
+    if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
+    try {
+        const fulfilledRequests = await mongoDb.collection('movie_requests')
+            .find({ status: 'subido' })
+            .sort({ fulfilledAt: -1 })
+            .limit(20)
+            .toArray();
+        res.status(200).json(fulfilledRequests);
+    } catch (error) {
+        console.error("Error en /api/requests/fulfilled:", error);
+        res.status(500).json({ error: "Error interno al obtener pedidos completados." });
+    }
+});
+
 app.get('/api/streaming-status', (req, res) => {
     const clientBuildId = parseInt(req.query.build_id) || 0;
     const clientVersion = parseInt(req.query.version) || 0;
@@ -1712,10 +1727,13 @@ app.post('/add-movie', async (req, res) => {
         }
 
         try {
-            await mongoDb.collection('movie_requests').deleteOne({ tmdbId: cleanTmdbId });
-            console.log(`[Auto-Clean] Pedido eliminado tras subida: ${title} (${cleanTmdbId})`);
+            await mongoDb.collection('movie_requests').updateOne(
+                { tmdbId: cleanTmdbId },
+                { $set: { status: 'subido', fulfilledAt: new Date() } }
+            );
+            console.log(`[Auto-Clean] Pedido actualizado a 'subido': ${title} (${cleanTmdbId})`);
         } catch (cleanupError) {
-            console.warn(`[Auto-Clean Warning] No se pudo limpiar el pedido: ${cleanupError.message}`);
+            console.warn(`[Auto-Clean Warning] No se pudo actualizar el pedido: ${cleanupError.message}`);
         }
         
         embedCache.del(`embed-${cleanTmdbId}-movie-1-pro`);
@@ -1792,10 +1810,13 @@ app.post('/add-series-episode', async (req, res) => {
         }
 
         try {
-            await mongoDb.collection('movie_requests').deleteOne({ tmdbId: cleanTmdbId });
-            console.log(`[Auto-Clean] Pedido eliminado tras subida episodio: ${title} (${cleanTmdbId})`);
+            await mongoDb.collection('movie_requests').updateOne(
+                { tmdbId: cleanTmdbId },
+                { $set: { status: 'subido', fulfilledAt: new Date() } }
+            );
+            console.log(`[Auto-Clean] Pedido actualizado a 'subido' tras subida episodio: ${title} (${cleanTmdbId})`);
         } catch (cleanupError) {
-            console.warn(`[Auto-Clean Warning] No se pudo limpiar el pedido: ${cleanupError.message}`);
+            console.warn(`[Auto-Clean Warning] No se pudo actualizar el pedido: ${cleanupError.message}`);
         }
 
         embedCache.del(`embed-${cleanTmdbId}-${sNum}-${eNum}-pro`);
