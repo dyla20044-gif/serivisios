@@ -255,65 +255,14 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_IDS, TMDB_API_KE
         if (userText.startsWith('/')) {
             return;
         }
-        // NUEVO PASO: Guardar el nombre personalizado del menú
-            if (step === 'hub_nav_text') {
-                adminState[chatId].tempHubData.navText = userText;
-                adminState[chatId].step = 'hub_hero_title';
-                bot.sendMessage(chatId, '✅ Texto del menú guardado.\n\n📝 Ahora ingresa el **TÍTULO** del evento (Ej: SUNSET BEATS LIVE):', { parse_mode: 'Markdown' });
-            }
-            else if (step === 'hub_hero_title') {
-                adminState[chatId].tempHubData.title = userText;
-                adminState[chatId].step = 'hub_hero_image';
-                bot.sendMessage(chatId, '✅ Título guardado.\n\n🖼️ Ingresa la **URL de la imagen** de portada/banner (16:9):', { parse_mode: 'Markdown' });
-            }
-            else if (step === 'hub_hero_image') {
-                if (!userText.startsWith('http')) { bot.sendMessage(chatId, '❌ Envía una URL válida.'); return; }
-                adminState[chatId].tempHubData.image = userText;
-                adminState[chatId].step = 'hub_hero_video';
-                bot.sendMessage(chatId, '✅ Imagen guardada.\n\n🔗 Ingresa la **URL del video** o transmisión (.m3u8 o .mp4):', { parse_mode: 'Markdown' });
-            }
-            else if (step === 'hub_hero_video') {
-                if (!userText.startsWith('http')) { bot.sendMessage(chatId, '❌ Envía una URL válida.'); return; }
-                adminState[chatId].tempHubData.video = userText;
-                adminState[chatId].step = 'hub_hero_viewers';
-                bot.sendMessage(chatId, '✅ Video guardado.\n\n👁️ Ingresa la cantidad BASE de **espectadores simulados** (Ej: 3500):', { parse_mode: 'Markdown' });
-            }
-            else if (step === 'hub_hero_viewers') {
-                const viewers = parseInt(userText.trim()) || 0;
-                adminState[chatId].tempHubData.viewers = viewers;
-                
-                bot.sendMessage(chatId, '⏳ Guardando Evento Principal en el servidor...', { parse_mode: 'Markdown' });
-                
-                const heroData = adminState[chatId].tempHubData;
-                const updateObj = {
-                    "config.mainTitle": heroData.title, 
-                    // AQUÍ INYECTAMOS TU TEXTO PERSONALIZADO
-                    "config.navOverride": { text: heroData.navText, icon: "fa-broadcast-tower" }, 
-                    heroEvent: {
-                        title: heroData.title,
-                        imageUrl: heroData.image,
-                        videoUrl: heroData.video,
-                        viewers: heroData.viewers,
-                        statusLabel: "EN VIVO",
-                        btnText: "VER AHORA",
-                        description: "Contenido exclusivo en vivo."
-                    }
-                };
-                
-                try {
-                    await mongoDb.collection('live_feed_config').updateOne(
-                        { _id: 'main_feed' },
-                        { $set: updateObj },
-                        { upsert: true }
-                    );
-                    clearLiveCache();
-                    bot.sendMessage(chatId, '✅ **¡Evento Principal configurado con éxito!**', { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '🏠 Menú Principal', callback_data: 'back_to_menu' }]] } });
-                } catch(e) {
-                    console.error("Error guardando Hub Hero:", e);
-                    bot.sendMessage(chatId, '❌ Ocurrió un error al guardar el evento principal.');
-                }
-                adminState[chatId] = { step: 'menu' };
-            }
+
+        // --- FLUJO WIZARD: HUB ESPECIAL (Super Admin) ---
+        if (adminState[chatId] && adminState[chatId].step && adminState[chatId].step.startsWith('hub_')) {
+            if (chatId !== ADMIN_CHAT_IDS[0]) return; // Refuerzo de seguridad
+
+            const step = adminState[chatId].step;
+
+            if (step === 'hub_hero_title') {
                 adminState[chatId].tempHubData.title = userText;
                 adminState[chatId].step = 'hub_hero_image';
                 bot.sendMessage(chatId, '✅ Título guardado.\n\n🖼️ Ingresa la **URL de la imagen** de portada/banner (16:9):', { parse_mode: 'Markdown' });
@@ -966,9 +915,8 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 }
 
                 if (data === 'hub_config_hero') {
-                    // CAMBIO: Iniciamos preguntando el texto del botón del menú
-                    adminState[chatId] = { step: 'hub_nav_text', tempHubData: {}, promptMessageId: msg.message_id };
-                    bot.editMessageText('✏️ **Configurar Evento Principal**\n\n📝 Primero, ingresa el **texto para el botón del menú** (Ej: En Vivo, VIP, Eventos):', { chat_id: chatId, message_id: msg.message_id, parse_mode: 'Markdown' }).catch(()=>{});
+                    adminState[chatId] = { step: 'hub_hero_title', tempHubData: {}, promptMessageId: msg.message_id };
+                    bot.editMessageText('✏️ **Configurar Evento Principal (Hero)**\n\n📝 Ingresa el **título** del evento principal (Ej: SUNSET BEATS LIVE: DJ KAIO):', { chat_id: chatId, message_id: msg.message_id, parse_mode: 'Markdown' }).catch(()=>{});
                     return;
                 }
 
