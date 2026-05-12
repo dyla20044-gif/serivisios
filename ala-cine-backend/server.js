@@ -356,7 +356,7 @@ const ctx = {
 // --- CARGA DE ARCHIVOS DE RUTAS EXTERNAS ---
 require('./routes_user.js')(app, ctx);
 require('./routes_content.js')(app, ctx);
-
+require('./routes_live.js')(app, ctx)
 // --- RUTAS GLOBALES Y MISC ---
 app.get('/', (req, res) => { res.send('¡El bot y el servidor de Sala Cine están activos!'); });
 
