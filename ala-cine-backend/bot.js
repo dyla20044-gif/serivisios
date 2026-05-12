@@ -262,7 +262,12 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_IDS, TMDB_API_KE
 
             const step = adminState[chatId].step;
 
-            if (step === 'hub_hero_title') {
+            if (step === 'hub_nav_text') {
+                adminState[chatId].tempHubData.navText = userText;
+                adminState[chatId].step = 'hub_hero_title';
+                bot.sendMessage(chatId, '✅ Texto del menú guardado.\n\n📝 Ahora ingresa el **TÍTULO** del evento (Ej: SUNSET BEATS LIVE):', { parse_mode: 'Markdown' });
+            }
+            else if (step === 'hub_hero_title') {
                 adminState[chatId].tempHubData.title = userText;
                 adminState[chatId].step = 'hub_hero_image';
                 bot.sendMessage(chatId, '✅ Título guardado.\n\n🖼️ Ingresa la **URL de la imagen** de portada/banner (16:9):', { parse_mode: 'Markdown' });
@@ -287,15 +292,15 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_IDS, TMDB_API_KE
                 
                 const heroData = adminState[chatId].tempHubData;
                 const updateObj = {
-                    "config.mainTitle": "CONTENIDO EN VIVO",
-                    "config.navOverride": { text: "En Vivo", icon: "fa-broadcast-tower" },
+                    "config.mainTitle": heroData.title,
+                    "config.navOverride": { text: heroData.navText, icon: "fa-broadcast-tower" },
                     heroEvent: {
                         title: heroData.title,
                         imageUrl: heroData.image,
                         videoUrl: heroData.video,
                         viewers: heroData.viewers,
-                        statusLabel: "ESPERANDO ACCESO",
-                        btnText: "VER ANUNCIO (30s) PARA DESBLOQUEAR EL STREAM COMPLETO",
+                        statusLabel: "EN VIVO",
+                        btnText: "VER AHORA",
                         description: "Contenido exclusivo en vivo."
                     }
                 };
@@ -915,8 +920,9 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 }
 
                 if (data === 'hub_config_hero') {
-                    adminState[chatId] = { step: 'hub_hero_title', tempHubData: {}, promptMessageId: msg.message_id };
-                    bot.editMessageText('✏️ **Configurar Evento Principal (Hero)**\n\n📝 Ingresa el **título** del evento principal (Ej: SUNSET BEATS LIVE: DJ KAIO):', { chat_id: chatId, message_id: msg.message_id, parse_mode: 'Markdown' }).catch(()=>{});
+                    // CAMBIO AQUI: Iniciamos preguntando el texto del botón del menú
+                    adminState[chatId] = { step: 'hub_nav_text', tempHubData: {}, promptMessageId: msg.message_id };
+                    bot.editMessageText('✏️ **Configurar Evento Principal**\n\n📝 Primero, ingresa el **texto para el botón del menú inferior** (Ej: En Vivo, VIP, Eventos):', { chat_id: chatId, message_id: msg.message_id, parse_mode: 'Markdown' }).catch(()=>{});
                     return;
                 }
 
@@ -1618,6 +1624,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 if (!movieDataToSave?.tmdbId) { bot.sendMessage(chatId, 'Error: Datos perdidos.'); adminState[chatId] = { step: 'menu' }; return; }
                 await axios.post(`${RENDER_BACKEND_URL}/add-movie`, movieDataToSave);
                 await sendFinalSummary(chatId, movieDataToSave.title, true, msg.message_id);
+                // El adminState se dejará tal cual. Al pulsar "add_movie" o "add_series" en el summary, se sobrescribirá de todas formas.
             }
 
             else if (data.startsWith('save_silent_hidden_')) {
@@ -1985,6 +1992,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 }
             }
             
+            // MODIFICADO PARA LA CARGA CONTINUA AL FINALIZAR UNA SERIE
             else if (data.startsWith('finish_series_')) {
                 const state = adminState[chatId];
                 const seriesTitle = state?.selectedSeries?.name || state?.lastSavedEpisodeData?.title || 'La serie';
@@ -2001,6 +2009,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                         ] 
                     } 
                 }).catch(()=>{});
+                // Lo devolvemos al menú por defecto para que no quede en el aire si deciden no pulsar nada.
                 adminState[chatId] = { step: 'menu' };
             }
 
