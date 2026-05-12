@@ -353,6 +353,9 @@ const ctx = {
     utils: { calculateAndRecordRevenue, sendNotificationToTopic, axios }
 };
 
+// 👇 AQUÍ ESTÁ LA LÍNEA QUE CONECTA EL CACHÉ GLOBAL CON EL BOT 👇
+global.ctx = ctx;
+
 // --- CARGA DE ARCHIVOS DE RUTAS EXTERNAS ---
 require('./routes_user.js')(app, ctx);
 require('./routes_content.js')(app, ctx);
