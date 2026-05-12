@@ -30,6 +30,10 @@ const RECENT_CACHE_KEY = 'recent_content_main';
 const userCache = new NodeCache({ stdTTL: 21600, checkperiod: 1200 });
 const zyroCache = new NodeCache({ stdTTL: 3600, checkperiod: 600 });
 
+// NUEVO: CACHÉ DE PEDIDOS (7 Días)
+const requestsCache = new NodeCache({ stdTTL: 604800, checkperiod: 3600 }); 
+const REQUESTS_CACHE_KEY = 'all_movie_requests';
+
 let coinWriteBuffer = {};
 
 const app = express();
@@ -52,7 +56,6 @@ const token = process.env.TELEGRAM_BOT_TOKEN;
 const RENDER_BACKEND_URL = process.env.RENDER_EXTERNAL_URL || 'https://serivisios.onrender.com';
 const bot = new TelegramBot(token);
 
-// Modificación: Leer array de IDs de Administradores
 const ADMIN_CHAT_ID_PRIMARY = parseInt(process.env.ADMIN_CHAT_ID, 10);
 const ADMIN_CHAT_ID_2 = process.env.ADMIN_CHAT_ID_2 ? parseInt(process.env.ADMIN_CHAT_ID_2, 10) : null;
 const ADMIN_CHAT_IDS = [ADMIN_CHAT_ID_PRIMARY];
@@ -68,7 +71,6 @@ const BUILD_ID_UNDER_REVIEW = 19;
 const MONGO_URI = process.env.MONGO_URI;
 const MONGO_DB_NAME = process.env.MONGO_DB_NAME || 'sala_cine';
 
-// Configuración de Costos y Límites (Admins)
 const REVENUE_SETTINGS = {
     estreno_peli: 1.00,
     catalogo_peli: 0.50,
@@ -78,7 +80,6 @@ const REVENUE_SETTINGS = {
     months_to_be_estreno: 6
 };
 
-// Nombres de colecciones para ganancias
 const COLL_REVENUE = 'uploader_revenue';
 const COLL_DAILY_STATS = 'uploader_daily_stats';
 
@@ -98,7 +99,6 @@ async function connectToMongo() {
         mongoDb = client.db(MONGO_DB_NAME);
         console.log(`✅ Conexión a MongoDB Atlas [${MONGO_DB_NAME}] exitosa!`);
         
-        // Crear índices necesarios para las nuevas colecciones si no existen
         await mongoDb.collection(COLL_REVENUE).createIndex({ uploaderId: 1, timestamp: -1 });
         await mongoDb.collection(COLL_REVENUE).createIndex({ tmdbId: 1, season: 1, episode: 1 });
         await mongoDb.collection(COLL_DAILY_STATS).createIndex({ uploaderId: 1, dayId: 1 }, { unique: true });
@@ -116,7 +116,6 @@ const adminState = {};
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// SISTEMA DE ALERTA DE TRÁFICO
 let trafficCount = 0;
 let lastTrafficAlert = 0;
 const TRAFFIC_THRESHOLD = 300; 
@@ -224,11 +223,6 @@ function countsCacheMiddleware(req, res, next) {
     next();
 }
 
-// FUNCIONES AUXILIARES DE GANANCIAS
-
-/**
- * Calcula y registra la ganancia para el uploader
- */
 async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title, season = null, episode = null }) {
     const uploaderNum = Number(uploaderId);
 
@@ -278,7 +272,6 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
             basePrice = REVENUE_SETTINGS.episodio_serie;
         }
 
-        // LÓGICA DE LÍMITES Y TASAS DINÁMICAS
         let dailyStats = await mongoDb.collection(COLL_DAILY_STATS).findOne({ uploaderId: uploaderNum, dayId });
         let currentDaily = dailyStats ? (dailyStats.today_earned || 0) : 0;
 
@@ -373,7 +366,26 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
     }
 }
 
-// ENDPOINTS DE LA API
+// NUEVO ENDPOINT HIPER-LIGERO PARA LA CAMPANITA DE NOTIFICACIONES
+app.get('/api/updates-count', async (req, res) => {
+    if (!mongoDb) return res.status(503).json({ count: 0 });
+    try {
+        let reqCount = requestsCache.get(REQUESTS_CACHE_KEY)?.length || 0;
+        let recCount = recentCache.get(RECENT_CACHE_KEY)?.length || 0;
+
+        if (reqCount === 0) {
+            reqCount = await mongoDb.collection('movie_requests').countDocuments();
+        }
+        if (recCount === 0) {
+            recCount = await mongoDb.collection('media_catalog').countDocuments() + await mongoDb.collection('series_catalog').countDocuments();
+        }
+
+        res.status(200).json({ count: reqCount + recCount });
+    } catch (e) {
+        res.status(200).json({ count: 0 });
+    }
+});
+
 
 app.get('/api/content/featured', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
@@ -1416,7 +1428,6 @@ app.get('/app/details/:tmdbId', (req, res) => {
     res.send(htmlResponse);
 });
 
-// AQUI ESTÁ EL ENDPOINT DE PEDIDOS (NUEVO PEDIDO)
 app.post('/request-movie', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
 
@@ -1471,6 +1482,7 @@ app.post('/request-movie', async (req, res) => {
             }
         }
 
+        requestsCache.del(REQUESTS_CACHE_KEY); // Limpiar caché
         res.status(200).json({ message: 'Solicitud guardada correctamente.' });
 
     } catch (error) {
@@ -1479,17 +1491,23 @@ app.post('/request-movie', async (req, res) => {
     }
 });
 
-// AQUI ESTÁ EL ENDPOINT CORREGIDO DE PEDIDOS
+// NUEVO CACHÉ PARA PEDIDOS
 app.get('/api/requests/fulfilled', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
+    
+    const cachedReqs = requestsCache.get(REQUESTS_CACHE_KEY);
+    if (cachedReqs) {
+        return res.status(200).json(cachedReqs);
+    }
+
     try {
-        // CAMBIO: Quitamos el filtro { status: 'subido' } para traer TODOS los pedidos (pendientes y subidos)
-        // Y los ordenamos directamente por votos (los más pedidos primero)
         const allRequests = await mongoDb.collection('movie_requests')
             .find({}) 
-            .sort({ votes: -1, fulfilledAt: -1 }) // Ordena de más pedidos a menos pedidos
-            .limit(50) // Aumentamos el límite para que alcance a llenar ambos carruseles
+            .sort({ votes: -1, fulfilledAt: -1 })
+            .limit(50) 
             .toArray();
+
+        requestsCache.set(REQUESTS_CACHE_KEY, allRequests);
         res.status(200).json(allRequests);
     } catch (error) {
         console.error("Error en /api/requests/fulfilled:", error);
@@ -1683,7 +1701,6 @@ app.post('/api/increment-likes', async (req, res) => {
     } catch (error) { console.error("Error increment-likes:", error); res.status(500).json({ error: "Error interno." }); }
 });
 
-// 💡 CAMBIO PRINCIPAL PARA PELÍCULAS
 app.post('/add-movie', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "BD no disponible." });
     try {
@@ -1746,7 +1763,7 @@ app.post('/add-movie', async (req, res) => {
         recentCache.del(RECENT_CACHE_KEY);
         pinnedCache.del(PINNED_CACHE_KEY);
         kdramaCache.del(KDRAMA_CACHE_KEY);
-        
+        requestsCache.del(REQUESTS_CACHE_KEY); // Limpiar caché pedidos
         catalogCache.flushAll();
 
         console.log(`[Cache] Cachés invalidadas por subida de película: ${title}`);
@@ -1760,7 +1777,6 @@ app.post('/add-movie', async (req, res) => {
     } catch (error) { console.error("Error add-movie:", error); res.status(500).json({ error: 'Error interno.' }); }
 });
 
-// 💡 CAMBIO PRINCIPAL PARA SERIES
 app.post('/add-series-episode', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "BD no disponible." });
     try {
@@ -1829,7 +1845,7 @@ app.post('/add-series-episode', async (req, res) => {
         recentCache.del(RECENT_CACHE_KEY);
         pinnedCache.del(PINNED_CACHE_KEY);
         kdramaCache.del(KDRAMA_CACHE_KEY);
-        
+        requestsCache.del(REQUESTS_CACHE_KEY); // Limpiar caché pedidos
         catalogCache.flushAll();
         
         console.log(`[Cache] Cachés invalidadas por subida de episodio: ${title} S${sNum}E${eNum}`);
@@ -1874,8 +1890,6 @@ app.post('/delete-series-episode', async (req, res) => {
         res.status(500).json({ error: 'Error interno.' });
     }
 });
-
-// ENDPOINT DE ESTADÍSTICAS PARA BOT
 
 app.get('/api/admin/uploader-stats', verifyIdToken, verifyInternalAdmin, async (req, res) => {
     const targetUploaderId = parseInt(req.query.uploaderId) || parseInt(req.uid) || ADMIN_CHAT_ID_2;
@@ -2047,7 +2061,6 @@ async function sendNotificationToTopic(title, body, imageUrl, tmdbId, mediaType,
     }
 }
 
-// RECORDATORIO CRON PARA MAXIMIZAR GANANCIAS
 cron.schedule('0 18 * * *', () => {
     if (ADMIN_CHAT_ID_2) {
         bot.sendMessage(ADMIN_CHAT_ID_2, '🔥 ¡Empieza la hora pico! El CPM está subiendo. ¡Es el momento ideal para subir contenido y maximizar ganancias! 🚀💰');
