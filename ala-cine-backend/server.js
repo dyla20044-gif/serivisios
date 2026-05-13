@@ -14,7 +14,6 @@ const fs = require('fs');
 const path = require('path'); 
 const initZyroEngine = require('./zyroEngine.js');
 
-// --- CACHÉS ---
 const embedCache = new NodeCache({ stdTTL: 86400, checkperiod: 600 });
 const countsCache = new NodeCache({ stdTTL: 900, checkperiod: 120 });
 const tmdbCache = new NodeCache({ stdTTL: 86400, checkperiod: 3600 });
@@ -37,7 +36,6 @@ const app = express();
 dotenv.config();
 const PORT = process.env.PORT || 3000;
 
-// --- FIREBASE INIT ---
 try {
     const serviceAccount = JSON.parse(process.env.FIREBASE_ADMIN_SDK);
     admin.initializeApp({
@@ -66,7 +64,6 @@ const TMDB_API_KEY = process.env.TMDB_API_KEY;
 let GLOBAL_STREAMING_ACTIVE = true;
 const BUILD_ID_UNDER_REVIEW = 19; 
 
-// --- MONGODB CONFIG ---
 const MONGO_URI = process.env.MONGO_URI;
 const MONGO_DB_NAME = process.env.MONGO_DB_NAME || 'sala_cine';
 
@@ -114,7 +111,6 @@ const adminState = {};
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// --- TRÁFICO Y MIDDLEWARES ---
 let trafficCount = 0;
 let lastTrafficAlert = 0;
 const TRAFFIC_THRESHOLD = 300; 
@@ -143,7 +139,6 @@ try {
     console.warn("⚠️ Advertencia: No se pudo cargar bridge.js:", error.message);
 }
 
-// --- MIDDLEWARES COMPARTIDOS ---
 async function verifyIdToken(req, res, next) {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -167,7 +162,6 @@ function verifyInternalAdmin(req, res, next) {
     return res.status(403).json({ error: "Acceso denegado. Autenticación de administrador requerida." });
 }
 
-// --- FUNCIONES COMPARTIDAS ---
 async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title, season = null, episode = null }) {
     const uploaderNum = Number(uploaderId);
 
@@ -338,7 +332,6 @@ async function sendNotificationToTopic(title, body, imageUrl, tmdbId, mediaType,
     }
 }
 
-// --- CONFIGURACIÓN DE CONTEXTO GLOBAL PARA INYECTAR EN LAS RUTAS ---
 const ctx = {
     db, getMongoDb: () => mongoDb, admin, messaging, bot,
     TMDB_API_KEY, ADMIN_CHAT_IDS, ADMIN_CHAT_ID_2,
@@ -353,14 +346,12 @@ const ctx = {
     utils: { calculateAndRecordRevenue, sendNotificationToTopic, axios }
 };
 
-// 👇 AQUÍ ESTÁ LA LÍNEA QUE CONECTA EL CACHÉ GLOBAL CON EL BOT 👇
 global.ctx = ctx;
 
-// --- CARGA DE ARCHIVOS DE RUTAS EXTERNAS ---
 require('./routes_user.js')(app, ctx);
 require('./routes_content.js')(app, ctx);
 require('./routes_live.js')(app, ctx)
-// --- RUTAS GLOBALES Y MISC ---
+
 app.get('/', (req, res) => { res.send('¡El bot y el servidor de Sala Cine están activos!'); });
 
 if (process.env.NODE_ENV === 'production' && token) {
@@ -421,9 +412,20 @@ app.get('/api/app-status', (req, res) => {
     res.json({ isAppApproved: true, safeContentIds: [11104, 539, 4555, 27205, 33045] });
 });
 
+app.get('/api/app-ui-config', (req, res) => {
+    const uiConfig = {
+        networkAlertTitle: "Diagnóstico de Red",
+        networkAlertDesc: "Para garantizar una experiencia óptima y la estabilidad del servidor, requerimos una conexión estándar. Por favor, deshabilita filtros o bloqueadores de red activos.",
+        networkAlertBtn: "Verificar Red",
+        proModalText: "Acceso restringido. Nivel de usuario insuficiente.",
+        loaderTitle: "Estableciendo conexión...",
+        loaderDesc: "Sincronizando paquetes de datos con el servidor más cercano."
+    };
+    res.status(200).json(uiConfig);
+});
+
 app.get('/.well-known/assetlinks.json', (req, res) => { res.sendFile('assetlinks.json', { root: __dirname }); });
 
-// --- CRON JOBS Y ARRANQUE ---
 cron.schedule('0 18 * * *', () => {
     if (ADMIN_CHAT_ID_2) {
         bot.sendMessage(ADMIN_CHAT_ID_2, '🔥 ¡Empieza la hora pico! El CPM está subiendo. ¡Es el momento ideal para subir contenido y maximizar ganancias! 🚀💰');
