@@ -3,17 +3,16 @@ const path = require('path');
 const initializePublicAds = require('./publicAds');
 
 function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_IDS, TMDB_API_KEY, RENDER_BACKEND_URL, axios, pinnedCache, sendNotificationToTopic, userCache) {
-    // Pasamos el administrador principal a los anuncios para no romper ese módulo
     initializePublicAds(bot, mongoDb, ADMIN_CHAT_IDS[0]);
 
     bot.setMyCommands([
         { command: 'start', description: 'Reiniciar el bot y ver el menú principal' },
         { command: 'subir', description: 'Subir una película o serie a la base de datos' },
         { command: 'editar', description: 'Editar los enlaces de una película o serie existente' },
-        { command: 'pedidos', description: 'Ver la lista de películas solicitadas por los usuarios' }
+        { command: 'pedidos', description: 'Ver la lista de películas solicitadas por los usuarios' },
+        { command: 'subirexclusivo', description: 'Subir contenido a la bóveda privada/exclusiva' }
     ]);
 
-    // Función auxiliar para limpiar el caché en vivo de forma segura (Hub Dinámico)
     const clearLiveCache = () => {
         try {
             if (typeof global !== 'undefined' && global.ctx && global.ctx.caches && global.ctx.caches.liveCache) {
@@ -28,7 +27,26 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_IDS, TMDB_API_KE
         }
     };
 
-    // Función auxiliar para generar el menú principal
+    const clearAllCaches = () => {
+        try {
+            if (typeof global !== 'undefined' && global.ctx && global.ctx.caches) {
+                if(global.ctx.caches.requestsCache) global.ctx.caches.requestsCache.flushAll();
+                if(global.ctx.caches.recentCache) global.ctx.caches.recentCache.flushAll();
+                if(global.ctx.caches.catalogCache) global.ctx.caches.catalogCache.flushAll();
+                if(global.ctx.caches.countsCache) global.ctx.caches.countsCache.flushAll();
+                console.log("[Bot] Cachés generales limpiados exitosamente.");
+            } else if (typeof ctx !== 'undefined' && ctx.caches) {
+                if(ctx.caches.requestsCache) ctx.caches.requestsCache.flushAll();
+                if(ctx.caches.recentCache) ctx.caches.recentCache.flushAll();
+                if(ctx.caches.catalogCache) ctx.caches.catalogCache.flushAll();
+                if(ctx.caches.countsCache) ctx.caches.countsCache.flushAll();
+                console.log("[Bot] Cachés locales limpiados exitosamente.");
+            }
+        } catch (e) {
+            console.warn("[Bot] Excepción intentando limpiar cachés:", e.message);
+        }
+    };
+
     function getMainMenuKeyboard(chatId) {
         const inline_keyboard = [
             [
@@ -40,14 +58,12 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_IDS, TMDB_API_KE
             [{ text: '💰 Mis Ganancias', callback_data: 'view_earnings' }]
         ];
 
-        // Lógica Super-Admin
         if (chatId === ADMIN_CHAT_IDS[0]) {
             if (ADMIN_CHAT_IDS.length > 1) {
                 inline_keyboard.push([{ text: '📊 Ver Ganancias Admin 2', callback_data: 'view_admin2_earnings' }]);
             }
-            // Botones exclusivos Super-Admin
             inline_keyboard.push([{ text: '💰 Gestionar Saldo (Bonos)', callback_data: 'manage_bonus_menu' }]);
-            inline_keyboard.push([{ text: '📡 Gestionar Hub Especial', callback_data: 'manage_special_hub' }]); // NUEVO BOTÓN
+            inline_keyboard.push([{ text: '📡 Gestionar Hub Especial', callback_data: 'manage_special_hub' }]);
         }
 
         inline_keyboard.push(
@@ -71,7 +87,6 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_IDS, TMDB_API_KE
         bot.sendMessage(chatId, `¡Hola ${msg.from.first_name || 'Admin'}! ¿Qué quieres hacer hoy?`, options);
     });
 
-    // Función auxiliar para renderizar el panel de ganancias
     async function showEarningsPanel(targetUploaderId, uploaderName, requestChatId) {
         bot.sendMessage(requestChatId, '⏳ Calculando estadísticas financieras...');
                 
@@ -136,7 +151,6 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_IDS, TMDB_API_KE
         }
     }
 
-    // Función auxiliar para enviar el Resumen Final Elegante
     async function sendFinalSummary(chatId, title, isMovie = true, promptMsgId = null) {
         try {
             const now = new Date();
@@ -219,10 +233,9 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_IDS, TMDB_API_KE
             return;
         }
 
-        if (userText.startsWith('/')) {
-            const command = userText.split(' ')[0];
-
-            if (!ADMIN_CHAT_IDS.includes(chatId)) {
+        if (!ADMIN_CHAT_IDS.includes(chatId)) {
+            if (userText.startsWith('/')) {
+                const command = userText.split(' ')[0];
                 if (command === '/start' || command === '/ayuda') {
                     const helpMessage = `👋 ¡Hola! Bienvenido al bot oficial.\n\n🤖 **Gestión de Accesos:**\nSi enviaste una solicitud para unirte a nuestros canales privados, este bot te aceptará automáticamente en breve.\n\n📢 **Servicio de Publicidad:**\nSi eres creador de contenido o tienes un negocio, puedes pautar con nosotros y llegar a más de 300,000 personas en nuestra red de canales.`;
                     
@@ -237,28 +250,73 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_IDS, TMDB_API_KE
                     });
                     return;
                 }
-
                 if (command === '/contacto') {
                     bot.sendMessage(chatId, 'Para soporte o dudas, puedes contactar al desarrollador en: @TuUsuarioDeTelegram');
                     return;
                 }
-            }
-        }
-
-        if (!ADMIN_CHAT_IDS.includes(chatId)) {
-            if (userText.startsWith('/')) {
                 bot.sendMessage(chatId, 'Lo siento, no tienes permiso para usar este comando.');
             }
             return;
         }
 
         if (userText.startsWith('/')) {
+            const command = userText.split(' ')[0];
+            if (command === '/subirexclusivo') {
+                adminState[chatId] = { step: 'exc_await_title', excData: {} };
+                bot.sendMessage(chatId, '🔒 **Subida de Contenido Exclusivo**\n\n📝 Ingresa el **TÍTULO** del contenido:', { parse_mode: 'Markdown' });
+            }
             return;
         }
 
-        // --- FLUJO WIZARD: HUB ESPECIAL (Super Admin) ---
+        if (adminState[chatId] && adminState[chatId].step && adminState[chatId].step.startsWith('exc_')) {
+            const step = adminState[chatId].step;
+
+            if (step === 'exc_await_title') {
+                adminState[chatId].excData.title = userText;
+                adminState[chatId].step = 'exc_await_overview';
+                bot.sendMessage(chatId, '✅ Título guardado.\n\n📝 Ahora ingresa la **SINOPSIS** (Descripción):');
+            }
+            else if (step === 'exc_await_overview') {
+                adminState[chatId].excData.overview = userText;
+                adminState[chatId].step = 'exc_await_poster';
+                bot.sendMessage(chatId, '✅ Sinopsis guardada.\n\n🖼️ Envía la **URL de la imagen PORTADA** (Vertical):');
+            }
+            else if (step === 'exc_await_poster') {
+                if (!userText.startsWith('http')) { bot.sendMessage(chatId, '❌ Envía una URL válida.'); return; }
+                adminState[chatId].excData.poster_path = userText;
+                adminState[chatId].step = 'exc_await_video';
+                bot.sendMessage(chatId, '✅ Portada guardada.\n\n🔗 Envía la **URL del VIDEO** (.mp4, .m3u8, iframe, etc):');
+            }
+            else if (step === 'exc_await_video') {
+                if (!userText.startsWith('http')) { bot.sendMessage(chatId, '❌ Envía una URL válida.'); return; }
+                adminState[chatId].excData.video_url = userText;
+
+                bot.sendMessage(chatId, '⏳ Guardando contenido exclusivo en la bóveda...');
+                const newItem = {
+                    id: "exc_" + Date.now(),
+                    title: adminState[chatId].excData.title,
+                    overview: adminState[chatId].excData.overview,
+                    poster_path: adminState[chatId].excData.poster_path,
+                    videoUrl: adminState[chatId].excData.video_url, 
+                    addedAt: new Date(),
+                    media_type: 'movie'
+                };
+
+                try {
+                    await mongoDb.collection('exclusive_catalog').insertOne(newItem);
+                    clearAllCaches(); 
+                    bot.sendMessage(chatId, '✅ **¡Contenido Exclusivo guardado con éxito!**\nYa estará disponible en la pestaña Exclusivos de la App.', { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '🏠 Menú Principal', callback_data: 'back_to_menu' }]] } });
+                } catch(e) {
+                    console.error("Error guardando exclusivo:", e);
+                    bot.sendMessage(chatId, '❌ Ocurrió un error al guardar en la base de datos.');
+                }
+                adminState[chatId] = { step: 'menu' };
+            }
+            return;
+        }
+
         if (adminState[chatId] && adminState[chatId].step && adminState[chatId].step.startsWith('hub_')) {
-            if (chatId !== ADMIN_CHAT_IDS[0]) return; // Refuerzo de seguridad
+            if (chatId !== ADMIN_CHAT_IDS[0]) return; 
 
             const step = adminState[chatId].step;
 
@@ -361,7 +419,6 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_IDS, TMDB_API_KE
             return;
         }
 
-        // --- MANEJO DE BONOS (Super Admin) ---
         if (adminState[chatId] && adminState[chatId].step === 'awaiting_bonus_user_id') {
             const targetId = parseInt(userText.trim());
             bot.deleteMessage(chatId, msg.message_id).catch(() => {});
@@ -398,7 +455,6 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_IDS, TMDB_API_KE
             const targetId = adminState[chatId].bonusTargetId;
 
             try {
-                // Actualizar totalRevenue y currentBalance como solicitado + loguear como 'bonus'
                 await mongoDb.collection('uploader_revenue').updateOne(
                     { uploaderId: targetId },
                     { $inc: { totalRevenue: amount, currentBalance: amount } },
@@ -420,7 +476,6 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_IDS, TMDB_API_KE
                     bot.sendMessage(chatId, successMsg, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '🏠 Menú Principal', callback_data: 'back_to_menu' }]] } });
                 }
 
-                // Notificar al usuario editor
                 bot.sendMessage(targetId, `🎉 **¡Felicidades!** Has recibido un bono manual de administrador por **$${amount.toFixed(2)} USD** que ha sido sumado a tu saldo. ¡Buen trabajo!`, { parse_mode: 'Markdown' }).catch(e => console.log('No se pudo notificar al usuario del bono.'));
 
             } catch (err) {
@@ -697,7 +752,6 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_IDS, TMDB_API_KE
             } catch (error) { console.error("Error buscando para eliminar:", error); bot.sendMessage(chatId, 'Error buscando.'); }
         }
 
-        // --- OPTIMIZACIÓN DE INTERFAZ (Bloque Único) ---
         else if (adminState[chatId] && adminState[chatId].step === 'awaiting_unified_link_movie') {
             const { selectedMedia } = adminState[chatId];
             if (!selectedMedia?.id) {
@@ -707,7 +761,7 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_IDS, TMDB_API_KE
             }
             
             const linkInput = userText.trim();
-            bot.deleteMessage(chatId, msg.message_id).catch(() => {}); // Borrar el link enviado por el usuario para no hacer spam
+            bot.deleteMessage(chatId, msg.message_id).catch(() => {});
 
             const finalLink = linkInput.toLowerCase() === 'no' ? null : linkInput;
 
@@ -848,6 +902,7 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_IDS, TMDB_API_KE
 
             try {
                 await axios.post(`${RENDER_BACKEND_URL}/add-movie`, movieDataToUpdate);
+                clearAllCaches();
                 if (adminState[chatId].promptMessageId) {
                     bot.editMessageText(`✅ Enlace actualizado correctamente para ID ${tmdbId}.`, { chat_id: chatId, message_id: adminState[chatId].promptMessageId });
                 } else {
@@ -891,7 +946,6 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
 
             bot.answerCallbackQuery(callbackQuery.id);
 
-            // --- LÓGICA DEL HUB ESPECIAL (SUPER-ADMIN ONLY) ---
             if (data.startsWith('hub_')) {
                 if (chatId !== ADMIN_CHAT_IDS[0]) {
                     bot.answerCallbackQuery(callbackQuery.id, { text: '🔒 Acceso denegado. Solo el Admin Principal.', show_alert: true });
@@ -920,7 +974,6 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 }
 
                 if (data === 'hub_config_hero') {
-                    // CAMBIO AQUI: Iniciamos preguntando el texto del botón del menú
                     adminState[chatId] = { step: 'hub_nav_text', tempHubData: {}, promptMessageId: msg.message_id };
                     bot.editMessageText('✏️ **Configurar Evento Principal**\n\n📝 Primero, ingresa el **texto para el botón del menú inferior** (Ej: En Vivo, VIP, Eventos):', { chat_id: chatId, message_id: msg.message_id, parse_mode: 'Markdown' }).catch(()=>{});
                     return;
@@ -952,7 +1005,6 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 return;
             }
 
-            // --- VOLVER AL MENÚ PRINCIPAL ---
             if (data === 'back_to_menu') {
                 adminState[chatId] = { step: 'menu' };
                 const inline_keyboard = getMainMenuKeyboard(chatId);
@@ -967,7 +1019,6 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 return;
             }
 
-            // --- GESTIÓN DE BONOS MANUALES ---
             if (data === 'manage_bonus_menu') {
                 adminState[chatId] = { step: 'awaiting_bonus_user_id', promptMessageId: msg.message_id };
                 bot.editMessageText('💰 **Gestión de Bonos**\n\nPor favor, escribe el **ID de Telegram** del editor al que deseas enviar un bono:', {
@@ -979,7 +1030,6 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 return;
             }
 
-            // --- LÓGICA DE GANANCIAS ---
             if (data === 'view_earnings') {
                 const uploaderName = msg.chat.first_name || msg.chat.username || "Admin";
                 await showEarningsPanel(chatId, uploaderName, chatId);
@@ -1286,7 +1336,6 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                         }
                     };
                     
-                    // Borramos el markup anterior
                     bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id }).catch(() => { });
                     
                     const promptMsg = await bot.sendMessage(chatId, `🎬 Película: *${movieData.title}*\n🏷️ Géneros: ${genreIds.length}\n🌍 Países: ${countries.join(', ')}\n\n🔗 Envía el **ENLACE (Link)** del video.`, { parse_mode: 'Markdown' });
@@ -1348,7 +1397,8 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
 
                 try {
                     await axios.post(`${RENDER_BACKEND_URL}/add-series-episode`, seriesData);
-
+                    clearAllCaches(); // FORZAR LIMPIEZA DE CACHÉ
+                    
                     const nextEpisode = episode + 1;
                     const isSeasonFinished = totalEpisodesInSeason && episode >= totalEpisodesInSeason;
 
@@ -1474,6 +1524,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                     await axios.post(`${RENDER_BACKEND_URL}/delete-series-episode`, {
                         tmdbId, seasonNumber: parseInt(season), episodeNumber: parseInt(episode)
                     });
+                    clearAllCaches(); // FORZAR LIMPIEZA DE CACHÉ
                     bot.sendMessage(chatId, `🗑️ Episodio S${season}E${episode} eliminado. Puedes volver a subirlo.`);
                 } catch (e) {
                     bot.sendMessage(chatId, '❌ Error eliminando episodio.');
@@ -1570,6 +1621,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                         pinnedCache.del('pinned_content_top');
                         console.log("[Bot] Caché de destacados borrada. El cambio será inmediato.");
                     }
+                    clearAllCaches();
 
                     bot.sendMessage(chatId, replyText);
 
@@ -1605,6 +1657,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 try {
                     const result = await mongoDb.collection(collectionName).deleteOne({ tmdbId: tmdbId.toString() });
                     if (result.deletedCount > 0) {
+                        clearAllCaches(); // FORZAR LIMPIEZA DE CACHÉ
                         bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id }).catch(() => { });
                         bot.sendMessage(chatId, `✅ Contenido (ID: ${tmdbId}) eliminado exitosamente.`);
                     } else {
@@ -1617,14 +1670,13 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 adminState[chatId] = { step: 'menu' };
             }
 
-            // --- FLUJOS DE GUARDADO Y PUBLICACIÓN CON RESUMEN ---
             else if (data.startsWith('save_only_')) {
                 bot.editMessageText('⏳ Guardando datos en el servidor...', { chat_id: chatId, message_id: msg.message_id }).catch(()=>{});
                 const { movieDataToSave } = adminState[chatId];
                 if (!movieDataToSave?.tmdbId) { bot.sendMessage(chatId, 'Error: Datos perdidos.'); adminState[chatId] = { step: 'menu' }; return; }
                 await axios.post(`${RENDER_BACKEND_URL}/add-movie`, movieDataToSave);
+                clearAllCaches(); // FORZAR LIMPIEZA DE CACHÉ
                 await sendFinalSummary(chatId, movieDataToSave.title, true, msg.message_id);
-                // El adminState se dejará tal cual. Al pulsar "add_movie" o "add_series" en el summary, se sobrescribirá de todas formas.
             }
 
             else if (data.startsWith('save_silent_hidden_')) {
@@ -1634,6 +1686,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 movieDataToSave.hideFromRecent = true;
                 try {
                     await axios.post(`${RENDER_BACKEND_URL}/add-movie`, movieDataToSave);
+                    clearAllCaches(); // FORZAR LIMPIEZA DE CACHÉ
                     await sendFinalSummary(chatId, movieDataToSave.title + " (Oculta)", true, msg.message_id);
                 } catch (error) {
                     bot.sendMessage(chatId, '❌ Error al guardar.');
@@ -1653,6 +1706,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
 
                 try {
                     await axios.post(`${RENDER_BACKEND_URL}/add-movie`, movieDataToSave);
+                    clearAllCaches(); // FORZAR LIMPIEZA DE CACHÉ
 
                     await axios.post(`${RENDER_BACKEND_URL}/api/notify-new-content`, {
                         title: "¡Nuevo Estreno!",
@@ -1663,7 +1717,6 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                     });
 
                     const DEEPLINK_URL = `${RENDER_BACKEND_URL}/view/movie/${movieDataToSave.tmdbId}`;
-                    
                     const CHANNEL_SMALL = process.env.TELEGRAM_CHANNEL_A_ID;
                     const CHANNEL_BIG_ID = process.env.TELEGRAM_CHANNEL_B_ID;
 
@@ -1746,6 +1799,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
 
                 try {
                     await axios.post(`${RENDER_BACKEND_URL}/add-movie`, movieDataToSave);
+                    clearAllCaches(); // FORZAR LIMPIEZA DE CACHÉ
 
                     const DEEPLINK_URL = `${RENDER_BACKEND_URL}/view/movie/${movieDataToSave.tmdbId}`;
                     const CHANNEL_SMALL = process.env.TELEGRAM_CHANNEL_A_ID;
@@ -1866,7 +1920,6 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                     });
 
                     const DEEPLINK_URL = `${RENDER_BACKEND_URL}/view/tv/${episodeData.tmdbId}`;
-                    
                     const CHANNEL_SMALL = process.env.TELEGRAM_CHANNEL_A_ID;
                     const CHANNEL_BIG_ID = process.env.TELEGRAM_CHANNEL_B_ID;
 
@@ -1992,7 +2045,6 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 }
             }
             
-            // MODIFICADO PARA LA CARGA CONTINUA AL FINALIZAR UNA SERIE
             else if (data.startsWith('finish_series_')) {
                 const state = adminState[chatId];
                 const seriesTitle = state?.selectedSeries?.name || state?.lastSavedEpisodeData?.title || 'La serie';
@@ -2009,7 +2061,6 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                         ] 
                     } 
                 }).catch(()=>{});
-                // Lo devolvemos al menú por defecto para que no quede en el aire si deciden no pulsar nada.
                 adminState[chatId] = { step: 'menu' };
             }
 
