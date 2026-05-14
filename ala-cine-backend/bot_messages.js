@@ -1,7 +1,28 @@
 module.exports = function(botCtx, helpers) {
     const { bot, mongoDb, adminState, ADMIN_CHAT_IDS, TMDB_API_KEY, RENDER_BACKEND_URL, axios, sendNotificationToTopic } = botCtx;
-    const { clearAllCaches, clearLiveCache } = helpers;
+    // Agregamos getMainMenuKeyboard aquí para poder llamarlo
+    const { clearAllCaches, clearLiveCache, getMainMenuKeyboard } = helpers;
 
+    // --- AQUÍ ESTÁ LA SOLUCIÓN: El disparador del menú principal ---
+    bot.onText(/^\/start$|^\/subir$/, (msg) => {
+        const chatId = msg.chat.id;
+        
+        // Si no es un administrador, lo ignoramos aquí 
+        // (el mensaje de bienvenida público se maneja más abajo)
+        if (!ADMIN_CHAT_IDS.includes(chatId)) {
+            return;
+        }
+        
+        // Reiniciamos el estado del admin al menú principal
+        adminState[chatId] = { step: 'menu' };
+        
+        // Llamamos al teclado y lo enviamos
+        const inline_keyboard = getMainMenuKeyboard(chatId);
+        const options = { reply_markup: { inline_keyboard } };
+        bot.sendMessage(chatId, `¡Hola ${msg.from.first_name || 'Admin'}! ¿Qué quieres hacer hoy?`, options);
+    });
+
+    // --- RESTO DE LOS MENSAJES (Búsquedas, Enlaces, etc) ---
     bot.on('message', async (msg) => {
         const hasLinks = msg.entities && msg.entities.some(
             e => e.type === 'url' || e.type === 'text_link' || e.type === 'mention'
@@ -62,6 +83,8 @@ module.exports = function(botCtx, helpers) {
                 adminState[chatId] = { step: 'exc_await_title', excData: {} };
                 bot.sendMessage(chatId, '🔒 **Subida de Contenido Exclusivo**\n\n📝 Ingresa el **TÍTULO** del contenido:', { parse_mode: 'Markdown' });
             }
+            // No hacemos return aquí para /start porque ya se manejó en bot.onText arriba, 
+            // el return vacío simplemente corta el flujo para comandos desconocidos de admins.
             return;
         }
 
@@ -680,7 +703,6 @@ module.exports = function(botCtx, helpers) {
             }
         }
 
-        // AQUÍ ESTÁ LA SOLUCIÓN DEL PÓSTER EN BLANCO INTEGRADA
         else if (adminState[chatId] && adminState[chatId].step === 'awaiting_edit_movie_link') {
             const { tmdbId, isPro } = adminState[chatId];
             const linkInput = userText.trim();
@@ -699,7 +721,6 @@ module.exports = function(botCtx, helpers) {
             };
 
             try {
-                // LLAMA A LA NUEVA RUTA PARA NO BORRAR DATOS
                 await axios.post(`${RENDER_BACKEND_URL}/update-movie-links`, movieDataToUpdate);
                 clearAllCaches();
                 if (adminState[chatId].promptMessageId) {
