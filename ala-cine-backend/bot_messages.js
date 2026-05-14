@@ -1,28 +1,21 @@
 module.exports = function(botCtx, helpers) {
     const { bot, mongoDb, adminState, ADMIN_CHAT_IDS, TMDB_API_KEY, RENDER_BACKEND_URL, axios, sendNotificationToTopic } = botCtx;
-    // Agregamos getMainMenuKeyboard aquí para poder llamarlo
     const { clearAllCaches, clearLiveCache, getMainMenuKeyboard } = helpers;
 
-    // --- AQUÍ ESTÁ LA SOLUCIÓN: El disparador del menú principal ---
     bot.onText(/^\/start$|^\/subir$/, (msg) => {
         const chatId = msg.chat.id;
         
-        // Si no es un administrador, lo ignoramos aquí 
-        // (el mensaje de bienvenida público se maneja más abajo)
         if (!ADMIN_CHAT_IDS.includes(chatId)) {
             return;
         }
         
-        // Reiniciamos el estado del admin al menú principal
         adminState[chatId] = { step: 'menu' };
         
-        // Llamamos al teclado y lo enviamos
         const inline_keyboard = getMainMenuKeyboard(chatId);
         const options = { reply_markup: { inline_keyboard } };
         bot.sendMessage(chatId, `¡Hola ${msg.from.first_name || 'Admin'}! ¿Qué quieres hacer hoy?`, options);
     });
 
-    // --- RESTO DE LOS MENSAJES (Búsquedas, Enlaces, etc) ---
     bot.on('message', async (msg) => {
         const hasLinks = msg.entities && msg.entities.some(
             e => e.type === 'url' || e.type === 'text_link' || e.type === 'mention'
@@ -83,8 +76,6 @@ module.exports = function(botCtx, helpers) {
                 adminState[chatId] = { step: 'exc_await_title', excData: {} };
                 bot.sendMessage(chatId, '🔒 **Subida de Contenido Exclusivo**\n\n📝 Ingresa el **TÍTULO** del contenido:', { parse_mode: 'Markdown' });
             }
-            // No hacemos return aquí para /start porque ya se manejó en bot.onText arriba, 
-            // el return vacío simplemente corta el flujo para comandos desconocidos de admins.
             return;
         }
 
@@ -165,7 +156,15 @@ module.exports = function(botCtx, helpers) {
             else if (step === 'hub_hero_viewers') {
                 const viewers = parseInt(userText.trim()) || 0;
                 adminState[chatId].tempHubData.viewers = viewers;
+                adminState[chatId].step = 'hub_hero_status';
                 
+                // NUEVA PREGUNTA: La etiqueta
+                bot.sendMessage(chatId, '✅ Espectadores guardados.\n\n🏷️ Ingresa la **ETIQUETA** del evento (Ej: EN VIVO, ESTRENO, PRÓXIMAMENTE):', { parse_mode: 'Markdown' });
+            }
+            else if (step === 'hub_hero_status') {
+                const statusLabel = userText.trim().toUpperCase() || 'EN VIVO';
+                adminState[chatId].tempHubData.statusLabel = statusLabel;
+
                 bot.sendMessage(chatId, '⏳ Guardando Evento Principal en el servidor...', { parse_mode: 'Markdown' });
                 
                 const heroData = adminState[chatId].tempHubData;
@@ -177,7 +176,7 @@ module.exports = function(botCtx, helpers) {
                         imageUrl: heroData.image,
                         videoUrl: heroData.video,
                         viewers: heroData.viewers,
-                        statusLabel: "EN VIVO",
+                        statusLabel: heroData.statusLabel, // Usamos la nueva variable
                         btnText: "VER AHORA",
                         description: "Contenido exclusivo en vivo."
                     }
@@ -197,6 +196,7 @@ module.exports = function(botCtx, helpers) {
                 }
                 adminState[chatId] = { step: 'menu' };
             }
+
             else if (step === 'hub_sec_title') {
                 adminState[chatId].tempHubData.title = userText;
                 adminState[chatId].step = 'hub_sec_image';
@@ -205,8 +205,16 @@ module.exports = function(botCtx, helpers) {
             else if (step === 'hub_sec_image') {
                 if (!userText.startsWith('http')) { bot.sendMessage(chatId, '❌ Envía una URL válida.'); return; }
                 adminState[chatId].tempHubData.image = userText;
+                
+                // CAMBIO AQUÍ: Ahora pedimos la URL del video para las tarjetas secundarias
+                adminState[chatId].step = 'hub_sec_video';
+                bot.sendMessage(chatId, '✅ Imagen guardada.\n\n🔗 Ingresa la **URL del video** (.mp4, .m3u8) para esta tarjeta secundaria:', { parse_mode: 'Markdown' });
+            }
+            else if (step === 'hub_sec_video') {
+                if (!userText.startsWith('http')) { bot.sendMessage(chatId, '❌ Envía una URL válida.'); return; }
+                adminState[chatId].tempHubData.videoUrl = userText;
                 adminState[chatId].step = 'hub_sec_viewers';
-                bot.sendMessage(chatId, '✅ Imagen guardada.\n\n👁️ Ingresa la cantidad BASE de **espectadores** para esta tarjeta:', { parse_mode: 'Markdown' });
+                bot.sendMessage(chatId, '✅ Video guardado.\n\n👁️ Ingresa la cantidad BASE de **espectadores** para esta tarjeta:', { parse_mode: 'Markdown' });
             }
             else if (step === 'hub_sec_viewers') {
                 const viewers = parseInt(userText.trim()) || 0;
@@ -219,6 +227,7 @@ module.exports = function(botCtx, helpers) {
                     id: Date.now().toString(),
                     title: secData.title,
                     imageUrl: secData.image,
+                    videoUrl: secData.videoUrl, // Se guarda el video correctamente
                     viewers: secData.viewers
                 };
                 
