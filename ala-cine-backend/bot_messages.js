@@ -150,16 +150,10 @@ module.exports = function(botCtx, helpers) {
             else if (step === 'hub_hero_video') {
                 if (!userText.startsWith('http')) { bot.sendMessage(chatId, '❌ Envía una URL válida.'); return; }
                 adminState[chatId].tempHubData.video = userText;
-                adminState[chatId].step = 'hub_hero_viewers';
-                bot.sendMessage(chatId, '✅ Video guardado.\n\n👁️ Ingresa la cantidad BASE de **espectadores simulados** (Ej: 3500):', { parse_mode: 'Markdown' });
-            }
-            else if (step === 'hub_hero_viewers') {
-                const viewers = parseInt(userText.trim()) || 0;
-                adminState[chatId].tempHubData.viewers = viewers;
-                adminState[chatId].step = 'hub_hero_status';
                 
-                // NUEVA PREGUNTA: La etiqueta
-                bot.sendMessage(chatId, '✅ Espectadores guardados.\n\n🏷️ Ingresa la **ETIQUETA** del evento (Ej: EN VIVO, ESTRENO, PRÓXIMAMENTE):', { parse_mode: 'Markdown' });
+                // SALTAMOS LOS ESPECTADORES, VAMOS DIRECTO A LA ETIQUETA
+                adminState[chatId].step = 'hub_hero_status';
+                bot.sendMessage(chatId, '✅ Video guardado.\n\n🏷️ Ingresa la **ETIQUETA** del evento (Ej: EN VIVO, ESTRENO, PRÓXIMAMENTE):', { parse_mode: 'Markdown' });
             }
             else if (step === 'hub_hero_status') {
                 const statusLabel = userText.trim().toUpperCase() || 'EN VIVO';
@@ -175,8 +169,8 @@ module.exports = function(botCtx, helpers) {
                         title: heroData.title,
                         imageUrl: heroData.image,
                         videoUrl: heroData.video,
-                        viewers: heroData.viewers,
-                        statusLabel: heroData.statusLabel, // Usamos la nueva variable
+                        viewers: 0, // Se autogestiona en RAM
+                        statusLabel: heroData.statusLabel,
                         btnText: "VER AHORA",
                         description: "Contenido exclusivo en vivo."
                     }
@@ -205,21 +199,14 @@ module.exports = function(botCtx, helpers) {
             else if (step === 'hub_sec_image') {
                 if (!userText.startsWith('http')) { bot.sendMessage(chatId, '❌ Envía una URL válida.'); return; }
                 adminState[chatId].tempHubData.image = userText;
-                
-                // CAMBIO AQUÍ: Ahora pedimos la URL del video para las tarjetas secundarias
                 adminState[chatId].step = 'hub_sec_video';
                 bot.sendMessage(chatId, '✅ Imagen guardada.\n\n🔗 Ingresa la **URL del video** (.mp4, .m3u8) para esta tarjeta secundaria:', { parse_mode: 'Markdown' });
             }
             else if (step === 'hub_sec_video') {
                 if (!userText.startsWith('http')) { bot.sendMessage(chatId, '❌ Envía una URL válida.'); return; }
                 adminState[chatId].tempHubData.videoUrl = userText;
-                adminState[chatId].step = 'hub_sec_viewers';
-                bot.sendMessage(chatId, '✅ Video guardado.\n\n👁️ Ingresa la cantidad BASE de **espectadores** para esta tarjeta:', { parse_mode: 'Markdown' });
-            }
-            else if (step === 'hub_sec_viewers') {
-                const viewers = parseInt(userText.trim()) || 0;
-                adminState[chatId].tempHubData.viewers = viewers;
                 
+                // SALTAMOS LOS ESPECTADORES Y GUARDAMOS
                 bot.sendMessage(chatId, '⏳ Guardando Tarjeta Secundaria...', { parse_mode: 'Markdown' });
                 
                 const secData = adminState[chatId].tempHubData;
@@ -227,8 +214,8 @@ module.exports = function(botCtx, helpers) {
                     id: Date.now().toString(),
                     title: secData.title,
                     imageUrl: secData.image,
-                    videoUrl: secData.videoUrl, // Se guarda el video correctamente
-                    viewers: secData.viewers
+                    videoUrl: secData.videoUrl, 
+                    viewers: 0 // Se autogestiona en RAM
                 };
                 
                 try {
