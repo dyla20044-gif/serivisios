@@ -52,6 +52,37 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                     bot.editMessageText('🔴 **Hub Dinámico DESACTIVADO**\n\nLa app volvió a la normalidad.', { chat_id: chatId, message_id: msg.message_id, parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '⬅️ Volver', callback_data: 'manage_special_hub' }]] } }).catch(()=>{});
                     return;
                 }
+
+                // NUEVO GESTOR INDIVIDUAL DE TARJETAS SECUNDARIAS
+                if (data === 'hub_manage_secondary') {
+                    const liveData = await mongoDb.collection('live_feed_config').findOne({ _id: 'main_feed' });
+                    if (!liveData || !liveData.secondaryEvents || liveData.secondaryEvents.length === 0) {
+                        bot.editMessageText('📭 No hay tarjetas secundarias creadas.', { chat_id: chatId, message_id: msg.message_id, reply_markup: { inline_keyboard: [[{ text: '⬅️ Volver', callback_data: 'manage_special_hub' }]] } }).catch(()=>{});
+                        return;
+                    }
+                    let buttons = [];
+                    liveData.secondaryEvents.forEach(ev => {
+                        buttons.push([{ text: `🗑️ Borrar: ${ev.title}`, callback_data: `hub_del_sec_${ev.id}` }]);
+                    });
+                    buttons.push([{ text: '🧹 Vaciar TODAS de golpe', callback_data: 'hub_clear_secondary' }]);
+                    buttons.push([{ text: '⬅️ Volver', callback_data: 'manage_special_hub' }]);
+
+                    bot.editMessageText('📋 **Gestor de Tarjetas Secundarias**\n\nSelecciona cuál deseas eliminar:', {
+                        chat_id: chatId, message_id: msg.message_id, parse_mode: 'Markdown', reply_markup: { inline_keyboard: buttons }
+                    }).catch(()=>{});
+                    return;
+                }
+
+                if (data.startsWith('hub_del_sec_')) {
+                    const evId = data.replace('hub_del_sec_', '');
+                    await mongoDb.collection('live_feed_config').updateOne(
+                        { _id: 'main_feed' },
+                        { $pull: { secondaryEvents: { id: evId } } }
+                    );
+                    clearLiveCache();
+                    bot.editMessageText('✅ Tarjeta secundaria eliminada exitosamente.', { chat_id: chatId, message_id: msg.message_id, reply_markup: { inline_keyboard: [[{ text: '⬅️ Volver', callback_data: 'hub_manage_secondary' }]] } }).catch(()=>{});
+                    return;
+                }
                 
                 if (data === 'hub_clear_secondary') {
                     await mongoDb.collection('live_feed_config').updateOne({ _id: 'main_feed' }, { $set: { secondaryEvents: [] } }, { upsert: true });
@@ -84,7 +115,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                             [{ text: '🟢 Activar Hub', callback_data: 'hub_activate' }, { text: '🔴 Desactivar Hub', callback_data: 'hub_deactivate' }],
                             [{ text: '✏️ Configurar Evento Principal (Hero)', callback_data: 'hub_config_hero' }],
                             [{ text: '➕ Agregar Tarjeta Secundaria', callback_data: 'hub_add_secondary' }],
-                            [{ text: '🧹 Vaciar Tarjetas Secundarias', callback_data: 'hub_clear_secondary' }],
+                            [{ text: '📋 Gestionar Secundarias (Editar/Borrar)', callback_data: 'hub_manage_secondary' }],
                             [{ text: '⬅️ Volver', callback_data: 'back_to_menu' }]
                         ]
                     }
