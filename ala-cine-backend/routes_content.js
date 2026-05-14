@@ -33,7 +33,6 @@ module.exports = function(app, ctx) {
         } catch (e) { res.status(200).json({ count: 0 }); }
     });
 
-    // --- NUEVA RUTA: BÓVEDA EXCLUSIVA ---
     app.get('/api/content/exclusive', async (req, res) => {
         const mongoDb = getMongoDb();
         if (!mongoDb) return res.status(503).json({ error: "BD no disponible." });
@@ -236,7 +235,7 @@ module.exports = function(app, ctx) {
         } catch (error) { res.status(500).json({ error: "Error interno." }); }
     });
 
-    // --- MEJORA PARA SOLICITUDES / PEDIDOS ---
+    // --- LÓGICA DE PEDIDOS CORREGIDA (Notificaciones originales y arreglo de App) ---
     app.post('/request-movie', async (req, res) => {
         const mongoDb = getMongoDb();
         if (!mongoDb) return res.status(503).json({ error: "BD no disponible." });
@@ -245,33 +244,29 @@ module.exports = function(app, ctx) {
 
         try {
             const cleanId = String(tmdbId).trim();
-            // AHORA TODO PEDIDO QUE LLEGUE SE MARCARÁ COMO 'fast' SI NO TRAE PRIORIDAD MÁS ALTA
-            const finalPriority = (priority && priority !== 'regular') ? priority : 'fast'; 
-            
+            // Restauramos la lógica para que respete tu configuración original y agregamos el estado inicial 'pendiente'
             await mongoDb.collection('movie_requests').updateOne(
                 { tmdbId: cleanId }, 
-                { $set: { title, poster_path, latestPriority: finalPriority, updatedAt: new Date(), status: 'pendiente' }, $inc: { votes: 1 } }, 
+                { 
+                    $set: { title, poster_path, latestPriority: priority || 'regular', updatedAt: new Date() }, 
+                    $setOnInsert: { status: 'pendiente' }, // IMPORTANTE: Agrega el estado inicial para la App
+                    $inc: { votes: 1 } 
+                }, 
                 { upsert: true }
             );
 
-            // AHORA SIEMPRE SE NOTIFICARÁ AL BOT DE TELEGRAM DE FORMA INMEDIATA
-            const posterUrl = poster_path ? `https://image.tmdb.org/t/p/w500${poster_path}` : 'https://placehold.co/500x750?text=No+Poster';
-            let pt = finalPriority === 'fast' ? '⚡ Rápido (~24h)' : (finalPriority === 'immediate' ? '🚀 Inmediato (~1h)' : '👑 PREMIUM');
-            const message = `🔔 *Nuevo Pedido Recibido:* ${title}\n*Nivel:* ${pt}\n\nSe ha registrado en la base de datos para subirlo.`;
-            
-            for (const adminId of ADMIN_CHAT_IDS) {
-                try { 
-                    await bot.sendPhoto(adminId, posterUrl, { 
-                        caption: message, 
-                        parse_mode: 'Markdown', 
-                        reply_markup: { inline_keyboard: [[{ text: '✅ Gestionar (Subir ahora)', callback_data: `solicitud_${tmdbId}` }]] } 
-                    }); 
-                } catch (err) {}
+            // Las notificaciones quedan igual a como las tenías originalmente
+            if (priority && priority !== 'regular') {
+                const posterUrl = poster_path ? `https://image.tmdb.org/t/p/w500${poster_path}` : 'https://placehold.co/500x750?text=No+Poster';
+                let pt = priority === 'fast' ? '⚡ Rápido (~24h)' : (priority === 'immediate' ? '🚀 Inmediato (~1h)' : '👑 PREMIUM');
+                const message = `🔔 *Solicitud PRIORITARIA:* ${title}\n*Nivel:* ${pt}\n\nSe ha registrado/actualizado.`;
+                for (const adminId of ADMIN_CHAT_IDS) {
+                    try { await bot.sendPhoto(adminId, posterUrl, { caption: message, parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '✅ Gestionar (Subir ahora)', callback_data: `solicitud_${tmdbId}` }]] } }); } catch (err) {}
+                }
             }
             
-            // Forzamos el limpiado COMPLETO de los cachés de pedidos
-            requestsCache.flushAll(); 
-            res.status(200).json({ message: 'Solicitud guardada y notificada con éxito.' });
+            requestsCache.del(REQUESTS_CACHE_KEY); // Limpieza de caché forzada e inmediata
+            res.status(200).json({ message: 'Solicitud guardada.' });
         } catch (error) { res.status(500).json({ error: 'Error al procesar solicitud.' }); }
     });
 
@@ -281,7 +276,14 @@ module.exports = function(app, ctx) {
         const cachedReqs = requestsCache.get(REQUESTS_CACHE_KEY);
         if (cachedReqs) return res.status(200).json(cachedReqs);
         try {
-            const allRequests = await mongoDb.collection('movie_requests').find({}).sort({ votes: -1, fulfilledAt: -1 }).limit(100).toArray();
+            // CORRECCIÓN CLAVE: Enviamos los 300 pedidos MÁS RECIENTES por fecha, para que no se entierren. 
+            // Tu app en el frontend (updates.js) ya se encarga de ordenarlos por votos internamente.
+            const allRequests = await mongoDb.collection('movie_requests')
+                .find({})
+                .sort({ updatedAt: -1, fulfilledAt: -1 }) 
+                .limit(300)
+                .toArray();
+                
             requestsCache.set(REQUESTS_CACHE_KEY, allRequests);
             res.status(200).json(allRequests);
         } catch (error) { res.status(500).json({ error: "Error interno." }); }
@@ -394,13 +396,11 @@ module.exports = function(app, ctx) {
             
             const cleanId = String(tmdbId).trim();
 
-            // Solo actualizamos los enlaces, no tocamos nada más ($set solo incluye enlaces)
             await mongoDb.collection('media_catalog').updateOne(
                 { tmdbId: cleanId },
                 { $set: { freeEmbedCode, proEmbedCode } }
             );
 
-            // Limpiamos los cachés correspondientes
             embedCache.del(`embed-${cleanId}-movie-1-pro`); 
             embedCache.del(`embed-${cleanId}-movie-1-free`); 
             catalogCache.flushAll();
@@ -430,12 +430,14 @@ module.exports = function(app, ctx) {
 
             let rev = null;
             if (eraFantasma && uploaderId) rev = await calculateAndRecordRevenue({ uploaderId, tmdbId: cleanId, mediaType: 'movie', title });
-            try { await mongoDb.collection('movie_requests').updateOne({ tmdbId: cleanId }, { $set: { status: 'subido', fulfilledAt: new Date() } }); } catch (e) {}
+            
+            // Actualizamos la base de datos de solicitudes y LIMPIAMOS EL CACHÉ EXACTO
+            try { 
+                await mongoDb.collection('movie_requests').updateOne({ tmdbId: cleanId }, { $set: { status: 'subido', fulfilledAt: new Date() } }); 
+                requestsCache.del(REQUESTS_CACHE_KEY); 
+            } catch (e) {}
             
             embedCache.del(`embed-${cleanId}-movie-1-pro`); embedCache.del(`embed-${cleanId}-movie-1-free`); countsCache.del(`counts-data-${cleanId}`); recentCache.del(RECENT_CACHE_KEY); pinnedCache.del(PINNED_CACHE_KEY); kdramaCache.del(KDRAMA_CACHE_KEY); 
-            
-            // Forzamos el limpiado completo para sincronizar app al instante
-            requestsCache.flushAll(); 
             catalogCache.flushAll(); 
             recentCache.del('exclusive_catalog_data');
             
@@ -459,12 +461,14 @@ module.exports = function(app, ctx) {
             
             let rev = null;
             if (!teniaLinks && uploaderId) rev = await calculateAndRecordRevenue({ uploaderId, tmdbId: cleanId, mediaType: 'tv', title: `${title} S${sNum}E${eNum}`, season: sNum, episode: eNum });
-            try { await mongoDb.collection('movie_requests').updateOne({ tmdbId: cleanId }, { $set: { status: 'subido', fulfilledAt: new Date() } }); } catch (e) {}
+            
+            // Actualizamos la base de datos de solicitudes y LIMPIAMOS EL CACHÉ EXACTO
+            try { 
+                await mongoDb.collection('movie_requests').updateOne({ tmdbId: cleanId }, { $set: { status: 'subido', fulfilledAt: new Date() } }); 
+                requestsCache.del(REQUESTS_CACHE_KEY);
+            } catch (e) {}
 
             embedCache.del(`embed-${cleanId}-${sNum}-${eNum}-pro`); embedCache.del(`embed-${cleanId}-${sNum}-${eNum}-free`); countsCache.del(`counts-data-${cleanId}`); recentCache.del(RECENT_CACHE_KEY); pinnedCache.del(PINNED_CACHE_KEY); kdramaCache.del(KDRAMA_CACHE_KEY); 
-            
-            // Forzamos el limpiado completo para sincronizar app al instante
-            requestsCache.flushAll(); 
             catalogCache.flushAll(); 
             recentCache.del('exclusive_catalog_data');
             
