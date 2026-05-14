@@ -33,6 +33,21 @@ module.exports = function(app, ctx) {
         } catch (e) { res.status(200).json({ count: 0 }); }
     });
 
+    // --- NUEVA RUTA: BÓVEDA EXCLUSIVA ---
+    app.get('/api/content/exclusive', async (req, res) => {
+        const mongoDb = getMongoDb();
+        if (!mongoDb) return res.status(503).json({ error: "BD no disponible." });
+        const cacheKey = 'exclusive_catalog_data';
+        try {
+            const cached = recentCache.get(cacheKey);
+            if (cached) return res.status(200).json(cached);
+            
+            const items = await mongoDb.collection('exclusive_catalog').find({}).sort({ addedAt: -1 }).limit(100).toArray();
+            recentCache.set(cacheKey, items);
+            res.status(200).json(items);
+        } catch (error) { res.status(500).json({ error: "Error interno." }); }
+    });
+
     app.get('/api/content/featured', async (req, res) => {
         const mongoDb = getMongoDb();
         if (!mongoDb) return res.status(503).json({ error: "Base de datos no disponible." });
@@ -207,13 +222,14 @@ module.exports = function(app, ctx) {
         if (cachedRecent) return res.status(200).json(cachedRecent);
 
         try {
-            const moviesPromise = mongoDb.collection('media_catalog').find({ hideFromRecent: { $ne: true } }).project({ tmdbId: 1, title: 1, poster_path: 1, backdrop_path: 1, addedAt: 1 }).sort({ addedAt: -1 }).limit(50).toArray();
-            const seriesPromise = mongoDb.collection('series_catalog').find({}).project({ tmdbId: 1, name: 1, title: 1, poster_path: 1, backdrop_path: 1, addedAt: 1 }).sort({ addedAt: -1 }).limit(50).toArray();
+            // Aumentado a 100 para mejorar la precisión de los numeritos
+            const moviesPromise = mongoDb.collection('media_catalog').find({ hideFromRecent: { $ne: true } }).project({ tmdbId: 1, title: 1, poster_path: 1, backdrop_path: 1, addedAt: 1, genres: 1, genre_ids: 1 }).sort({ addedAt: -1 }).limit(100).toArray();
+            const seriesPromise = mongoDb.collection('series_catalog').find({}).project({ tmdbId: 1, name: 1, title: 1, poster_path: 1, backdrop_path: 1, addedAt: 1, genres: 1, genre_ids: 1 }).sort({ addedAt: -1 }).limit(100).toArray();
             const [movies, series] = await Promise.all([moviesPromise, seriesPromise]);
             
             const combined = [
-                ...movies.map(m => ({ id: m.tmdbId, tmdbId: m.tmdbId, title: m.title, poster_path: m.poster_path, backdrop_path: m.backdrop_path, media_type: 'movie', addedAt: m.addedAt ? new Date(m.addedAt) : new Date(0) })),
-                ...series.map(s => ({ id: s.tmdbId, tmdbId: s.tmdbId, title: s.name || s.title || "Serie Actualizada", poster_path: s.poster_path, backdrop_path: s.backdrop_path, media_type: 'tv', addedAt: s.addedAt ? new Date(s.addedAt) : new Date(0) }))
+                ...movies.map(m => ({ id: m.tmdbId, tmdbId: m.tmdbId, title: m.title, poster_path: m.poster_path, backdrop_path: m.backdrop_path, media_type: 'movie', genre_ids: m.genres || m.genre_ids || [], addedAt: m.addedAt ? new Date(m.addedAt) : new Date(0) })),
+                ...series.map(s => ({ id: s.tmdbId, tmdbId: s.tmdbId, title: s.name || s.title || "Serie Actualizada", poster_path: s.poster_path, backdrop_path: s.backdrop_path, media_type: 'tv', genre_ids: s.genres || s.genre_ids || [], addedAt: s.addedAt ? new Date(s.addedAt) : new Date(0) }))
             ].sort((a, b) => b.addedAt - a.addedAt);
             
             recentCache.set(RECENT_CACHE_KEY, combined);
@@ -250,7 +266,8 @@ module.exports = function(app, ctx) {
         const cachedReqs = requestsCache.get(REQUESTS_CACHE_KEY);
         if (cachedReqs) return res.status(200).json(cachedReqs);
         try {
-            const allRequests = await mongoDb.collection('movie_requests').find({}).sort({ votes: -1, fulfilledAt: -1 }).limit(50).toArray();
+            // Aumentado a 100 para sincronización perfecta
+            const allRequests = await mongoDb.collection('movie_requests').find({}).sort({ votes: -1, fulfilledAt: -1 }).limit(100).toArray();
             requestsCache.set(REQUESTS_CACHE_KEY, allRequests);
             res.status(200).json(allRequests);
         } catch (error) { res.status(500).json({ error: "Error interno." }); }
@@ -374,7 +391,7 @@ module.exports = function(app, ctx) {
             if (eraFantasma && uploaderId) rev = await calculateAndRecordRevenue({ uploaderId, tmdbId: cleanId, mediaType: 'movie', title });
             try { await mongoDb.collection('movie_requests').updateOne({ tmdbId: cleanId }, { $set: { status: 'subido', fulfilledAt: new Date() } }); } catch (e) {}
             
-            embedCache.del(`embed-${cleanId}-movie-1-pro`); embedCache.del(`embed-${cleanId}-movie-1-free`); countsCache.del(`counts-data-${cleanId}`); recentCache.del(RECENT_CACHE_KEY); pinnedCache.del(PINNED_CACHE_KEY); kdramaCache.del(KDRAMA_CACHE_KEY); requestsCache.del(REQUESTS_CACHE_KEY); catalogCache.flushAll();
+            embedCache.del(`embed-${cleanId}-movie-1-pro`); embedCache.del(`embed-${cleanId}-movie-1-free`); countsCache.del(`counts-data-${cleanId}`); recentCache.del(RECENT_CACHE_KEY); pinnedCache.del(PINNED_CACHE_KEY); kdramaCache.del(KDRAMA_CACHE_KEY); requestsCache.del(REQUESTS_CACHE_KEY); catalogCache.flushAll(); recentCache.del('exclusive_catalog_data');
             res.status(200).json({ message: 'Película publicada.', upserted: result.upsertedCount > 0, revenue: rev });
         } catch (error) { res.status(500).json({ error: 'Error interno.' }); }
     });
@@ -397,7 +414,7 @@ module.exports = function(app, ctx) {
             if (!teniaLinks && uploaderId) rev = await calculateAndRecordRevenue({ uploaderId, tmdbId: cleanId, mediaType: 'tv', title: `${title} S${sNum}E${eNum}`, season: sNum, episode: eNum });
             try { await mongoDb.collection('movie_requests').updateOne({ tmdbId: cleanId }, { $set: { status: 'subido', fulfilledAt: new Date() } }); } catch (e) {}
 
-            embedCache.del(`embed-${cleanId}-${sNum}-${eNum}-pro`); embedCache.del(`embed-${cleanId}-${sNum}-${eNum}-free`); countsCache.del(`counts-data-${cleanId}`); recentCache.del(RECENT_CACHE_KEY); pinnedCache.del(PINNED_CACHE_KEY); kdramaCache.del(KDRAMA_CACHE_KEY); requestsCache.del(REQUESTS_CACHE_KEY); catalogCache.flushAll();
+            embedCache.del(`embed-${cleanId}-${sNum}-${eNum}-pro`); embedCache.del(`embed-${cleanId}-${sNum}-${eNum}-free`); countsCache.del(`counts-data-${cleanId}`); recentCache.del(RECENT_CACHE_KEY); pinnedCache.del(PINNED_CACHE_KEY); kdramaCache.del(KDRAMA_CACHE_KEY); requestsCache.del(REQUESTS_CACHE_KEY); catalogCache.flushAll(); recentCache.del('exclusive_catalog_data');
             res.status(200).json({ message: `Episodio S${sNum}E${eNum} publicado.`, revenue: rev });
         } catch (error) { res.status(500).json({ error: 'Error interno.' }); }
     });
