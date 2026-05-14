@@ -75,7 +75,8 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_IDS, TMDB_API_KE
         return inline_keyboard;
     }
 
-    bot.onText(/\/start|\/subir/, (msg) => {
+    // AQUI ESTA LA CORRECCION PRINCIPAL (^ para inicio y $ para fin estricto)
+    bot.onText(/^\/start$|^\/subir$/, (msg) => {
         const chatId = msg.chat.id;
         if (!ADMIN_CHAT_IDS.includes(chatId)) {
             return;
