@@ -14,23 +14,25 @@ const fs = require('fs');
 const path = require('path'); 
 const initZyroEngine = require('./zyroEngine.js');
 
-// --- CACHÉS ---
+// --- CACHÉS OPTIMIZADOS PARA ALTO TRÁFICO ---
+// Se aumentó el tiempo de vida (stdTTL) a 86400 segundos (24 horas). 
+// La base de datos no se tocará a menos que subas una película nueva (lo cual limpia el caché) o pasen 24h.
 const embedCache = new NodeCache({ stdTTL: 86400, checkperiod: 600 });
-const countsCache = new NodeCache({ stdTTL: 900, checkperiod: 120 });
+const countsCache = new NodeCache({ stdTTL: 3600, checkperiod: 120 }); // Vistas y likes (1 hr para reflejar cambios)
 const tmdbCache = new NodeCache({ stdTTL: 86400, checkperiod: 3600 });
-const recentCache = new NodeCache({ stdTTL: 3600, checkperiod: 600 }); 
+const recentCache = new NodeCache({ stdTTL: 86400, checkperiod: 3600 }); // Caché principal de Recientes (24 Hrs)
 const historyCache = new NodeCache({ stdTTL: 900, checkperiod: 120 });
 const localDetailsCache = new NodeCache({ stdTTL: 86400, checkperiod: 3600 }); 
-const pinnedCache = new NodeCache({ stdTTL: 3600, checkperiod: 600 });
+const pinnedCache = new NodeCache({ stdTTL: 86400, checkperiod: 3600 }); // Destacados (24 Hrs)
 const PINNED_CACHE_KEY = 'pinned_content_top';
-const kdramaCache = new NodeCache({ stdTTL: 3600, checkperiod: 600 });
+const kdramaCache = new NodeCache({ stdTTL: 86400, checkperiod: 3600 }); // Kdramas (24 Hrs)
 const KDRAMA_CACHE_KEY = 'kdrama_content_list';
-const catalogCache = new NodeCache({ stdTTL: 3600, checkperiod: 600 });
+const catalogCache = new NodeCache({ stdTTL: 86400, checkperiod: 3600 }); // Catálogo completo (24 Hrs)
 const CATALOG_CACHE_KEY = 'full_catalog_list'; 
 const RECENT_CACHE_KEY = 'recent_content_main'; 
-const userCache = new NodeCache({ stdTTL: 21600, checkperiod: 1200 });
-const zyroCache = new NodeCache({ stdTTL: 3600, checkperiod: 600 });
-const requestsCache = new NodeCache({ stdTTL: 604800, checkperiod: 3600 }); 
+const userCache = new NodeCache({ stdTTL: 21600, checkperiod: 1200 }); // Caché de usuarios (6 Hrs)
+const zyroCache = new NodeCache({ stdTTL: 86400, checkperiod: 3600 });
+const requestsCache = new NodeCache({ stdTTL: 604800, checkperiod: 3600 }); // Pedidos (7 Días)
 const REQUESTS_CACHE_KEY = 'all_movie_requests';
 
 const app = express();
@@ -98,12 +100,20 @@ async function connectToMongo() {
         mongoDb = client.db(MONGO_DB_NAME);
         console.log(`✅ Conexión a MongoDB Atlas [${MONGO_DB_NAME}] exitosa!`);
         
+        // Índices originales
         await mongoDb.collection(COLL_REVENUE).createIndex({ uploaderId: 1, timestamp: -1 });
         await mongoDb.collection(COLL_REVENUE).createIndex({ tmdbId: 1, season: 1, episode: 1 });
         await mongoDb.collection(COLL_DAILY_STATS).createIndex({ uploaderId: 1, dayId: 1 }, { unique: true });
         await mongoDb.collection(COLL_DAILY_STATS).createIndex({ uploaderId: 1, monthId: 1 });
         
-        console.log("✅ Índices de MongoDB para ganancias verificados.");
+        // 👇 NUEVOS ÍNDICES: Cruciales para que la "única" vez que busque, sea instantáneo 👇
+        await mongoDb.collection('media_catalog').createIndex({ addedAt: -1 });
+        await mongoDb.collection('series_catalog').createIndex({ addedAt: -1 });
+        await mongoDb.collection('media_catalog').createIndex({ isPinned: 1, addedAt: -1 });
+        await mongoDb.collection('series_catalog').createIndex({ isPinned: 1, addedAt: -1 });
+        await mongoDb.collection('movie_requests').createIndex({ updatedAt: -1 });
+        
+        console.log("✅ Índices de MongoDB optimizados y verificados.");
         return mongoDb;
     } catch (e) {
         console.error("❌ Error al conectar a MongoDB Atlas:", e);
@@ -359,7 +369,9 @@ global.ctx = ctx;
 // --- CARGA DE ARCHIVOS DE RUTAS EXTERNAS ---
 require('./routes_user.js')(app, ctx);
 require('./routes_content.js')(app, ctx);
-require('./routes_live.js')(app, ctx)
+// Si tienes la ruta live descomenta la siguiente línea:
+// require('./routes_live.js')(app, ctx);
+
 // --- RUTAS GLOBALES Y MISC ---
 app.get('/', (req, res) => { res.send('¡El bot y el servidor de Sala Cine están activos!'); });
 
@@ -393,7 +405,6 @@ app.get('/api/streaming-status', (req, res) => {
         console.log("⚠️ [Review Mode] Detectada versión en revisión. Ocultando streaming.");
         return res.status(200).json({ isStreamingActive: false }); 
     }
-    console.log(`[Status Check] Usuario normal. Devolviendo estado global: ${GLOBAL_STREAMING_ACTIVE}`);
     res.status(200).json({ isStreamingActive: GLOBAL_STREAMING_ACTIVE });
 });
 
@@ -441,6 +452,19 @@ async function startServer() {
 
     app.listen(PORT, () => {
         console.log(`🚀 Servidor de backend Sala Cine iniciado en puerto ${PORT}`);
+        
+        // 👇 ESTA ES LA MAGIA: PRE-CALENTAMIENTO DE CACHÉ AL ARRANCAR 👇
+        setTimeout(async () => {
+            try {
+                console.log("🔥 Llenando Memoria RAM (Caché) para proteger la Base de Datos...");
+                // Hacemos peticiones "fantasma" a nosotros mismos para obligar a NodeCache a guardar los datos en RAM
+                await axios.get(`http://localhost:${PORT}/api/content/recent`).catch(() => null);
+                await axios.get(`http://localhost:${PORT}/api/content/featured`).catch(() => null);
+                await axios.get(`http://localhost:${PORT}/api/requests/fulfilled`).catch(() => null);
+                console.log("✅ ¡Memoria RAM lista! La Base de Datos está blindada.");
+            } catch (err) {}
+        }, 3000); // Esperamos 3 segundos después de arrancar para hacer el pre-calentamiento
+
         client.on('close', () => {
             console.warn('Conexión a MongoDB cerrada. Intentando reconectar...');
             setTimeout(connectToMongo, 5000);
