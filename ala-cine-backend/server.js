@@ -451,11 +451,25 @@ app.get('/api/admin/pedidos/list', async (req, res) => {
     try {
         if (!mongoDb) return res.status(500).json({ error: "DB no conectada" });
         
-        // LIMITE SALVAVIDAS: .limit(80) protege la RAM del teléfono del usuario.
+        // PAGINACIÓN PARA EVITAR EL CRASH DE TELEGRAM
+        const page = parseInt(req.query.page) || 0;
+        const type = req.query.type || 'alta';
+        const limit = 20; // Solo mandamos 20 por página
+        const skip = page * limit;
+
+        let query = { status: { $ne: 'subido' } };
+        
+        if (type === 'alta') {
+            query.latestPriority = { $in: ['immediate', 'premium', 'fast'] };
+        } else {
+            query.latestPriority = { $nin: ['immediate', 'premium', 'fast'] };
+        }
+
         const requests = await mongoDb.collection('movie_requests')
-            .find({ status: { $ne: 'subido' } })
+            .find(query)
             .sort({ votes: -1, updatedAt: -1 })
-            .limit(80) 
+            .skip(skip)
+            .limit(limit)
             .toArray();
             
         res.json(requests);
@@ -465,14 +479,52 @@ app.get('/api/admin/pedidos/list', async (req, res) => {
     }
 });
 
+app.delete('/api/admin/pedidos/:id', async (req, res) => {
+    try {
+        if (!mongoDb) return res.status(500).json({ error: "DB no conectada" });
+        const tmdbId = req.params.id;
+        
+        await mongoDb.collection('movie_requests').deleteOne({ tmdbId: tmdbId.toString() });
+        
+        // Limpiamos caché de pedidos si existe
+        if (global.ctx && global.ctx.caches && global.ctx.caches.requestsCache) {
+            global.ctx.caches.requestsCache.flushAll();
+        }
+        
+        res.json({ success: true });
+    } catch (error) {
+        console.error("Error eliminando pedido:", error);
+        res.status(500).json({ error: "Error eliminando" });
+    }
+});
+
 // =========================================================
 
 // --- CRON JOBS Y ARRANQUE ---
+
+// 1. Cron de Hora Pico
 cron.schedule('0 18 * * *', () => {
     if (ADMIN_CHAT_ID_2) {
         bot.sendMessage(ADMIN_CHAT_ID_2, '🔥 ¡Empieza la hora pico! El CPM está subiendo. ¡Es el momento ideal para subir contenido y maximizar ganancias! 🚀💰');
     }
 }, { scheduled: true, timezone: "America/Guayaquil" });
+
+// 2. Cron de Expiración de Usuarios Premium (Se ejecuta todos los días a medianoche)
+cron.schedule('0 0 * * *', async () => {
+    console.log("🧹 [CRON] Revisando expiración de usuarios Premium...");
+    if (!mongoDb) return;
+    try {
+        const now = new Date();
+        const result = await mongoDb.collection('users').updateMany(
+            { isPremium: true, premiumExpiresAt: { $lt: now.toISOString() } }, // Verifica si la fecha ya pasó
+            { $set: { isPremium: false }, $unset: { premiumExpiresAt: "" } } // Le quita el Premium
+        );
+        console.log(`✅ [CRON] Se quitó el Premium a ${result.modifiedCount} usuarios que ya expiraron.`);
+    } catch(e) { 
+        console.error("❌ Error en CRON premium:", e); 
+    }
+}, { scheduled: true, timezone: "America/Guayaquil" });
+
 
 async function startServer() {
     await connectToMongo();
