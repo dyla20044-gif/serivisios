@@ -15,24 +15,22 @@ const path = require('path');
 const initZyroEngine = require('./zyroEngine.js');
 
 // --- CACHÉS OPTIMIZADOS PARA ALTO TRÁFICO ---
-// Se aumentó el tiempo de vida (stdTTL) a 86400 segundos (24 horas). 
-// La base de datos no se tocará a menos que subas una película nueva (lo cual limpia el caché) o pasen 24h.
 const embedCache = new NodeCache({ stdTTL: 86400, checkperiod: 600 });
-const countsCache = new NodeCache({ stdTTL: 3600, checkperiod: 120 }); // Vistas y likes (1 hr para reflejar cambios)
+const countsCache = new NodeCache({ stdTTL: 3600, checkperiod: 120 });
 const tmdbCache = new NodeCache({ stdTTL: 86400, checkperiod: 3600 });
-const recentCache = new NodeCache({ stdTTL: 86400, checkperiod: 3600 }); // Caché principal de Recientes (24 Hrs)
+const recentCache = new NodeCache({ stdTTL: 86400, checkperiod: 3600 });
 const historyCache = new NodeCache({ stdTTL: 900, checkperiod: 120 });
 const localDetailsCache = new NodeCache({ stdTTL: 86400, checkperiod: 3600 }); 
-const pinnedCache = new NodeCache({ stdTTL: 86400, checkperiod: 3600 }); // Destacados (24 Hrs)
+const pinnedCache = new NodeCache({ stdTTL: 86400, checkperiod: 3600 });
 const PINNED_CACHE_KEY = 'pinned_content_top';
-const kdramaCache = new NodeCache({ stdTTL: 86400, checkperiod: 3600 }); // Kdramas (24 Hrs)
+const kdramaCache = new NodeCache({ stdTTL: 86400, checkperiod: 3600 });
 const KDRAMA_CACHE_KEY = 'kdrama_content_list';
-const catalogCache = new NodeCache({ stdTTL: 86400, checkperiod: 3600 }); // Catálogo completo (24 Hrs)
+const catalogCache = new NodeCache({ stdTTL: 86400, checkperiod: 3600 });
 const CATALOG_CACHE_KEY = 'full_catalog_list'; 
 const RECENT_CACHE_KEY = 'recent_content_main'; 
-const userCache = new NodeCache({ stdTTL: 21600, checkperiod: 1200 }); // Caché de usuarios (6 Hrs)
+const userCache = new NodeCache({ stdTTL: 21600, checkperiod: 1200 });
 const zyroCache = new NodeCache({ stdTTL: 86400, checkperiod: 3600 });
-const requestsCache = new NodeCache({ stdTTL: 604800, checkperiod: 3600 }); // Pedidos (7 Días)
+const requestsCache = new NodeCache({ stdTTL: 604800, checkperiod: 3600 });
 const REQUESTS_CACHE_KEY = 'all_movie_requests';
 
 const app = express();
@@ -100,13 +98,11 @@ async function connectToMongo() {
         mongoDb = client.db(MONGO_DB_NAME);
         console.log(`✅ Conexión a MongoDB Atlas [${MONGO_DB_NAME}] exitosa!`);
         
-        // Índices originales
         await mongoDb.collection(COLL_REVENUE).createIndex({ uploaderId: 1, timestamp: -1 });
         await mongoDb.collection(COLL_REVENUE).createIndex({ tmdbId: 1, season: 1, episode: 1 });
         await mongoDb.collection(COLL_DAILY_STATS).createIndex({ uploaderId: 1, dayId: 1 }, { unique: true });
         await mongoDb.collection(COLL_DAILY_STATS).createIndex({ uploaderId: 1, monthId: 1 });
         
-        // 👇 NUEVOS ÍNDICES: Cruciales para que la "única" vez que busque, sea instantáneo 👇
         await mongoDb.collection('media_catalog').createIndex({ addedAt: -1 });
         await mongoDb.collection('series_catalog').createIndex({ addedAt: -1 });
         await mongoDb.collection('media_catalog').createIndex({ isPinned: 1, addedAt: -1 });
@@ -348,7 +344,7 @@ async function sendNotificationToTopic(title, body, imageUrl, tmdbId, mediaType,
     }
 }
 
-// --- CONFIGURACIÓN DE CONTEXTO GLOBAL PARA INYECTAR EN LAS RUTAS ---
+// --- CONFIGURACIÓN DE CONTEXTO GLOBAL ---
 const ctx = {
     db, getMongoDb: () => mongoDb, admin, messaging, bot,
     TMDB_API_KEY, ADMIN_CHAT_IDS, ADMIN_CHAT_ID_2,
@@ -363,14 +359,11 @@ const ctx = {
     utils: { calculateAndRecordRevenue, sendNotificationToTopic, axios }
 };
 
-// 👇 AQUÍ ESTÁ LA LÍNEA QUE CONECTA EL CACHÉ GLOBAL CON EL BOT 👇
 global.ctx = ctx;
 
 // --- CARGA DE ARCHIVOS DE RUTAS EXTERNAS ---
 require('./routes_user.js')(app, ctx);
 require('./routes_content.js')(app, ctx);
-// Si tienes la ruta live descomenta la siguiente línea:
-// require('./routes_live.js')(app, ctx);
 
 // --- RUTAS GLOBALES Y MISC ---
 app.get('/', (req, res) => { res.send('¡El bot y el servidor de Sala Cine están activos!'); });
@@ -381,7 +374,7 @@ if (process.env.NODE_ENV === 'production' && token) {
         res.sendStatus(200);
     });
 } else if (!token && process.env.NODE_ENV === 'production'){
-    console.warn("⚠️  Webhook de Telegram no configurado porque TELEGRAM_BOT_TOKEN no está definido.");
+    console.warn("⚠️ Webhook de Telegram no configurado porque TELEGRAM_BOT_TOKEN no está definido.");
 }
 
 app.get('/app/details/:tmdbId', (req, res) => {
@@ -400,9 +393,7 @@ app.get('/api/streaming-status', (req, res) => {
     const clientBuildId = parseInt(req.query.build_id) || 0;
     const clientVersion = parseInt(req.query.version) || 0;
     const receivedId = clientBuildId || clientVersion;
-    console.log(`[Status Check] ID Recibido: ${receivedId} | ID en Revisión: ${BUILD_ID_UNDER_REVIEW}`);
     if (receivedId === BUILD_ID_UNDER_REVIEW) {
-        console.log("⚠️ [Review Mode] Detectada versión en revisión. Ocultando streaming.");
         return res.status(200).json({ isStreamingActive: false }); 
     }
     res.status(200).json({ isStreamingActive: GLOBAL_STREAMING_ACTIVE });
@@ -434,6 +425,52 @@ app.get('/api/app-status', (req, res) => {
 
 app.get('/.well-known/assetlinks.json', (req, res) => { res.sendFile('assetlinks.json', { root: __dirname }); });
 
+// =========================================================
+// NUEVAS RUTAS PARA LA MINI APP DE PEDIDOS (WEB APP)
+// =========================================================
+
+// Ruta que entrega la interfaz gráfica HTML leyendo directamente en el mismo directorio (sin carpeta "public")
+app.get('/admin/pedidos', async (req, res) => {
+    try {
+        // Busca el archivo 'pedidos.html' en la misma ubicación que 'server.js'
+        const htmlPath = path.join(__dirname, 'pedidos.html');
+        if (!fs.existsSync(htmlPath)) {
+            return res.status(404).send("Error: Archivo 'pedidos.html' no encontrado. Asegúrate de crearlo al lado de server.js");
+        }
+        
+        let html = fs.readFileSync(htmlPath, 'utf8');
+        
+        // Magia: Obtenemos el nombre de tu bot en tiempo real para inyectarlo en el HTML
+        const botInfo = await bot.getMe();
+        html = html.replace(/{{BOT_USERNAME}}/g, botInfo.username);
+        
+        res.send(html);
+    } catch (error) {
+        console.error("Error al cargar la Mini App:", error);
+        res.status(500).send("Error interno cargando la interfaz.");
+    }
+});
+
+// Ruta API que alimenta a la Mini App con los pedidos desde la Base de Datos
+app.get('/api/admin/pedidos/list', async (req, res) => {
+    try {
+        if (!mongoDb) return res.status(500).json({ error: "DB no conectada" });
+        
+        // Traemos todos los pedidos que NO estén subidos aún, ordenados por más votados
+        const requests = await mongoDb.collection('movie_requests')
+            .find({ status: { $ne: 'subido' } })
+            .sort({ votes: -1, updatedAt: -1 })
+            .toArray();
+            
+        res.json(requests);
+    } catch (error) {
+        console.error("Error obteniendo lista de pedidos:", error);
+        res.status(500).json({ error: "Error obteniendo pedidos" });
+    }
+});
+
+// =========================================================
+
 // --- CRON JOBS Y ARRANQUE ---
 cron.schedule('0 18 * * *', () => {
     if (ADMIN_CHAT_ID_2) {
@@ -453,17 +490,15 @@ async function startServer() {
     app.listen(PORT, () => {
         console.log(`🚀 Servidor de backend Sala Cine iniciado en puerto ${PORT}`);
         
-        // 👇 ESTA ES LA MAGIA: PRE-CALENTAMIENTO DE CACHÉ AL ARRANCAR 👇
         setTimeout(async () => {
             try {
-                console.log("🔥 Llenando Memoria RAM (Caché) para proteger la Base de Datos...");
-                // Hacemos peticiones "fantasma" a nosotros mismos para obligar a NodeCache a guardar los datos en RAM
+                console.log("🔥 Llenando Memoria RAM (Caché)...");
                 await axios.get(`http://localhost:${PORT}/api/content/recent`).catch(() => null);
                 await axios.get(`http://localhost:${PORT}/api/content/featured`).catch(() => null);
                 await axios.get(`http://localhost:${PORT}/api/requests/fulfilled`).catch(() => null);
-                console.log("✅ ¡Memoria RAM lista! La Base de Datos está blindada.");
+                console.log("✅ ¡Memoria RAM lista!");
             } catch (err) {}
-        }, 3000); // Esperamos 3 segundos después de arrancar para hacer el pre-calentamiento
+        }, 3000);
 
         client.on('close', () => {
             console.warn('Conexión a MongoDB cerrada. Intentando reconectar...');
