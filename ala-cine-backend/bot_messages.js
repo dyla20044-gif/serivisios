@@ -2,6 +2,9 @@ module.exports = function(botCtx, helpers) {
     const { bot, mongoDb, adminState, ADMIN_CHAT_IDS, COMMUNITY_GROUP_ID, TMDB_API_KEY, RENDER_BACKEND_URL, axios, sendNotificationToTopic } = botCtx;
     const { clearAllCaches, clearLiveCache, getMainMenuKeyboard } = helpers;
 
+    // Limpiamos el ID por si se pegó con un espacio invisible en Render
+    const cleanCommunityId = COMMUNITY_GROUP_ID ? COMMUNITY_GROUP_ID.toString().trim() : null;
+
     // =========================================================
     // SISTEMA IA: CACHÉ EN RAM Y DICCIONARIO HUMANO AVANZADO
     // =========================================================
@@ -92,7 +95,13 @@ module.exports = function(botCtx, helpers) {
     bot.on('message', async (msg) => {
         const chatId = msg.chat.id;
         const isAdmin = ADMIN_CHAT_IDS.includes(msg.from.id);
-        const isCommunity = COMMUNITY_GROUP_ID && chatId.toString() === COMMUNITY_GROUP_ID.toString();
+        const isCommunity = cleanCommunityId && chatId.toString() === cleanCommunityId;
+
+        // --- EL CHIVATO (ESTO NOS DIRÁ DÓNDE ESTÁ EL ERROR) ---
+        if (msg.text) {
+            console.log(`[TEST-BOT] Msg de: ${msg.from.first_name} | ID Grupo/Chat: ${chatId} | ID Configurado en Render: ${cleanCommunityId} | Es Admin: ${isAdmin} | Coincide el Grupo: ${isCommunity} | Texto: ${msg.text}`);
+        }
+        // ------------------------------------------------------
 
         // 1. LIMPIEZA AUTOMÁTICA DE MENSAJES DEL SISTEMA (Uniones/Salidas)
         if (msg.new_chat_members || msg.left_chat_member) {
@@ -101,7 +110,7 @@ module.exports = function(botCtx, helpers) {
                     await bot.deleteMessage(chatId, msg.message_id);
                 } catch (e) { /* Falla silenciosa si no tiene permisos */ }
             }
-            return; // Cortamos la ejecución aquí porque estos mensajes no tienen texto
+            return; 
         }
 
         // 2. ANTI-SPAM DE ENLACES PARA USUARIOS NORMALES
@@ -127,7 +136,6 @@ module.exports = function(botCtx, helpers) {
 
             // A. FILTRO ANTI-GROSERÍAS
             const badWords = ['puta', 'mierda', 'pendejo', 'cabron', 'verga', 'imbecil', 'idiota', 'estupido', 'conchetumare', 'hijo de puta', 'malparido'];
-            // Verifica si alguna grosería exacta está en el texto
             const hasBadWord = badWords.some(word => new RegExp(`\\b${word}\\b`, 'i').test(textLower));
             
             if (hasBadWord) {
@@ -140,7 +148,7 @@ module.exports = function(botCtx, helpers) {
             }
 
             // B. CHARLAS SOCIALES
-            if (textLower === 'hola' || textLower === 'buenas' || textLower === 'saludos') {
+            if (textLower.includes('hola') || textLower.includes('buenas') || textLower.includes('saludos')) {
                 return bot.sendMessage(chatId, dict.getRandom('smallTalkHello'), { reply_to_message_id: msg.message_id });
             }
             if (textLower.includes('gracias bot') || textLower.includes('buen bot') || textLower === 'gracias') {
@@ -172,7 +180,6 @@ module.exports = function(botCtx, helpers) {
             }
 
             // F. BÚSQUEDA INTELIGENTE AMPLIADA
-            // Atrapa: "busco batman", "tienes batman", "quiero ver batman", "pelicula batman", "donde veo batman", "hay batman"
             const searchMatch = textLower.match(/(?:busco|tienes|tienen|quiero ver|ponme|b[uú]scame|pel[ií]cula(?: de)?|serie(?: de)?|donde veo|hay)\s+(.+)/i);
             
             if (searchMatch && searchMatch[1].length > 2) {
@@ -203,7 +210,7 @@ module.exports = function(botCtx, helpers) {
                     });
                 }
             }
-            return; // Si no entendió, se queda en silencio.
+            return; 
         }
 
         // =========================================================
