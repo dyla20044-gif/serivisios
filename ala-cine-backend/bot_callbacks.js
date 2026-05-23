@@ -852,7 +852,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                             `👉 https://tututorialaqui.com\n\n` +
                             `👇🏻 *MIRA AQUÍ LA PELÍCULA* 👇🏻`;
 
-                        const imageToSend = movieDataToSave.poster_path ? (movieDataToSave.poster_path.startsWith('http') ? movieDataToSave.poster_path : `https://placehold.co/500x750?text=SALA+CINE`;
+                        const imageToSend = movieDataToSave.poster_path ? (movieDataToSave.poster_path.startsWith('http') ? movieDataToSave.poster_path : `https://image.tmdb.org/t/p/w500${movieDataToSave.poster_path}`) : 'https://placehold.co/500x750?text=SALA+CINE';
 
                         const sentMsgSmall = await bot.sendPhoto(CHANNEL_SMALL, imageToSend, {
                             caption: messageToSmall,
