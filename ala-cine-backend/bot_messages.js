@@ -3,14 +3,13 @@ module.exports = function(botCtx, helpers) {
     const { clearAllCaches, clearLiveCache, getMainMenuKeyboard } = helpers;
 
     // =========================================================
-    // SISTEMA IA: CACHÉ EN RAM Y DICCIONARIO HUMANO
+    // SISTEMA IA: CACHÉ EN RAM Y DICCIONARIO HUMANO AVANZADO
     // =========================================================
     
-    // Caché en RAM para no saturar MongoDB con las búsquedas del grupo
     const smartBotCache = {
         catalog: [],
         lastUpdate: 0,
-        ttl: 15 * 60 * 1000 // Se actualiza cada 15 minutos
+        ttl: 15 * 60 * 1000 // 15 minutos
     };
 
     async function ensureCacheWarmed() {
@@ -25,23 +24,20 @@ module.exports = function(botCtx, helpers) {
                 ...series.map(s => ({ id: s.tmdbId, title: s.title || s.name, type: 'tv' }))
             ];
             smartBotCache.lastUpdate = Date.now();
-            console.log(`✅ Caché bot lista: ${smartBotCache.catalog.length} títulos guardados en RAM.`);
-        } catch(e) { 
-            console.error("Error calentando caché bot:", e); 
-        }
+            console.log(`✅ Caché bot lista: ${smartBotCache.catalog.length} títulos en RAM.`);
+        } catch(e) { console.error("Error calentando caché bot:", e); }
     }
 
-    // Diccionario de respuestas naturales
     const dict = {
         greetings: [
-            "¡Claro! Déjame revisar la bóveda un segundo... 🔍",
+            "¡Hola! Claro, déjame revisar la bóveda un segundo... 🔍",
             "A ver, déjame buscar si la tenemos lista para ti... 🍿",
-            "¡Buena elección! Dame un momento, la busco en el servidor. 🚀"
+            "¡Buena elección! Dame un momento, la busco en los servidores. 🚀"
         ],
         found: [
             "¡Bingo! La encontré. Aquí la tienes lista para ver. 👇",
             "¡Aquí está! Entra al enlace y prepara el canguil 🍿:",
-            "Sí la tenemos disponible en máxima calidad. Disfrútala:"
+            "Sí la tenemos disponible en máxima calidad. De una, disfrútala:"
         ],
         notFound: [
             "Puf, busqué por todos lados pero esa todavía no la tenemos subida. 😔 Recuerda que puedes pedirla en la sección 'Pedidos' de la App.",
@@ -60,6 +56,16 @@ module.exports = function(botCtx, helpers) {
             "¿Quieres pedir una película o serie nueva? ¡Súper fácil! Abre la app Sala Cine, ve a la sección de 'Pedidos' y deja tu voto. Las más votadas se suben súper rápido. 📝",
             "Todo el contenido nuevo se sube basándonos en lo que piden. ¡Entra a la app y déjanos tu solicitud ahí para ponerla en la lista de prioridades! 🚀"
         ],
+        smallTalkHello: [
+            "¡Hola! ¿Qué tal? ¿Buscando algo bueno para ver hoy? 🍿",
+            "¡Buenas! Bienvenido a la comunidad. Si buscas alguna peli, solo dímelo. 🎬",
+            "¡Hola, hola! Aquí el asistente de Sala Cine activo y listo. 🤖"
+        ],
+        smallTalkThanks: [
+            "¡De nada! Para eso estamos. ¡Que disfrutes la función! 🍿",
+            "¡A ti! Ya sabes, cualquier otra peli que busques, me avisas. 🚀",
+            "¡Con gusto! Disfruta del contenido. 🎬"
+        ],
         getRandom: (category) => {
             const options = dict[category];
             return options[Math.floor(Math.random() * options.length)];
@@ -72,53 +78,76 @@ module.exports = function(botCtx, helpers) {
 
     bot.onText(/^\/start$|^\/subir$/, (msg) => {
         const chatId = msg.chat.id;
-        
-        if (!ADMIN_CHAT_IDS.includes(msg.from.id)) {
-            return;
-        }
+        if (!ADMIN_CHAT_IDS.includes(msg.from.id)) return;
         
         adminState[chatId] = { step: 'menu' };
-        
         const inline_keyboard = getMainMenuKeyboard(chatId);
-        const options = { reply_markup: { inline_keyboard } };
-        bot.sendMessage(chatId, `¡Hola ${msg.from.first_name || 'Admin'}! ¿Qué quieres hacer hoy?`, options);
+        bot.sendMessage(chatId, `¡Hola ${msg.from.first_name || 'Admin'}! ¿Qué quieres hacer hoy?`, { reply_markup: { inline_keyboard } });
     });
 
-    bot.on('message', async (msg) => {
-        const hasLinks = msg.entities && msg.entities.some(
-            e => e.type === 'url' || e.type === 'text_link' || e.type === 'mention'
-        );
-        const isAdmin = ADMIN_CHAT_IDS.includes(msg.from.id);
+    // =========================================================
+    // MANEJADOR PRINCIPAL DE MENSAJES
+    // =========================================================
 
-        // Bloqueo Anti-Spam para usuarios normales
+    bot.on('message', async (msg) => {
+        const chatId = msg.chat.id;
+        const isAdmin = ADMIN_CHAT_IDS.includes(msg.from.id);
+        const isCommunity = COMMUNITY_GROUP_ID && chatId.toString() === COMMUNITY_GROUP_ID.toString();
+
+        // 1. LIMPIEZA AUTOMÁTICA DE MENSAJES DEL SISTEMA (Uniones/Salidas)
+        if (msg.new_chat_members || msg.left_chat_member) {
+            if (isCommunity) {
+                try {
+                    await bot.deleteMessage(chatId, msg.message_id);
+                } catch (e) { /* Falla silenciosa si no tiene permisos */ }
+            }
+            return; // Cortamos la ejecución aquí porque estos mensajes no tienen texto
+        }
+
+        // 2. ANTI-SPAM DE ENLACES PARA USUARIOS NORMALES
+        const hasLinks = msg.entities && msg.entities.some(e => e.type === 'url' || e.type === 'text_link' || e.type === 'mention');
         if (hasLinks && !isAdmin) {
             try {
                 await bot.deleteMessage(msg.chat.id, msg.message_id);
-                const warningMessage = await bot.sendMessage(
-                    msg.chat.id,
-                    `@${msg.from.username || msg.from.first_name}, no se permite enviar enlaces en este grupo.`
-                );
-                setTimeout(() => {
-                    bot.deleteMessage(warningMessage.chat.id, warningMessage.message_id).catch(e => { });
-                }, 5000);
+                const warningMessage = await bot.sendMessage(msg.chat.id, `@${msg.from.username || msg.from.first_name}, no se permite enviar enlaces en este grupo.`);
+                setTimeout(() => bot.deleteMessage(warningMessage.chat.id, warningMessage.message_id).catch(() => {}), 5000);
             } catch (error) {}
             return;
         }
 
-        const chatId = msg.chat.id;
+        // Si es una foto, sticker o no hay texto, lo ignoramos
         const userText = msg.text;
-
-        if (!userText) {
-            return;
-        }
+        if (!userText) return;
 
         // =========================================================
-        // IA DEL GRUPO (ASISTENTE HUMANO)
+        // IA DEL GRUPO (ASISTENTE HUMANO Y MODERADOR)
         // =========================================================
-        if (COMMUNITY_GROUP_ID && chatId.toString() === COMMUNITY_GROUP_ID.toString() && !isAdmin) {
+        if (isCommunity && !isAdmin) {
             const textLower = userText.toLowerCase();
 
-            // 1. FAQ: Descargar / App
+            // A. FILTRO ANTI-GROSERÍAS
+            const badWords = ['puta', 'mierda', 'pendejo', 'cabron', 'verga', 'imbecil', 'idiota', 'estupido', 'conchetumare', 'hijo de puta', 'malparido'];
+            // Verifica si alguna grosería exacta está en el texto
+            const hasBadWord = badWords.some(word => new RegExp(`\\b${word}\\b`, 'i').test(textLower));
+            
+            if (hasBadWord) {
+                try {
+                    await bot.deleteMessage(chatId, msg.message_id);
+                    const warnMsg = await bot.sendMessage(chatId, `⚠️ @${msg.from.username || msg.from.first_name}, por favor mantengamos el respeto en la comunidad. Las groserías están prohibidas.`);
+                    setTimeout(() => bot.deleteMessage(chatId, warnMsg.message_id).catch(()=>{}), 8000);
+                } catch(e) {}
+                return;
+            }
+
+            // B. CHARLAS SOCIALES
+            if (textLower === 'hola' || textLower === 'buenas' || textLower === 'saludos') {
+                return bot.sendMessage(chatId, dict.getRandom('smallTalkHello'), { reply_to_message_id: msg.message_id });
+            }
+            if (textLower.includes('gracias bot') || textLower.includes('buen bot') || textLower === 'gracias') {
+                return bot.sendMessage(chatId, dict.getRandom('smallTalkThanks'), { reply_to_message_id: msg.message_id });
+            }
+
+            // C. FAQ: Descargar / App
             if (textLower.match(/(d[oó]nde descargo|pasar la app|como descargo|link de la app|instalar la app|apk|descargar sala cine)/)) {
                 return bot.sendMessage(chatId, dict.getRandom('faqDownload'), {
                     reply_to_message_id: msg.message_id,
@@ -126,7 +155,7 @@ module.exports = function(botCtx, helpers) {
                 });
             }
 
-            // 2. FAQ: En Vivo
+            // D. FAQ: En Vivo
             if (textLower.match(/(en vivo|partido|deportes|tv en vivo|canales|donde veo el partido)/)) {
                 return bot.sendMessage(chatId, dict.getRandom('faqLive'), {
                     reply_to_message_id: msg.message_id,
@@ -134,25 +163,25 @@ module.exports = function(botCtx, helpers) {
                 });
             }
 
-            // 3. FAQ: Pedidos
-            if (textLower.match(/(como pido|agregar pelicula|subir pelicula|pueden subir|como solicito)/)) {
+            // E. FAQ: Pedidos
+            if (textLower.match(/(como pido|agregar pelicula|subir pelicula|pueden subir|como solicito|agreguen)/)) {
                 return bot.sendMessage(chatId, dict.getRandom('faqRequests'), {
                     reply_to_message_id: msg.message_id,
                     reply_markup: { inline_keyboard: [[{ text: '📝 Ir a Pedidos', url: `${RENDER_BACKEND_URL}/app/details/0` }]] }
                 });
             }
 
-            // 4. BÚSQUEDA INTELIGENTE
-            const searchMatch = textLower.match(/(?:ponme|b[uú]scame|quiero ver|tienen|est[aá]|puedes poner)\s+(?:la serie\s+|la pel[ií]cula\s+|el documental\s+)?(.+)/i);
+            // F. BÚSQUEDA INTELIGENTE AMPLIADA
+            // Atrapa: "busco batman", "tienes batman", "quiero ver batman", "pelicula batman", "donde veo batman", "hay batman"
+            const searchMatch = textLower.match(/(?:busco|tienes|tienen|quiero ver|ponme|b[uú]scame|pel[ií]cula(?: de)?|serie(?: de)?|donde veo|hay)\s+(.+)/i);
             
             if (searchMatch && searchMatch[1].length > 2) {
                 const query = searchMatch[1].replace(/[?¿!¡]/g, '').trim().toLowerCase();
                 
                 const waitMsg = await bot.sendMessage(chatId, dict.getRandom('greetings'), { reply_to_message_id: msg.message_id });
 
-                await ensureCacheWarmed(); // Actualiza la RAM si pasaron 15 min
+                await ensureCacheWarmed(); 
                 
-                // Búsqueda en RAM súper rápida (sin tocar la Base de Datos)
                 const result = smartBotCache.catalog.find(item => item.title.toLowerCase().includes(query));
 
                 if (result) {
@@ -174,33 +203,21 @@ module.exports = function(botCtx, helpers) {
                     });
                 }
             }
-
-            // Si el mensaje en el grupo no es pregunta frecuente ni búsqueda, lo ignora (deja que hablen)
-            return; 
+            return; // Si no entendió, se queda en silencio.
         }
 
         // =========================================================
-        // RESTRICCIÓN PARA USUARIOS NORMALES EN MENSAJE PRIVADO
+        // RESTRICCIÓN PARA MENSAJES PRIVADOS (DM NORMALES)
         // =========================================================
         if (!isAdmin) {
             if (userText.startsWith('/')) {
                 const command = userText.split(' ')[0];
                 if (command === '/start' || command === '/ayuda') {
-                    const helpMessage = `👋 ¡Hola! Bienvenido al bot oficial.\n\n🤖 **Gestión de Accesos:**\nSi enviaste una solicitud para unirte a nuestros canales privados, este bot te aceptará automáticamente en breve.\n\n📢 **Servicio de Publicidad:**\nSi eres creador de contenido o tienes un negocio, puedes pautar con nosotros y llegar a más de 300,000 personas en nuestra red de canales.`;
-                    
+                    const helpMessage = `👋 ¡Hola! Bienvenido al bot oficial.\n\n🤖 **Gestión de Accesos:**\nSi enviaste una solicitud para unirte a nuestros canales privados, este bot te aceptará automáticamente en breve.\n\n📢 **Servicio de Publicidad:**\nSi eres creador de contenido o tienes un negocio, puedes pautar con nosotros.`;
                     bot.sendMessage(chatId, helpMessage, { 
                         parse_mode: 'Markdown',
-                        reply_markup: {
-                            inline_keyboard: [
-                                [{ text: '📢 Panel de Publicidad', callback_data: 'ads_open_dashboard' }],
-                                [{ text: '📞 Contactar Soporte', callback_data: 'public_contact' }]
-                            ]
-                        }
+                        reply_markup: { inline_keyboard: [[{ text: '📞 Contactar Soporte', callback_data: 'public_contact' }]] }
                     });
-                    return;
-                }
-                if (command === '/contacto') {
-                    bot.sendMessage(chatId, 'Para soporte o dudas, puedes contactar al desarrollador en: @TuUsuarioDeTelegram');
                     return;
                 }
                 bot.sendMessage(chatId, 'Lo siento, no tienes permiso para usar este comando.');
@@ -209,7 +226,7 @@ module.exports = function(botCtx, helpers) {
         }
 
         // =========================================================
-        // LÓGICA DE ADMINISTRADOR (EL CÓDIGO ORIGINAL INTACTO)
+        // LÓGICA DE ADMINISTRADOR ORIGINAL
         // =========================================================
 
         if (userText.startsWith('/')) {
@@ -260,7 +277,6 @@ module.exports = function(botCtx, helpers) {
                     clearAllCaches(); 
                     bot.sendMessage(chatId, '✅ **¡Contenido Exclusivo guardado con éxito!**\nYa estará disponible en la pestaña Exclusivos de la App.', { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '🏠 Menú Principal', callback_data: 'back_to_menu' }]] } });
                 } catch(e) {
-                    console.error("Error guardando exclusivo:", e);
                     bot.sendMessage(chatId, '❌ Ocurrió un error al guardar en la base de datos.');
                 }
                 adminState[chatId] = { step: 'menu' };
@@ -326,7 +342,6 @@ module.exports = function(botCtx, helpers) {
                     clearLiveCache();
                     bot.sendMessage(chatId, '✅ **¡Evento Principal configurado con éxito!**', { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '🏠 Menú Principal', callback_data: 'back_to_menu' }]] } });
                 } catch(e) {
-                    console.error("Error guardando Hub Hero:", e);
                     bot.sendMessage(chatId, '❌ Ocurrió un error al guardar el evento principal.');
                 }
                 adminState[chatId] = { step: 'menu' };
@@ -367,7 +382,6 @@ module.exports = function(botCtx, helpers) {
                     clearLiveCache();
                     bot.sendMessage(chatId, '✅ **¡Tarjeta Secundaria agregada con éxito!**', { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '🏠 Menú Principal', callback_data: 'back_to_menu' }]] } });
                 } catch(e) {
-                    console.error("Error guardando Hub Secundario:", e);
                     bot.sendMessage(chatId, '❌ Ocurrió un error al guardar la tarjeta secundaria.');
                 }
                 adminState[chatId] = { step: 'menu' };
@@ -435,7 +449,6 @@ module.exports = function(botCtx, helpers) {
                 bot.sendMessage(targetId, `🎉 **¡Felicidades!** Has recibido un bono manual de administrador por **$${amount.toFixed(2)} USD** que ha sido sumado a tu saldo. ¡Buen trabajo!`, { parse_mode: 'Markdown' }).catch(e => console.log('No se pudo notificar al usuario del bono.'));
 
             } catch (err) {
-                console.error("Error añadiendo bono:", err);
                 bot.sendMessage(chatId, '❌ Ocurrió un error al añadir el bono.');
             } finally {
                 adminState[chatId] = { step: 'menu' };
@@ -590,7 +603,6 @@ module.exports = function(botCtx, helpers) {
                     bot.sendMessage(chatId, `⚠️ Error al enviar: ${result.error}`);
                 }
             } catch (e) {
-                console.error("Error enviando global msg:", e);
                 bot.sendMessage(chatId, '❌ Error crítico al enviar la notificación.');
             } finally {
                 adminState[chatId] = { step: 'menu' };
@@ -634,7 +646,7 @@ module.exports = function(botCtx, helpers) {
                         bot.sendPhoto(chatId, posterUrl, options);
                     }
                 } else { bot.sendMessage(chatId, `No se encontraron resultados para "${queryText}" ${yearFilter ? 'en ese año' : ''}.`); }
-            } catch (error) { console.error("Error buscando en TMDB (movie):", error); bot.sendMessage(chatId, 'Error buscando. Intenta de nuevo.'); }
+            } catch (error) { bot.sendMessage(chatId, 'Error buscando. Intenta de nuevo.'); }
 
         } 
         else if (adminState[chatId] && adminState[chatId].step === 'search_series') {
@@ -674,7 +686,7 @@ module.exports = function(botCtx, helpers) {
                         bot.sendPhoto(chatId, posterUrl, options);
                     }
                 } else { bot.sendMessage(chatId, `No se encontraron resultados para "${queryText}" ${yearFilter ? 'en ese año' : ''}.`); }
-            } catch (error) { console.error("Error buscando en TMDB (series):", error); bot.sendMessage(chatId, 'Error buscando. Intenta de nuevo.'); }
+            } catch (error) { bot.sendMessage(chatId, 'Error buscando. Intenta de nuevo.'); }
 
         } else if (adminState[chatId] && adminState[chatId].step === 'search_delete') {
             try {
@@ -705,7 +717,7 @@ module.exports = function(botCtx, helpers) {
                         bot.sendPhoto(chatId, posterUrl, options);
                     }
                 } else { bot.sendMessage(chatId, `No se encontraron resultados.`); }
-            } catch (error) { console.error("Error buscando para eliminar:", error); bot.sendMessage(chatId, 'Error buscando.'); }
+            } catch (error) { bot.sendMessage(chatId, 'Error buscando.'); }
         }
 
         else if (adminState[chatId] && adminState[chatId].step === 'awaiting_unified_link_movie') {
