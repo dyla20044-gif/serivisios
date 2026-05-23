@@ -1,11 +1,79 @@
 module.exports = function(botCtx, helpers) {
-    const { bot, mongoDb, adminState, ADMIN_CHAT_IDS, TMDB_API_KEY, RENDER_BACKEND_URL, axios, sendNotificationToTopic } = botCtx;
+    const { bot, mongoDb, adminState, ADMIN_CHAT_IDS, COMMUNITY_GROUP_ID, TMDB_API_KEY, RENDER_BACKEND_URL, axios, sendNotificationToTopic } = botCtx;
     const { clearAllCaches, clearLiveCache, getMainMenuKeyboard } = helpers;
+
+    // =========================================================
+    // SISTEMA IA: CACHÉ EN RAM Y DICCIONARIO HUMANO
+    // =========================================================
+    
+    // Caché en RAM para no saturar MongoDB con las búsquedas del grupo
+    const smartBotCache = {
+        catalog: [],
+        lastUpdate: 0,
+        ttl: 15 * 60 * 1000 // Se actualiza cada 15 minutos
+    };
+
+    async function ensureCacheWarmed() {
+        if (Date.now() - smartBotCache.lastUpdate < smartBotCache.ttl && smartBotCache.catalog.length > 0) return;
+        try {
+            console.log("🔥 Calentando Caché RAM del bot para respuestas ultrarrápidas...");
+            const movies = await mongoDb.collection('media_catalog').find({}).project({ tmdbId: 1, title: 1 }).toArray();
+            const series = await mongoDb.collection('series_catalog').find({}).project({ tmdbId: 1, title: 1, name: 1 }).toArray();
+            
+            smartBotCache.catalog = [
+                ...movies.map(m => ({ id: m.tmdbId, title: m.title, type: 'movie' })),
+                ...series.map(s => ({ id: s.tmdbId, title: s.title || s.name, type: 'tv' }))
+            ];
+            smartBotCache.lastUpdate = Date.now();
+            console.log(`✅ Caché bot lista: ${smartBotCache.catalog.length} títulos guardados en RAM.`);
+        } catch(e) { 
+            console.error("Error calentando caché bot:", e); 
+        }
+    }
+
+    // Diccionario de respuestas naturales
+    const dict = {
+        greetings: [
+            "¡Claro! Déjame revisar la bóveda un segundo... 🔍",
+            "A ver, déjame buscar si la tenemos lista para ti... 🍿",
+            "¡Buena elección! Dame un momento, la busco en el servidor. 🚀"
+        ],
+        found: [
+            "¡Bingo! La encontré. Aquí la tienes lista para ver. 👇",
+            "¡Aquí está! Entra al enlace y prepara el canguil 🍿:",
+            "Sí la tenemos disponible en máxima calidad. Disfrútala:"
+        ],
+        notFound: [
+            "Puf, busqué por todos lados pero esa todavía no la tenemos subida. 😔 Recuerda que puedes pedirla en la sección 'Pedidos' de la App.",
+            "¡Uf! Esa me falta. Pero tranquilo, anótala en la sección de pedidos de Sala Cine y la subimos pronto. ⚡",
+            "Todavía no está en la bóveda, pero buenísima sugerencia. ¡Estaré atento para cuando la subamos! 🎬"
+        ],
+        faqDownload: [
+            "¡Hola! Puedes descargar la aplicación de Sala Cine totalmente gratis y ver todo sin cortes. Búscala en la Play Store o entra aquí directo: 👇",
+            "Para ver todo nuestro catálogo, necesitas nuestra app oficial. Es súper ligera. Descárgala desde este enlace seguro: 🚀"
+        ],
+        faqLive: [
+            "¡Claro que sí! Tenemos contenido en VIVO 🔴. Partidos, eventos y canales 24/7. Solo abre Sala Cine y ve a la pestaña 'En Vivo'.",
+            "Para ver los canales y partidos en vivo, entra a la app y revisa la sección del Feed/En Vivo. ¡Ahí transmitimos lo mejor! 🔥"
+        ],
+        faqRequests: [
+            "¿Quieres pedir una película o serie nueva? ¡Súper fácil! Abre la app Sala Cine, ve a la sección de 'Pedidos' y deja tu voto. Las más votadas se suben súper rápido. 📝",
+            "Todo el contenido nuevo se sube basándonos en lo que piden. ¡Entra a la app y déjanos tu solicitud ahí para ponerla en la lista de prioridades! 🚀"
+        ],
+        getRandom: (category) => {
+            const options = dict[category];
+            return options[Math.floor(Math.random() * options.length)];
+        }
+    };
+
+    // =========================================================
+    // COMANDOS DE INICIO
+    // =========================================================
 
     bot.onText(/^\/start$|^\/subir$/, (msg) => {
         const chatId = msg.chat.id;
         
-        if (!ADMIN_CHAT_IDS.includes(chatId)) {
+        if (!ADMIN_CHAT_IDS.includes(msg.from.id)) {
             return;
         }
         
@@ -20,9 +88,10 @@ module.exports = function(botCtx, helpers) {
         const hasLinks = msg.entities && msg.entities.some(
             e => e.type === 'url' || e.type === 'text_link' || e.type === 'mention'
         );
-        const isNotAdmin = !ADMIN_CHAT_IDS.includes(msg.from.id);
+        const isAdmin = ADMIN_CHAT_IDS.includes(msg.from.id);
 
-        if (hasLinks && isNotAdmin) {
+        // Bloqueo Anti-Spam para usuarios normales
+        if (hasLinks && !isAdmin) {
             try {
                 await bot.deleteMessage(msg.chat.id, msg.message_id);
                 const warningMessage = await bot.sendMessage(
@@ -32,8 +101,7 @@ module.exports = function(botCtx, helpers) {
                 setTimeout(() => {
                     bot.deleteMessage(warningMessage.chat.id, warningMessage.message_id).catch(e => { });
                 }, 5000);
-            } catch (error) {
-            }
+            } catch (error) {}
             return;
         }
 
@@ -44,7 +112,77 @@ module.exports = function(botCtx, helpers) {
             return;
         }
 
-        if (!ADMIN_CHAT_IDS.includes(chatId)) {
+        // =========================================================
+        // IA DEL GRUPO (ASISTENTE HUMANO)
+        // =========================================================
+        if (COMMUNITY_GROUP_ID && chatId.toString() === COMMUNITY_GROUP_ID.toString() && !isAdmin) {
+            const textLower = userText.toLowerCase();
+
+            // 1. FAQ: Descargar / App
+            if (textLower.match(/(d[oó]nde descargo|pasar la app|como descargo|link de la app|instalar la app|apk|descargar sala cine)/)) {
+                return bot.sendMessage(chatId, dict.getRandom('faqDownload'), {
+                    reply_to_message_id: msg.message_id,
+                    reply_markup: { inline_keyboard: [[{ text: '📱 Descargar Sala Cine', url: `${RENDER_BACKEND_URL}/app/details/0` }]] }
+                });
+            }
+
+            // 2. FAQ: En Vivo
+            if (textLower.match(/(en vivo|partido|deportes|tv en vivo|canales|donde veo el partido)/)) {
+                return bot.sendMessage(chatId, dict.getRandom('faqLive'), {
+                    reply_to_message_id: msg.message_id,
+                    reply_markup: { inline_keyboard: [[{ text: '🔴 Abrir App', url: `${RENDER_BACKEND_URL}/app/details/0` }]] }
+                });
+            }
+
+            // 3. FAQ: Pedidos
+            if (textLower.match(/(como pido|agregar pelicula|subir pelicula|pueden subir|como solicito)/)) {
+                return bot.sendMessage(chatId, dict.getRandom('faqRequests'), {
+                    reply_to_message_id: msg.message_id,
+                    reply_markup: { inline_keyboard: [[{ text: '📝 Ir a Pedidos', url: `${RENDER_BACKEND_URL}/app/details/0` }]] }
+                });
+            }
+
+            // 4. BÚSQUEDA INTELIGENTE
+            const searchMatch = textLower.match(/(?:ponme|b[uú]scame|quiero ver|tienen|est[aá]|puedes poner)\s+(?:la serie\s+|la pel[ií]cula\s+|el documental\s+)?(.+)/i);
+            
+            if (searchMatch && searchMatch[1].length > 2) {
+                const query = searchMatch[1].replace(/[?¿!¡]/g, '').trim().toLowerCase();
+                
+                const waitMsg = await bot.sendMessage(chatId, dict.getRandom('greetings'), { reply_to_message_id: msg.message_id });
+
+                await ensureCacheWarmed(); // Actualiza la RAM si pasaron 15 min
+                
+                // Búsqueda en RAM súper rápida (sin tocar la Base de Datos)
+                const result = smartBotCache.catalog.find(item => item.title.toLowerCase().includes(query));
+
+                if (result) {
+                    const successText = dict.getRandom('found') + `\n\n🎬 *${result.title}*`;
+                    const deeplink = `${RENDER_BACKEND_URL}/view/${result.type}/${result.id}`;
+
+                    return bot.editMessageText(successText, {
+                        chat_id: chatId,
+                        message_id: waitMsg.message_id,
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            inline_keyboard: [[{ text: '▶️ Ver Ahora', url: deeplink }]]
+                        }
+                    });
+                } else {
+                    return bot.editMessageText(dict.getRandom('notFound'), {
+                        chat_id: chatId,
+                        message_id: waitMsg.message_id
+                    });
+                }
+            }
+
+            // Si el mensaje en el grupo no es pregunta frecuente ni búsqueda, lo ignora (deja que hablen)
+            return; 
+        }
+
+        // =========================================================
+        // RESTRICCIÓN PARA USUARIOS NORMALES EN MENSAJE PRIVADO
+        // =========================================================
+        if (!isAdmin) {
             if (userText.startsWith('/')) {
                 const command = userText.split(' ')[0];
                 if (command === '/start' || command === '/ayuda') {
@@ -69,6 +207,10 @@ module.exports = function(botCtx, helpers) {
             }
             return;
         }
+
+        // =========================================================
+        // LÓGICA DE ADMINISTRADOR (EL CÓDIGO ORIGINAL INTACTO)
+        // =========================================================
 
         if (userText.startsWith('/')) {
             const command = userText.split(' ')[0];
@@ -151,7 +293,6 @@ module.exports = function(botCtx, helpers) {
                 if (!userText.startsWith('http')) { bot.sendMessage(chatId, '❌ Envía una URL válida.'); return; }
                 adminState[chatId].tempHubData.video = userText;
                 
-                // SALTAMOS LOS ESPECTADORES, VAMOS DIRECTO A LA ETIQUETA
                 adminState[chatId].step = 'hub_hero_status';
                 bot.sendMessage(chatId, '✅ Video guardado.\n\n🏷️ Ingresa la **ETIQUETA** del evento (Ej: EN VIVO, ESTRENO, PRÓXIMAMENTE):', { parse_mode: 'Markdown' });
             }
@@ -169,7 +310,7 @@ module.exports = function(botCtx, helpers) {
                         title: heroData.title,
                         imageUrl: heroData.image,
                         videoUrl: heroData.video,
-                        viewers: 0, // Se autogestiona en RAM
+                        viewers: 0, 
                         statusLabel: heroData.statusLabel,
                         btnText: "VER AHORA",
                         description: "Contenido exclusivo en vivo."
@@ -206,7 +347,6 @@ module.exports = function(botCtx, helpers) {
                 if (!userText.startsWith('http')) { bot.sendMessage(chatId, '❌ Envía una URL válida.'); return; }
                 adminState[chatId].tempHubData.videoUrl = userText;
                 
-                // SALTAMOS LOS ESPECTADORES Y GUARDAMOS
                 bot.sendMessage(chatId, '⏳ Guardando Tarjeta Secundaria...', { parse_mode: 'Markdown' });
                 
                 const secData = adminState[chatId].tempHubData;
@@ -215,7 +355,7 @@ module.exports = function(botCtx, helpers) {
                     title: secData.title,
                     imageUrl: secData.image,
                     videoUrl: secData.videoUrl, 
-                    viewers: 0 // Se autogestiona en RAM
+                    viewers: 0 
                 };
                 
                 try {
