@@ -11,11 +11,12 @@
             background-color: var(--tg-theme-bg-color, #111827);
             color: var(--tg-theme-text-color, #ffffff);
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 0;
         }
         .glass-card {
-            background: rgba(31, 41, 55, 0.7);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: rgba(31, 41, 55, 0.9);
+            border: 1px solid rgba(255, 255, 255, 0.05);
         }
         .loader {
             border: 3px solid rgba(255,255,255,0.1);
@@ -26,113 +27,145 @@
             animation: spin 1s linear infinite;
         }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
+        /* Estilos para pestañas activas */
+        .tab-active { background-color: #2563eb; color: white; border-color: #3b82f6; }
+        .tab-inactive { background-color: #374151; color: #9ca3af; border-color: transparent; }
     </style>
 </head>
-<body class="p-4 pb-10">
+<body class="p-4 pb-12">
 
-    <div class="text-center mb-6 mt-2">
-        <h1 class="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-emerald-400">Bóveda de Pedidos</h1>
-        <p class="text-sm text-gray-400 mt-1">Selecciona el contenido para subir al bot</p>
+    <div class="text-center mb-4 mt-2">
+        <h1 class="text-2xl font-black bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-emerald-400">Bóveda de Pedidos</h1>
+        <p class="text-xs text-gray-400 mt-1">Top 100 solicitudes de usuarios</p>
     </div>
 
-    <div id="loading" class="flex justify-center items-center py-10">
-        <div class="loader"></div>
+    <div class="flex space-x-2 mb-6" id="tabs-container" style="display: none;">
+        <button id="btn-alta" onclick="switchTab('alta')" class="flex-1 py-2 rounded-lg font-bold text-sm border-b-2 tab-active transition-all">
+            🔥 Urgentes / Rápidos
+        </button>
+        <button id="btn-regular" onclick="switchTab('regular')" class="flex-1 py-2 rounded-lg font-bold text-sm border-b-2 tab-inactive transition-all">
+            📅 Semanales
+        </button>
     </div>
 
-    <div id="pedidos-container" class="hidden space-y-8">
+    <div id="loading" class="flex flex-col justify-center items-center py-10">
+        <div class="loader mb-3"></div>
+        <p class="text-sm text-gray-400" id="loading-text">Conectando a la bóveda...</p>
+    </div>
+
+    <div id="pedidos-container" class="hidden">
         
-        <section>
-            <h2 class="text-lg font-bold text-red-400 mb-3 flex items-center gap-2">
-                🔥 Prioridad Alta (Ultra / Fast)
-            </h2>
-            <div id="grid-alta" class="grid grid-cols-2 gap-4">
-                </div>
-            <p id="empty-alta" class="text-sm text-gray-500 hidden">No hay pedidos de alta prioridad.</p>
-        </section>
+        <div id="view-alta" class="grid grid-cols-2 gap-3"></div>
+        <p id="empty-alta" class="text-sm text-center text-gray-500 hidden mt-4">No hay pedidos urgentes.</p>
 
-        <section>
-            <h2 class="text-lg font-bold text-blue-400 mb-3 flex items-center gap-2">
-                📅 Prioridad Regular
-            </h2>
-            <div id="grid-regular" class="grid grid-cols-2 gap-4">
-                </div>
-            <p id="empty-regular" class="text-sm text-gray-500 hidden">No hay pedidos regulares.</p>
-        </section>
+        <div id="view-regular" class="grid grid-cols-2 gap-3 hidden"></div>
+        <p id="empty-regular" class="text-sm text-center text-gray-500 hidden mt-4">No hay pedidos semanales.</p>
 
     </div>
 
     <script>
-        // Inicializar Telegram Web App
         const tg = window.Telegram.WebApp;
-        tg.expand(); // Hace que la app ocupe toda la pantalla
+        tg.expand(); 
         tg.ready();
 
-        // El backend reemplazará {{BOT_USERNAME}} dinámicamente
         const botUsername = "{{BOT_USERNAME}}";
 
+        // Función para cambiar de pestaña
+        function switchTab(tab) {
+            tg.HapticFeedback.selectionChanged();
+            
+            const btnAlta = document.getElementById('btn-alta');
+            const btnRegular = document.getElementById('btn-regular');
+            const viewAlta = document.getElementById('view-alta');
+            const viewRegular = document.getElementById('view-regular');
+            const emptyAlta = document.getElementById('empty-alta');
+            const emptyRegular = document.getElementById('empty-regular');
+
+            if (tab === 'alta') {
+                btnAlta.className = "flex-1 py-2 rounded-lg font-bold text-sm border-b-2 tab-active transition-all";
+                btnRegular.className = "flex-1 py-2 rounded-lg font-bold text-sm border-b-2 tab-inactive transition-all";
+                viewAlta.classList.remove('hidden');
+                viewRegular.classList.add('hidden');
+                if (viewAlta.innerHTML === '') emptyAlta.classList.remove('hidden');
+                emptyRegular.classList.add('hidden');
+            } else {
+                btnRegular.className = "flex-1 py-2 rounded-lg font-bold text-sm border-b-2 tab-active transition-all";
+                btnAlta.className = "flex-1 py-2 rounded-lg font-bold text-sm border-b-2 tab-inactive transition-all";
+                viewRegular.classList.remove('hidden');
+                viewAlta.classList.add('hidden');
+                if (viewRegular.innerHTML === '') emptyRegular.classList.remove('hidden');
+                emptyAlta.classList.add('hidden');
+            }
+        }
+
+        // Carga de datos
         document.addEventListener('DOMContentLoaded', async () => {
             try {
                 const response = await fetch('/api/admin/pedidos/list');
+                if (!response.ok) throw new Error("Error de conexión al servidor");
+                
                 const pedidos = await response.json();
                 
+                if (pedidos.error) throw new Error(pedidos.error);
+
                 document.getElementById('loading').classList.add('hidden');
+                document.getElementById('tabs-container').style.display = 'flex';
                 document.getElementById('pedidos-container').classList.remove('hidden');
 
-                const gridAlta = document.getElementById('grid-alta');
-                const gridRegular = document.getElementById('grid-regular');
-                let countAlta = 0;
-                let countRegular = 0;
+                const viewAlta = document.getElementById('view-alta');
+                const viewRegular = document.getElementById('view-regular');
 
-                pedidos.forEach(p => {
-                    const posterUrl = p.poster_path 
-                        ? (p.poster_path.startsWith('http') ? p.poster_path : `https://image.tmdb.org/t/p/w200${p.poster_path}`) 
-                        : 'https://placehold.co/200x300?text=SALA+CINE';
+                // Separar los pedidos en dos listas
+                const pedidosAlta = pedidos.filter(p => ['immediate', 'premium', 'fast'].includes(p.latestPriority));
+                const pedidosRegular = pedidos.filter(p => !['immediate', 'premium', 'fast'].includes(p.latestPriority));
 
-                    const cardHTML = `
-                        <div class="glass-card rounded-xl overflow-hidden shadow-lg flex flex-col relative">
-                            <img src="${posterUrl}" alt="Poster" class="w-full h-48 object-cover">
-                            <div class="absolute top-2 right-2 bg-black/70 text-white text-xs px-2 py-1 rounded-full font-bold">
-                                ⭐ ${p.votes || 1}
+                // Función constructora de tarjetas
+                const renderCards = (lista, contenedor) => {
+                    contenedor.innerHTML = lista.map(p => {
+                        // Usamos PNG seguro en vez de SVG para evitar crashes en Android WebView
+                        let posterUrl = 'https://via.placeholder.com/200x300.png?text=Sin+Poster';
+                        if (p.poster_path) {
+                            posterUrl = p.poster_path.startsWith('http') ? p.poster_path : `https://image.tmdb.org/t/p/w200${p.poster_path}`;
+                        }
+
+                        const isSerie = p.mediaType === 'tv';
+                        return `
+                            <div class="glass-card rounded-xl overflow-hidden shadow-lg flex flex-col relative">
+                                <img src="${posterUrl}" alt="Poster" class="w-full h-40 object-cover bg-gray-800" loading="lazy">
+                                <div class="absolute top-2 right-2 bg-black/80 text-yellow-400 text-xs px-2 py-1 rounded-full font-bold shadow-md">
+                                    ⭐ ${p.votes || 1}
+                                </div>
+                                <div class="p-3 flex flex-col flex-grow">
+                                    <h3 class="text-sm font-bold truncate mb-1 text-white" title="${p.title}">${p.title}</h3>
+                                    <p class="text-[10px] text-gray-400 uppercase font-semibold mb-3">${isSerie ? '📺 Serie' : '🎬 Película'}</p>
+                                    
+                                    <button onclick="agregarContenido('${p.tmdbId}')" class="mt-auto w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-4 rounded-lg text-xs transition-colors shadow-[0_0_10px_rgba(37,99,235,0.4)]">
+                                        + AGREGAR
+                                    </button>
+                                </div>
                             </div>
-                            <div class="p-3 flex flex-col flex-grow">
-                                <h3 class="text-sm font-bold truncate mb-1" title="${p.title}">${p.title}</h3>
-                                <p class="text-xs text-gray-400 capitalize mb-3">${p.mediaType === 'tv' ? '📺 Serie' : '🎬 Película'}</p>
-                                
-                                <button onclick="agregarContenido('${p.tmdbId}')" class="mt-auto w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-4 rounded-lg text-sm transition-colors shadow-[0_0_10px_rgba(37,99,235,0.4)]">
-                                    + Agregar
-                                </button>
-                            </div>
-                        </div>
-                    `;
+                        `;
+                    }).join('');
+                };
 
-                    if (['immediate', 'premium', 'fast'].includes(p.latestPriority)) {
-                        gridAlta.innerHTML += cardHTML;
-                        countAlta++;
-                    } else {
-                        gridRegular.innerHTML += cardHTML;
-                        countRegular++;
-                    }
-                });
+                // Renderizamos
+                renderCards(pedidosAlta, viewAlta);
+                renderCards(pedidosRegular, viewRegular);
 
-                if (countAlta === 0) document.getElementById('empty-alta').classList.remove('hidden');
-                if (countRegular === 0) document.getElementById('empty-regular').classList.remove('hidden');
+                // Mostramos estado vacío si es necesario
+                if (pedidosAlta.length === 0) document.getElementById('empty-alta').classList.remove('hidden');
 
             } catch (error) {
-                console.error("Error cargando pedidos:", error);
-                document.getElementById('loading').innerHTML = '<p class="text-red-400">Error cargando los datos. Intenta de nuevo.</p>';
+                console.error("Error crítico:", error);
+                document.getElementById('loader').style.display = 'none';
+                document.getElementById('loading-text').innerHTML = `<span class="text-red-500 font-bold">❌ Error: ${error.message}</span>`;
             }
         });
 
-        // Función que se ejecuta al hacer clic en "Agregar"
         function agregarContenido(tmdbId) {
-            // Vibra el teléfono para dar feedback táctil
             tg.HapticFeedback.impactOccurred('medium');
-            
-            // Crea el Deep Link que abre el chat del bot y le manda el comando oculto /start req_ID
-            const startParam = `req_${tmdbId}`;
-            const link = `https://t.me/${botUsername}?start=${startParam}`;
-            
-            // Abre el enlace y cierra la Web App simultáneamente
+            const link = `https://t.me/${botUsername}?start=req_${tmdbId}`;
             tg.openTelegramLink(link);
             tg.close();
         }
