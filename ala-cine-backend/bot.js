@@ -2,14 +2,12 @@ const fs = require('fs');
 const path = require('path');
 const initializePublicAds = require('./publicAds');
 
-// Importamos nuestros nuevos submódulos
 const initHelpers = require('./bot_helpers');
 const initMessages = require('./bot_messages');
 const initCallbacks = require('./bot_callbacks');
 
 function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_IDS, TMDB_API_KEY, RENDER_BACKEND_URL, axios, pinnedCache, sendNotificationToTopic, userCache) {
     
-    // Obtenemos el ID de la comunidad desde las variables de entorno
     const COMMUNITY_GROUP_ID = process.env.COMMUNITY_GROUP_ID;
 
     // 1. Inicializar Publicidad
@@ -20,7 +18,7 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_IDS, TMDB_API_KE
         { command: 'start', description: 'Reiniciar el bot y ver el menú principal' },
         { command: 'subir', description: 'Subir una película o serie a la base de datos' },
         { command: 'editar', description: 'Editar los enlaces de una película o serie existente' },
-        { command: 'pedidos', description: 'Ver la lista de películas solicitadas por los usuarios' },
+        { command: 'pedidos', description: 'Abrir Gestor de Pedidos de Usuarios' },
         { command: 'subirexclusivo', description: 'Subir contenido a la bóveda privada/exclusiva' }
     ]);
 
@@ -132,11 +130,7 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_IDS, TMDB_API_KE
         }
     });
 
-    // =========================================================
-    // NUEVO: SISTEMA DE MENSAJES AUTOMÁTICOS (CADA 6 HORAS)
-    // =========================================================
     if (COMMUNITY_GROUP_ID) {
-        // 21600000 milisegundos = 6 horas
         setInterval(() => {
             const mensajesAutomáticos = [
                 "🍿 **¿Sin saber qué ver hoy?**\nRecuerda que en Sala Cine subimos estrenos y clásicos todos los días. ¡Abre la app y descubre tu próxima película favorita!",
@@ -147,7 +141,6 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_IDS, TMDB_API_KE
             
             const msjAleatorio = mensajesAutomáticos[Math.floor(Math.random() * mensajesAutomáticos.length)];
             
-            // Usamos tu ruta existente que abre la app si está instalada o redirige a la Play Store
             const smartLink = `${RENDER_BACKEND_URL}/app/details/0`; 
 
             bot.sendMessage(COMMUNITY_GROUP_ID, msjAleatorio, {
