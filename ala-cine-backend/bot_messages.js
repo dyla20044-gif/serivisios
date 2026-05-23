@@ -11,7 +11,7 @@ module.exports = function(botCtx, helpers) {
     const smartBotCache = {
         catalog: [],
         lastUpdate: 0,
-        ttl: 15 * 60 * 1000 // 15 minutos
+        ttl: 15 * 60 * 1000 
     };
 
     async function ensureCacheWarmed() {
@@ -80,13 +80,57 @@ module.exports = function(botCtx, helpers) {
     };
 
     // =========================================================
-    // COMANDOS DE INICIO
+    // COMANDOS DE INICIO Y DEEP LINKING (WEB APP)
     // =========================================================
 
-    bot.onText(/^\/start$|^\/subir$/, (msg) => {
+    bot.onText(/^\/start(?:\s+(.+))?$|^\/subir$/, async (msg, match) => {
         const chatId = msg.chat.id;
         if (!ADMIN_CHAT_IDS.includes(msg.from.id)) return;
         
+        const param = match && match[1];
+
+        // 🟢 NUEVO: SI VIENE DE LA WEB APP DE PEDIDOS (Deep Link: /start req_ID)
+        if (param && param.startsWith('req_')) {
+            const tmdbId = param.split('_')[1];
+            
+            try {
+                bot.sendMessage(chatId, `⏳ Extrayendo datos de TMDB para el pedido...`);
+                const movieUrl = `https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${TMDB_API_KEY}&language=es-ES`;
+                const response = await axios.get(movieUrl);
+                const movieData = response.data;
+                
+                if (!movieData) { bot.sendMessage(chatId, '❌ Error: No se encontraron detalles en TMDB.'); return; }
+
+                const genreIds = movieData.genres ? movieData.genres.map(g => g.id) : [];
+                const countries = movieData.production_countries ? movieData.production_countries.map(c => c.iso_3166_1) : [];
+
+                adminState[chatId] = {
+                    step: 'awaiting_unified_link_movie',
+                    selectedMedia: {
+                        id: movieData.id,
+                        title: movieData.title,
+                        overview: movieData.overview,
+                        poster_path: movieData.poster_path,
+                        backdrop_path: movieData.backdrop_path,
+                        genres: genreIds,
+                        release_date: movieData.release_date,
+                        popularity: movieData.popularity,
+                        vote_average: movieData.vote_average,
+                        origin_country: countries
+                    }
+                };
+                
+                const promptMsg = await bot.sendMessage(chatId, `🎬 Pedido: *${movieData.title}*\n🏷️ Géneros: ${genreIds.length}\n🌍 Países: ${countries.join(', ')}\n\n🔗 Envía el **ENLACE (Link)** del video.`, { parse_mode: 'Markdown' });
+                adminState[chatId].promptMessageId = promptMsg.message_id;
+
+            } catch (error) {
+                console.error("Error al obtener detalles de TMDB desde Web App:", error.message);
+                bot.sendMessage(chatId, '❌ Error al obtener los detalles de TMDB. Intenta agregarlo manualmente con el botón de subida normal.');
+            }
+            return; // Detiene la ejecución para no mostrar el menú
+        }
+
+        // INICIO NORMAL (MENÚ PRINCIPAL)
         adminState[chatId] = { step: 'menu' };
         const inline_keyboard = getMainMenuKeyboard(chatId);
         bot.sendMessage(chatId, `¡Hola ${msg.from.first_name || 'Admin'}! ¿Qué quieres hacer hoy?`, { reply_markup: { inline_keyboard } });
@@ -153,7 +197,7 @@ module.exports = function(botCtx, helpers) {
                 return bot.sendMessage(chatId, dict.getRandom('smallTalkThanks'), { reply_to_message_id: msg.message_id });
             }
 
-            // C. FAQ: Descargar / App (Preguntas directas sobre la app)
+            // C. FAQ: Descargar / App
             if (textLower.match(/(d[oó]nde descargo|pasar la app|como descargo|link de la app|instalar la app|apk|descargar sala cine|la aplicaci[oó]n|su app)/)) {
                 return bot.sendMessage(chatId, dict.getRandom('faqDownload'), {
                     reply_to_message_id: msg.message_id,
@@ -161,7 +205,7 @@ module.exports = function(botCtx, helpers) {
                 });
             }
 
-            // C2. FAQ: Cómo ver (Preguntas sobre cómo reproducir)
+            // C2. FAQ: Cómo ver
             if (textLower.match(/(c[oó]mo (lo|la) veo|puedo ver esta|d[oó]nde la veo|como funciona|ayuda para ver|puedo ver una pel[ií]cula)/)) {
                 return bot.sendMessage(chatId, dict.getRandom('faqHowToWatch'), {
                     reply_to_message_id: msg.message_id,
@@ -185,7 +229,7 @@ module.exports = function(botCtx, helpers) {
                 });
             }
 
-            // F. BÚSQUEDA INTELIGENTE AMPLIADA (Con doble botón)
+            // F. BÚSQUEDA INTELIGENTE AMPLIADA
             const searchMatch = textLower.match(/(?:busco|tienes|tienen|quiero ver|ponme|b[uú]scame|pel[ií]cula(?: de)?|serie(?: de)?|donde veo|hay|est[aá])\s+(.+)/i);
             
             if (searchMatch && searchMatch[1].length > 2) {
@@ -208,7 +252,7 @@ module.exports = function(botCtx, helpers) {
                         reply_markup: {
                             inline_keyboard: [
                                 [{ text: '▶️ Ver Ahora', url: deeplink }],
-                                [{ text: '📱 Descargar Sala Cine', url: `${RENDER_BACKEND_URL}/app/details/0` }] // NUEVO BOTÓN
+                                [{ text: '📱 Descargar Sala Cine', url: `${RENDER_BACKEND_URL}/app/details/0` }]
                             ]
                         }
                     });
@@ -224,13 +268,12 @@ module.exports = function(botCtx, helpers) {
         }
 
         // =========================================================
-        // LÓGICA DE COMANDOS DEL ADMINISTRADOR (INCLUYE MODO FANTASMA)
+        // LÓGICA DE COMANDOS DEL ADMINISTRADOR
         // =========================================================
         
         if (isAdmin && userText.startsWith('/')) {
             const command = userText.split(' ')[0];
             
-            // NUEVO COMANDO: MODO FANTASMA (/decir)
             if (command === '/decir') {
                 const mensaje = userText.replace('/decir', '').trim();
                 if (!mensaje) {
