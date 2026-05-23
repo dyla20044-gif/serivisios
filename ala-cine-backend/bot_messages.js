@@ -21,7 +21,6 @@ module.exports = function(botCtx, helpers) {
             const movies = await mongoDb.collection('media_catalog').find({}).project({ tmdbId: 1, title: 1, name: 1 }).toArray();
             const series = await mongoDb.collection('series_catalog').find({}).project({ tmdbId: 1, title: 1, name: 1 }).toArray();
             
-            // CORRECCIÓN AQUÍ: Evitar error si una película en la BD no tiene título
             smartBotCache.catalog = [
                 ...movies.map(m => ({ id: m.tmdbId, title: (m.title || m.name || '').toString(), type: 'movie' })),
                 ...series.map(s => ({ id: s.tmdbId, title: (s.title || s.name || '').toString(), type: 'tv' }))
@@ -50,6 +49,11 @@ module.exports = function(botCtx, helpers) {
         faqDownload: [
             "¡Hola! Puedes descargar la aplicación de Sala Cine totalmente gratis y ver todo sin cortes. Búscala en la Play Store o entra aquí directo: 👇",
             "Para ver todo nuestro catálogo, necesitas nuestra app oficial. Es súper ligera. Descárgala desde este enlace seguro: 🚀"
+        ],
+        faqHowToWatch: [
+            "¡Para ver cualquier película o serie necesitas nuestra app! 🍿 Descárgala gratis aquí y disfruta sin límites: 👇",
+            "Todo nuestro contenido es exclusivo de la app Sala Cine. 🚀 Bájala desde este enlace seguro y busca tu película adentro:",
+            "Es súper fácil. Solo instala nuestra aplicación oficial y busca el título ahí dentro. ¡Descárgala aquí! 👇"
         ],
         faqLive: [
             "¡Claro que sí! Tenemos contenido en VIVO 🔴. Partidos, eventos y canales 24/7. Solo abre Sala Cine y ve a la pestaña 'En Vivo'.",
@@ -97,10 +101,6 @@ module.exports = function(botCtx, helpers) {
         const isAdmin = ADMIN_CHAT_IDS.includes(msg.from.id);
         const isCommunity = cleanCommunityId && chatId.toString() === cleanCommunityId;
 
-        if (msg.text) {
-            console.log(`[TEST-BOT] Msg de: ${msg.from.first_name} | ID Grupo/Chat: ${chatId} | ID Configurado en Render: ${cleanCommunityId} | Es Admin: ${isAdmin} | Coincide el Grupo: ${isCommunity} | Texto: ${msg.text}`);
-        }
-
         // 1. LIMPIEZA AUTOMÁTICA DE MENSAJES DEL SISTEMA
         if (msg.new_chat_members || msg.left_chat_member) {
             if (isCommunity) {
@@ -129,7 +129,6 @@ module.exports = function(botCtx, helpers) {
         // IA DEL GRUPO (ASISTENTE HUMANO Y MODERADOR)
         // =========================================================
         
-        // NOTA: Quité la restricción de "!isAdmin" aquí para que a ti (como admin) también te responda si quieres buscar algo
         if (isCommunity) {
             const textLower = userText.toLowerCase();
 
@@ -137,10 +136,10 @@ module.exports = function(botCtx, helpers) {
             const badWords = ['puta', 'mierda', 'pendejo', 'cabron', 'verga', 'imbecil', 'idiota', 'estupido', 'conchetumare', 'hijo de puta', 'malparido'];
             const hasBadWord = badWords.some(word => new RegExp(`\\b${word}\\b`, 'i').test(textLower));
             
-            if (hasBadWord && !isAdmin) { // Si tú dices algo por error, a ti no te lo borra
+            if (hasBadWord && !isAdmin) { 
                 try {
                     await bot.deleteMessage(chatId, msg.message_id);
-                    const warnMsg = await bot.sendMessage(chatId, `⚠️ @${msg.from.username || msg.from.first_name}, por favor mantengamos el respeto en la comunidad. Las groserías están prohibidas.`);
+                    const warnMsg = await bot.sendMessage(chatId, `⚠️ @${msg.from.username || msg.from.first_name}, por favor mantengamos el respeto en la comunidad.`);
                     setTimeout(() => bot.deleteMessage(chatId, warnMsg.message_id).catch(()=>{}), 8000);
                 } catch(e) {}
                 return;
@@ -154,9 +153,17 @@ module.exports = function(botCtx, helpers) {
                 return bot.sendMessage(chatId, dict.getRandom('smallTalkThanks'), { reply_to_message_id: msg.message_id });
             }
 
-            // C. FAQ: Descargar / App
-            if (textLower.match(/(d[oó]nde descargo|pasar la app|como descargo|link de la app|instalar la app|apk|descargar sala cine)/)) {
+            // C. FAQ: Descargar / App (Preguntas directas sobre la app)
+            if (textLower.match(/(d[oó]nde descargo|pasar la app|como descargo|link de la app|instalar la app|apk|descargar sala cine|la aplicaci[oó]n|su app)/)) {
                 return bot.sendMessage(chatId, dict.getRandom('faqDownload'), {
+                    reply_to_message_id: msg.message_id,
+                    reply_markup: { inline_keyboard: [[{ text: '📱 Descargar Sala Cine', url: `${RENDER_BACKEND_URL}/app/details/0` }]] }
+                });
+            }
+
+            // C2. FAQ: Cómo ver (Preguntas sobre cómo reproducir)
+            if (textLower.match(/(c[oó]mo (lo|la) veo|puedo ver esta|d[oó]nde la veo|como funciona|ayuda para ver|puedo ver una pel[ií]cula)/)) {
+                return bot.sendMessage(chatId, dict.getRandom('faqHowToWatch'), {
                     reply_to_message_id: msg.message_id,
                     reply_markup: { inline_keyboard: [[{ text: '📱 Descargar Sala Cine', url: `${RENDER_BACKEND_URL}/app/details/0` }]] }
                 });
@@ -178,8 +185,8 @@ module.exports = function(botCtx, helpers) {
                 });
             }
 
-            // F. BÚSQUEDA INTELIGENTE AMPLIADA
-            const searchMatch = textLower.match(/(?:busco|tienes|tienen|quiero ver|ponme|b[uú]scame|pel[ií]cula(?: de)?|serie(?: de)?|donde veo|hay)\s+(.+)/i);
+            // F. BÚSQUEDA INTELIGENTE AMPLIADA (Con doble botón)
+            const searchMatch = textLower.match(/(?:busco|tienes|tienen|quiero ver|ponme|b[uú]scame|pel[ií]cula(?: de)?|serie(?: de)?|donde veo|hay|est[aá])\s+(.+)/i);
             
             if (searchMatch && searchMatch[1].length > 2) {
                 const query = searchMatch[1].replace(/[?¿!¡]/g, '').trim().toLowerCase();
@@ -188,7 +195,6 @@ module.exports = function(botCtx, helpers) {
 
                 await ensureCacheWarmed(); 
                 
-                // CORRECCIÓN AQUÍ: Ignorar títulos vacíos en la búsqueda para que no crashee
                 const result = smartBotCache.catalog.find(item => item.title && item.title.toLowerCase().includes(query));
 
                 if (result) {
@@ -200,7 +206,10 @@ module.exports = function(botCtx, helpers) {
                         message_id: waitMsg.message_id,
                         parse_mode: 'Markdown',
                         reply_markup: {
-                            inline_keyboard: [[{ text: '▶️ Ver Ahora', url: deeplink }]]
+                            inline_keyboard: [
+                                [{ text: '▶️ Ver Ahora', url: deeplink }],
+                                [{ text: '📱 Descargar Sala Cine', url: `${RENDER_BACKEND_URL}/app/details/0` }] // NUEVO BOTÓN
+                            ]
                         }
                     });
                 } else {
@@ -211,12 +220,42 @@ module.exports = function(botCtx, helpers) {
                 }
             }
             
-            // Si eres Admin y tu mensaje no fue para el bot, cortamos aquí para que no siga a la lógica privada por error.
             if (isAdmin) return; 
         }
 
         // =========================================================
-        // RESTRICCIÓN PARA MENSAJES PRIVADOS (DM NORMALES)
+        // LÓGICA DE COMANDOS DEL ADMINISTRADOR (INCLUYE MODO FANTASMA)
+        // =========================================================
+        
+        if (isAdmin && userText.startsWith('/')) {
+            const command = userText.split(' ')[0];
+            
+            // NUEVO COMANDO: MODO FANTASMA (/decir)
+            if (command === '/decir') {
+                const mensaje = userText.replace('/decir', '').trim();
+                if (!mensaje) {
+                    return bot.sendMessage(chatId, "⚠️ Debes escribir un mensaje. Ejemplo:\n`/decir Hola grupo, hoy subimos estrenos`", { parse_mode: 'Markdown' });
+                }
+                
+                if (cleanCommunityId) {
+                    bot.sendMessage(cleanCommunityId, mensaje, { parse_mode: 'Markdown' })
+                        .then(() => bot.sendMessage(chatId, "✅ Mensaje enviado al grupo exitosamente."))
+                        .catch(() => bot.sendMessage(chatId, "❌ Error al enviar el mensaje al grupo."));
+                } else {
+                    bot.sendMessage(chatId, "❌ El ID del grupo (COMMUNITY_GROUP_ID) no está configurado.");
+                }
+                return;
+            }
+
+            if (command === '/subirexclusivo') {
+                adminState[chatId] = { step: 'exc_await_title', excData: {} };
+                bot.sendMessage(chatId, '🔒 **Subida de Contenido Exclusivo**\n\n📝 Ingresa el **TÍTULO** del contenido:', { parse_mode: 'Markdown' });
+                return;
+            }
+        }
+
+        // =========================================================
+        // RESTRICCIÓN PARA MENSAJES PRIVADOS DE USUARIOS NORMALES
         // =========================================================
         if (!isAdmin) {
             if (userText.startsWith('/')) {
@@ -235,17 +274,8 @@ module.exports = function(botCtx, helpers) {
         }
 
         // =========================================================
-        // LÓGICA DE ADMINISTRADOR ORIGINAL
+        // LÓGICA DE ADMINISTRADOR ORIGINAL (MENÚS Y ESTADOS)
         // =========================================================
-
-        if (userText.startsWith('/')) {
-            const command = userText.split(' ')[0];
-            if (command === '/subirexclusivo') {
-                adminState[chatId] = { step: 'exc_await_title', excData: {} };
-                bot.sendMessage(chatId, '🔒 **Subida de Contenido Exclusivo**\n\n📝 Ingresa el **TÍTULO** del contenido:', { parse_mode: 'Markdown' });
-            }
-            return;
-        }
 
         if (adminState[chatId] && adminState[chatId].step && adminState[chatId].step.startsWith('exc_')) {
             const step = adminState[chatId].step;
