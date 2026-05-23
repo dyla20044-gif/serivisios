@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pedidos Sala Cine</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            background-color: var(--tg-theme-bg-color, #111827);
+            color: var(--tg-theme-text-color, #ffffff);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        }
+        .glass-card {
+            background: rgba(31, 41, 55, 0.7);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .loader {
+            border: 3px solid rgba(255,255,255,0.1);
+            border-top: 3px solid #3b82f6;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="p-4 pb-10">
+
+    <div class="text-center mb-6 mt-2">
+        <h1 class="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-emerald-400">Bóveda de Pedidos</h1>
+        <p class="text-sm text-gray-400 mt-1">Selecciona el contenido para subir al bot</p>
+    </div>
+
+    <div id="loading" class="flex justify-center items-center py-10">
+        <div class="loader"></div>
+    </div>
+
+    <div id="pedidos-container" class="hidden space-y-8">
+        
+        <section>
+            <h2 class="text-lg font-bold text-red-400 mb-3 flex items-center gap-2">
+                🔥 Prioridad Alta (Ultra / Fast)
+            </h2>
+            <div id="grid-alta" class="grid grid-cols-2 gap-4">
+                </div>
+            <p id="empty-alta" class="text-sm text-gray-500 hidden">No hay pedidos de alta prioridad.</p>
+        </section>
+
+        <section>
+            <h2 class="text-lg font-bold text-blue-400 mb-3 flex items-center gap-2">
+                📅 Prioridad Regular
+            </h2>
+            <div id="grid-regular" class="grid grid-cols-2 gap-4">
+                </div>
+            <p id="empty-regular" class="text-sm text-gray-500 hidden">No hay pedidos regulares.</p>
+        </section>
+
+    </div>
+
+    <script>
+        // Inicializar Telegram Web App
+        const tg = window.Telegram.WebApp;
+        tg.expand(); // Hace que la app ocupe toda la pantalla
+        tg.ready();
+
+        // El backend reemplazará {{BOT_USERNAME}} dinámicamente
+        const botUsername = "{{BOT_USERNAME}}";
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            try {
+                const response = await fetch('/api/admin/pedidos/list');
+                const pedidos = await response.json();
+                
+                document.getElementById('loading').classList.add('hidden');
+                document.getElementById('pedidos-container').classList.remove('hidden');
+
+                const gridAlta = document.getElementById('grid-alta');
+                const gridRegular = document.getElementById('grid-regular');
+                let countAlta = 0;
+                let countRegular = 0;
+
+                pedidos.forEach(p => {
+                    const posterUrl = p.poster_path 
+                        ? (p.poster_path.startsWith('http') ? p.poster_path : `https://image.tmdb.org/t/p/w200${p.poster_path}`) 
+                        : 'https://placehold.co/200x300?text=SALA+CINE';
+
+                    const cardHTML = `
+                        <div class="glass-card rounded-xl overflow-hidden shadow-lg flex flex-col relative">
+                            <img src="${posterUrl}" alt="Poster" class="w-full h-48 object-cover">
+                            <div class="absolute top-2 right-2 bg-black/70 text-white text-xs px-2 py-1 rounded-full font-bold">
+                                ⭐ ${p.votes || 1}
+                            </div>
+                            <div class="p-3 flex flex-col flex-grow">
+                                <h3 class="text-sm font-bold truncate mb-1" title="${p.title}">${p.title}</h3>
+                                <p class="text-xs text-gray-400 capitalize mb-3">${p.mediaType === 'tv' ? '📺 Serie' : '🎬 Película'}</p>
+                                
+                                <button onclick="agregarContenido('${p.tmdbId}')" class="mt-auto w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-4 rounded-lg text-sm transition-colors shadow-[0_0_10px_rgba(37,99,235,0.4)]">
+                                    + Agregar
+                                </button>
+                            </div>
+                        </div>
+                    `;
+
+                    if (['immediate', 'premium', 'fast'].includes(p.latestPriority)) {
+                        gridAlta.innerHTML += cardHTML;
+                        countAlta++;
+                    } else {
+                        gridRegular.innerHTML += cardHTML;
+                        countRegular++;
+                    }
+                });
+
+                if (countAlta === 0) document.getElementById('empty-alta').classList.remove('hidden');
+                if (countRegular === 0) document.getElementById('empty-regular').classList.remove('hidden');
+
+            } catch (error) {
+                console.error("Error cargando pedidos:", error);
+                document.getElementById('loading').innerHTML = '<p class="text-red-400">Error cargando los datos. Intenta de nuevo.</p>';
+            }
+        });
+
+        // Función que se ejecuta al hacer clic en "Agregar"
+        function agregarContenido(tmdbId) {
+            // Vibra el teléfono para dar feedback táctil
+            tg.HapticFeedback.impactOccurred('medium');
+            
+            // Crea el Deep Link que abre el chat del bot y le manda el comando oculto /start req_ID
+            const startParam = `req_${tmdbId}`;
+            const link = `https://t.me/${botUsername}?start=${startParam}`;
+            
+            // Abre el enlace y cierra la Web App simultáneamente
+            tg.openTelegramLink(link);
+            tg.close();
+        }
+    </script>
+</body>
+</html>
