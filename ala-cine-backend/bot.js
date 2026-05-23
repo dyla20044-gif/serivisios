@@ -8,6 +8,10 @@ const initMessages = require('./bot_messages');
 const initCallbacks = require('./bot_callbacks');
 
 function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_IDS, TMDB_API_KEY, RENDER_BACKEND_URL, axios, pinnedCache, sendNotificationToTopic, userCache) {
+    
+    // Obtenemos el ID de la comunidad desde las variables de entorno
+    const COMMUNITY_GROUP_ID = process.env.COMMUNITY_GROUP_ID;
+
     // 1. Inicializar Publicidad
     initializePublicAds(bot, mongoDb, ADMIN_CHAT_IDS[0]);
 
@@ -21,9 +25,8 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_IDS, TMDB_API_KE
     ]);
 
     // 3. Empaquetar todas las variables globales en un "Contexto" (botCtx)
-    // Esto evita que tengamos que pasar 20 variables una por una a los otros archivos.
     const botCtx = {
-        bot, db, mongoDb, adminState, ADMIN_CHAT_IDS, 
+        bot, db, mongoDb, adminState, ADMIN_CHAT_IDS, COMMUNITY_GROUP_ID,
         TMDB_API_KEY, RENDER_BACKEND_URL, axios, 
         pinnedCache, sendNotificationToTopic, userCache,
         fs, path
@@ -36,7 +39,6 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_IDS, TMDB_API_KE
 
     // =========================================================
     // EVENTOS PASIVOS: AUTO-ACEPTACIÓN DE USUARIOS
-    // (Estos se quedan aquí porque no requieren interacción directa del admin)
     // =========================================================
 
     bot.on('my_chat_member', async (update) => {
@@ -129,6 +131,33 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_IDS, TMDB_API_KE
             console.error(`[Auto-Aceptar] Error al procesar solicitud de ${userFirstName} en ${chatId}:`, error.message);
         }
     });
+
+    // =========================================================
+    // NUEVO: SISTEMA DE MENSAJES AUTOMÁTICOS (CADA 6 HORAS)
+    // =========================================================
+    if (COMMUNITY_GROUP_ID) {
+        // 21600000 milisegundos = 6 horas
+        setInterval(() => {
+            const mensajesAutomáticos = [
+                "🍿 **¿Sin saber qué ver hoy?**\nRecuerda que en Sala Cine subimos estrenos y clásicos todos los días. ¡Abre la app y descubre tu próxima película favorita!",
+                "🚀 **¡Siempre actualizados!**\nNo te pierdas los últimos estrenos. Si aún no tienes nuestra app o necesitas actualizarla, descárgala gratis y disfruta sin límites.",
+                "🔴 **¡Tenemos contenido en VIVO!**\n¿Ya revisaste nuestra sección de TV en vivo en la app? Deportes, eventos especiales y más. ¡Entra a revisarlo!",
+                "💡 **¿Buscas una película en específico?**\nRecuerda que puedes pedírmela por aquí escribiendo algo como: *'busco la película Batman'* o pedirla directo en la sección de pedidos de la app."
+            ];
+            
+            const msjAleatorio = mensajesAutomáticos[Math.floor(Math.random() * mensajesAutomáticos.length)];
+            
+            // Usamos tu ruta existente que abre la app si está instalada o redirige a la Play Store
+            const smartLink = `${RENDER_BACKEND_URL}/app/details/0`; 
+
+            bot.sendMessage(COMMUNITY_GROUP_ID, msjAleatorio, {
+                parse_mode: 'Markdown',
+                reply_markup: {
+                    inline_keyboard: [[{ text: '📱 Abrir App / Descargar', url: smartLink }]]
+                }
+            }).catch(e => console.error("Error enviando mensaje automático de 6h:", e.message));
+        }, 21600000); 
+    }
 }
 
 module.exports = initializeBot;
