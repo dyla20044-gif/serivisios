@@ -2,17 +2,15 @@ module.exports = function(botCtx) {
     const { bot, mongoDb, adminState, ADMIN_CHAT_IDS, COMMUNITY_GROUP_ID, TMDB_API_KEY, axios, RENDER_BACKEND_URL } = botCtx;
 
     // =========================================================
-    // NUEVO: COLA DE SUBIDAS (BATCH UPLOADS)
+    // COLA DE SUBIDAS (BATCH UPLOADS)
     // =========================================================
     let uploadQueue = [];
     
     if (COMMUNITY_GROUP_ID) {
-        // Revisamos la cola cada 15 minutos (900000 ms)
         setInterval(() => {
             if (uploadQueue.length > 0) {
                 let mensaje = "🚀 **¡NUEVO CONTENIDO AÑADIDO!** 🚀\n\nAcabamos de subir todo esto a la bóveda de Sala Cine:\n\n";
                 
-                // Iteramos la cola para listar los nombres
                 uploadQueue.forEach(item => {
                     const icon = item.isMovie ? '🎬' : '📺';
                     mensaje += `${icon} *${item.title}*\n`;
@@ -20,7 +18,6 @@ module.exports = function(botCtx) {
                 
                 mensaje += `\n👇🏻 **MIRA TODO AQUÍ** 👇🏻`;
                 
-                // Usamos la ruta inteligente de tu servidor que abre la app o la PlayStore
                 const smartLink = `${RENDER_BACKEND_URL}/app/details/0`; 
 
                 bot.sendMessage(COMMUNITY_GROUP_ID, mensaje, {
@@ -30,7 +27,6 @@ module.exports = function(botCtx) {
                     }
                 }).catch(e => console.error("Error enviando resumen de cola masiva:", e.message));
 
-                // Vaciamos la cola después de enviar el mensaje
                 uploadQueue = []; 
             }
         }, 900000); 
@@ -71,29 +67,45 @@ module.exports = function(botCtx) {
     };
 
     function getMainMenuKeyboard(chatId) {
+        // Enlace de la Web App apuntando a tu servidor Render
+        const webAppUrl = `${RENDER_BACKEND_URL || 'https://serivisios.onrender.com'}/admin/pedidos`;
+
         const inline_keyboard = [
+            // Fila 1: Subidas de Contenido (Grilla de 3)
             [
-                { text: '🎬 Agregar películas', callback_data: 'add_movie' },
-                { text: '📺 Agregar series', callback_data: 'add_series' }
+                { text: '🎬 + Peli', callback_data: 'add_movie' },
+                { text: '📺 + Serie', callback_data: 'add_series' },
+                { text: '📁 + Manual', callback_data: 'add_manual_movie' }
             ],
-            [{ text: '📁 Subida Manual (Propio)', callback_data: 'add_manual_movie' }],
-            [{ text: '🔔 Ver Pedidos', callback_data: 'view_requests_menu' }],
-            [{ text: '💰 Mis Ganancias', callback_data: 'view_earnings' }]
+            // Fila 2: Web App de Pedidos y Ganancias (Grilla de 2)
+            [
+                { text: '🌟 Abrir Pedidos', web_app: { url: webAppUrl } },
+                { text: '💰 Mis Ganancias', callback_data: 'view_earnings' }
+            ]
         ];
 
+        // Opciones exclusivas del Admin Principal
         if (chatId === ADMIN_CHAT_IDS[0]) {
+            const adminRow = [];
             if (ADMIN_CHAT_IDS.length > 1) {
-                inline_keyboard.push([{ text: '📊 Ver Ganancias Admin 2', callback_data: 'view_admin2_earnings' }]);
+                adminRow.push({ text: '📊 Ganancias Ad 2', callback_data: 'view_admin2_earnings' });
             }
-            inline_keyboard.push([{ text: '💰 Gestionar Saldo (Bonos)', callback_data: 'manage_bonus_menu' }]);
+            adminRow.push({ text: '🎁 Bonos', callback_data: 'manage_bonus_menu' });
+            inline_keyboard.push(adminRow);
+            
             inline_keyboard.push([{ text: '📡 Gestionar Hub Especial', callback_data: 'manage_special_hub' }]);
         }
 
-        inline_keyboard.push(
-            [{ text: '📡 Gestionar Comunicados (App)', callback_data: 'cms_announcement_menu' }],
-            [{ text: '📢 Enviar Notificación Global', callback_data: 'send_global_msg' }],
-            [{ text: '🗑️ Eliminar película/serie', callback_data: 'delete_movie' }]
-        );
+        // Fila de Notificaciones y Comunicados (Grilla de 2)
+        inline_keyboard.push([
+            { text: '📢 Alerta Global', callback_data: 'send_global_msg' },
+            { text: '📰 Comunicados App', callback_data: 'cms_announcement_menu' }
+        ]);
+
+        // Fila de Eliminar (Única para evitar accidentes)
+        inline_keyboard.push([
+            { text: '🗑️ Eliminar Película/Serie', callback_data: 'delete_movie' }
+        ]);
         
         return inline_keyboard;
     }
@@ -164,7 +176,6 @@ module.exports = function(botCtx) {
 
     async function sendFinalSummary(chatId, title, isMovie = true, promptMsgId = null) {
         try {
-            // NUEVO: Agregamos el contenido subido a la cola silenciosa para la comunidad
             if (COMMUNITY_GROUP_ID) {
                 uploadQueue.push({ title, isMovie });
             }
