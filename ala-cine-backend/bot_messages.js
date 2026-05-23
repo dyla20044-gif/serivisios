@@ -2,7 +2,6 @@ module.exports = function(botCtx, helpers) {
     const { bot, mongoDb, adminState, ADMIN_CHAT_IDS, COMMUNITY_GROUP_ID, TMDB_API_KEY, RENDER_BACKEND_URL, axios, sendNotificationToTopic } = botCtx;
     const { clearAllCaches, clearLiveCache, getMainMenuKeyboard } = helpers;
 
-    // Limpiamos el ID por si se pegó con un espacio invisible en Render
     const cleanCommunityId = COMMUNITY_GROUP_ID ? COMMUNITY_GROUP_ID.toString().trim() : null;
 
     // =========================================================
@@ -19,12 +18,13 @@ module.exports = function(botCtx, helpers) {
         if (Date.now() - smartBotCache.lastUpdate < smartBotCache.ttl && smartBotCache.catalog.length > 0) return;
         try {
             console.log("🔥 Calentando Caché RAM del bot para respuestas ultrarrápidas...");
-            const movies = await mongoDb.collection('media_catalog').find({}).project({ tmdbId: 1, title: 1 }).toArray();
+            const movies = await mongoDb.collection('media_catalog').find({}).project({ tmdbId: 1, title: 1, name: 1 }).toArray();
             const series = await mongoDb.collection('series_catalog').find({}).project({ tmdbId: 1, title: 1, name: 1 }).toArray();
             
+            // CORRECCIÓN AQUÍ: Evitar error si una película en la BD no tiene título
             smartBotCache.catalog = [
-                ...movies.map(m => ({ id: m.tmdbId, title: m.title, type: 'movie' })),
-                ...series.map(s => ({ id: s.tmdbId, title: s.title || s.name, type: 'tv' }))
+                ...movies.map(m => ({ id: m.tmdbId, title: (m.title || m.name || '').toString(), type: 'movie' })),
+                ...series.map(s => ({ id: s.tmdbId, title: (s.title || s.name || '').toString(), type: 'tv' }))
             ];
             smartBotCache.lastUpdate = Date.now();
             console.log(`✅ Caché bot lista: ${smartBotCache.catalog.length} títulos en RAM.`);
@@ -97,18 +97,16 @@ module.exports = function(botCtx, helpers) {
         const isAdmin = ADMIN_CHAT_IDS.includes(msg.from.id);
         const isCommunity = cleanCommunityId && chatId.toString() === cleanCommunityId;
 
-        // --- EL CHIVATO (ESTO NOS DIRÁ DÓNDE ESTÁ EL ERROR) ---
         if (msg.text) {
             console.log(`[TEST-BOT] Msg de: ${msg.from.first_name} | ID Grupo/Chat: ${chatId} | ID Configurado en Render: ${cleanCommunityId} | Es Admin: ${isAdmin} | Coincide el Grupo: ${isCommunity} | Texto: ${msg.text}`);
         }
-        // ------------------------------------------------------
 
-        // 1. LIMPIEZA AUTOMÁTICA DE MENSAJES DEL SISTEMA (Uniones/Salidas)
+        // 1. LIMPIEZA AUTOMÁTICA DE MENSAJES DEL SISTEMA
         if (msg.new_chat_members || msg.left_chat_member) {
             if (isCommunity) {
                 try {
                     await bot.deleteMessage(chatId, msg.message_id);
-                } catch (e) { /* Falla silenciosa si no tiene permisos */ }
+                } catch (e) { }
             }
             return; 
         }
@@ -124,21 +122,22 @@ module.exports = function(botCtx, helpers) {
             return;
         }
 
-        // Si es una foto, sticker o no hay texto, lo ignoramos
         const userText = msg.text;
         if (!userText) return;
 
         // =========================================================
         // IA DEL GRUPO (ASISTENTE HUMANO Y MODERADOR)
         // =========================================================
-        if (isCommunity && !isAdmin) {
+        
+        // NOTA: Quité la restricción de "!isAdmin" aquí para que a ti (como admin) también te responda si quieres buscar algo
+        if (isCommunity) {
             const textLower = userText.toLowerCase();
 
             // A. FILTRO ANTI-GROSERÍAS
             const badWords = ['puta', 'mierda', 'pendejo', 'cabron', 'verga', 'imbecil', 'idiota', 'estupido', 'conchetumare', 'hijo de puta', 'malparido'];
             const hasBadWord = badWords.some(word => new RegExp(`\\b${word}\\b`, 'i').test(textLower));
             
-            if (hasBadWord) {
+            if (hasBadWord && !isAdmin) { // Si tú dices algo por error, a ti no te lo borra
                 try {
                     await bot.deleteMessage(chatId, msg.message_id);
                     const warnMsg = await bot.sendMessage(chatId, `⚠️ @${msg.from.username || msg.from.first_name}, por favor mantengamos el respeto en la comunidad. Las groserías están prohibidas.`);
@@ -189,7 +188,8 @@ module.exports = function(botCtx, helpers) {
 
                 await ensureCacheWarmed(); 
                 
-                const result = smartBotCache.catalog.find(item => item.title.toLowerCase().includes(query));
+                // CORRECCIÓN AQUÍ: Ignorar títulos vacíos en la búsqueda para que no crashee
+                const result = smartBotCache.catalog.find(item => item.title && item.title.toLowerCase().includes(query));
 
                 if (result) {
                     const successText = dict.getRandom('found') + `\n\n🎬 *${result.title}*`;
@@ -210,7 +210,9 @@ module.exports = function(botCtx, helpers) {
                     });
                 }
             }
-            return; 
+            
+            // Si eres Admin y tu mensaje no fue para el bot, cortamos aquí para que no siga a la lógica privada por error.
+            if (isAdmin) return; 
         }
 
         // =========================================================
