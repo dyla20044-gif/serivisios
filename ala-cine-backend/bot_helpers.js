@@ -1,5 +1,40 @@
 module.exports = function(botCtx) {
-    const { bot, mongoDb, adminState, ADMIN_CHAT_IDS, TMDB_API_KEY, axios } = botCtx;
+    const { bot, mongoDb, adminState, ADMIN_CHAT_IDS, COMMUNITY_GROUP_ID, TMDB_API_KEY, axios, RENDER_BACKEND_URL } = botCtx;
+
+    // =========================================================
+    // NUEVO: COLA DE SUBIDAS (BATCH UPLOADS)
+    // =========================================================
+    let uploadQueue = [];
+    
+    if (COMMUNITY_GROUP_ID) {
+        // Revisamos la cola cada 15 minutos (900000 ms)
+        setInterval(() => {
+            if (uploadQueue.length > 0) {
+                let mensaje = "🚀 **¡NUEVO CONTENIDO AÑADIDO!** 🚀\n\nAcabamos de subir todo esto a la bóveda de Sala Cine:\n\n";
+                
+                // Iteramos la cola para listar los nombres
+                uploadQueue.forEach(item => {
+                    const icon = item.isMovie ? '🎬' : '📺';
+                    mensaje += `${icon} *${item.title}*\n`;
+                });
+                
+                mensaje += `\n👇🏻 **MIRA TODO AQUÍ** 👇🏻`;
+                
+                // Usamos la ruta inteligente de tu servidor que abre la app o la PlayStore
+                const smartLink = `${RENDER_BACKEND_URL}/app/details/0`; 
+
+                bot.sendMessage(COMMUNITY_GROUP_ID, mensaje, {
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        inline_keyboard: [[{ text: '▶️ Abrir Sala Cine', url: smartLink }]]
+                    }
+                }).catch(e => console.error("Error enviando resumen de cola masiva:", e.message));
+
+                // Vaciamos la cola después de enviar el mensaje
+                uploadQueue = []; 
+            }
+        }, 900000); 
+    }
 
     const clearLiveCache = () => {
         try {
@@ -129,6 +164,11 @@ module.exports = function(botCtx) {
 
     async function sendFinalSummary(chatId, title, isMovie = true, promptMsgId = null) {
         try {
+            // NUEVO: Agregamos el contenido subido a la cola silenciosa para la comunidad
+            if (COMMUNITY_GROUP_ID) {
+                uploadQueue.push({ title, isMovie });
+            }
+
             const now = new Date();
             const dayId = now.toISOString().split('T')[0];
             const todayStats = await mongoDb.collection('uploader_daily_stats').findOne({ uploaderId: chatId, dayId });
