@@ -429,18 +429,14 @@ app.get('/.well-known/assetlinks.json', (req, res) => { res.sendFile('assetlinks
 // NUEVAS RUTAS PARA LA MINI APP DE PEDIDOS (WEB APP)
 // =========================================================
 
-// Ruta que entrega la interfaz gráfica HTML leyendo directamente en el mismo directorio (sin carpeta "public")
 app.get('/admin/pedidos', async (req, res) => {
     try {
-        // Busca el archivo 'pedidos.html' en la misma ubicación que 'server.js'
         const htmlPath = path.join(__dirname, 'pedidos.html');
         if (!fs.existsSync(htmlPath)) {
             return res.status(404).send("Error: Archivo 'pedidos.html' no encontrado. Asegúrate de crearlo al lado de server.js");
         }
         
         let html = fs.readFileSync(htmlPath, 'utf8');
-        
-        // Magia: Obtenemos el nombre de tu bot en tiempo real para inyectarlo en el HTML
         const botInfo = await bot.getMe();
         html = html.replace(/{{BOT_USERNAME}}/g, botInfo.username);
         
@@ -451,15 +447,15 @@ app.get('/admin/pedidos', async (req, res) => {
     }
 });
 
-// Ruta API que alimenta a la Mini App con los pedidos desde la Base de Datos
 app.get('/api/admin/pedidos/list', async (req, res) => {
     try {
         if (!mongoDb) return res.status(500).json({ error: "DB no conectada" });
         
-        // Traemos todos los pedidos que NO estén subidos aún, ordenados por más votados
+        // LIMITE SALVAVIDAS: .limit(80) protege la RAM del teléfono del usuario.
         const requests = await mongoDb.collection('movie_requests')
             .find({ status: { $ne: 'subido' } })
             .sort({ votes: -1, updatedAt: -1 })
+            .limit(80) 
             .toArray();
             
         res.json(requests);
