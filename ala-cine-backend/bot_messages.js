@@ -1,6 +1,7 @@
 module.exports = function(botCtx, helpers) {
     const { bot, mongoDb, adminState, ADMIN_CHAT_IDS, COMMUNITY_GROUP_ID, TMDB_API_KEY, RENDER_BACKEND_URL, axios, sendNotificationToTopic } = botCtx;
-    const { clearAllCaches, clearLiveCache, getMainMenuKeyboard } = helpers;
+    // IMPORTANTE: Ahora jalamos handleManageSeries desde los helpers
+    const { clearAllCaches, clearLiveCache, getMainMenuKeyboard, handleManageSeries } = helpers;
 
     const cleanCommunityId = COMMUNITY_GROUP_ID ? COMMUNITY_GROUP_ID.toString().trim() : null;
 
@@ -11,7 +12,7 @@ module.exports = function(botCtx, helpers) {
     const smartBotCache = {
         catalog: [],
         lastUpdate: 0,
-        ttl: 15 * 60 * 1000 
+        ttl: 15 * 60 * 1000 // 15 minutos
     };
 
     async function ensureCacheWarmed() {
@@ -80,7 +81,7 @@ module.exports = function(botCtx, helpers) {
     };
 
     // =========================================================
-    // COMANDOS DE INICIO Y DEEP LINKING (WEB APP)
+    // COMANDOS DE INICIO Y WEB APP
     // =========================================================
 
     bot.onText(/^\/start(?:\s+(.+))?$|^\/subir$/, async (msg, match) => {
@@ -89,12 +90,29 @@ module.exports = function(botCtx, helpers) {
         
         const param = match && match[1];
 
-        // 🟢 NUEVO: SI VIENE DE LA WEB APP DE PEDIDOS (Deep Link: /start req_ID)
+        // 🟢 INTERCEPTOR WEB APP CON DIFERENCIADOR PELI/SERIE
         if (param && param.startsWith('req_')) {
-            const tmdbId = param.split('_')[1];
-            
+            const parts = param.split('_');
+            let type = 'movie';
+            let tmdbId = '';
+
+            if (parts.length === 3) {
+                type = parts[1]; // 'movie' o 'tv'
+                tmdbId = parts[2];
+            } else {
+                tmdbId = parts[1]; // Legado
+            }
+
+            if (type === 'tv') {
+                try {
+                    bot.sendMessage(chatId, `⏳ Conectando con TMDB para gestionar **SERIE**...`);
+                    await handleManageSeries(chatId, tmdbId);
+                } catch(e) { bot.sendMessage(chatId, '❌ Error al gestionar la serie.'); }
+                return;
+            }
+
             try {
-                bot.sendMessage(chatId, `⏳ Extrayendo datos de TMDB para el pedido...`);
+                bot.sendMessage(chatId, `⏳ Extrayendo datos de TMDB para **PELÍCULA**...`);
                 const movieUrl = `https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${TMDB_API_KEY}&language=es-ES`;
                 const response = await axios.get(movieUrl);
                 const movieData = response.data;
@@ -120,17 +138,16 @@ module.exports = function(botCtx, helpers) {
                     }
                 };
                 
-                const promptMsg = await bot.sendMessage(chatId, `🎬 Pedido: *${movieData.title}*\n🏷️ Géneros: ${genreIds.length}\n🌍 Países: ${countries.join(', ')}\n\n🔗 Envía el **ENLACE (Link)** del video.`, { parse_mode: 'Markdown' });
+                const promptMsg = await bot.sendMessage(chatId, `🎬 Película: *${movieData.title}*\n🏷️ Géneros: ${genreIds.length}\n🌍 Países: ${countries.join(', ')}\n\n🔗 Envía el **ENLACE (Link)** del video.`, { parse_mode: 'Markdown' });
                 adminState[chatId].promptMessageId = promptMsg.message_id;
 
             } catch (error) {
                 console.error("Error al obtener detalles de TMDB desde Web App:", error.message);
-                bot.sendMessage(chatId, '❌ Error al obtener los detalles de TMDB. Intenta agregarlo manualmente con el botón de subida normal.');
+                bot.sendMessage(chatId, '❌ Error al obtener los detalles de TMDB. Intenta agregarlo manualmente.');
             }
-            return; // Detiene la ejecución para no mostrar el menú
+            return;
         }
 
-        // INICIO NORMAL (MENÚ PRINCIPAL)
         adminState[chatId] = { step: 'menu' };
         const inline_keyboard = getMainMenuKeyboard(chatId);
         bot.sendMessage(chatId, `¡Hola ${msg.from.first_name || 'Admin'}! ¿Qué quieres hacer hoy?`, { reply_markup: { inline_keyboard } });
@@ -229,7 +246,7 @@ module.exports = function(botCtx, helpers) {
                 });
             }
 
-            // F. BÚSQUEDA INTELIGENTE AMPLIADA
+            // F. BÚSQUEDA INTELIGENTE
             const searchMatch = textLower.match(/(?:busco|tienes|tienen|quiero ver|ponme|b[uú]scame|pel[ií]cula(?: de)?|serie(?: de)?|donde veo|hay|est[aá])\s+(.+)/i);
             
             if (searchMatch && searchMatch[1].length > 2) {
@@ -263,12 +280,11 @@ module.exports = function(botCtx, helpers) {
                     });
                 }
             }
-            
             if (isAdmin) return; 
         }
 
         // =========================================================
-        // LÓGICA DE COMANDOS DEL ADMINISTRADOR
+        // LÓGICA DE ADMINISTRADOR Y ESTADOS
         // =========================================================
         
         if (isAdmin && userText.startsWith('/')) {
@@ -297,9 +313,6 @@ module.exports = function(botCtx, helpers) {
             }
         }
 
-        // =========================================================
-        // RESTRICCIÓN PARA MENSAJES PRIVADOS DE USUARIOS NORMALES
-        // =========================================================
         if (!isAdmin) {
             if (userText.startsWith('/')) {
                 const command = userText.split(' ')[0];
@@ -315,10 +328,6 @@ module.exports = function(botCtx, helpers) {
             }
             return;
         }
-
-        // =========================================================
-        // LÓGICA DE ADMINISTRADOR ORIGINAL (MENÚS Y ESTADOS)
-        // =========================================================
 
         if (adminState[chatId] && adminState[chatId].step && adminState[chatId].step.startsWith('exc_')) {
             const step = adminState[chatId].step;
