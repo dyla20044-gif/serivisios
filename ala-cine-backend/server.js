@@ -14,7 +14,6 @@ const fs = require('fs');
 const path = require('path'); 
 const initZyroEngine = require('./zyroEngine.js');
 
-// --- CACHÉS OPTIMIZADOS PARA ALTO TRÁFICO ---
 const embedCache = new NodeCache({ stdTTL: 86400, checkperiod: 600 });
 const countsCache = new NodeCache({ stdTTL: 3600, checkperiod: 120 });
 const tmdbCache = new NodeCache({ stdTTL: 86400, checkperiod: 3600 });
@@ -37,15 +36,14 @@ const app = express();
 dotenv.config();
 const PORT = process.env.PORT || 3000;
 
-// --- FIREBASE INIT ---
 try {
     const serviceAccount = JSON.parse(process.env.FIREBASE_ADMIN_SDK);
     admin.initializeApp({
       credential: admin.credential.cert(serviceAccount)
     });
-    console.log("✅ Firebase Admin SDK inicializado correctamente.");
+    console.log("Firebase Admin SDK inicializado correctamente.");
 } catch (error) {
-    console.error("❌ ERROR FATAL: No se pudo parsear FIREBASE_ADMIN_SDK. Verifica la variable de entorno.", error);
+    console.error("ERROR FATAL: No se pudo parsear FIREBASE_ADMIN_SDK.", error);
 }
 const db = admin.firestore();
 const messaging = admin.messaging();
@@ -66,7 +64,6 @@ const TMDB_API_KEY = process.env.TMDB_API_KEY;
 let GLOBAL_STREAMING_ACTIVE = true;
 const BUILD_ID_UNDER_REVIEW = 10; 
 
-// --- MONGODB CONFIG ---
 const MONGO_URI = process.env.MONGO_URI;
 const MONGO_DB_NAME = process.env.MONGO_DB_NAME || 'sala_cine';
 
@@ -96,7 +93,7 @@ async function connectToMongo() {
     try {
         await client.connect();
         mongoDb = client.db(MONGO_DB_NAME);
-        console.log(`✅ Conexión a MongoDB Atlas [${MONGO_DB_NAME}] exitosa!`);
+        console.log(`Conexión a MongoDB Atlas [${MONGO_DB_NAME}] exitosa!`);
         
         await mongoDb.collection(COLL_REVENUE).createIndex({ uploaderId: 1, timestamp: -1 });
         await mongoDb.collection(COLL_REVENUE).createIndex({ tmdbId: 1, season: 1, episode: 1 });
@@ -109,10 +106,10 @@ async function connectToMongo() {
         await mongoDb.collection('series_catalog').createIndex({ isPinned: 1, addedAt: -1 });
         await mongoDb.collection('movie_requests').createIndex({ updatedAt: -1 });
         
-        console.log("✅ Índices de MongoDB optimizados y verificados.");
+        console.log("Índices de MongoDB optimizados y verificados.");
         return mongoDb;
     } catch (e) {
-        console.error("❌ Error al conectar a MongoDB Atlas:", e);
+        console.error("Error al conectar a MongoDB Atlas:", e);
         process.exit(1);
     }
 }
@@ -120,7 +117,6 @@ const adminState = {};
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// --- TRÁFICO Y MIDDLEWARES ---
 let trafficCount = 0;
 let lastTrafficAlert = 0;
 const TRAFFIC_THRESHOLD = 300; 
@@ -131,7 +127,7 @@ app.use((req, res, next) => {
     if (trafficCount > TRAFFIC_THRESHOLD && (Date.now() - lastTrafficAlert > 3600000)) {
         lastTrafficAlert = Date.now();
         if (ADMIN_CHAT_ID_2) {
-            bot.sendMessage(ADMIN_CHAT_ID_2, '🔥 ¡Tráfico alto detectado ahora! El CPM está subiendo. ¡Es el momento ideal para subir contenido y maximizar ganancias! 🚀');
+            bot.sendMessage(ADMIN_CHAT_ID_2, 'Tráfico alto detectado ahora. El CPM está subiendo.');
         }
     }
 
@@ -144,12 +140,11 @@ app.use((req, res, next) => {
 
 try {
     require('./bridge.js')(app);
-    console.log("✅ Módulo Bridge (Landing Page) cargado correctamente.");
+    console.log("Módulo Bridge cargado correctamente.");
 } catch (error) {
-    console.warn("⚠️ Advertencia: No se pudo cargar bridge.js:", error.message);
+    console.warn("Advertencia: No se pudo cargar bridge.js:", error.message);
 }
 
-// --- MIDDLEWARES COMPARTIDOS ---
 async function verifyIdToken(req, res, next) {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -173,7 +168,6 @@ function verifyInternalAdmin(req, res, next) {
     return res.status(403).json({ error: "Acceso denegado. Autenticación de administrador requerida." });
 }
 
-// --- FUNCIONES COMPARTIDAS ---
 async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title, season = null, episode = null }) {
     const uploaderNum = Number(uploaderId);
 
@@ -184,7 +178,6 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
     const existingQuery = { tmdbId: tmdbId.toString(), season, episode };
     const existingEntry = await mongoDb.collection(COLL_REVENUE).findOne(existingQuery);
     if (existingEntry) {
-        console.log(`[Revenue] Contenido ya pagado previamente: ${title} (${tmdbId})`);
         return { appliedRevenue: 0, status: 'skipped_duplicate' };
     }
 
@@ -215,7 +208,6 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
                     basePrice = REVENUE_SETTINGS.catalogo_peli;
                 }
             } catch (tmdbErr) {
-                console.error(`[Revenue] Error consultando TMDB para ${tmdbId}:`, tmdbErr.message);
                 basePrice = REVENUE_SETTINGS.catalogo_peli; 
             }
         } else {
@@ -306,11 +298,9 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
         };
 
         await mongoDb.collection(COLL_REVENUE).insertOne(revenueRecord);
-        console.log(`[Revenue] ${status} for ${title} (Uploader: ${uploaderNum}). Earned: $${finalEarned} (Base: $${basePrice}, Tasa: ${rateApplied}). Today: $${(currentDaily + finalEarned).toFixed(2)}`);
         
         return { appliedRevenue: finalEarned, status };
     } catch (error) {
-        console.error("[Revenue] Error crítico calculando ganancia:", error);
         return { appliedRevenue: 0, status: 'error_interno' };
     }
 }
@@ -334,17 +324,13 @@ async function sendNotificationToTopic(title, body, imageUrl, tmdbId, mediaType,
     };
 
     try {
-        console.log(`🚀 Intentando enviar notificación al topic '${topic}'...`);
         const response = await messaging.send(message);
-        console.log('✅ Notificación FCM enviada exitosamente al topic:', response);
-        return { success: true, message: `Notificación enviada al topic '${topic}'.`, response: response };
+        return { success: true, message: `Notificacion enviada al topic '${topic}'.`, response: response };
     } catch (error) {
-        console.error(`❌ Error al enviar notificación FCM al topic '${topic}':`, error);
         return { success: false, error: error.message };
     }
 }
 
-// --- CONFIGURACIÓN DE CONTEXTO GLOBAL ---
 const ctx = {
     db, getMongoDb: () => mongoDb, admin, messaging, bot,
     TMDB_API_KEY, ADMIN_CHAT_IDS, ADMIN_CHAT_ID_2,
@@ -361,12 +347,11 @@ const ctx = {
 
 global.ctx = ctx;
 
-// --- CARGA DE ARCHIVOS DE RUTAS EXTERNAS ---
 require('./routes_user.js')(app, ctx);
 require('./routes_content.js')(app, ctx);
+require('./routes_live.js')(app, ctx);
 
-// --- RUTAS GLOBALES Y MISC ---
-app.get('/', (req, res) => { res.send('¡El bot y el servidor de Sala Cine están activos!'); });
+app.get('/', (req, res) => { res.send('Activo'); });
 
 if (process.env.NODE_ENV === 'production' && token) {
     app.post(`/bot${token}`, (req, res) => {
@@ -374,7 +359,7 @@ if (process.env.NODE_ENV === 'production' && token) {
         res.sendStatus(200);
     });
 } else if (!token && process.env.NODE_ENV === 'production'){
-    console.warn("⚠️ Webhook de Telegram no configurado porque TELEGRAM_BOT_TOKEN no está definido.");
+    console.warn("Telegram no configurado");
 }
 
 app.get('/app/details/:tmdbId', (req, res) => {
@@ -409,13 +394,12 @@ app.get('/api/announcement', (req, res) => {
         if (json.siempreVisible === true) json.id = Date.now().toString();
         return res.status(200).json(json);
     } catch (error) {
-        console.error("Error leyendo anuncio global:", error);
         return res.status(204).send();
     }
 });
 
 app.get('/api/app-update', (req, res) => {
-    const updateInfo = { "latest_version_code": 12, "update_url": "https://play.google.com/store/apps/details?id=com.salacine.app&pcampaignid=web_share", "force_update": false, "update_message": "¡Nueva versión (1.5.2) de Sala Cine disponible! Incluye mejoras de rendimiento. Actualiza ahora." };
+    const updateInfo = { "latest_version_code": 12, "update_url": "https://play.google.com/store/apps/details?id=com.salacine.app&pcampaignid=web_share", "force_update": false, "update_message": "Nueva versión de Sala Cine disponible." };
     res.status(200).json(updateInfo);
 });
 
@@ -425,15 +409,11 @@ app.get('/api/app-status', (req, res) => {
 
 app.get('/.well-known/assetlinks.json', (req, res) => { res.sendFile('assetlinks.json', { root: __dirname }); });
 
-// =========================================================
-// NUEVAS RUTAS PARA LA MINI APP DE PEDIDOS (WEB APP)
-// =========================================================
-
 app.get('/admin/pedidos', async (req, res) => {
     try {
         const htmlPath = path.join(__dirname, 'pedidos.html');
         if (!fs.existsSync(htmlPath)) {
-            return res.status(404).send("Error: Archivo 'pedidos.html' no encontrado. Asegúrate de crearlo al lado de server.js");
+            return res.status(404).send("Error");
         }
         
         let html = fs.readFileSync(htmlPath, 'utf8');
@@ -442,8 +422,7 @@ app.get('/admin/pedidos', async (req, res) => {
         
         res.send(html);
     } catch (error) {
-        console.error("Error al cargar la Mini App:", error);
-        res.status(500).send("Error interno cargando la interfaz.");
+        res.status(500).send("Error");
     }
 });
 
@@ -451,10 +430,9 @@ app.get('/api/admin/pedidos/list', async (req, res) => {
     try {
         if (!mongoDb) return res.status(500).json({ error: "DB no conectada" });
         
-        // PAGINACIÓN PARA EVITAR EL CRASH DE TELEGRAM
         const page = parseInt(req.query.page) || 0;
         const type = req.query.type || 'alta';
-        const limit = 20; // Solo mandamos 20 por página
+        const limit = 20; 
         const skip = page * limit;
 
         let query = { status: { $ne: 'subido' } };
@@ -474,7 +452,6 @@ app.get('/api/admin/pedidos/list', async (req, res) => {
             
         res.json(requests);
     } catch (error) {
-        console.error("Error obteniendo lista de pedidos:", error);
         res.status(500).json({ error: "Error obteniendo pedidos" });
     }
 });
@@ -486,45 +463,35 @@ app.delete('/api/admin/pedidos/:id', async (req, res) => {
         
         await mongoDb.collection('movie_requests').deleteOne({ tmdbId: tmdbId.toString() });
         
-        // Limpiamos caché de pedidos si existe
         if (global.ctx && global.ctx.caches && global.ctx.caches.requestsCache) {
             global.ctx.caches.requestsCache.flushAll();
         }
         
         res.json({ success: true });
     } catch (error) {
-        console.error("Error eliminando pedido:", error);
         res.status(500).json({ error: "Error eliminando" });
     }
 });
 
-// =========================================================
-
-// --- CRON JOBS Y ARRANQUE ---
-
-// 1. Cron de Hora Pico
 cron.schedule('0 18 * * *', () => {
     if (ADMIN_CHAT_ID_2) {
-        bot.sendMessage(ADMIN_CHAT_ID_2, '🔥 ¡Empieza la hora pico! El CPM está subiendo. ¡Es el momento ideal para subir contenido y maximizar ganancias! 🚀💰');
+        bot.sendMessage(ADMIN_CHAT_ID_2, 'Hora pico detectada.');
     }
 }, { scheduled: true, timezone: "America/Guayaquil" });
 
-// 2. Cron de Expiración de Usuarios Premium (Se ejecuta todos los días a medianoche)
 cron.schedule('0 0 * * *', async () => {
-    console.log("🧹 [CRON] Revisando expiración de usuarios Premium...");
-    if (!mongoDb) return;
     try {
         const now = new Date();
-        const result = await mongoDb.collection('users').updateMany(
-            { isPremium: true, premiumExpiresAt: { $lt: now.toISOString() } }, // Verifica si la fecha ya pasó
-            { $set: { isPremium: false }, $unset: { premiumExpiresAt: "" } } // Le quita el Premium
-        );
-        console.log(`✅ [CRON] Se quitó el Premium a ${result.modifiedCount} usuarios que ya expiraron.`);
-    } catch(e) { 
-        console.error("❌ Error en CRON premium:", e); 
-    }
+        const snapshot = await db.collection('users').where('isPro', '==', true).where('premiumExpiry', '<', now).get();
+        if (!snapshot.empty) {
+            const batch = db.batch();
+            snapshot.docs.forEach(doc => {
+                batch.update(doc.ref, { isPro: false });
+            });
+            await batch.commit();
+        }
+    } catch(e) {}
 }, { scheduled: true, timezone: "America/Guayaquil" });
-
 
 async function startServer() {
     await connectToMongo();
@@ -536,20 +503,17 @@ async function startServer() {
     initZyroEngine(app, () => mongoDb, zyroCache, TMDB_API_KEY);
 
     app.listen(PORT, () => {
-        console.log(`🚀 Servidor de backend Sala Cine iniciado en puerto ${PORT}`);
+        console.log(`Servidor iniciado en puerto ${PORT}`);
         
         setTimeout(async () => {
             try {
-                console.log("🔥 Llenando Memoria RAM (Caché)...");
                 await axios.get(`http://localhost:${PORT}/api/content/recent`).catch(() => null);
                 await axios.get(`http://localhost:${PORT}/api/content/featured`).catch(() => null);
                 await axios.get(`http://localhost:${PORT}/api/requests/fulfilled`).catch(() => null);
-                console.log("✅ ¡Memoria RAM lista!");
             } catch (err) {}
         }, 3000);
 
         client.on('close', () => {
-            console.warn('Conexión a MongoDB cerrada. Intentando reconectar...');
             setTimeout(connectToMongo, 5000);
         });
     });
@@ -557,5 +521,5 @@ async function startServer() {
 
 startServer();
 
-process.on('uncaughtException', (error) => { console.error('Uncaught Exception:', error); });
-process.on('unhandledRejection', (reason, promise) => { console.error('Unhandled Rejection at:', promise, 'reason:', reason); });
+process.on('uncaughtException', (error) => {});
+process.on('unhandledRejection', (reason, promise) => {});
