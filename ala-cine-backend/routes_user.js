@@ -17,7 +17,8 @@ module.exports = function(app, ctx) {
 
         uidsToFlush.forEach(uid => {
             const amount = coinWriteBuffer[uid];
-            if (amount !== 0) {
+            // CORRECCIÓN: Validar que el uid sea válido antes de agregarlo al lote
+            if (amount !== 0 && uid && uid !== 'undefined' && uid !== 'null') {
                 const userRef = db.collection('users').doc(uid);
                 batch.update(userRef, { coins: admin.firestore.FieldValue.increment(amount) });
             }
