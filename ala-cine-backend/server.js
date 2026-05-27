@@ -145,10 +145,11 @@ try {
     console.warn("Advertencia: No se pudo cargar bridge.js:", error.message);
 }
 
+// === CORRECCIÓN CLAVE: BLOQUEAR PETICIONES SIN TOKEN VÁLIDO ===
 async function verifyIdToken(req, res, next) {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return next(); 
+        return res.status(401).json({ error: "No autorizado. Faltan credenciales." }); 
     }
     const idToken = authHeader.split(' ')[1];
     try {
@@ -157,7 +158,7 @@ async function verifyIdToken(req, res, next) {
         req.email = decodedToken.email;
         next();
     } catch (error) {
-        next();
+        return res.status(401).json({ error: "No autorizado. Token inválido." });
     }
 }
 
