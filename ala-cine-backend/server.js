@@ -61,7 +61,7 @@ if (ADMIN_CHAT_ID_2 && !isNaN(ADMIN_CHAT_ID_2)) {
 
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
 
-let GLOBAL_STREAMING_ACTIVE = true;
+let GLOBAL_STREAMING_ACTIVE = false;
 const BUILD_ID_UNDER_REVIEW = 21; 
 
 const MONGO_URI = process.env.MONGO_URI;
