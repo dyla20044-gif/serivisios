@@ -400,7 +400,7 @@ app.get('/api/announcement', (req, res) => {
 });
 
 app.get('/api/app-update', (req, res) => {
-    const updateInfo = { "latest_version_code": 12, "update_url": "https://play.google.com/store/apps/details?id=com.salacine.app&pcampaignid=web_share", "force_update": false, "update_message": "Nueva versión de Sala Cine disponible." };
+    const updateInfo = { "latest_version_code": 21, "update_url": "https://play.google.com/store/apps/details?id=com.salacine.app&pcampaignid=web_share", "force_update": true, "update_message": "Nueva versión de Sala Cine disponible." };
     res.status(200).json(updateInfo);
 });
 
