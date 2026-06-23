@@ -139,33 +139,62 @@ module.exports = function(botCtx) {
                 .toArray();
             const monthEarned = monthlyDocs.reduce((sum, doc) => sum + (doc.today_earned || 0), 0);
 
+            // NUEVO: Consultar historial de pagos (Últimos 3)
+            const paymentHistory = await mongoDb.collection('payment_history')
+                .find({ uploaderId: targetUploaderId })
+                .sort({ date: -1 })
+                .limit(3)
+                .toArray();
+
+            let historyText = "\n🧾 *ÚLTIMOS PAGOS:*\n";
+            if (paymentHistory.length > 0) {
+                historyText += paymentHistory.map(p => `├ 📅 ${p.dateStr}: $${p.amount.toFixed(2)}`).join('\n') + `\n`;
+            } else {
+                historyText += `├ No hay pagos registrados aún.\n`;
+            }
+
             const msgEarnings = `📊 *REPORTE FINANCIERO UPLOADER* 📊\n` +
                                 `━━━━━━━━━━━━━━━━━━━━━━\n` +
                                 `👤 *Usuario:* \`${uploaderName}\`\n` +
                                 `🆔 *ID:* \`${targetUploaderId}\`\n\n` +
                                 `💰 *INGRESOS ACTUALES*\n` +
                                 `├ 💵 *Hoy:* $${todayEarned.toFixed(2)} USD\n` +
-                                `└ 📅 *Este Mes:* $${monthEarned.toFixed(2)} USD\n\n` +
+                                `└ 📅 *Este Ciclo:* $${monthEarned.toFixed(2)} USD\n\n` +
                                 `📈 *ESTADÍSTICAS HISTÓRICAS*\n` +
                                 `├ 🏆 *Total Generado:* $${hist.totalEarned.toFixed(2)} USD\n` +
                                 `├ 🎁 *Bonos Recibidos:* $${(hist.bonusTotal || 0).toFixed(2)} USD\n` +
                                 `├ 🎬 *Películas Subidas:* ${hist.totalMovies}\n` +
-                                `└ 📺 *Episodios Subidos:* ${hist.totalEpisodes}\n\n` +
+                                `└ 📺 *Episodios Subidos:* ${hist.totalEpisodes}\n` +
+                                historyText + `\n` +
                                 `🚀 *LÍMITES DE CUENTA*\n` +
                                 `├ ⏱️ *Diario:* $10.00 USD\n` +
-                                `└ 🗓️ *Mensual:* $200.00 USD\n` +
+                                `└ 🗓️ *Mensual:* $80.00 USD\n` +
                                 `━━━━━━━━━━━━━━━━━━━━━━\n` +
                                 `💳 *INFORMACIÓN DE PAGOS:*\n` +
                                 `Las fechas de corte son del *21 al 25* de cada mes.\n` +
                                 `👉 Solicita tu retiro con: @Dylan_1m_oficial`;
 
-            const bannerUrl = 'https://i.ibb.co/Nd24c62C/Gemini-Generated-Image-49psui49psui49ps-Photoroom.png'; 
+            // NUEVO: Configurar foto de perfil personalizada
+            const workerPhotos = {
+                [ADMIN_CHAT_IDS[1]]: 'URL_DE_LA_FOTO_DE_TU_TRABAJADOR.jpg' // REEMPLAZAR CON LA URL REAL DE LA FOTO
+            };
+            const bannerUrl = workerPhotos[targetUploaderId] || 'https://i.ibb.co/Nd24c62C/Gemini-Generated-Image-49psui49psui49ps-Photoroom.png';
+
+            // NUEVO: Botón de Pagar (Solo visible para ti si estás viendo las stats del otro admin)
+            let options = { parse_mode: 'Markdown' };
+            if (requestChatId === ADMIN_CHAT_IDS[0] && targetUploaderId !== ADMIN_CHAT_IDS[0]) {
+                options.reply_markup = {
+                    inline_keyboard: [
+                        [{ text: '💸 Pagar y Reiniciar Ciclo', callback_data: `pay_uploader_${targetUploaderId}_${monthEarned}` }]
+                    ]
+                };
+            }
 
             bot.sendPhoto(requestChatId, bannerUrl, { 
                 caption: msgEarnings, 
-                parse_mode: 'Markdown' 
+                ...options 
             }).catch(e => {
-                bot.sendMessage(requestChatId, msgEarnings, { parse_mode: 'Markdown' });
+                bot.sendMessage(requestChatId, msgEarnings, options);
             });
 
         } catch (error) {
