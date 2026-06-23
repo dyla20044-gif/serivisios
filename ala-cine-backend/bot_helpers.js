@@ -167,8 +167,8 @@ module.exports = function(botCtx) {
                                 `└ 📺 *Episodios Subidos:* ${hist.totalEpisodes}\n` +
                                 historyText + `\n` +
                                 `🚀 *LÍMITES DE CUENTA*\n` +
-                                `├ ⏱️ *Diario:* $10.00 USD\n` +
-                                `└ 🗓️ *Mensual:* $80.00 USD\n` +
+                                `├ ⏱️ *Diario:* $40.00 USD\n` +
+                                `└ 🗓️ *Mensual:* $500.00 USD\n` +
                                 `━━━━━━━━━━━━━━━━━━━━━━\n` +
                                 `💳 *INFORMACIÓN DE PAGOS:*\n` +
                                 `Las fechas de corte son del *21 al 25* de cada mes.\n` +
@@ -176,7 +176,7 @@ module.exports = function(botCtx) {
 
             // NUEVO: Configurar foto de perfil personalizada
             const workerPhotos = {
-                [ADMIN_CHAT_IDS[1]]: 'URL_DE_LA_FOTO_DE_TU_TRABAJADOR.jpg' // REEMPLAZAR CON LA URL REAL DE LA FOTO
+                [ADMIN_CHAT_IDS[1]]: 'https://iili.io/CTsdfdN.jpg' // REEMPLAZAR CON LA URL REAL DE LA FOTO
             };
             const bannerUrl = workerPhotos[targetUploaderId] || 'https://i.ibb.co/Nd24c62C/Gemini-Generated-Image-49psui49psui49ps-Photoroom.png';
 
