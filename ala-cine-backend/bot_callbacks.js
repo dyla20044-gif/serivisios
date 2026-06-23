@@ -162,6 +162,33 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 return;
             }
 
+            // NUEVO: Manejador para el botón de Pagar del panel de ganancias
+            if (data.startsWith('pay_uploader_')) {
+                const parts = data.split('_');
+                const targetId = parseInt(parts[2]);
+                const amountToPay = parseFloat(parts[3]);
+
+                if (amountToPay <= 0) {
+                    bot.answerCallbackQuery(callbackQuery.id, { text: 'El balance es $0.00, no hay nada que liquidar.', show_alert: true });
+                    return;
+                }
+
+                adminState[chatId] = {
+                    step: 'awaiting_payment_message',
+                    payTargetId: targetId,
+                    payAmount: amountToPay,
+                    promptMessageId: msg.message_id
+                };
+
+                bot.editMessageText(`💸 **Liquidación a Uploader ID:** ${targetId}\n💰 **Monto a liquidar:** $${amountToPay.toFixed(2)}\n\n📝 Escribe el **mensaje de notificación** que se le enviará (Ej: "Disculpen la demora, ya estamos operando..."):`, { 
+                    chat_id: chatId, 
+                    message_id: msg.message_id, 
+                    parse_mode: 'Markdown', 
+                    reply_markup: { inline_keyboard: [[{ text: '❌ Cancelar', callback_data: 'back_to_menu' }]] } 
+                }).catch(()=>{});
+                return;
+            }
+
             if (data === 'cms_announcement_menu') {
                 const options = {
                     reply_markup: {
