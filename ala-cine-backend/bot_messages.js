@@ -548,7 +548,7 @@ module.exports = function(botCtx, helpers) {
         }
 
         // =========================================================
-        // NUEVA SECCIÓN: PROCESAR PAGO AL UPLOADER
+        // NUEVA SECCIÓN: PROCESAR PAGO AL UPLOADER Y REINICIAR CICLO
         // =========================================================
         if (adminState[chatId] && adminState[chatId].step === 'awaiting_payment_message') {
             if (userText.startsWith('/')) return; // IGNORA LOS COMANDOS AQUÍ
@@ -560,9 +560,10 @@ module.exports = function(botCtx, helpers) {
 
             const now = new Date();
             const dayId = now.toISOString().split('T')[0];
+            const currentMonthId = dayId.substring(0, 7);
 
             try {
-                // 1. Guardar historial
+                // 1. Guardar historial de liquidación (Para que el usuario lo vea en su panel)
                 await mongoDb.collection('payment_history').insertOne({
                     uploaderId: targetId,
                     amount: amount,
@@ -571,26 +572,45 @@ module.exports = function(botCtx, helpers) {
                     message: customMessage
                 });
 
-                // 2. Reiniciar monto mensual del trabajador
-                await mongoDb.collection('uploader_daily_stats').updateOne(
-                    { uploaderId: targetId, dayId: dayId },
-                    { $inc: { today_earned: -amount } }, 
-                    { upsert: true }
-                );
+                // 2. Reiniciar el ciclo contable mensual (SISTEMA DE LEDGER)
+                // En lugar de restarle al día actual y dañar sus estadísticas diarias de hoy,
+                // creamos un registro de "Balance de Cierre" negativo con un ID único. 
+                // Así, la sumatoria del mes vuelve a cero, pero lo generado en el día actual
+                // sigue visible en sus métricas y se traslada perfectamente al próximo ciclo.
+                await mongoDb.collection('uploader_daily_stats').insertOne({
+                    uploaderId: targetId,
+                    dayId: `cierre_${Date.now()}`, // ID único para no sobreescribir el día actual
+                    monthId: currentMonthId,
+                    today_earned: -amount,         // Balancea la suma del mes a $0.00
+                    isPaymentOffset: true,
+                    description: "Reinicio de ciclo por liquidación",
+                    createdAt: now
+                });
 
-                // 3. Notificar trabajador
-                const notification = `💰 **¡PAGO PROCESADO!** 💰\n\nHola, se ha procesado un pago por tus subidas en Sala Cine.\n💵 **Monto:** $${amount.toFixed(2)} USD\n\n📝 **Mensaje de Administración:**\n_"${customMessage}"_\n\n🔄 Tu ciclo ha sido reiniciado. ¡Ya puedes continuar subiendo! 🚀`;
+                // 3. Notificar trabajador con un mensaje muy profesional
+                const notification = `🧾 **LIQUIDACIÓN DE CICLO** 🧾\n` +
+                                     `━━━━━━━━━━━━━━━━━━━━━━\n` +
+                                     `Hola, se ha procesado tu pago correspondiente a tus subidas en Sala Cine.\n\n` +
+                                     `💰 **Monto Liquidado:** $${amount.toFixed(2)} USD\n` +
+                                     `📅 **Fecha de corte:** ${dayId}\n\n` +
+                                     `📝 **Mensaje de Administración:**\n` +
+                                     `_"${customMessage}"_\n\n` +
+                                     `🔄 *Tu ciclo contable ha sido reiniciado con éxito.* \n` +
+                                     `Las ganancias que hayas generado hoy continuarán sumando con normalidad para tu próximo ciclo. ¡Sigue así! 🚀`;
+                
                 await bot.sendMessage(targetId, notification, { parse_mode: 'Markdown' }).catch(()=>{});
 
                 // 4. Avisar al admin
-                const successMsg = `✅ **Pago registrado y ciclo reiniciado.**\nSe enviaron $${amount.toFixed(2)} al usuario y se le notificó correctamente.`;
+                const successMsg = `✅ **¡Pago Registrado y Ciclo Reiniciado!**\n\n` +
+                                   `Se ha liquidado el monto de **$${amount.toFixed(2)} USD** al usuario \`${targetId}\`.\n` +
+                                   `El historial ha sido guardado y el sistema contable está balanceado en cero para su nuevo ciclo. Todo lo facturado hoy se pasa al siguiente mes automáticamente.`;
                 
                 if (adminState[chatId].promptMessageId) {
-                    bot.editMessageText(successMsg, { chat_id: chatId, message_id: adminState[chatId].promptMessageId, parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '🏠 Menú Principal', callback_data: 'back_to_menu' }]] } }).catch(()=>{
-                        bot.sendMessage(chatId, successMsg, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '🏠 Menú Principal', callback_data: 'back_to_menu' }]] } });
+                    bot.editMessageText(successMsg, { chat_id: chatId, message_id: adminState[chatId].promptMessageId, parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '🏠 Volver al Menú', callback_data: 'back_to_menu' }]] } }).catch(()=>{
+                        bot.sendMessage(chatId, successMsg, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '🏠 Volver al Menú', callback_data: 'back_to_menu' }]] } });
                     });
                 } else {
-                    bot.sendMessage(chatId, successMsg, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '🏠 Menú Principal', callback_data: 'back_to_menu' }]] } });
+                    bot.sendMessage(chatId, successMsg, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '🏠 Volver al Menú', callback_data: 'back_to_menu' }]] } });
                 }
             } catch (err) {
                 console.error("Error al pagar:", err);
@@ -600,7 +620,6 @@ module.exports = function(botCtx, helpers) {
             }
             return;
         }
-        // =========================================================
 
         if (adminState[chatId] && adminState[chatId].step && adminState[chatId].step.startsWith('cms_')) {
             const step = adminState[chatId].step;
