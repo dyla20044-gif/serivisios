@@ -311,6 +311,12 @@ module.exports = function(botCtx, helpers) {
                 bot.sendMessage(chatId, '🔒 **Subida de Contenido Exclusivo**\n\n📝 Ingresa el **TÍTULO** del contenido:', { parse_mode: 'Markdown' });
                 return;
             }
+
+            // 🟢 NUEVO INTERCEPTOR: Evita que comandos reinicien la búsqueda como texto
+            if (['/start', '/subir', '/pedidos', '/editar'].includes(command)) {
+                adminState[chatId] = { step: 'menu' };
+                return; // Cortamos la ejecución aquí. El evento bot.onText se encargará de mostrar el menú.
+            }
         }
 
         if (!isAdmin) {
