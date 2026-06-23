@@ -162,7 +162,9 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 return;
             }
 
-            // NUEVO: Manejador para el botón de Pagar del panel de ganancias
+            // =========================================================
+            // MANEJADOR OPTIMIZADO: Pagar y Reiniciar Ciclo
+            // =========================================================
             if (data.startsWith('pay_uploader_')) {
                 const parts = data.split('_');
                 const targetId = parseInt(parts[2]);
@@ -173,19 +175,23 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                     return;
                 }
 
-                adminState[chatId] = {
-                    step: 'awaiting_payment_message',
-                    payTargetId: targetId,
-                    payAmount: amountToPay,
-                    promptMessageId: msg.message_id
-                };
+                // 1. Borramos la foto estadística para evitar el error de la API de Telegram
+                bot.deleteMessage(chatId, msg.message_id).catch(() => {});
 
-                bot.editMessageText(`💸 **Liquidación a Uploader ID:** ${targetId}\n💰 **Monto a liquidar:** $${amountToPay.toFixed(2)}\n\n📝 Escribe el **mensaje de notificación** que se le enviará (Ej: "Disculpen la demora, ya estamos operando..."):`, { 
-                    chat_id: chatId, 
-                    message_id: msg.message_id, 
+                // 2. Enviamos el mensaje de texto limpio y profesional
+                bot.sendMessage(chatId, `💸 **Procesando Liquidación**\n━━━━━━━━━━━━━━━━━━━━━━\n👤 **ID Usuario:** \`${targetId}\`\n💰 **Monto a liquidar:** **$${amountToPay.toFixed(2)} USD**\n\n📝 Escribe el **mensaje de notificación** que recibirá (Ej: "Pago de este mes completado, ¡sigue así!"):`, { 
                     parse_mode: 'Markdown', 
                     reply_markup: { inline_keyboard: [[{ text: '❌ Cancelar', callback_data: 'back_to_menu' }]] } 
-                }).catch(()=>{});
+                }).then((sentMsg) => {
+                    // 3. Guardamos el estado y el ID del nuevo mensaje para editarlo al terminar
+                    adminState[chatId] = {
+                        step: 'awaiting_payment_message',
+                        payTargetId: targetId,
+                        payAmount: amountToPay,
+                        promptMessageId: sentMsg.message_id 
+                    };
+                }).catch(err => console.error("Error al generar vista de pago:", err));
+
                 return;
             }
 
