@@ -1,1131 +1,1034 @@
 module.exports = function(botCtx, helpers) {
-    const { bot, mongoDb, adminState, ADMIN_CHAT_IDS, TMDB_API_KEY, RENDER_BACKEND_URL, axios, pinnedCache, fs, path } = botCtx;
-    const { clearLiveCache, clearAllCaches, getMainMenuKeyboard, showEarningsPanel, sendFinalSummary, handleManageSeries } = helpers;
+    const { bot, mongoDb, adminState, ADMIN_CHAT_IDS, COMMUNITY_GROUP_ID, TMDB_API_KEY, RENDER_BACKEND_URL, axios, sendNotificationToTopic } = botCtx;
+    // IMPORTANTE: Ahora jalamos handleManageSeries desde los helpers
+    const { clearAllCaches, clearLiveCache, getMainMenuKeyboard, handleManageSeries } = helpers;
 
-    bot.on('callback_query', async (callbackQuery) => {
-        const msg = callbackQuery.message;
-        const data = callbackQuery.data;
-        const chatId = msg.chat.id;
+    const cleanCommunityId = COMMUNITY_GROUP_ID ? COMMUNITY_GROUP_ID.toString().trim() : null;
 
+    // =========================================================
+    // SISTEMA IA: CACHÉ EN RAM Y DICCIONARIO HUMANO AVANZADO
+    // =========================================================
+    
+    const smartBotCache = {
+        catalog: [],
+        lastUpdate: 0,
+        ttl: 15 * 60 * 1000 // 15 minutos
+    };
+
+    async function ensureCacheWarmed() {
+        if (Date.now() - smartBotCache.lastUpdate < smartBotCache.ttl && smartBotCache.catalog.length > 0) return;
         try {
-            if (data === 'public_help') {
-                bot.answerCallbackQuery(callbackQuery.id);
-                const helpMessage = `👋 ¡Hola! Soy un Bot de Auto-Aceptación de Solicitudes.
-                    
-**Función Principal:**
-Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu canal o grupo privado.`;
-                bot.sendMessage(chatId, helpMessage, { parse_mode: 'Markdown' });
-                return;
-            }
-
-            if (data === 'public_contact') {
-                bot.answerCallbackQuery(callbackQuery.id);
-                bot.sendMessage(chatId, 'Para soporte o dudas, puedes contactar al desarrollador en: @TuUsuarioDeTelegram');
-                return;
-            }
-
-            if (data && data.startsWith('ads_')) return;
-
-            if (!ADMIN_CHAT_IDS.includes(chatId)) {
-                bot.answerCallbackQuery(callbackQuery.id, { text: 'No tienes permiso.', show_alert: true });
-                return;
-            }
-
-            bot.answerCallbackQuery(callbackQuery.id);
-
-            if (data.startsWith('hub_')) {
-                if (chatId !== ADMIN_CHAT_IDS[0]) {
-                    bot.answerCallbackQuery(callbackQuery.id, { text: '🔒 Acceso denegado. Solo el Admin Principal.', show_alert: true });
-                    return;
-                }
-                
-                if (data === 'hub_activate') {
-                    await mongoDb.collection('live_feed_config').updateOne({ _id: 'main_feed' }, { $set: { "config.isActive": true } }, { upsert: true });
-                    clearLiveCache();
-                    bot.editMessageText('🟢 **Hub Dinámico ACTIVADO**\n\nEl feed en vivo ya es visible en la app.', { chat_id: chatId, message_id: msg.message_id, parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '⬅️ Volver', callback_data: 'manage_special_hub' }]] } }).catch(()=>{});
-                    return;
-                }
-                
-                if (data === 'hub_deactivate') {
-                    await mongoDb.collection('live_feed_config').updateOne({ _id: 'main_feed' }, { $set: { "config.isActive": false } }, { upsert: true });
-                    clearLiveCache();
-                    bot.editMessageText('🔴 **Hub Dinámico DESACTIVADO**\n\nLa app volvió a la normalidad.', { chat_id: chatId, message_id: msg.message_id, parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '⬅️ Volver', callback_data: 'manage_special_hub' }]] } }).catch(()=>{});
-                    return;
-                }
-
-                if (data === 'hub_manage_secondary') {
-                    const liveData = await mongoDb.collection('live_feed_config').findOne({ _id: 'main_feed' });
-                    if (!liveData || !liveData.secondaryEvents || liveData.secondaryEvents.length === 0) {
-                        bot.editMessageText('📭 No hay tarjetas secundarias creadas.', { chat_id: chatId, message_id: msg.message_id, reply_markup: { inline_keyboard: [[{ text: '⬅️ Volver', callback_data: 'manage_special_hub' }]] } }).catch(()=>{});
-                        return;
-                    }
-                    let buttons = [];
-                    liveData.secondaryEvents.forEach(ev => {
-                        buttons.push([{ text: `🗑️ Borrar: ${ev.title}`, callback_data: `hub_del_sec_${ev.id}` }]);
-                    });
-                    buttons.push([{ text: '🧹 Vaciar TODAS de golpe', callback_data: 'hub_clear_secondary' }]);
-                    buttons.push([{ text: '⬅️ Volver', callback_data: 'manage_special_hub' }]);
-
-                    bot.editMessageText('📋 **Gestor de Tarjetas Secundarias**\n\nSelecciona cuál deseas eliminar:', {
-                        chat_id: chatId, message_id: msg.message_id, parse_mode: 'Markdown', reply_markup: { inline_keyboard: buttons }
-                    }).catch(()=>{});
-                    return;
-                }
-
-                if (data.startsWith('hub_del_sec_')) {
-                    const evId = data.replace('hub_del_sec_', '');
-                    await mongoDb.collection('live_feed_config').updateOne(
-                        { _id: 'main_feed' },
-                        { $pull: { secondaryEvents: { id: evId } } }
-                    );
-                    clearLiveCache();
-                    bot.editMessageText('✅ Tarjeta secundaria eliminada exitosamente.', { chat_id: chatId, message_id: msg.message_id, reply_markup: { inline_keyboard: [[{ text: '⬅️ Volver', callback_data: 'hub_manage_secondary' }]] } }).catch(()=>{});
-                    return;
-                }
-                
-                if (data === 'hub_clear_secondary') {
-                    await mongoDb.collection('live_feed_config').updateOne({ _id: 'main_feed' }, { $set: { secondaryEvents: [] } }, { upsert: true });
-                    clearLiveCache();
-                    bot.editMessageText('🧹 **Tarjetas Secundarias Vaciadas**\n\nSe limpió el listado secundario exitosamente.', { chat_id: chatId, message_id: msg.message_id, parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '⬅️ Volver', callback_data: 'manage_special_hub' }]] } }).catch(()=>{});
-                    return;
-                }
-
-                if (data === 'hub_config_hero') {
-                    adminState[chatId] = { step: 'hub_nav_text', tempHubData: {}, promptMessageId: msg.message_id };
-                    bot.editMessageText('✏️ **Configurar Evento Principal**\n\n📝 Primero, ingresa el **texto para el botón del menú inferior** (Ej: En Vivo, VIP, Eventos):', { chat_id: chatId, message_id: msg.message_id, parse_mode: 'Markdown' }).catch(()=>{});
-                    return;
-                }
-
-                if (data === 'hub_add_secondary') {
-                    adminState[chatId] = { step: 'hub_sec_title', tempHubData: {}, promptMessageId: msg.message_id };
-                    bot.editMessageText('➕ **Agregar Tarjeta Secundaria**\n\n📝 Ingresa el **título** para la tarjeta secundaria:', { chat_id: chatId, message_id: msg.message_id, parse_mode: 'Markdown' }).catch(()=>{});
-                    return;
-                }
-            }
+            console.log("🔥 Calentando Caché RAM del bot para respuestas ultrarrápidas...");
+            const movies = await mongoDb.collection('media_catalog').find({}).project({ tmdbId: 1, title: 1, name: 1 }).toArray();
+            const series = await mongoDb.collection('series_catalog').find({}).project({ tmdbId: 1, title: 1, name: 1 }).toArray();
             
-            if (data === 'manage_special_hub') {
-                if (chatId !== ADMIN_CHAT_IDS[0]) return;
-                bot.editMessageText('📡 **Gestor del Hub Especial (Feed en Vivo)**\n\nSelecciona una opción a continuación:', {
-                    chat_id: chatId,
-                    message_id: msg.message_id,
-                    parse_mode: 'Markdown',
-                    reply_markup: {
-                        inline_keyboard: [
-                            [{ text: '🟢 Activar Hub', callback_data: 'hub_activate' }, { text: '🔴 Desactivar Hub', callback_data: 'hub_deactivate' }],
-                            [{ text: '✏️ Configurar Evento Principal (Hero)', callback_data: 'hub_config_hero' }],
-                            [{ text: '➕ Agregar Tarjeta Secundaria', callback_data: 'hub_add_secondary' }],
-                            [{ text: '📋 Gestionar Secundarias (Editar/Borrar)', callback_data: 'hub_manage_secondary' }],
-                            [{ text: '⬅️ Volver', callback_data: 'back_to_menu' }]
-                        ]
-                    }
-                }).catch(()=>{});
+            smartBotCache.catalog = [
+                ...movies.map(m => ({ id: m.tmdbId, title: (m.title || m.name || '').toString(), type: 'movie' })),
+                ...series.map(s => ({ id: s.tmdbId, title: (s.title || s.name || '').toString(), type: 'tv' }))
+            ];
+            smartBotCache.lastUpdate = Date.now();
+            console.log(`✅ Caché bot lista: ${smartBotCache.catalog.length} títulos en RAM.`);
+        } catch(e) { console.error("Error calentando caché bot:", e); }
+    }
+
+    const dict = {
+        greetings: [
+            "¡Hola! Claro, déjame revisar la bóveda un segundo... 🔍",
+            "A ver, déjame buscar si la tenemos lista para ti... 🍿",
+            "¡Buena elección! Dame un momento, la busco en los servidores. 🚀"
+        ],
+        found: [
+            "¡Bingo! La encontré. Aquí la tienes lista para ver. 👇",
+            "¡Aquí está! Entra al enlace y prepara el canguil 🍿:",
+            "Sí la tenemos disponible en máxima calidad. De una, disfrútala:"
+        ],
+        notFound: [
+            "Puf, busqué por todos lados pero esa todavía no la tenemos subida. 😔 Recuerda que puedes pedirla en la sección 'Pedidos' de la App.",
+            "¡Uf! Esa me falta. Pero tranquilo, anótala en la sección de pedidos de Sala Cine y la subimos pronto. ⚡",
+            "Todavía no está en la bóveda, pero buenísima sugerencia. ¡Estaré atento para cuando la subamos! 🎬"
+        ],
+        faqDownload: [
+            "¡Hola! Puedes descargar la aplicación de Sala Cine totalmente gratis y ver todo sin cortes. Búscala en la Play Store o entra aquí directo: 👇",
+            "Para ver todo nuestro catálogo, necesitas nuestra app oficial. Es súper ligera. Descárgala desde este enlace seguro: 🚀"
+        ],
+        faqHowToWatch: [
+            "¡Para ver cualquier película o serie necesitas nuestra app! 🍿 Descárgala gratis aquí y disfruta sin límites: 👇",
+            "Todo nuestro contenido es exclusivo de la app Sala Cine. 🚀 Bájala desde este enlace seguro y busca tu película adentro:",
+            "Es súper fácil. Solo instala nuestra aplicación oficial y busca el título ahí dentro. ¡Descárgala aquí! 👇"
+        ],
+        faqLive: [
+            "¡Claro que sí! Tenemos contenido en VIVO 🔴. Partidos, eventos y canales 24/7. Solo abre Sala Cine y ve a la pestaña 'En Vivo'.",
+            "Para ver los canales y partidos en vivo, entra a la app y revisa la sección del Feed/En Vivo. ¡Ahí transmitimos lo mejor! 🔥"
+        ],
+        faqRequests: [
+            "¿Quieres pedir una película o serie nueva? ¡Súper fácil! Abre la app Sala Cine, ve a la sección de 'Pedidos' y deja tu voto. Las más votadas se suben súper rápido. 📝",
+            "Todo el contenido nuevo se sube basándonos en lo que piden. ¡Entra a la app y déjanos tu solicitud ahí para ponerla en la lista de prioridades! 🚀"
+        ],
+        smallTalkHello: [
+            "¡Hola! ¿Qué tal? ¿Buscando algo bueno para ver hoy? 🍿",
+            "¡Buenas! Bienvenido a la comunidad. Si buscas alguna peli, solo dímelo. 🎬",
+            "¡Hola, hola! Aquí el asistente de Sala Cine activo y listo. 🤖"
+        ],
+        smallTalkThanks: [
+            "¡De nada! Para eso estamos. ¡Que disfrutes la función! 🍿",
+            "¡A ti! Ya sabes, cualquier otra peli que busques, me avisas. 🚀",
+            "¡Con gusto! Disfruta del contenido. 🎬"
+        ],
+        getRandom: (category) => {
+            const options = dict[category];
+            return options[Math.floor(Math.random() * options.length)];
+        }
+    };
+
+    // =========================================================
+    // COMANDOS DE INICIO Y WEB APP
+    // =========================================================
+
+    bot.onText(/^\/start(?:\s+(.+))?$|^\/subir$/, async (msg, match) => {
+        const chatId = msg.chat.id;
+        if (!ADMIN_CHAT_IDS.includes(msg.from.id)) return;
+        
+        const param = match && match[1];
+
+        // 🟢 INTERCEPTOR WEB APP CON DIFERENCIADOR PELI/SERIE
+        if (param && param.startsWith('req_')) {
+            const parts = param.split('_');
+            let type = 'movie';
+            let tmdbId = '';
+
+            if (parts.length === 3) {
+                type = parts[1]; // 'movie' o 'tv'
+                tmdbId = parts[2];
+            } else {
+                tmdbId = parts[1]; // Legado
+            }
+
+            if (type === 'tv') {
+                try {
+                    bot.sendMessage(chatId, `⏳ Conectando con TMDB para gestionar **SERIE**...`);
+                    await handleManageSeries(chatId, tmdbId);
+                } catch(e) { bot.sendMessage(chatId, '❌ Error al gestionar la serie.'); }
                 return;
             }
 
-            if (data === 'back_to_menu') {
-                adminState[chatId] = { step: 'menu' };
-                const inline_keyboard = getMainMenuKeyboard(chatId);
+            try {
+                bot.sendMessage(chatId, `⏳ Extrayendo datos de TMDB para **PELÍCULA**...`);
+                const movieUrl = `https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${TMDB_API_KEY}&language=es-ES`;
+                const response = await axios.get(movieUrl);
+                const movieData = response.data;
                 
-                bot.editMessageText(`¡Hola de nuevo! ¿Qué quieres hacer hoy?`, {
-                    chat_id: chatId,
-                    message_id: msg.message_id,
-                    reply_markup: { inline_keyboard }
-                }).catch(() => {
-                    bot.sendMessage(chatId, `¡Hola de nuevo! ¿Qué quieres hacer hoy?`, { reply_markup: { inline_keyboard } });
-                });
-                return;
-            }
+                if (!movieData) { bot.sendMessage(chatId, '❌ Error: No se encontraron detalles en TMDB.'); return; }
 
-            if (data === 'manage_bonus_menu') {
-                adminState[chatId] = { step: 'awaiting_bonus_user_id', promptMessageId: msg.message_id };
-                bot.editMessageText('💰 **Gestión de Bonos**\n\nPor favor, escribe el **ID de Telegram** del editor al que deseas enviar un bono:', {
-                    chat_id: chatId,
-                    message_id: msg.message_id,
-                    parse_mode: 'Markdown',
-                    reply_markup: { inline_keyboard: [[{ text: '⬅️ Cancelar y Volver', callback_data: 'back_to_menu' }]] }
-                }).catch(e => { bot.sendMessage(chatId, '💰 **Gestión de Bonos**\n\nEscribe el ID del editor:'); });
-                return;
-            }
-
-            if (data === 'view_earnings') {
-                const uploaderName = msg.chat.first_name || msg.chat.username || "Admin";
-                await showEarningsPanel(chatId, uploaderName, chatId);
-                return;
-            }
-            
-            if (data === 'view_admin2_earnings') {
-                if (ADMIN_CHAT_IDS.length > 1) {
-                    await showEarningsPanel(ADMIN_CHAT_IDS[1], "Admin Secundario", chatId);
-                } else {
-                    bot.sendMessage(chatId, "⚠️ No hay un Admin 2 configurado en las variables de entorno.");
-                }
-                return;
-            }
-
-            // CORRECCIÓN CLAVE: Botón de Pagar (Borrar foto y mandar texto)
-            if (data.startsWith('pay_uploader_')) {
-                const parts = data.split('_');
-                const targetId = parseInt(parts[2]);
-                const amountToPay = parseFloat(parts[3]);
-
-                if (amountToPay <= 0) {
-                    bot.answerCallbackQuery(callbackQuery.id, { text: 'El balance es $0.00, no hay nada que liquidar.', show_alert: true });
-                    return;
-                }
+                const genreIds = movieData.genres ? movieData.genres.map(g => g.id) : [];
+                const countries = movieData.production_countries ? movieData.production_countries.map(c => c.iso_3166_1) : [];
 
                 adminState[chatId] = {
-                    step: 'awaiting_payment_message',
-                    payTargetId: targetId,
-                    payAmount: amountToPay
-                };
-
-                // Eliminamos la foto de ganancias para evitar el error de Telegram
-                bot.deleteMessage(chatId, msg.message_id).catch(() => {});
-
-                // Mandamos un nuevo mensaje de texto limpio
-                bot.sendMessage(chatId, `💸 **Liquidación a Uploader ID:** ${targetId}\n💰 **Monto a liquidar:** $${amountToPay.toFixed(2)}\n\n📝 Escribe el **mensaje de notificación** que se le enviará (Ej: "Disculpen la demora, ya estamos operando..."):`, { 
-                    parse_mode: 'Markdown', 
-                    reply_markup: { inline_keyboard: [[{ text: '❌ Cancelar', callback_data: 'back_to_menu' }]] } 
-                }).then((sentMsg) => {
-                    adminState[chatId].promptMessageId = sentMsg.message_id;
-                });
-                return;
-            }
-
-            if (data === 'cms_announcement_menu') {
-                const options = {
-                    reply_markup: {
-                        inline_keyboard: [
-                            [{ text: '🆕 Crear Nuevo', callback_data: 'cms_create_new' }],
-                            [{ text: '🗑️ Borrar Actual', callback_data: 'cms_delete_current' }],
-                            [{ text: '👀 Ver JSON Actual', callback_data: 'cms_view_current' }],
-                            [{ text: '⬅️ Volver', callback_data: 'back_to_menu' }]
-                        ]
-                    }
-                };
-                bot.editMessageText('📡 **Gestor de Comunicados Globales**\n\nAquí puedes crear anuncios multimedia para la App.', { chat_id: chatId, message_id: msg.message_id, parse_mode: 'Markdown', ...options }).catch(()=>{});
-            }
-
-            else if (data === 'cms_create_new') {
-                adminState[chatId] = {
-                    step: 'cms_await_media_type',
-                    tempAnnouncement: {}
-                };
-                bot.editMessageText('🛠️ **Creando Nuevo Anuncio**\n\nSelecciona el formato:', {
-                    chat_id: chatId,
-                    message_id: msg.message_id,
-                    reply_markup: {
-                        inline_keyboard: [
-                            [{ text: '🎬 Video (MP4/M3U8)', callback_data: 'cms_type_video' }],
-                            [{ text: '🖼️ Imagen (JPG/PNG)', callback_data: 'cms_type_image' }],
-                            [{ text: '📝 Solo Texto', callback_data: 'cms_type_text' }]
-                        ]
-                    }
-                }).catch(()=>{});
-            }
-
-            else if (data === 'cms_type_image' || data === 'cms_type_video' || data === 'cms_type_text') {
-                let type = 'text';
-                if (data === 'cms_type_image') type = 'image';
-                if (data === 'cms_type_video') type = 'video';
-
-                adminState[chatId].tempAnnouncement.mediaType = type;
-
-                if (type === 'text') {
-                    adminState[chatId].step = 'cms_await_title';
-                    bot.editMessageText('✅ Formato: Solo Texto.\n\n📝 Escribe el **TÍTULO** del anuncio:', { chat_id: chatId, message_id: msg.message_id }).catch(()=>{});
-                } else {
-                    adminState[chatId].step = 'cms_await_media_url';
-                    const tipoMsg = type === 'video' ? 'del VIDEO (mp4, m3u8)' : 'de la IMAGEN';
-                    bot.editMessageText(`✅ Formato: ${type.toUpperCase()}.\n\n🔗 Envía la **URL** directa ${tipoMsg}:`, { chat_id: chatId, message_id: msg.message_id }).catch(()=>{});
-                }
-            }
-            
-            else if (data === 'cms_vis_true' || data === 'cms_vis_false') {
-                const isAlwaysVisible = data === 'cms_vis_true';
-                adminState[chatId].tempAnnouncement.siempreVisible = isAlwaysVisible;
-                
-                const ann = adminState[chatId].tempAnnouncement;
-                let mediaDisplay = `🔗 **Media:** [Ver Link](${ann.mediaUrl})`;
-                if (ann.mediaType === 'text') mediaDisplay = "📄 **Tipo:** Solo Texto";
-
-                const visibilityText = isAlwaysVisible ? '✅ Sí (Ignora Caché)' : '❌ No (Normal)';
-
-                const summary = `📢 *RESUMEN DEL ANUNCIO*\n\n` +
-                    `🎬 **Tipo:** ${ann.mediaType}\n` +
-                    `${mediaDisplay}\n` +
-                    `📌 **Título:** ${ann.title}\n` +
-                    `📝 **Cuerpo:** ${ann.message}\n` +
-                    `🔘 **Botón:** ${ann.buttonText}\n` +
-                    `🚀 **Acción:** [Ver Link](${ann.actionUrl})\n` +
-                    `🔥 **Siempre Visible:** ${visibilityText}`;
-
-                adminState[chatId].step = 'cms_confirm_save';
-
-                bot.editMessageText(summary, {
-                    chat_id: chatId,
-                    message_id: msg.message_id,
-                    parse_mode: 'Markdown',
-                    reply_markup: {
-                        inline_keyboard: [
-                            [{ text: '✅ PUBLICAR AHORA', callback_data: 'cms_save_confirm' }],
-                            [{ text: '❌ Cancelar', callback_data: 'cms_cancel' }]
-                        ]
-                    }
-                }).catch(()=>{});
-            }
-
-            else if (data === 'cms_delete_current') {
-                const filePath = path.join(__dirname, 'globalAnnouncement.json');
-                if (fs.existsSync(filePath)) {
-                    fs.unlinkSync(filePath);
-                    bot.sendMessage(chatId, '✅ Comunicado eliminado. La App ya no mostrará nada.');
-                } else {
-                    bot.sendMessage(chatId, '⚠️ No había comunicado activo.');
-                }
-            }
-
-            else if (data === 'cms_view_current') {
-                const filePath = path.join(__dirname, 'globalAnnouncement.json');
-                if (fs.existsSync(filePath)) {
-                    const content = fs.readFileSync(filePath, 'utf8');
-                    bot.sendMessage(chatId, `📄 **JSON Actual en Servidor:**\n\`${content}\``, { parse_mode: 'Markdown' });
-                } else {
-                    bot.sendMessage(chatId, '📭 No hay comunicado activo.');
-                }
-            }
-
-            else if (data === 'cms_save_confirm') {
-                const announcement = adminState[chatId].tempAnnouncement;
-                const filePath = path.join(__dirname, 'globalAnnouncement.json');
-
-                try {
-                    let jsonToSave = {
-                        id: Date.now().toString(),
-                        title: announcement.title,
-                        message: announcement.message,
-                        btnText: announcement.buttonText,
-                        actionUrl: announcement.actionUrl,
-                        siempreVisible: announcement.siempreVisible || false
-                    };
-
-                    if (announcement.mediaType === 'video') {
-                        jsonToSave.videoUrl = announcement.mediaUrl;
-                    } else if (announcement.mediaType === 'image') {
-                        jsonToSave.imageUrl = announcement.mediaUrl;
-                    }
-
-                    fs.writeFileSync(filePath, JSON.stringify(jsonToSave, null, 2));
-
-                    bot.editMessageText('✅ **¡Comunicado Publicado Correctamente!**\n\nEl JSON ha sido generado con el formato que el Frontend espera.', { chat_id: chatId, message_id: msg.message_id, parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '🏠 Menú', callback_data: 'back_to_menu' }]] } }).catch(()=>{});
-                    adminState[chatId] = { step: 'menu' };
-
-                } catch (err) {
-                    console.error("CMS Save Error:", err);
-                    bot.sendMessage(chatId, '❌ Error al guardar el archivo JSON.');
-                }
-            }
-
-            else if (data === 'cms_cancel') {
-                adminState[chatId] = { step: 'menu' };
-                bot.editMessageText('❌ Operación cancelada.', { chat_id: chatId, message_id: msg.message_id, reply_markup: { inline_keyboard: [[{ text: '🏠 Menú', callback_data: 'back_to_menu' }]] } }).catch(()=>{});
-            }
-
-            else if (data === 'send_global_msg') {
-                adminState[chatId] = { step: 'awaiting_global_msg_title' };
-                bot.sendMessage(chatId, "📢 **NOTIFICACIÓN GLOBAL**\n\nPrimero, escribe el **TÍTULO** que aparecerá en la notificación:", { parse_mode: 'Markdown' });
-            }
-
-            else if (data === 'add_manual_movie') {
-                adminState[chatId] = {
-                    step: 'manual_await_title',
-                    manualData: {}
-                };
-                bot.sendMessage(chatId, '📁 **Subida Manual (Propio)**\n\n📝 Escribe el **TÍTULO** del contenido:');
-            }
-
-            else if (data === 'add_movie') {
-                adminState[chatId] = { step: 'search_movie' };
-                if (msg.photo) {
-                    bot.sendMessage(chatId, '🔍 Escribe el nombre de la película a agregar (Ej: "Avatar 2009").');
-                } else {
-                    bot.editMessageText('🔍 Escribe el nombre de la película a agregar (Ej: "Avatar 2009").', { chat_id: chatId, message_id: msg.message_id }).catch(() => {
-                        bot.sendMessage(chatId, 'Escribe el nombre de la película a agregar (Ej: "Avatar 2009").');
-                    });
-                }
-            }
-            else if (data === 'add_series') {
-                adminState[chatId] = { step: 'search_series' };
-                if (msg.photo) {
-                    bot.sendMessage(chatId, '🔍 Escribe el nombre de la serie a agregar (Ej: "Dark 2017").');
-                } else {
-                    bot.editMessageText('🔍 Escribe el nombre de la serie a agregar (Ej: "Dark 2017").', { chat_id: chatId, message_id: msg.message_id }).catch(() => {
-                        bot.sendMessage(chatId, 'Escribe el nombre del serie a agregar (Ej: "Dark 2017").');
-                    });
-                }
-            }
-
-            else if (data.startsWith('add_new_movie_') || data.startsWith('solicitud_')) {
-                let tmdbId = '';
-                if (data.startsWith('add_new_movie_')) tmdbId = data.split('_')[3];
-                if (data.startsWith('solicitud_')) tmdbId = data.split('_')[1];
-
-                if (!tmdbId) { bot.sendMessage(chatId, 'Error: No se pudo obtener el ID.'); return; }
-                try {
-                    const movieUrl = `https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${TMDB_API_KEY}&language=es-ES`;
-                    const response = await axios.get(movieUrl);
-                    const movieData = response.data;
-                    if (!movieData) { bot.sendMessage(chatId, 'Error: No se encontraron detalles.'); return; }
-
-                    const genreIds = movieData.genres ? movieData.genres.map(g => g.id) : [];
-                    const countries = movieData.production_countries ? movieData.production_countries.map(c => c.iso_3166_1) : [];
-
-                    adminState[chatId] = {
-                        step: 'awaiting_unified_link_movie',
-                        selectedMedia: {
-                            id: movieData.id,
-                            title: movieData.title,
-                            overview: movieData.overview,
-                            poster_path: movieData.poster_path,
-                            backdrop_path: movieData.backdrop_path,
-                            genres: genreIds,
-                            release_date: movieData.release_date,
-                            popularity: movieData.popularity,
-                            vote_average: movieData.vote_average,
-                            origin_country: countries
-                        }
-                    };
-                    
-                    bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id }).catch(() => { });
-                    
-                    const promptMsg = await bot.sendMessage(chatId, `🎬 Película: *${movieData.title}*\n🏷️ Géneros: ${genreIds.length}\n🌍 Países: ${countries.join(', ')}\n\n🔗 Envía el **ENLACE (Link)** del video.`, { parse_mode: 'Markdown' });
-                    adminState[chatId].promptMessageId = promptMsg.message_id;
-
-                } catch (error) {
-                    console.error("Error al obtener detalles de TMDB:", error.message);
-                    bot.sendMessage(chatId, 'Error al obtener los detalles de TMDB.');
-                }
-            }
-
-            else if (data.startsWith('set_pinned_movie_')) {
-                const isPinned = data === 'set_pinned_movie_true';
-                if (!adminState[chatId].movieDataToSave) { bot.sendMessage(chatId, 'Error de estado.'); return; }
-
-                adminState[chatId].movieDataToSave.isPinned = isPinned;
-                adminState[chatId].step = 'awaiting_publish_choice';
-
-                const mediaId = adminState[chatId].movieDataToSave.tmdbId;
-
-                const options = {
-                    reply_markup: {
-                        inline_keyboard: [
-                            [
-                                { text: '💾 Solo App (Visible)', callback_data: 'save_only_' + mediaId },
-                                { text: '🤫 Solo Guardar (Oculto)', callback_data: 'save_silent_hidden_' + mediaId }
-                            ],
-                            [
-                                { text: '🚀 Canal (A+B) + PUSH', callback_data: 'save_publish_push_channel_' + mediaId }
-                            ],
-                            [
-                                { text: '📢 Canal (A+B) - Sin Push', callback_data: 'save_publish_channel_no_push_' + mediaId }
-                            ]
-                        ]
-                    }
-                };
-
-                const pinnedStatus = isPinned ? "⭐ DESTACADO (Top)" : "📅 Normal";
-                bot.editMessageText(`✅ Estado definido: ${pinnedStatus}.\n¿Cómo deseas publicar la película?`, {
-                    chat_id: chatId,
-                    message_id: msg.message_id,
-                    reply_markup: options.reply_markup
-                }).catch(() => {
-                    bot.sendMessage(chatId, `✅ Estado definido: ${pinnedStatus}.\n¿Cómo deseas publicar?`, options);
-                });
-            }
-
-            else if (data.startsWith('set_pinned_series_')) {
-                const isPinned = data === 'set_pinned_series_true';
-                if (!adminState[chatId].seriesDataToSave) { bot.sendMessage(chatId, 'Error de estado.'); return; }
-
-                adminState[chatId].seriesDataToSave.isPinned = isPinned;
-                const seriesData = adminState[chatId].seriesDataToSave;
-                const season = adminState[chatId].season;
-                const episode = adminState[chatId].episode;
-                const totalEpisodesInSeason = adminState[chatId].totalEpisodesInSeason;
-
-                bot.editMessageText(`⏳ Guardando S${season}E${episode} (${isPinned ? '⭐ Destacado' : '📅 Normal'})...`, { chat_id: chatId, message_id: msg.message_id }).catch(()=>{});
-
-                try {
-                    await axios.post(`${RENDER_BACKEND_URL}/add-series-episode`, seriesData);
-                    clearAllCaches(); 
-                    
-                    const nextEpisode = episode + 1;
-                    const isSeasonFinished = totalEpisodesInSeason && episode >= totalEpisodesInSeason;
-
-                    adminState[chatId].lastSavedEpisodeData = seriesData;
-                    adminState[chatId].step = 'awaiting_series_action';
-
-                    const rowCorrections = [
-                        { text: `✏️ Editar`, callback_data: `edit_episode_${seriesData.tmdbId}_${season}_${episode}` },
-                        { text: '🗑️ Borrar', callback_data: `delete_episode_${seriesData.tmdbId}_${season}_${episode}` }
-                    ];
-
-                    let rowNext = [];
-                    if (isSeasonFinished) {
-                        const nextSeason = season + 1;
-                        rowNext.push({ text: `🎉 Fin T${season} -> Iniciar T${nextSeason}`, callback_data: `manage_season_${seriesData.tmdbId}_${nextSeason}` });
-                    } else {
-                        rowNext.push({ text: `➡️ Siguiente: S${season}E${nextEpisode}`, callback_data: `add_next_episode_${seriesData.tmdbId}_${season}` });
-                    }
-
-                    const rowPublish = [
-                        { text: `📲 App + PUSH`, callback_data: `publish_push_this_episode_${seriesData.tmdbId}_${season}_${episode}` },
-                        { text: `🚀 Canal + PUSH`, callback_data: `publish_push_channel_this_episode_${seriesData.tmdbId}_${season}_${episode}` }
-                    ];
-
-                    const rowFinal = [
-                        { text: `📢 Solo Canal`, callback_data: `publish_channel_no_push_this_episode_${seriesData.tmdbId}_${season}_${episode}` },
-                        { text: '⏹️ Finalizar Todo', callback_data: `finish_series_${seriesData.tmdbId}` }
-                    ];
-
-                    bot.editMessageText(`✅ *S${season}E${episode} Guardado exitosamente.*\n\n¿Qué acción deseas realizar ahora?`, {
-                        chat_id: chatId,
-                        message_id: msg.message_id,
-                        parse_mode: 'Markdown',
-                        reply_markup: { inline_keyboard: [rowCorrections, rowNext, rowPublish, rowFinal] }
-                    }).catch(()=>{});
-
-                } catch (error) {
-                    console.error("Error guardando episodio:", error.message);
-                    bot.sendMessage(chatId, '❌ Error guardando en servidor.');
-                    adminState[chatId] = { step: 'menu' };
-                }
-            }
-
-            else if (data.startsWith('add_new_series_')) {
-                const tmdbId = data.split('_')[3];
-                bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id }).catch(() => { });
-                await handleManageSeries(chatId, tmdbId);
-            }
-            else if (data.startsWith('manage_series_')) {
-                const tmdbId = data.split('_')[2];
-                bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id }).catch(() => { });
-                await handleManageSeries(chatId, tmdbId);
-            }
-
-            else if (data.startsWith('manage_season_')) {
-                const [_, __, tmdbId, seasonNumber] = data.split('_');
-                const { selectedSeries } = adminState[chatId] || {};
-
-                if (!selectedSeries || (selectedSeries.id && selectedSeries.id.toString() !== tmdbId && selectedSeries.tmdbId !== tmdbId)) {
-                    bot.sendMessage(chatId, '⚠️ Estado perdido. Por favor busca la serie nuevamente.');
-                    return;
-                }
-
-                let totalEpisodes = 0;
-                try {
-                    const url = `https://api.themoviedb.org/3/tv/${tmdbId}/season/${seasonNumber}?api_key=${TMDB_API_KEY}`;
-                    const resp = await axios.get(url);
-                    if (resp.data && resp.data.episodes) totalEpisodes = resp.data.episodes.length;
-                } catch (e) { }
-
-                const seriesData = await mongoDb.collection('series_catalog').findOne({ tmdbId: tmdbId });
-                let lastEpisode = 0;
-                if (seriesData && seriesData.seasons && seriesData.seasons[seasonNumber] && seriesData.seasons[seasonNumber].episodes) {
-                    lastEpisode = Object.keys(seriesData.seasons[seasonNumber].episodes).map(Number).sort((a, b) => b - a)[0] || 0;
-                }
-                const nextEpisode = lastEpisode + 1;
-
-                adminState[chatId] = {
-                    ...adminState[chatId],
-                    step: 'awaiting_unified_link_series',
-                    season: parseInt(seasonNumber),
-                    episode: nextEpisode,
-                    totalEpisodesInSeason: totalEpisodes
-                };
-
-                const msgPrompt = `Gestionando *S${seasonNumber}* de *${selectedSeries.name}*.\nAgregando episodio *E${nextEpisode}*.\n\n🔗 Envía el **ENLACE** del video.`;
-                
-                bot.editMessageText(msgPrompt, { chat_id: chatId, message_id: msg.message_id, parse_mode: 'Markdown' }).catch(async () => {
-                     const promptMsg = await bot.sendMessage(chatId, msgPrompt, { parse_mode: 'Markdown' });
-                     adminState[chatId].promptMessageId = promptMsg.message_id;
-                });
-                adminState[chatId].promptMessageId = msg.message_id; 
-            }
-
-            else if (data.startsWith('add_next_episode_')) {
-                const [_, __, ___, tmdbId, seasonNumber] = data.split('_');
-                const { selectedSeries, totalEpisodesInSeason } = adminState[chatId];
-
-                if (!selectedSeries || selectedSeries.id.toString() !== tmdbId && selectedSeries.tmdbId !== tmdbId) {
-                    bot.sendMessage(chatId, 'Error: Datos de la serie perdidos. Vuelve a empezar.');
-                    adminState[chatId] = { step: 'menu' };
-                    return;
-                }
-
-                const lastSaved = adminState[chatId].lastSavedEpisodeData;
-                const nextEpisode = (lastSaved ? lastSaved.episodeNumber : 0) + 1;
-
-                adminState[chatId] = {
-                    ...adminState[chatId],
-                    step: 'awaiting_unified_link_series',
-                    season: parseInt(seasonNumber),
-                    episode: nextEpisode
-                };
-
-                bot.editMessageText(`Siguiente: Envía **ENLACE** para S${seasonNumber}E${nextEpisode}.`, { chat_id: chatId, message_id: msg.message_id }).catch(()=>{});
-                adminState[chatId].promptMessageId = msg.message_id;
-            }
-
-            else if (data.startsWith('delete_episode_')) {
-                const [_, __, tmdbId, season, episode] = data.split('_');
-                try {
-                    await axios.post(`${RENDER_BACKEND_URL}/delete-series-episode`, {
-                        tmdbId, seasonNumber: parseInt(season), episodeNumber: parseInt(episode)
-                    });
-                    clearAllCaches(); 
-                    bot.sendMessage(chatId, `🗑️ Episodio S${season}E${episode} eliminado. Puedes volver a subirlo.`);
-                } catch (e) {
-                    bot.sendMessage(chatId, '❌ Error eliminando episodio.');
-                }
-            }
-
-            else if (data.startsWith('edit_episode_')) {
-                const [_, __, tmdbId, season, episode] = data.split('_');
-                adminState[chatId] = {
-                    ...adminState[chatId],
-                    step: 'awaiting_unified_link_series',
-                    season: parseInt(season),
-                    episode: parseInt(episode)
-                };
-                bot.editMessageText(`✏️ Corrección: Envía el NUEVO enlace para **S${season}E${episode}**:`, { chat_id: chatId, message_id: msg.message_id }).catch(()=>{});
-                adminState[chatId].promptMessageId = msg.message_id;
-            }
-
-            else if (data.startsWith('manage_movie_')) {
-                const tmdbId = data.split('_')[2];
-                try {
-                    const movieUrl = `https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${TMDB_API_KEY}&language=es-ES`;
-                    const response = await axios.get(movieUrl);
-                    const movieData = response.data;
-
-                    adminState[chatId].selectedMedia = {
+                    step: 'awaiting_unified_link_movie',
+                    selectedMedia: {
                         id: movieData.id,
                         title: movieData.title,
                         overview: movieData.overview,
-                        poster_path: movieData.poster_path
-                    };
-
-                    const localMovie = await mongoDb.collection('media_catalog').findOne({ tmdbId: tmdbId.toString() });
-                    const isPinned = localMovie?.isPinned || false;
-
-                    let pinnedButtons = [];
-                    if (isPinned) {
-                        pinnedButtons = [
-                            { text: '🔄 Subir al 1° Lugar', callback_data: `pin_action_refresh_movie_${tmdbId}` },
-                            { text: '❌ Quitar de Top', callback_data: `pin_action_unpin_movie_${tmdbId}` }
-                        ];
-                    } else {
-                        pinnedButtons = [
-                            { text: '⭐ Fijar en Top', callback_data: `pin_action_pin_movie_${tmdbId}` }
-                        ];
+                        poster_path: movieData.poster_path,
+                        backdrop_path: movieData.backdrop_path,
+                        genres: genreIds,
+                        release_date: movieData.release_date,
+                        popularity: movieData.popularity,
+                        vote_average: movieData.vote_average,
+                        origin_country: countries
                     }
+                };
+                
+                const promptMsg = await bot.sendMessage(chatId, `🎬 Película: *${movieData.title}*\n🏷️ Géneros: ${genreIds.length}\n🌍 Países: ${countries.join(', ')}\n\n🔗 Envía el **ENLACE (Link)** del video.`, { parse_mode: 'Markdown' });
+                adminState[chatId].promptMessageId = promptMsg.message_id;
 
-                    const options = {
+            } catch (error) {
+                console.error("Error al obtener detalles de TMDB desde Web App:", error.message);
+                bot.sendMessage(chatId, '❌ Error al obtener los detalles de TMDB. Intenta agregarlo manualmente.');
+            }
+            return;
+        }
+
+        adminState[chatId] = { step: 'menu' };
+        const inline_keyboard = getMainMenuKeyboard(chatId);
+        bot.sendMessage(chatId, `¡Hola ${msg.from.first_name || 'Admin'}! ¿Qué quieres hacer hoy?`, { reply_markup: { inline_keyboard } });
+    });
+
+    // =========================================================
+    // MANEJADOR PRINCIPAL DE MENSAJES
+    // =========================================================
+
+    bot.on('message', async (msg) => {
+        const chatId = msg.chat.id;
+        const isAdmin = ADMIN_CHAT_IDS.includes(msg.from.id);
+        const isCommunity = cleanCommunityId && chatId.toString() === cleanCommunityId;
+
+        // 1. LIMPIEZA AUTOMÁTICA DE MENSAJES DEL SISTEMA
+        if (msg.new_chat_members || msg.left_chat_member) {
+            if (isCommunity) {
+                try {
+                    await bot.deleteMessage(chatId, msg.message_id);
+                } catch (e) { }
+            }
+            return; 
+        }
+
+        // 2. ANTI-SPAM DE ENLACES PARA USUARIOS NORMALES
+        const hasLinks = msg.entities && msg.entities.some(e => e.type === 'url' || e.type === 'text_link' || e.type === 'mention');
+        if (hasLinks && !isAdmin) {
+            try {
+                await bot.deleteMessage(msg.chat.id, msg.message_id);
+                const warningMessage = await bot.sendMessage(msg.chat.id, `@${msg.from.username || msg.from.first_name}, no se permite enviar enlaces en este grupo.`);
+                setTimeout(() => bot.deleteMessage(warningMessage.chat.id, warningMessage.message_id).catch(() => {}), 5000);
+            } catch (error) {}
+            return;
+        }
+
+        const userText = msg.text;
+        if (!userText) return;
+
+        // =========================================================
+        // IA DEL GRUPO (ASISTENTE HUMANO Y MODERADOR)
+        // =========================================================
+        
+        if (isCommunity) {
+            const textLower = userText.toLowerCase();
+
+            // A. FILTRO ANTI-GROSERÍAS
+            const badWords = ['puta', 'mierda', 'pendejo', 'cabron', 'verga', 'imbecil', 'idiota', 'estupido', 'conchetumare', 'hijo de puta', 'malparido'];
+            const hasBadWord = badWords.some(word => new RegExp(`\\b${word}\\b`, 'i').test(textLower));
+            
+            if (hasBadWord && !isAdmin) { 
+                try {
+                    await bot.deleteMessage(chatId, msg.message_id);
+                    const warnMsg = await bot.sendMessage(chatId, `⚠️ @${msg.from.username || msg.from.first_name}, por favor mantengamos el respeto en la comunidad.`);
+                    setTimeout(() => bot.deleteMessage(chatId, warnMsg.message_id).catch(()=>{}), 8000);
+                } catch(e) {}
+                return;
+            }
+
+            // B. CHARLAS SOCIALES
+            if (textLower.includes('hola') || textLower.includes('buenas') || textLower.includes('saludos')) {
+                return bot.sendMessage(chatId, dict.getRandom('smallTalkHello'), { reply_to_message_id: msg.message_id });
+            }
+            if (textLower.includes('gracias bot') || textLower.includes('buen bot') || textLower === 'gracias') {
+                return bot.sendMessage(chatId, dict.getRandom('smallTalkThanks'), { reply_to_message_id: msg.message_id });
+            }
+
+            // C. FAQ: Descargar / App
+            if (textLower.match(/(d[oó]nde descargo|pasar la app|como descargo|link de la app|instalar la app|apk|descargar sala cine|la aplicaci[oó]n|su app)/)) {
+                return bot.sendMessage(chatId, dict.getRandom('faqDownload'), {
+                    reply_to_message_id: msg.message_id,
+                    reply_markup: { inline_keyboard: [[{ text: '📱 Descargar Sala Cine', url: `${RENDER_BACKEND_URL}/app/details/0` }]] }
+                });
+            }
+
+            // C2. FAQ: Cómo ver
+            if (textLower.match(/(c[oó]mo (lo|la) veo|puedo ver esta|d[oó]nde la veo|como funciona|ayuda para ver|puedo ver una pel[ií]cula)/)) {
+                return bot.sendMessage(chatId, dict.getRandom('faqHowToWatch'), {
+                    reply_to_message_id: msg.message_id,
+                    reply_markup: { inline_keyboard: [[{ text: '📱 Descargar Sala Cine', url: `${RENDER_BACKEND_URL}/app/details/0` }]] }
+                });
+            }
+
+            // D. FAQ: En Vivo
+            if (textLower.match(/(en vivo|partido|deportes|tv en vivo|canales|donde veo el partido)/)) {
+                return bot.sendMessage(chatId, dict.getRandom('faqLive'), {
+                    reply_to_message_id: msg.message_id,
+                    reply_markup: { inline_keyboard: [[{ text: '🔴 Abrir App', url: `${RENDER_BACKEND_URL}/app/details/0` }]] }
+                });
+            }
+
+            // E. FAQ: Pedidos
+            if (textLower.match(/(como pido|agregar pelicula|subir pelicula|pueden subir|como solicito|agreguen)/)) {
+                return bot.sendMessage(chatId, dict.getRandom('faqRequests'), {
+                    reply_to_message_id: msg.message_id,
+                    reply_markup: { inline_keyboard: [[{ text: '📝 Ir a Pedidos', url: `${RENDER_BACKEND_URL}/app/details/0` }]] }
+                });
+            }
+
+            // F. BÚSQUEDA INTELIGENTE
+            const searchMatch = textLower.match(/(?:busco|tienes|tienen|quiero ver|ponme|b[uú]scame|pel[ií]cula(?: de)?|serie(?: de)?|donde veo|hay|est[aá])\s+(.+)/i);
+            
+            if (searchMatch && searchMatch[1].length > 2) {
+                const query = searchMatch[1].replace(/[?¿!¡]/g, '').trim().toLowerCase();
+                
+                const waitMsg = await bot.sendMessage(chatId, dict.getRandom('greetings'), { reply_to_message_id: msg.message_id });
+
+                await ensureCacheWarmed(); 
+                
+                const result = smartBotCache.catalog.find(item => item.title && item.title.toLowerCase().includes(query));
+
+                if (result) {
+                    const successText = dict.getRandom('found') + `\n\n🎬 *${result.title}*`;
+                    const deeplink = `${RENDER_BACKEND_URL}/view/${result.type}/${result.id}`;
+
+                    return bot.editMessageText(successText, {
+                        chat_id: chatId,
+                        message_id: waitMsg.message_id,
+                        parse_mode: 'Markdown',
                         reply_markup: {
                             inline_keyboard: [
-                                [{ text: '✏️ Editar Link', callback_data: `add_pro_movie_${tmdbId}` }],
-                                pinnedButtons,
-                                [{ text: '🗑️ Eliminar Película', callback_data: `delete_confirm_${tmdbId}_movie` }]
+                                [{ text: '▶️ Ver Ahora', url: deeplink }],
+                                [{ text: '📱 Descargar Sala Cine', url: `${RENDER_BACKEND_URL}/app/details/0` }]
                             ]
                         }
-                    };
-
-                    const statusText = isPinned ? "⭐ ES DESTACADO" : "📅 ES NORMAL";
-                    bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id }).catch(() => { });
-                    bot.sendMessage(chatId, `Gestionando: *${movieData.title}*\nEstado: ${statusText}\n\n¿Qué deseas hacer?`, { ...options, parse_mode: 'Markdown' });
-
-                } catch (error) {
-                    console.error("Error manage_movie_:", error.message);
-                    bot.sendMessage(chatId, 'Error al obtener los detalles.');
+                    });
+                } else {
+                    return bot.editMessageText(dict.getRandom('notFound'), {
+                        chat_id: chatId,
+                        message_id: waitMsg.message_id
+                    });
                 }
             }
+            if (isAdmin) return; 
+        }
 
-            else if (data.startsWith('pin_action_')) {
-                const parts = data.split('_');
-                const action = parts[2];
-                const type = parts[3];
-                const tmdbId = parts[4];
-
-                try {
-                    const collection = (type === 'tv' || type === 'series') ? mongoDb.collection('series_catalog') : mongoDb.collection('media_catalog');
-
-                    let updateDoc = {};
-                    let replyText = "";
-
-                    if (action === 'pin') {
-                        updateDoc = { $set: { isPinned: true, addedAt: new Date() } };
-                        replyText = "✅ Película fijada y movida al PRIMER lugar (Top 1).";
-                    } else if (action === 'unpin') {
-                        updateDoc = { $set: { isPinned: false } };
-                        replyText = "✅ Película quitada de destacados.";
-                    } else if (action === 'refresh') {
-                        updateDoc = { $set: { isPinned: true, addedAt: new Date() } };
-                        replyText = "🔄 Refrescada: Ahora está en el PRIMER lugar (Top 1).";
-                    }
-
-                    await collection.updateOne({ tmdbId: tmdbId.toString() }, updateDoc);
-
-                    if (pinnedCache) {
-                        pinnedCache.del('pinned_content_top');
-                        console.log("[Bot] Caché de destacados borrada. El cambio será inmediato.");
-                    }
-                    clearAllCaches();
-
-                    bot.sendMessage(chatId, replyText);
-
-                } catch (error) {
-                    console.error("Error pin_action:", error);
-                    bot.sendMessage(chatId, "❌ Error al cambiar el estado.");
+        // =========================================================
+        // LÓGICA DE ADMINISTRADOR Y ESTADOS
+        // =========================================================
+        
+        if (isAdmin && userText.startsWith('/')) {
+            const command = userText.split(' ')[0];
+            
+            if (command === '/decir') {
+                const mensaje = userText.replace('/decir', '').trim();
+                if (!mensaje) {
+                    return bot.sendMessage(chatId, "⚠️ Debes escribir un mensaje. Ejemplo:\n`/decir Hola grupo, hoy subimos estrenos`", { parse_mode: 'Markdown' });
                 }
+                
+                if (cleanCommunityId) {
+                    bot.sendMessage(cleanCommunityId, mensaje, { parse_mode: 'Markdown' })
+                        .then(() => bot.sendMessage(chatId, "✅ Mensaje enviado al grupo exitosamente."))
+                        .catch(() => bot.sendMessage(chatId, "❌ Error al enviar el mensaje al grupo."));
+                } else {
+                    bot.sendMessage(chatId, "❌ El ID del grupo (COMMUNITY_GROUP_ID) no está configurado.");
+                }
+                return;
             }
 
-            else if (data.startsWith('add_pro_movie_') || data.startsWith('add_free_movie_')) {
-                const isPro = data.startsWith('add_pro_movie_');
-                const tmdbId = data.split('_')[3];
-                adminState[chatId] = {
-                    step: 'awaiting_edit_movie_link',
-                    tmdbId: tmdbId,
-                    isPro: isPro,
-                    promptMessageId: msg.message_id
+            if (command === '/subirexclusivo') {
+                adminState[chatId] = { step: 'exc_await_title', excData: {} };
+                bot.sendMessage(chatId, '🔒 **Subida de Contenido Exclusivo**\n\n📝 Ingresa el **TÍTULO** del contenido:', { parse_mode: 'Markdown' });
+                return;
+            }
+        }
+
+        if (!isAdmin) {
+            if (userText.startsWith('/')) {
+                const command = userText.split(' ')[0];
+                if (command === '/start' || command === '/ayuda') {
+                    const helpMessage = `👋 ¡Hola! Bienvenido al bot oficial.\n\n🤖 **Gestión de Accesos:**\nSi enviaste una solicitud para unirte a nuestros canales privados, este bot te aceptará automáticamente en breve.\n\n📢 **Servicio de Publicidad:**\nSi eres creador de contenido o tienes un negocio, puedes pautar con nosotros.`;
+                    bot.sendMessage(chatId, helpMessage, { 
+                        parse_mode: 'Markdown',
+                        reply_markup: { inline_keyboard: [[{ text: '📞 Contactar Soporte', callback_data: 'public_contact' }]] }
+                    });
+                    return;
+                }
+                bot.sendMessage(chatId, 'Lo siento, no tienes permiso para usar este comando.');
+            }
+            return;
+        }
+
+        if (adminState[chatId] && adminState[chatId].step && adminState[chatId].step.startsWith('exc_')) {
+            const step = adminState[chatId].step;
+
+            if (step === 'exc_await_title') {
+                adminState[chatId].excData.title = userText;
+                adminState[chatId].step = 'exc_await_overview';
+                bot.sendMessage(chatId, '✅ Título guardado.\n\n📝 Ahora ingresa la **SINOPSIS** (Descripción):');
+            }
+            else if (step === 'exc_await_overview') {
+                adminState[chatId].excData.overview = userText;
+                adminState[chatId].step = 'exc_await_poster';
+                bot.sendMessage(chatId, '✅ Sinopsis guardada.\n\n🖼️ Envía la **URL de la imagen PORTADA** (Vertical):');
+            }
+            else if (step === 'exc_await_poster') {
+                if (!userText.startsWith('http')) { bot.sendMessage(chatId, '❌ Envía una URL válida.'); return; }
+                adminState[chatId].excData.poster_path = userText;
+                adminState[chatId].step = 'exc_await_video';
+                bot.sendMessage(chatId, '✅ Portada guardada.\n\n🔗 Envía la **URL del VIDEO** (.mp4, .m3u8, iframe, etc):');
+            }
+            else if (step === 'exc_await_video') {
+                if (!userText.startsWith('http')) { bot.sendMessage(chatId, '❌ Envía una URL válida.'); return; }
+                adminState[chatId].excData.video_url = userText;
+
+                bot.sendMessage(chatId, '⏳ Guardando contenido exclusivo en la bóveda...');
+                const newItem = {
+                    id: "exc_" + Date.now(),
+                    title: adminState[chatId].excData.title,
+                    overview: adminState[chatId].excData.overview,
+                    poster_path: adminState[chatId].excData.poster_path,
+                    videoUrl: adminState[chatId].excData.video_url, 
+                    addedAt: new Date(),
+                    media_type: 'movie'
                 };
-                bot.editMessageText(`✏️ Editando enlace para ID: ${tmdbId}.\n\n🔗 Envía el nuevo enlace ahora:`, { chat_id: chatId, message_id: msg.message_id }).catch(() => {});
-            }
 
-            else if (data === 'delete_movie') {
-                adminState[chatId] = { step: 'search_delete' };
-                bot.sendMessage(chatId, 'Escribe el nombre del contenido a ELIMINAR.');
-            }
-            
-            else if (data.startsWith('delete_confirm_')) {
-                const [_, __, tmdbId, mediaType] = data.split('_');
-                let collectionName = '';
-                if (mediaType === 'movie') collectionName = 'media_catalog';
-                else if (mediaType === 'tv') collectionName = 'series_catalog';
-                else { bot.sendMessage(chatId, 'Error: Tipo de medio desconocido.'); return; }
                 try {
-                    const result = await mongoDb.collection(collectionName).deleteOne({ tmdbId: tmdbId.toString() });
-                    if (result.deletedCount > 0) {
-                        clearAllCaches(); 
-                        bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id }).catch(() => { });
-                        bot.sendMessage(chatId, `✅ Contenido (ID: ${tmdbId}) eliminado exitosamente.`);
-                    } else {
-                        bot.sendMessage(chatId, `⚠️ No se encontró contenido con ID ${tmdbId} en la base de datos para eliminar.`);
+                    await mongoDb.collection('exclusive_catalog').insertOne(newItem);
+                    clearAllCaches(); 
+                    bot.sendMessage(chatId, '✅ **¡Contenido Exclusivo guardado con éxito!**\nYa estará disponible en la pestaña Exclusivos de la App.', { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '🏠 Menú Principal', callback_data: 'back_to_menu' }]] } });
+                } catch(e) {
+                    bot.sendMessage(chatId, '❌ Ocurrió un error al guardar en la base de datos.');
+                }
+                adminState[chatId] = { step: 'menu' };
+            }
+            return;
+        }
+
+        if (adminState[chatId] && adminState[chatId].step && adminState[chatId].step.startsWith('hub_')) {
+            if (chatId !== ADMIN_CHAT_IDS[0]) return; 
+
+            const step = adminState[chatId].step;
+
+            if (step === 'hub_nav_text') {
+                adminState[chatId].tempHubData.navText = userText;
+                adminState[chatId].step = 'hub_hero_title';
+                bot.sendMessage(chatId, '✅ Texto del menú guardado.\n\n📝 Ahora ingresa el **TÍTULO** del evento (Ej: SUNSET BEATS LIVE):', { parse_mode: 'Markdown' });
+            }
+            else if (step === 'hub_hero_title') {
+                adminState[chatId].tempHubData.title = userText;
+                adminState[chatId].step = 'hub_hero_image';
+                bot.sendMessage(chatId, '✅ Título guardado.\n\n🖼️ Ingresa la **URL de la imagen** de portada/banner (16:9):', { parse_mode: 'Markdown' });
+            }
+            else if (step === 'hub_hero_image') {
+                if (!userText.startsWith('http')) { bot.sendMessage(chatId, '❌ Envía una URL válida.'); return; }
+                adminState[chatId].tempHubData.image = userText;
+                adminState[chatId].step = 'hub_hero_video';
+                bot.sendMessage(chatId, '✅ Imagen guardada.\n\n🔗 Ingresa la **URL del video** o transmisión (.m3u8 o .mp4):', { parse_mode: 'Markdown' });
+            }
+            else if (step === 'hub_hero_video') {
+                if (!userText.startsWith('http')) { bot.sendMessage(chatId, '❌ Envía una URL válida.'); return; }
+                adminState[chatId].tempHubData.video = userText;
+                
+                adminState[chatId].step = 'hub_hero_status';
+                bot.sendMessage(chatId, '✅ Video guardado.\n\n🏷️ Ingresa la **ETIQUETA** del evento (Ej: EN VIVO, ESTRENO, PRÓXIMAMENTE):', { parse_mode: 'Markdown' });
+            }
+            else if (step === 'hub_hero_status') {
+                const statusLabel = userText.trim().toUpperCase() || 'EN VIVO';
+                adminState[chatId].tempHubData.statusLabel = statusLabel;
+
+                bot.sendMessage(chatId, '⏳ Guardando Evento Principal en el servidor...', { parse_mode: 'Markdown' });
+                
+                const heroData = adminState[chatId].tempHubData;
+                const updateObj = {
+                    "config.mainTitle": heroData.title,
+                    "config.navOverride": { text: heroData.navText, icon: "fa-broadcast-tower" },
+                    heroEvent: {
+                        title: heroData.title,
+                        imageUrl: heroData.image,
+                        videoUrl: heroData.video,
+                        viewers: 0, 
+                        statusLabel: heroData.statusLabel,
+                        btnText: "VER AHORA",
+                        description: "Contenido exclusivo en vivo."
                     }
-                } catch (error) {
-                    console.error("Error al eliminar de MongoDB:", error);
-                    bot.sendMessage(chatId, '❌ Error al intentar eliminar el contenido.');
+                };
+                
+                try {
+                    await mongoDb.collection('live_feed_config').updateOne(
+                        { _id: 'main_feed' },
+                        { $set: updateObj },
+                        { upsert: true }
+                    );
+                    clearLiveCache();
+                    bot.sendMessage(chatId, '✅ **¡Evento Principal configurado con éxito!**', { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '🏠 Menú Principal', callback_data: 'back_to_menu' }]] } });
+                } catch(e) {
+                    bot.sendMessage(chatId, '❌ Ocurrió un error al guardar el evento principal.');
                 }
                 adminState[chatId] = { step: 'menu' };
             }
 
-            else if (data.startsWith('save_only_')) {
-                bot.editMessageText('⏳ Guardando datos en el servidor...', { chat_id: chatId, message_id: msg.message_id }).catch(()=>{});
-                const { movieDataToSave } = adminState[chatId];
-                if (!movieDataToSave?.tmdbId) { bot.sendMessage(chatId, 'Error: Datos perdidos.'); adminState[chatId] = { step: 'menu' }; return; }
-                await axios.post(`${RENDER_BACKEND_URL}/add-movie`, movieDataToSave);
-                clearAllCaches(); 
-                await sendFinalSummary(chatId, movieDataToSave.title, true, msg.message_id);
+            else if (step === 'hub_sec_title') {
+                adminState[chatId].tempHubData.title = userText;
+                adminState[chatId].step = 'hub_sec_image';
+                bot.sendMessage(chatId, '✅ Título guardado.\n\n🖼️ Ingresa la **URL de la imagen** para esta tarjeta (16:9):', { parse_mode: 'Markdown' });
             }
-
-            else if (data.startsWith('save_silent_hidden_')) {
-                bot.editMessageText('⏳ Guardando en modo silencioso...', { chat_id: chatId, message_id: msg.message_id }).catch(()=>{});
-                const { movieDataToSave } = adminState[chatId];
-                if (!movieDataToSave?.tmdbId) { bot.sendMessage(chatId, 'Error: Datos perdidos.'); adminState[chatId] = { step: 'menu' }; return; }
-                movieDataToSave.hideFromRecent = true;
-                try {
-                    await axios.post(`${RENDER_BACKEND_URL}/add-movie`, movieDataToSave);
-                    clearAllCaches(); 
-                    await sendFinalSummary(chatId, movieDataToSave.title + " (Oculta)", true, msg.message_id);
-                } catch (error) {
-                    bot.sendMessage(chatId, '❌ Error al guardar.');
-                }
+            else if (step === 'hub_sec_image') {
+                if (!userText.startsWith('http')) { bot.sendMessage(chatId, '❌ Envía una URL válida.'); return; }
+                adminState[chatId].tempHubData.image = userText;
+                adminState[chatId].step = 'hub_sec_video';
+                bot.sendMessage(chatId, '✅ Imagen guardada.\n\n🔗 Ingresa la **URL del video** (.mp4, .m3u8) para esta tarjeta secundaria:', { parse_mode: 'Markdown' });
             }
-
-            else if (data.startsWith('save_publish_push_channel_')) {
-                bot.editMessageText('⏳ Guardando y publicando en canales...', { chat_id: chatId, message_id: msg.message_id }).catch(()=>{});
-                const tmdbIdFromCallback = data.split('_').pop();
-                const { movieDataToSave } = adminState[chatId];
-
-                if (!movieDataToSave?.tmdbId || movieDataToSave.tmdbId !== tmdbIdFromCallback) {
-                    bot.sendMessage(chatId, 'Error: Datos perdidos. Intenta de nuevo desde la búsqueda.');
-                    adminState[chatId] = { step: 'menu' };
-                    return;
-                }
-
-                try {
-                    await axios.post(`${RENDER_BACKEND_URL}/add-movie`, movieDataToSave);
-                    clearAllCaches(); 
-
-                    await axios.post(`${RENDER_BACKEND_URL}/api/notify-new-content`, {
-                        title: "¡Nuevo Estreno!",
-                        body: `Ya puedes ver: ${movieDataToSave.title}`,
-                        imageUrl: movieDataToSave.poster_path ? (movieDataToSave.poster_path.startsWith('http') ? movieDataToSave.poster_path : `https://image.tmdb.org/t/p/w500${movieDataToSave.poster_path}`) : null,
-                        tmdbId: movieDataToSave.tmdbId,
-                        mediaType: 'movie'
-                    });
-
-                    const DEEPLINK_URL = `${RENDER_BACKEND_URL}/view/movie/${movieDataToSave.tmdbId}`;
-                    const CHANNEL_SMALL = process.env.TELEGRAM_CHANNEL_A_ID;
-                    const CHANNEL_BIG_ID = process.env.TELEGRAM_CHANNEL_B_ID;
-
-                    if (CHANNEL_SMALL) {
-                        const shortOverview = movieDataToSave.overview 
-                            ? (movieDataToSave.overview.length > 280 
-                                ? movieDataToSave.overview.substring(0, 280) + '...' 
-                                : movieDataToSave.overview)
-                            : 'Sin sinopsis disponible.';
-
-                        const messageToSmall = `🎬 *${movieDataToSave.title.toUpperCase()}*\n\n` +
-                            `📺 Calidad: Full HD\n` +
-                            `🗣 Idioma: Latino\n` +
-                            `⭐ Puntuación: ${movieDataToSave.vote_average ? movieDataToSave.vote_average.toFixed(1) : 'N/A'} / 10\n\n` +
-                            `📖 *Sinopsis:*\n` +
-                            `${shortOverview}\n\n` +
-                            `❓ ¿No sabes cómo verla?\n` +
-                            `📘 Tutorial paso a paso aquí:\n` +
-                            `👉 https://tututorialaqui.com\n\n` +
-                            `👇🏻 *MIRA AQUÍ LA PELÍCULA* 👇🏻`;
-
-                        const imageToSend = movieDataToSave.poster_path ? (movieDataToSave.poster_path.startsWith('http') ? movieDataToSave.poster_path : `https://image.tmdb.org/t/p/w500${movieDataToSave.poster_path}`) : 'https://placehold.co/500x750?text=SALA+CINE';
-
-                        const sentMsgSmall = await bot.sendPhoto(CHANNEL_SMALL, imageToSend, {
-                            caption: messageToSmall,
-                            parse_mode: 'Markdown',
-                            reply_markup: {
-                                inline_keyboard: [
-                                    [{ text: '▶️ Ver Ahora en la App', url: DEEPLINK_URL }]
-                                ]
-                            }
-                        });
-
-                        const channelUsername = CHANNEL_SMALL.replace('@', '');
-                        const linkToPost = `https://t.me/${channelUsername}/${sentMsgSmall.message_id}`;
-
-                        if (CHANNEL_BIG_ID) {
-                            const releaseYear = movieDataToSave.release_date ? `(${movieDataToSave.release_date.substring(0, 4)})` : '';
-                            const overviewTeaser = movieDataToSave.overview
-                                ? movieDataToSave.overview.length > 250
-                                    ? movieDataToSave.overview.substring(0, 250) + '...'
-                                    : movieDataToSave.overview
-                                : 'Una historia increíble te espera...';
-
-                            const messageToBig = `🍿 *ESTRENO YA DISPONIBLE* 🍿\n\n` +
-                                `🎬 *${movieDataToSave.title}* ${releaseYear}\n\n` +
-                                `📝 _${overviewTeaser}_\n\n` +
-                                `⚠️ _Por temas de copyright, la película completa se encuentra en nuestro canal privado._\n\n` +
-                                `👇 *VER PELÍCULA AQUÍ* 👇`;
-
-                            await bot.sendPhoto(CHANNEL_BIG_ID, imageToSend, {
-                                caption: messageToBig,
-                                parse_mode: 'Markdown',
-                                reply_markup: {
-                                    inline_keyboard: [
-                                        [{ text: '🚀 IR AL CANAL Y VER AHORA 🚀', url: linkToPost }]
-                                    ]
-                                }
-                            });
-                        }
-                    }
-                    await sendFinalSummary(chatId, movieDataToSave.title, true, msg.message_id);
-
-                } catch (error) {
-                    console.error("Error en save_publish_push_channel_:", error.response ? error.response.data : error.message);
-                    bot.sendMessage(chatId, '❌ Error al guardar o enviar notificación.');
-                }
-            }
-
-            else if (data.startsWith('save_publish_channel_no_push_')) {
-                bot.editMessageText('⏳ Publicando sin Push...', { chat_id: chatId, message_id: msg.message_id }).catch(()=>{});
-                const tmdbIdFromCallback = data.split('_').pop();
-                const { movieDataToSave } = adminState[chatId];
-
-                if (!movieDataToSave?.tmdbId || movieDataToSave.tmdbId !== tmdbIdFromCallback) {
-                    bot.sendMessage(chatId, 'Error: Datos perdidos. Intenta de nuevo.');
-                    adminState[chatId] = { step: 'menu' };
-                    return;
-                }
-
-                try {
-                    await axios.post(`${RENDER_BACKEND_URL}/add-movie`, movieDataToSave);
-                    clearAllCaches(); 
-
-                    const DEEPLINK_URL = `${RENDER_BACKEND_URL}/view/movie/${movieDataToSave.tmdbId}`;
-                    const CHANNEL_SMALL = process.env.TELEGRAM_CHANNEL_A_ID;
-                    const CHANNEL_BIG_ID = process.env.TELEGRAM_CHANNEL_B_ID;
-
-                    if (CHANNEL_SMALL) {
-                        const shortOverview = movieDataToSave.overview 
-                            ? (movieDataToSave.overview.length > 280 
-                                ? movieDataToSave.overview.substring(0, 280) + '...' 
-                                : movieDataToSave.overview)
-                            : 'Sin sinopsis disponible.';
-
-                        const messageToSmall = `🎬 *${movieDataToSave.title.toUpperCase()}*\n\n` +
-                            `📺 Calidad: Full HD\n` +
-                            `🗣 Idioma: Latino\n` +
-                            `⭐ Puntuación: ${movieDataToSave.vote_average ? movieDataToSave.vote_average.toFixed(1) : 'N/A'} / 10\n\n` +
-                            `📖 *Sinopsis:*\n` +
-                            `${shortOverview}\n\n` +
-                            `❓ ¿No sabes cómo verla?\n` +
-                            `📘 Tutorial paso a paso aquí:\n` +
-                            `👉 https://tututorialaqui.com\n\n` +
-                            `👇🏻 *MIRA AQUÍ LA PELÍCULA* 👇🏻`;
-
-                        const imageToSend = movieDataToSave.poster_path ? (movieDataToSave.poster_path.startsWith('http') ? movieDataToSave.poster_path : `https://image.tmdb.org/t/p/w500${movieDataToSave.poster_path}`) : 'https://placehold.co/500x750?text=SALA+CINE';
-
-                        const sentMsgSmall = await bot.sendPhoto(CHANNEL_SMALL, imageToSend, {
-                            caption: messageToSmall,
-                            parse_mode: 'Markdown',
-                            reply_markup: {
-                                inline_keyboard: [
-                                    [{ text: '▶️ Ver Ahora en la App', url: DEEPLINK_URL }]
-                                ]
-                            }
-                        });
-
-                        const channelUsername = CHANNEL_SMALL.replace('@', '');
-                        const linkToPost = `https://t.me/${channelUsername}/${sentMsgSmall.message_id}`;
-
-                        if (CHANNEL_BIG_ID) {
-                            const releaseYear = movieDataToSave.release_date ? `(${movieDataToSave.release_date.substring(0, 4)})` : '';
-                            const overviewTeaser = movieDataToSave.overview
-                                ? movieDataToSave.overview.length > 250
-                                    ? movieDataToSave.overview.substring(0, 250) + '...'
-                                    : movieDataToSave.overview
-                                : 'Una historia increíble te espera...';
-
-                            const messageToBig = `🍿 *ESTRENO YA DISPONIBLE* 🍿\n\n` +
-                                `🎬 *${movieDataToSave.title}* ${releaseYear}\n\n` +
-                                `📝 _${overviewTeaser}_\n\n` +
-                                `⚠️ _Por temas de copyright, la película completa se encuentra en nuestro canal privado._\n\n` +
-                                `👇 *VER PELÍCULA AQUÍ* 👇`;
-
-                            await bot.sendPhoto(CHANNEL_BIG_ID, imageToSend, {
-                                caption: messageToBig,
-                                parse_mode: 'Markdown',
-                                reply_markup: {
-                                    inline_keyboard: [
-                                        [{ text: '🚀 IR AL CANAL Y VER AHORA 🚀', url: linkToPost }]
-                                    ]
-                                }
-                            });
-                        }
-                    }
-                    await sendFinalSummary(chatId, movieDataToSave.title, true, msg.message_id);
-
-                } catch (error) {
-                    console.error("Error en save_publish_channel_no_push_:", error.response ? error.response.data : error.message);
-                    bot.sendMessage(chatId, '❌ Error al guardar o publicar.');
-                }
-            }
-
-            else if (data.startsWith('publish_push_this_episode_')) {
-                bot.editMessageText('⏳ Enviando Push del Episodio...', { chat_id: chatId, message_id: msg.message_id }).catch(()=>{});
-                const [_, __, ___, tmdbId, season, episode] = data.split('_');
-                const state = adminState[chatId];
-                const episodeData = state?.lastSavedEpisodeData;
-                if (!episodeData || episodeData.tmdbId !== tmdbId || episodeData.seasonNumber.toString() !== season || episodeData.episodeNumber.toString() !== episode) {
-                    bot.sendMessage(chatId, 'Error: Datos perdidos.'); adminState[chatId] = { step: 'menu' }; return;
-                }
+            else if (step === 'hub_sec_video') {
+                if (!userText.startsWith('http')) { bot.sendMessage(chatId, '❌ Envía una URL válida.'); return; }
+                adminState[chatId].tempHubData.videoUrl = userText;
+                
+                bot.sendMessage(chatId, '⏳ Guardando Tarjeta Secundaria...', { parse_mode: 'Markdown' });
+                
+                const secData = adminState[chatId].tempHubData;
+                const newSecEvent = {
+                    id: Date.now().toString(),
+                    title: secData.title,
+                    imageUrl: secData.image,
+                    videoUrl: secData.videoUrl, 
+                    viewers: 0 
+                };
                 
                 try {
-                    await axios.post(`${RENDER_BACKEND_URL}/api/notify-new-content`, {
-                        title: `¡Nuevo Episodio! ${episodeData.title}`,
-                        body: `Ya disponible: S${episodeData.seasonNumber}E${episodeData.episodeNumber}`,
-                        imageUrl: episodeData.poster_path ? `https://image.tmdb.org/t/p/w500${episodeData.poster_path}` : null,
-                        tmdbId: episodeData.tmdbId,
-                        mediaType: 'tv'
-                    });
-                    await sendFinalSummary(chatId, `${episodeData.title} S${season}E${episode}`, false, msg.message_id);
-                } catch (error) {
-                    console.error("Error en publish_push_this_episode:", error.response ? error.response.data : error.message);
-                    bot.sendMessage(chatId, '❌ Error al enviar notificación.');
+                    await mongoDb.collection('live_feed_config').updateOne(
+                        { _id: 'main_feed' },
+                        { $push: { secondaryEvents: newSecEvent } },
+                        { upsert: true }
+                    );
+                    clearLiveCache();
+                    bot.sendMessage(chatId, '✅ **¡Tarjeta Secundaria agregada con éxito!**', { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '🏠 Menú Principal', callback_data: 'back_to_menu' }]] } });
+                } catch(e) {
+                    bot.sendMessage(chatId, '❌ Ocurrió un error al guardar la tarjeta secundaria.');
                 }
+                adminState[chatId] = { step: 'menu' };
             }
+            return;
+        }
 
-            else if (data.startsWith('publish_push_channel_this_episode_')) {
-                bot.editMessageText('⏳ Publicando Episodio en Canales...', { chat_id: chatId, message_id: msg.message_id }).catch(()=>{});
-                const parts = data.split('_');
-                const tmdbId = parts[5];
-                const season = parts[6];
-                const episode = parts[7];
-
-                const state = adminState[chatId];
-                const episodeData = state?.lastSavedEpisodeData;
-                if (!episodeData || episodeData.tmdbId !== tmdbId || episodeData.seasonNumber.toString() !== season || episodeData.episodeNumber.toString() !== episode) {
-                    bot.sendMessage(chatId, 'Error: Datos perdidos. Intenta de nuevo desde el episodio anterior.');
-                    adminState[chatId] = { step: 'menu' };
-                    return;
-                }
-                
-                try {
-                    await axios.post(`${RENDER_BACKEND_URL}/api/notify-new-content`, {
-                        title: `¡Nuevo Episodio! ${episodeData.title}`,
-                        body: `Ya disponible: S${episodeData.seasonNumber}E${episodeData.episodeNumber}`,
-                        imageUrl: episodeData.poster_path ? `https://image.tmdb.org/t/p/w500${episodeData.poster_path}` : null,
-                        tmdbId: episodeData.tmdbId,
-                        mediaType: 'tv'
-                    });
-
-                    const DEEPLINK_URL = `${RENDER_BACKEND_URL}/view/tv/${episodeData.tmdbId}`;
-                    const CHANNEL_SMALL = process.env.TELEGRAM_CHANNEL_A_ID;
-                    const CHANNEL_BIG_ID = process.env.TELEGRAM_CHANNEL_B_ID;
-
-                    if (CHANNEL_SMALL) {
-                        const shortOverviewSeries = episodeData.overview 
-                            ? (episodeData.overview.length > 280 
-                                ? episodeData.overview.substring(0, 280) + '...' 
-                                : episodeData.overview)
-                            : '¡Un nuevo capítulo lleno de emoción te espera!';
-
-                        const messageToSmall = `🎬 *${episodeData.title.toUpperCase()}*\n` +
-                            `🔹 Temporada ${episodeData.seasonNumber} - Episodio ${episodeData.episodeNumber}\n\n` +
-                            `📺 Calidad: Full HD\n` +
-                            `🗣 Idioma: Latino\n` +
-                            `⭐ Puntuación: ${episodeData.vote_average ? episodeData.vote_average.toFixed(1) : 'N/A'} / 10\n\n` +
-                            `📖 *Sinopsis:*\n` +
-                            `${shortOverviewSeries}\n\n` +
-                            `❓ ¿No sabes cómo verla?\n` +
-                            `📘 Tutorial paso a paso aquí:\n` +
-                            `👉 https://tututorialaqui.com\n\n` +
-                            `👇🏻 *MIRA AQUÍ LA SERIE* 👇🏻`;
-
-                        const sentMsgSmall = await bot.sendPhoto(CHANNEL_SMALL, episodeData.poster_path ? `https://image.tmdb.org/t/p/w500${episodeData.poster_path}` : 'https://placehold.co/500x750?text=SALA+CINE', {
-                            caption: messageToSmall,
-                            parse_mode: 'Markdown',
-                            reply_markup: {
-                                inline_keyboard: [
-                                    [{ text: '▶️ Ver Ahora en la App', url: DEEPLINK_URL }]
-                                ]
-                            }
-                        });
-
-                        const channelUsername = CHANNEL_SMALL.replace('@', '');
-                        const linkToPost = `https://t.me/${channelUsername}/${sentMsgSmall.message_id}`;
-
-                        if (CHANNEL_BIG_ID) {
-                            const overviewTeaser = episodeData.overview
-                                ? episodeData.overview.length > 200
-                                    ? episodeData.overview.substring(0, 200) + '...'
-                                    : episodeData.overview
-                                : '¡Un nuevo capítulo lleno de emoción te espera!';
-
-                            const messageToBig = `🍿 *NUEVO EPISODIO DISPONIBLE* 🍿\n\n` +
-                                `📺 *${episodeData.title}*\n` +
-                                `🔹 Temporada ${episodeData.seasonNumber} - Episodio ${episodeData.episodeNumber}\n\n` +
-                                `📝 _${overviewTeaser}_\n\n` +
-                                `⚠️ _Disponible ahora en nuestro canal de respaldo privado._\n\n` +
-                                `👇 *VER EPISODIO AQUÍ* 👇`;
-
-                            await bot.sendPhoto(CHANNEL_BIG_ID, episodeData.poster_path ? `https://image.tmdb.org/t/p/w500${episodeData.poster_path}` : 'https://placehold.co/500x750?text=SALA+CINE', {
-                                caption: messageToBig,
-                                parse_mode: 'Markdown',
-                                reply_markup: {
-                                    inline_keyboard: [
-                                        [{ text: '🚀 IR AL CANAL Y VER AHORA 🚀', url: linkToPost }]
-                                    ]
-                                }
-                            });
-                        }
-                    }
-                    await sendFinalSummary(chatId, `${episodeData.title} S${season}E${episode}`, false, msg.message_id);
-
-                } catch (error) {
-                    console.error("Error en publish_push_channel_this_episode:", error.response ? error.response.data : error.message);
-                    bot.sendMessage(chatId, '❌ Error al enviar notificación.');
-                }
-            }
-
-            else if (data.startsWith('publish_channel_no_push_this_episode_')) {
-                bot.editMessageText('⏳ Publicando Episodio sin Push...', { chat_id: chatId, message_id: msg.message_id }).catch(()=>{});
-                const parts = data.split('_');
-                const tmdbId = parts[6];
-                const season = parts[7];
-                const episode = parts[8];
-
-                const state = adminState[chatId];
-                const episodeData = state?.lastSavedEpisodeData;
-
-                if (!episodeData || episodeData.tmdbId !== tmdbId || episodeData.seasonNumber.toString() !== season || episodeData.episodeNumber.toString() !== episode) {
-                    bot.sendMessage(chatId, 'Error: Datos perdidos. Intenta de nuevo.');
-                    adminState[chatId] = { step: 'menu' };
-                    return;
-                }
-
-                try {
-                    const DEEPLINK_URL = `${RENDER_BACKEND_URL}/view/tv/${episodeData.tmdbId}`;
-                    const CHANNEL_ID = process.env.TELEGRAM_CHANNEL_A_ID;
-
-                    if (CHANNEL_ID) {
-                        const shortOverviewSeries = episodeData.overview 
-                            ? (episodeData.overview.length > 280 
-                                ? episodeData.overview.substring(0, 280) + '...' 
-                                : episodeData.overview)
-                            : '¡Un nuevo capítulo lleno de emoción te espera!';
-                        
-                        const messageToChannel = `🎬 *${episodeData.title.toUpperCase()}*\n` +
-                            `🔹 Temporada ${episodeData.seasonNumber} - Episodio ${episodeData.episodeNumber}\n\n` +
-                            `📺 Calidad: Full HD\n` +
-                            `🗣 Idioma: Latino\n` +
-                            `⭐ Puntuación: ${episodeData.vote_average ? episodeData.vote_average.toFixed(1) : 'N/A'} / 10\n\n` +
-                            `📖 *Sinopsis:*\n` +
-                            `${shortOverviewSeries}\n\n` +
-                            `❓ ¿No sabes cómo verla?\n` +
-                            `📘 Tutorial paso a paso aquí:\n` +
-                            `👉 https://tututorialaqui.com\n\n` +
-                            `👇🏻 *MIRA AQUÍ LA SERIE* 👇🏻`;
-
-                        await bot.sendPhoto(CHANNEL_ID, episodeData.poster_path ? `https://image.tmdb.org/t/p/w500${episodeData.poster_path}` : 'https://placehold.co/500x750?text=SALA+CINE', {
-                            caption: messageToChannel,
-                            parse_mode: 'Markdown',
-                            reply_markup: {
-                                inline_keyboard: [
-                                    [{ text: '▶️ Ver Ahora en la App', url: DEEPLINK_URL }]
-                                ]
-                            }
-                        });
-                    }
-                    await sendFinalSummary(chatId, `${episodeData.title} S${season}E${episode}`, false, msg.message_id);
-
-                } catch (error) {
-                    console.error("Error en publish_channel_no_push_series:", error.response ? error.response.data : error.message);
-                    bot.sendMessage(chatId, '❌ Error al publicar.');
-                }
-            }
+        if (adminState[chatId] && adminState[chatId].step === 'awaiting_bonus_user_id') {
+            const targetId = parseInt(userText.trim());
+            bot.deleteMessage(chatId, msg.message_id).catch(() => {});
             
-            else if (data.startsWith('finish_series_')) {
-                const state = adminState[chatId];
-                const seriesTitle = state?.selectedSeries?.name || state?.lastSavedEpisodeData?.title || 'La serie';
+            if (isNaN(targetId)) {
+                if (adminState[chatId].promptMessageId) {
+                    bot.editMessageText('❌ ID inválido. Debe ser un número numérico.\n\nEscribe de nuevo el ID del editor:', { chat_id: chatId, message_id: adminState[chatId].promptMessageId });
+                } else {
+                    bot.sendMessage(chatId, '❌ ID inválido. Debe ser un número.');
+                }
+                return;
+            }
+            adminState[chatId].bonusTargetId = targetId;
+            adminState[chatId].step = 'awaiting_bonus_amount';
+            
+            if (adminState[chatId].promptMessageId) {
+                bot.editMessageText(`✅ ID Guardado: \`${targetId}\`\n\n💵 Ahora escribe la **CANTIDAD** a sumar (Ejemplo: 5.50):`, { chat_id: chatId, message_id: adminState[chatId].promptMessageId, parse_mode: 'Markdown' });
+            } else {
+                bot.sendMessage(chatId, `✅ ID Guardado: ${targetId}\n\n💵 Ahora escribe la **CANTIDAD** a sumar (ej. 5.50):`);
+            }
+            return;
+        }
+        else if (adminState[chatId] && adminState[chatId].step === 'awaiting_bonus_amount') {
+            const amountText = userText.trim().replace(',', '.');
+            const amount = parseFloat(amountText);
+            bot.deleteMessage(chatId, msg.message_id).catch(() => {});
+
+            if (isNaN(amount) || amount <= 0) {
+                if (adminState[chatId].promptMessageId) {
+                    bot.editMessageText('❌ Cantidad inválida. Intenta de nuevo.\n\nEscribe la CANTIDAD a sumar:', { chat_id: chatId, message_id: adminState[chatId].promptMessageId });
+                }
+                return;
+            }
+            const targetId = adminState[chatId].bonusTargetId;
+
+            try {
+                await mongoDb.collection('uploader_revenue').updateOne(
+                    { uploaderId: targetId },
+                    { $inc: { totalRevenue: amount, currentBalance: amount } },
+                    { upsert: true }
+                );
+
+                await mongoDb.collection('uploader_revenue').insertOne({
+                    uploaderId: targetId,
+                    mediaType: 'bonus',
+                    earned: amount,
+                    createdAt: new Date()
+                });
+
+                const successMsg = `🎉 ✅ Bono de **$${amount.toFixed(2)} USD** añadido correctamente al usuario \`${targetId}\`.`;
                 
-                const finalMsg = `✅ **¡Proceso de serie finalizado!**\n\n📺 *${seriesTitle}* ya está disponible en la app.\n\n¿Qué deseas subir ahora?`;
-                bot.editMessageText(finalMsg, { 
-                    chat_id: chatId, 
-                    message_id: msg.message_id, 
-                    parse_mode: 'Markdown',
-                    reply_markup: { 
+                if (adminState[chatId].promptMessageId) {
+                    bot.editMessageText(successMsg, { chat_id: chatId, message_id: adminState[chatId].promptMessageId, parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '🏠 Menú Principal', callback_data: 'back_to_menu' }]] } });
+                } else {
+                    bot.sendMessage(chatId, successMsg, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '🏠 Menú Principal', callback_data: 'back_to_menu' }]] } });
+                }
+
+                bot.sendMessage(targetId, `🎉 **¡Felicidades!** Has recibido un bono manual de administrador por **$${amount.toFixed(2)} USD** que ha sido sumado a tu saldo. ¡Buen trabajo!`, { parse_mode: 'Markdown' }).catch(e => console.log('No se pudo notificar al usuario del bono.'));
+
+            } catch (err) {
+                bot.sendMessage(chatId, '❌ Ocurrió un error al añadir el bono.');
+            } finally {
+                adminState[chatId] = { step: 'menu' };
+            }
+            return;
+        }
+
+        // =========================================================
+        // NUEVA SECCIÓN: PROCESAR PAGO AL UPLOADER
+        // =========================================================
+        if (adminState[chatId] && adminState[chatId].step === 'awaiting_payment_message') {
+            if (userText.startsWith('/')) return; // IGNORA LOS COMANDOS AQUÍ
+            
+            const targetId = adminState[chatId].payTargetId;
+            const amount = adminState[chatId].payAmount;
+            const customMessage = userText.trim();
+            bot.deleteMessage(chatId, msg.message_id).catch(() => {});
+
+            const now = new Date();
+            const dayId = now.toISOString().split('T')[0];
+
+            try {
+                // 1. Guardar historial
+                await mongoDb.collection('payment_history').insertOne({
+                    uploaderId: targetId,
+                    amount: amount,
+                    date: now,
+                    dateStr: dayId,
+                    message: customMessage
+                });
+
+                // 2. Reiniciar monto mensual del trabajador
+                await mongoDb.collection('uploader_daily_stats').updateOne(
+                    { uploaderId: targetId, dayId: dayId },
+                    { $inc: { today_earned: -amount } }, 
+                    { upsert: true }
+                );
+
+                // 3. Notificar trabajador
+                const notification = `💰 **¡PAGO PROCESADO!** 💰\n\nHola, se ha procesado un pago por tus subidas en Sala Cine.\n💵 **Monto:** $${amount.toFixed(2)} USD\n\n📝 **Mensaje de Administración:**\n_"${customMessage}"_\n\n🔄 Tu ciclo ha sido reiniciado. ¡Ya puedes continuar subiendo! 🚀`;
+                await bot.sendMessage(targetId, notification, { parse_mode: 'Markdown' }).catch(()=>{});
+
+                // 4. Avisar al admin
+                const successMsg = `✅ **Pago registrado y ciclo reiniciado.**\nSe enviaron $${amount.toFixed(2)} al usuario y se le notificó correctamente.`;
+                
+                if (adminState[chatId].promptMessageId) {
+                    bot.editMessageText(successMsg, { chat_id: chatId, message_id: adminState[chatId].promptMessageId, parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '🏠 Menú Principal', callback_data: 'back_to_menu' }]] } }).catch(()=>{
+                        bot.sendMessage(chatId, successMsg, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '🏠 Menú Principal', callback_data: 'back_to_menu' }]] } });
+                    });
+                } else {
+                    bot.sendMessage(chatId, successMsg, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '🏠 Menú Principal', callback_data: 'back_to_menu' }]] } });
+                }
+            } catch (err) {
+                console.error("Error al pagar:", err);
+                bot.sendMessage(chatId, '❌ Ocurrió un error al procesar el pago en la base de datos.');
+            } finally {
+                adminState[chatId] = { step: 'menu' };
+            }
+            return;
+        }
+        // =========================================================
+
+        if (adminState[chatId] && adminState[chatId].step && adminState[chatId].step.startsWith('cms_')) {
+            const step = adminState[chatId].step;
+
+            if (step === 'cms_await_media_url') {
+                if (!userText.startsWith('http')) {
+                    bot.sendMessage(chatId, '❌ Por favor envía una URL válida (empieza con http).');
+                    return;
+                }
+                adminState[chatId].tempAnnouncement.mediaUrl = userText;
+                adminState[chatId].step = 'cms_await_title';
+                bot.sendMessage(chatId, '✅ URL Guardada.\n\n📝 Ahora escribe el **TÍTULO** del anuncio:');
+            }
+            else if (step === 'cms_await_title') {
+                adminState[chatId].tempAnnouncement.title = userText;
+                adminState[chatId].step = 'cms_await_body';
+                bot.sendMessage(chatId, '✅ Título Guardado.\n\n📝 Ahora escribe el **MENSAJE (Cuerpo)** del anuncio:');
+            }
+            else if (step === 'cms_await_body') {
+                adminState[chatId].tempAnnouncement.message = userText;
+                adminState[chatId].step = 'cms_await_btn_text';
+                bot.sendMessage(chatId, '✅ Cuerpo Guardado.\n\n🔘 Escribe el texto del **BOTÓN** (Ej: "Ver ahora", "Más info"):');
+            }
+            else if (step === 'cms_await_btn_text') {
+                adminState[chatId].tempAnnouncement.buttonText = userText;
+                adminState[chatId].step = 'cms_await_action_url';
+                bot.sendMessage(chatId, '✅ Botón Guardado.\n\n🔗 Finalmente, envía la **URL DE ACCIÓN** (A donde lleva el botón):');
+            }
+            else if (step === 'cms_await_action_url') {
+                if (!userText.startsWith('http')) {
+                    bot.sendMessage(chatId, '❌ Envía una URL válida.');
+                    return;
+                }
+                adminState[chatId].tempAnnouncement.actionUrl = userText;
+                
+                adminState[chatId].step = 'cms_await_visibility';
+
+                bot.sendMessage(chatId, '✅ URL de Acción Guardada.\n\n⚠️ **¿Este anuncio es Importante (Ignorar Caché)?**\nSi eliges "Sí", se forzará a la App a mostrarlo como nuevo, ignorando su caché interna.', {
+                    reply_markup: {
                         inline_keyboard: [
-                            [{ text: '📺 Subir otra Serie', callback_data: 'add_series' }],
-                            [{ text: '🎬 Subir una Película', callback_data: 'add_movie' }]
-                        ] 
-                    } 
-                }).catch(()=>{});
+                            [{ text: 'Sí, mostrar siempre', callback_data: 'cms_vis_true' }],
+                            [{ text: 'No, anuncio normal', callback_data: 'cms_vis_false' }]
+                        ]
+                    }
+                });
+            }
+        }
+
+        else if (adminState[chatId] && adminState[chatId].step === 'manual_await_title') {
+            adminState[chatId].manualData.title = userText;
+            adminState[chatId].step = 'manual_await_overview';
+            bot.sendMessage(chatId, '✅ Título Guardado.\n\n📝 Ahora escribe la **SINOPSIS** (Descripción):');
+        }
+        else if (adminState[chatId] && adminState[chatId].step === 'manual_await_overview') {
+            adminState[chatId].manualData.overview = userText;
+            adminState[chatId].step = 'manual_await_poster';
+            bot.sendMessage(chatId, '✅ Sinopsis Guardada.\n\n🖼️ Envía la **URL de la imagen PORTADA** (Poster Vertical):');
+        }
+        else if (adminState[chatId] && adminState[chatId].step === 'manual_await_poster') {
+            if (!userText.startsWith('http')) {
+                bot.sendMessage(chatId, '❌ Por favor envía una URL válida (empieza con http).');
+                return;
+            }
+            adminState[chatId].manualData.poster_path = userText;
+            adminState[chatId].step = 'manual_await_backdrop';
+            bot.sendMessage(chatId, '✅ Portada Guardada.\n\n🖼️ Envía la **URL de la imagen BANNER** (Backdrop Horizontal):');
+        }
+        else if (adminState[chatId] && adminState[chatId].step === 'manual_await_backdrop') {
+            if (!userText.startsWith('http')) {
+                bot.sendMessage(chatId, '❌ Por favor envía una URL válida (empieza con http).');
+                return;
+            }
+            adminState[chatId].manualData.backdrop_path = userText;
+            adminState[chatId].step = 'manual_await_video_link';
+            bot.sendMessage(chatId, '✅ Banner Guardado.\n\n🔗 Envía el **ENLACE (URL)** del video:');
+        }
+        else if (adminState[chatId] && adminState[chatId].step === 'manual_await_video_link') {
+            if (!userText.startsWith('http')) {
+                bot.sendMessage(chatId, '❌ Por favor envía una URL válida (empieza con http).');
+                return;
+            }
+            const videoUrl = userText;
+            const generatedId = "manual_" + Date.now();
+            const today = new Date().toISOString().split('T')[0];
+
+            adminState[chatId].movieDataToSave = {
+                tmdbId: generatedId,
+                title: adminState[chatId].manualData.title,
+                overview: adminState[chatId].manualData.overview,
+                poster_path: adminState[chatId].manualData.poster_path,
+                backdrop_path: adminState[chatId].manualData.backdrop_path,
+                proEmbedCode: videoUrl,
+                freeEmbedCode: videoUrl,
+                links: [videoUrl],
+                isPremium: false,
+                genres: [], 
+                release_date: today,
+                popularity: 100,
+                vote_average: 10,
+                origin_country: ["LOCAL"],
+                isPinned: false,
+                uploaderId: chatId 
+            };
+
+            adminState[chatId].step = 'awaiting_pinned_choice_movie';
+
+            bot.sendMessage(chatId, `✅ Enlace guardado correctamente.\n\n⭐ **¿Deseas FIJAR este contenido en DESTACADOS (Top)?**`, {
+                reply_markup: {
+                    inline_keyboard: [
+                        [
+                            { text: '⭐ Sí, Destacar (Top)', callback_data: 'set_pinned_movie_true' },
+                            { text: '📅 No, Normal', callback_data: 'set_pinned_movie_false' }
+                        ]
+                    ]
+                }
+            });
+        }
+
+        else if (adminState[chatId] && adminState[chatId].step === 'awaiting_global_msg_title') {
+            const titleInput = userText;
+            adminState[chatId].tempGlobalTitle = titleInput;
+            adminState[chatId].step = 'awaiting_global_msg_body';
+            
+            bot.sendMessage(chatId, `✅ Título: *${titleInput}*\n\n📝 Ahora escribe el **MENSAJE (Cuerpo)** de la notificación:`, { parse_mode: 'Markdown' });
+        }
+
+        else if (adminState[chatId] && adminState[chatId].step === 'awaiting_global_msg_body') {
+            const messageBody = userText;
+            const titleToSend = adminState[chatId].tempGlobalTitle || "Aviso Importante";
+
+            bot.sendMessage(chatId, '🚀 Enviando notificación a TODOS los usuarios...');
+
+            try {
+                const result = await sendNotificationToTopic(
+                    titleToSend,
+                    messageBody,
+                    null,
+                    '0',
+                    'general',
+                    'new_content'
+                );
+
+                if (result.success) {
+                    bot.sendMessage(chatId, `✅ **Notificación enviada con éxito.**\n\n📢 Título: ${titleToSend}\n📝 Msj: ${messageBody}`, { parse_mode: 'Markdown' });
+                } else {
+                    bot.sendMessage(chatId, `⚠️ Error al enviar: ${result.error}`);
+                }
+            } catch (e) {
+                bot.sendMessage(chatId, '❌ Error crítico al enviar la notificación.');
+            } finally {
                 adminState[chatId] = { step: 'menu' };
             }
+        }
 
-        } catch (error) {
-            console.error("Error en callback_query:", error);
-            bot.sendMessage(chatId, '❌ Ocurrió un error procesando tu solicitud.');
+        else if (adminState[chatId] && adminState[chatId].step === 'search_movie') {
+            if (userText.startsWith('/')) return; // IGNORA LOS COMANDOS AQUÍ Y EVITA EL BUG
+            try {
+                let queryText = userText.trim();
+                let yearFilter = "";
+                
+                const yearMatch = queryText.match(/(.+?)\s+(\d{4})$/);
+                
+                if (yearMatch) {
+                    queryText = yearMatch[1]; 
+                    yearFilter = `&year=${yearMatch[2]}`; 
+                    bot.sendMessage(chatId, `🔍 Buscando: "${queryText}" del año ${yearMatch[2]}...`);
+                }
+
+                const searchUrl = `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(queryText)}&language=es-ES${yearFilter}`;
+                
+                const response = await axios.get(searchUrl);
+                const data = response.data;
+                if (data.results && data.results.length > 0) {
+                    const results = data.results.slice(0, 5);
+                    for (const item of results) {
+                        const existingMovie = await mongoDb.collection('media_catalog').findOne({ tmdbId: item.id.toString() });
+                        const existingData = existingMovie || null;
+                        const posterUrl = item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : 'https://placehold.co/500x750?text=No+Poster';
+                        const title = item.title || item.name;
+                        const date = item.release_date || item.first_air_date;
+
+                        let overview = item.overview || 'Sin sinopsis disponible.';
+                        if (overview.length > 800) {
+                            overview = overview.substring(0, 800) + '...';
+                        }
+
+                        const message = `🎬 *${title}* (${date ? date.substring(0, 4) : 'N/A'})\n\n${overview}`;
+                        let buttons = [[{ text: existingData ? '✅ Gestionar' : '✅ Agregar', callback_data: `${existingData ? 'manage_movie' : 'add_new_movie'}_${item.id}` }]];
+                        const options = { caption: message, parse_mode: 'Markdown', reply_markup: { inline_keyboard: buttons } };
+                        bot.sendPhoto(chatId, posterUrl, options);
+                    }
+                } else { bot.sendMessage(chatId, `No se encontraron resultados para "${queryText}" ${yearFilter ? 'en ese año' : ''}.`); }
+            } catch (error) { bot.sendMessage(chatId, 'Error buscando. Intenta de nuevo.'); }
+
+        } 
+        else if (adminState[chatId] && adminState[chatId].step === 'search_series') {
+            if (userText.startsWith('/')) return; // IGNORA LOS COMANDOS AQUÍ
+            try {
+                let queryText = userText.trim();
+                let yearFilter = "";
+
+                const yearMatch = queryText.match(/(.+?)\s+(\d{4})$/);
+
+                if (yearMatch) {
+                    queryText = yearMatch[1];
+                    yearFilter = `&first_air_date_year=${yearMatch[2]}`;
+                    bot.sendMessage(chatId, `🔍 Buscando serie: "${queryText}" del año ${yearMatch[2]}...`);
+                }
+
+                const searchUrl = `https://api.themoviedb.org/3/search/tv?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(queryText)}&language=es-ES${yearFilter}`;
+                
+                const response = await axios.get(searchUrl);
+                const data = response.data;
+                if (data.results && data.results.length > 0) {
+                    const results = data.results.slice(0, 5);
+                    for (const item of results) {
+                        const existingSeries = await mongoDb.collection('series_catalog').findOne({ tmdbId: item.id.toString() });
+                        const existingData = existingSeries || null;
+                        const posterUrl = item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : 'https://placehold.co/500x750?text=No+Poster';
+                        const title = item.title || item.name;
+                        const date = item.first_air_date;
+
+                        let overview = item.overview || 'Sin sinopsis disponible.';
+                        if (overview.length > 800) {
+                            overview = overview.substring(0, 800) + '...';
+                        }
+
+                        const message = `🎬 *${title}* (${date ? date.substring(0, 4) : 'N/A'})\n\n${overview}`;
+                        let buttons = [[{ text: existingData ? '✅ Gestionar' : '✅ Agregar', callback_data: `${existingData ? 'manage_series' : 'add_new_series'}_${item.id}` }]];
+                        const options = { caption: message, parse_mode: 'Markdown', reply_markup: { inline_keyboard: buttons } };
+                        bot.sendPhoto(chatId, posterUrl, options);
+                    }
+                } else { bot.sendMessage(chatId, `No se encontraron resultados para "${queryText}" ${yearFilter ? 'en ese año' : ''}.`); }
+            } catch (error) { bot.sendMessage(chatId, 'Error buscando. Intenta de nuevo.'); }
+
+        } else if (adminState[chatId] && adminState[chatId].step === 'search_delete') {
+            if (userText.startsWith('/')) return; // IGNORA LOS COMANDOS AQUÍ
+            try {
+                const searchUrl = `https://api.themoviedb.org/3/search/multi?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(userText)}&language=es-ES`;
+                const response = await axios.get(searchUrl);
+                const data = response.data;
+                if (data.results?.length > 0) {
+                    const results = data.results.slice(0, 5).filter(m => m.media_type === 'movie' || m.media_type === 'tv');
+                    if (results.length === 0) { bot.sendMessage(chatId, `No se encontraron películas o series.`); return; }
+                    for (const item of results) {
+                        const posterUrl = item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : 'https://placehold.co/500x750?text=No+Poster';
+                        const title = item.title || item.name;
+                        const date = item.release_date || item.first_air_date;
+
+                        let overview = item.overview || 'Sin sinopsis.';
+                        if (overview.length > 800) {
+                            overview = overview.substring(0, 800) + '...';
+                        }
+
+                        const message = `🎬 *${title}* (${date ? date.substring(0, 4) : 'N/A'})\n\n${overview}`;
+                        const options = {
+                            caption: message, parse_mode: 'Markdown', reply_markup: {
+                                inline_keyboard: [[{
+                                    text: '🗑️ Confirmar Eliminación', callback_data: `delete_confirm_${item.id}_${item.media_type}`
+                                }]]
+                            }
+                        };
+                        bot.sendPhoto(chatId, posterUrl, options);
+                    }
+                } else { bot.sendMessage(chatId, `No se encontraron resultados.`); }
+            } catch (error) { bot.sendMessage(chatId, 'Error buscando.'); }
+        }
+
+        else if (adminState[chatId] && adminState[chatId].step === 'awaiting_unified_link_movie') {
+            const { selectedMedia } = adminState[chatId];
+            if (!selectedMedia?.id) {
+                bot.sendMessage(chatId, 'Error: Se perdieron los datos de la película.');
+                adminState[chatId] = { step: 'menu' };
+                return;
+            }
+            
+            const linkInput = userText.trim();
+            bot.deleteMessage(chatId, msg.message_id).catch(() => {});
+
+            const finalLink = linkInput.toLowerCase() === 'no' ? null : linkInput;
+
+            if (!finalLink) {
+                if (adminState[chatId].promptMessageId) {
+                    bot.editMessageText('❌ Debes enviar al menos un enlace válido. Escribe el enlace.', { chat_id: chatId, message_id: adminState[chatId].promptMessageId });
+                } else {
+                    bot.sendMessage(chatId, '❌ Debes enviar al menos un enlace válido. Escribe el enlace.');
+                }
+                return;
+            }
+
+            adminState[chatId].movieDataToSave = {
+                tmdbId: selectedMedia.id.toString(),
+                title: selectedMedia.title,
+                overview: selectedMedia.overview,
+                poster_path: selectedMedia.poster_path,
+                backdrop_path: selectedMedia.backdrop_path,
+                proEmbedCode: finalLink,
+                freeEmbedCode: finalLink,
+                isPremium: false,
+                genres: selectedMedia.genres || [],
+                release_date: selectedMedia.release_date,
+                popularity: selectedMedia.popularity,
+                vote_average: selectedMedia.vote_average,
+                origin_country: selectedMedia.origin_country || [],
+                isPinned: false,
+                uploaderId: chatId 
+            };
+
+            adminState[chatId].step = 'awaiting_pinned_choice_movie';
+
+            const pinnedOptions = {
+                reply_markup: {
+                    inline_keyboard: [
+                        [
+                            { text: '⭐ Sí, Destacar (Top)', callback_data: 'set_pinned_movie_true' },
+                            { text: '📅 No, Normal', callback_data: 'set_pinned_movie_false' }
+                        ]
+                    ]
+                }
+            };
+
+            if (adminState[chatId].promptMessageId) {
+                bot.editMessageText(`✅ Enlace recibido correctamente.\n\n⭐ **¿Deseas FIJAR esta película en DESTACADOS (Top)?**`, {
+                    chat_id: chatId,
+                    message_id: adminState[chatId].promptMessageId,
+                    ...pinnedOptions
+                }).catch(() => {
+                    bot.sendMessage(chatId, `✅ Enlace recibido.\n\n⭐ **¿Deseas FIJAR esta película en DESTACADOS (Top)?**`, pinnedOptions);
+                });
+            } else {
+                bot.sendMessage(chatId, `✅ Enlace recibido.\n\n⭐ **¿Deseas FIJAR esta película en DESTACADOS (Top)?**`, pinnedOptions);
+            }
+        }
+
+        else if (adminState[chatId] && adminState[chatId].step === 'awaiting_unified_link_series') {
+            const { selectedSeries, season, episode, totalEpisodesInSeason } = adminState[chatId];
+            if (!selectedSeries) {
+                bot.sendMessage(chatId, 'Error: Se perdieron los datos de la serie.');
+                adminState[chatId] = { step: 'menu' };
+                return;
+            }
+
+            const linkInput = userText.trim();
+            bot.deleteMessage(chatId, msg.message_id).catch(() => {});
+
+            const finalLink = linkInput.toLowerCase() === 'no' ? null : linkInput;
+
+            if (!finalLink) {
+                if (adminState[chatId].promptMessageId) {
+                    bot.editMessageText('❌ Debes enviar un enlace válido.', { chat_id: chatId, message_id: adminState[chatId].promptMessageId });
+                }
+                return;
+            }
+
+            adminState[chatId].seriesDataToSave = {
+                tmdbId: (selectedSeries.tmdbId || selectedSeries.id).toString(),
+                title: selectedSeries.title || selectedSeries.name,
+                poster_path: selectedSeries.poster_path,
+                seasonNumber: season,
+                episodeNumber: episode,
+                overview: selectedSeries.overview,
+                proEmbedCode: finalLink,
+                freeEmbedCode: finalLink,
+                isPremium: false,
+                genres: selectedSeries.genres || [],
+                first_air_date: selectedSeries.first_air_date,
+                popularity: selectedSeries.popularity,
+                vote_average: selectedSeries.vote_average,
+                origin_country: selectedSeries.origin_country || [],
+                isPinned: false,
+                uploaderId: chatId 
+            };
+
+            adminState[chatId].step = 'awaiting_pinned_choice_series';
+
+            const pinnedOptions = {
+                reply_markup: {
+                    inline_keyboard: [
+                        [
+                            { text: '⭐ Sí, Destacar', callback_data: 'set_pinned_series_true' },
+                            { text: '📅 No, Normal', callback_data: 'set_pinned_series_false' }
+                        ]
+                    ]
+                }
+            };
+
+            if (adminState[chatId].promptMessageId) {
+                bot.editMessageText(`✅ Enlace recibido para S${season}E${episode}.\n\n⭐ **¿Deseas FIJAR esta serie en DESTACADOS (Top)?**`, {
+                    chat_id: chatId,
+                    message_id: adminState[chatId].promptMessageId,
+                    ...pinnedOptions
+                }).catch(() => {
+                    bot.sendMessage(chatId, `✅ Enlace recibido para S${season}E${episode}.\n\n⭐ **¿Deseas FIJAR esta serie en DESTACADOS (Top)?**`, pinnedOptions);
+                });
+            } else {
+                bot.sendMessage(chatId, `✅ Enlace recibido para S${season}E${episode}.\n\n⭐ **¿Deseas FIJAR esta serie en DESTACADOS (Top)?**`, pinnedOptions);
+            }
+        }
+
+        else if (adminState[chatId] && adminState[chatId].step === 'awaiting_edit_movie_link') {
+            const { tmdbId, isPro } = adminState[chatId];
+            const linkInput = userText.trim();
+            bot.deleteMessage(chatId, msg.message_id).catch(() => {});
+
+            if (!linkInput) { 
+                if (adminState[chatId].promptMessageId) bot.editMessageText('❌ Enlace inválido.', {chat_id: chatId, message_id: adminState[chatId].promptMessageId});
+                return; 
+            }
+
+            const movieDataToUpdate = {
+                tmdbId: tmdbId,
+                proEmbedCode: linkInput,
+                freeEmbedCode: linkInput,
+                isPremium: false
+            };
+
+            try {
+                await axios.post(`${RENDER_BACKEND_URL}/update-movie-links`, movieDataToUpdate);
+                clearAllCaches();
+                if (adminState[chatId].promptMessageId) {
+                    bot.editMessageText(`✅ Enlace actualizado correctamente para ID ${tmdbId}.`, { chat_id: chatId, message_id: adminState[chatId].promptMessageId });
+                } else {
+                    bot.sendMessage(chatId, `✅ Enlace actualizado correctamente para ID ${tmdbId}.`);
+                }
+            } catch (error) {
+                bot.sendMessage(chatId, `❌ Error al actualizar.`);
+            }
+            adminState[chatId] = { step: 'menu' };
         }
     });
 };
