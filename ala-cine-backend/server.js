@@ -72,7 +72,7 @@ const REVENUE_SETTINGS = {
     catalogo_peli: 0.50,
     episodio_serie: 0.25,
     limit_daily: 10.00,
-    limit_monthly: 30.00,
+    limit_monthly: 80.00,
     months_to_be_estreno: 6
 };
 
