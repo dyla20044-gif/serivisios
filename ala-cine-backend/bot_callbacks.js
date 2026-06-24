@@ -195,6 +195,71 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 return;
             }
 
+            // =========================================================
+            // FASE 2: LÓGICA DE INTERFAZ DEL CHAT CORPORATIVO
+            // =========================================================
+            
+            if (data === 'corp_chat_start') {
+                adminState[chatId] = { step: 'corp_await_alias', promptMessageId: msg.message_id };
+                bot.editMessageText('🏢 **Mensajería Corporativa**\n\nPara iniciar, por favor escribe tu **Alias o Nombre** (Ej: Dylan, Soporte, Admin Principal):', {
+                    chat_id: chatId,
+                    message_id: msg.message_id,
+                    parse_mode: 'Markdown',
+                    reply_markup: { inline_keyboard: [[{ text: '❌ Cancelar', callback_data: 'back_to_menu' }]] }
+                }).catch(e => { bot.sendMessage(chatId, '🏢 **Mensajería Corporativa**\n\nEscribe tu Alias/Nombre:'); });
+                return;
+            }
+
+            if (data.startsWith('corp_select_')) {
+                const targetId = parseInt(data.replace('corp_select_', ''));
+                const alias = adminState[chatId]?.alias || 'Admin';
+                
+                adminState[chatId] = {
+                    step: 'corp_await_first_msg',
+                    targetId: targetId,
+                    alias: alias,
+                    promptMessageId: msg.message_id
+                };
+                
+                bot.editMessageText(`✅ Destinatario seleccionado.\n👤 Identificado como: *${alias}*\n\n💬 **Escribe tu mensaje, o envía una foto/video** para enviarlo como COMUNICADO OFICIAL.`, {
+                    chat_id: chatId,
+                    message_id: msg.message_id,
+                    parse_mode: 'Markdown',
+                    reply_markup: { inline_keyboard: [[{ text: '❌ Cancelar', callback_data: 'back_to_menu' }]] }
+                }).catch(()=>{});
+                return;
+            }
+
+            if (data.startsWith('corp_reply_')) {
+                const targetId = parseInt(data.replace('corp_reply_', ''));
+                adminState[chatId] = { step: 'corp_await_alias_reply', targetId: targetId, promptMessageId: msg.message_id };
+                
+                bot.sendMessage(chatId, '🏢 **Iniciando Respuesta**\n\nPara identificarte, escribe tu **Alias o Nombre** (Ej: Dylan):', {
+                    parse_mode: 'Markdown',
+                    reply_markup: { inline_keyboard: [[{ text: '❌ Cancelar', callback_data: 'back_to_menu' }]] }
+                });
+                return;
+            }
+
+            if (data === 'corp_chat_end') {
+                const partnerId = adminState[chatId]?.chatPartner;
+                if (partnerId) {
+                    bot.sendMessage(partnerId, '🛑 **SALA CERRADA**\n\nEl otro administrador ha finalizado la sesión de chat corporativo.', { 
+                        parse_mode: 'Markdown',
+                        reply_markup: { inline_keyboard: [[{ text: '🏠 Volver al Menú', callback_data: 'back_to_menu' }]] }
+                    }).catch(()=>{});
+                    adminState[partnerId] = { step: 'menu' };
+                }
+                adminState[chatId] = { step: 'menu' };
+                bot.editMessageText('🛑 **Sesión de chat finalizada exitosamente.**', {
+                    chat_id: chatId,
+                    message_id: msg.message_id,
+                    parse_mode: 'Markdown',
+                    reply_markup: { inline_keyboard: [[{ text: '🏠 Menú Principal', callback_data: 'back_to_menu' }]] }
+                }).catch(()=>{});
+                return;
+            }
+
             if (data === 'cms_announcement_menu') {
                 const options = {
                     reply_markup: {
