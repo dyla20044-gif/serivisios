@@ -102,6 +102,11 @@ module.exports = function(botCtx) {
             { text: '📰 Comunicados App', callback_data: 'cms_announcement_menu' }
         ]);
 
+        // NUEVO: Fila de Mensajería Corporativa / Chat Interno
+        inline_keyboard.push([
+            { text: '💬 Mensajería Corporativa', callback_data: 'corp_chat_start' }
+        ]);
+
         // Fila de Eliminar (Única para evitar accidentes)
         inline_keyboard.push([
             { text: '🗑️ Eliminar Película/Serie', callback_data: 'delete_movie' }
