@@ -148,7 +148,8 @@ module.exports = function(botCtx, helpers) {
             return;
         }
 
-        adminState[chatId] = { step: 'menu' };
+        // SALVAGUARDA: No borramos el alias si el usuario presiona /start por accidente
+        adminState[chatId] = { step: 'menu', alias: adminState[chatId]?.alias };
         const inline_keyboard = getMainMenuKeyboard(chatId);
         bot.sendMessage(chatId, `¡Hola ${msg.from.first_name || 'Admin'}! ¿Qué quieres hacer hoy?`, { reply_markup: { inline_keyboard } });
     });
@@ -401,7 +402,8 @@ module.exports = function(botCtx, helpers) {
                     }
                 });
                 
-                adminState[chatId] = { step: 'menu' };
+                // MANTENEMOS EL ALIAS AQUÍ PARA QUE NO SE PIERDA Y APAREZCA BIEN EN EL CHAT ACTIVO
+                adminState[chatId] = { step: 'menu', alias: alias };
                 bot.deleteMessage(chatId, msg.message_id).catch(()=>{});
                 return;
             }
@@ -412,7 +414,7 @@ module.exports = function(botCtx, helpers) {
                 const myAlias = adminState[chatId].alias || 'Admin';
 
                 if (!partnerId) {
-                    adminState[chatId] = { step: 'menu' };
+                    adminState[chatId] = { step: 'menu', alias: adminState[chatId]?.alias };
                     return;
                 }
 
