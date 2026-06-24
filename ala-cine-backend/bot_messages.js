@@ -183,14 +183,17 @@ module.exports = function(botCtx, helpers) {
             return;
         }
 
-        const userText = msg.text;
-        if (!userText) return;
+        // 3. CAPTURA UNIVERSAL DE TEXTO O MULTIMEDIA (Adaptado para Chat Corporativo)
+        const userText = msg.text || msg.caption || "";
+        if (!userText && !msg.photo && !msg.video) return;
 
         // =========================================================
         // IA DEL GRUPO (ASISTENTE HUMANO Y MODERADOR)
         // =========================================================
         
         if (isCommunity) {
+            if (!userText) return; // En la comunidad solo procesamos texto para el bot
+            
             const textLower = userText.toLowerCase();
 
             // A. FILTRO ANTI-GROSERÍAS
@@ -327,6 +330,129 @@ module.exports = function(botCtx, helpers) {
                 bot.sendMessage(chatId, 'Lo siento, no tienes permiso para usar este comando.');
             }
             return;
+        }
+
+        // =========================================================
+        // LÓGICA DE MENSAJERÍA CORPORATIVA (CHAT INTERNO MULTIMEDIA)
+        // =========================================================
+        if (adminState[chatId] && adminState[chatId].step && adminState[chatId].step.startsWith('corp_')) {
+            const step = adminState[chatId].step;
+
+            if (step === 'corp_await_alias') {
+                if (!userText) { bot.sendMessage(chatId, '❌ Debes enviar un texto con tu Alias.'); return; }
+                const alias = userText.trim();
+                adminState[chatId].alias = alias;
+                adminState[chatId].step = 'corp_select_target'; 
+
+                const adminButtons = [];
+                ADMIN_CHAT_IDS.forEach(id => {
+                    if (id !== chatId) {
+                        adminButtons.push([{ text: `👤 Admin ID: ${id}`, callback_data: `corp_select_${id}` }]);
+                    }
+                });
+                adminButtons.push([{ text: '❌ Cancelar', callback_data: 'back_to_menu' }]);
+
+                const textToEdit = `🏢 **Mensajería Corporativa**\n\n✅ Alias guardado: *${alias}*\n\nSelecciona a quién deseas enviar el comunicado:`;
+                if (adminState[chatId].promptMessageId) {
+                    bot.editMessageText(textToEdit, { chat_id: chatId, message_id: adminState[chatId].promptMessageId, parse_mode: 'Markdown', reply_markup: { inline_keyboard: adminButtons } }).catch(() => {
+                        bot.sendMessage(chatId, textToEdit, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: adminButtons } });
+                    });
+                } else {
+                    bot.sendMessage(chatId, textToEdit, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: adminButtons } });
+                }
+                bot.deleteMessage(chatId, msg.message_id).catch(()=>{});
+                return;
+            }
+
+            else if (step === 'corp_await_first_msg') {
+                const targetId = adminState[chatId].targetId;
+                const alias = adminState[chatId].alias;
+                
+                const header = `🏢 **COMUNICADO OFICIAL** 🏢\n━━━━━━━━━━━━━━━━━━━━━━\n👤 **De:** ${alias}\n\n`;
+                const footer = `\n━━━━━━━━━━━━━━━━━━━━━━`;
+                const replyMarkup = {
+                    inline_keyboard: [
+                        [{ text: `💬 Responder a ${alias}`, callback_data: `corp_reply_${chatId}` }]
+                    ]
+                };
+
+                bot.sendMessage(chatId, `⏳ Enviando comunicado...`).then(async (waitMsg) => {
+                    try {
+                        if (msg.photo || msg.video) {
+                            const caption = msg.caption ? msg.caption : "";
+                            const mediaMsg = header + caption + footer;
+                            
+                            if (msg.photo) {
+                                const fileId = msg.photo[msg.photo.length - 1].file_id;
+                                await bot.sendPhoto(targetId, fileId, { caption: mediaMsg, parse_mode: 'Markdown', reply_markup: replyMarkup });
+                            } else if (msg.video) {
+                                await bot.sendVideo(targetId, msg.video.file_id, { caption: mediaMsg, parse_mode: 'Markdown', reply_markup: replyMarkup });
+                            }
+                        } else {
+                            await bot.sendMessage(targetId, header + userText + footer, { parse_mode: 'Markdown', reply_markup: replyMarkup });
+                        }
+
+                        bot.editMessageText(`✅ **Comunicado enviado a ID: ${targetId}**\nTe notificaremos si responde.`, {
+                            chat_id: chatId, message_id: waitMsg.message_id, parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '🏠 Menú Principal', callback_data: 'back_to_menu' }]] }
+                        });
+                        
+                    } catch (err) {
+                        bot.editMessageText(`❌ Error al enviar el mensaje al Admin ${targetId}.`, { chat_id: chatId, message_id: waitMsg.message_id });
+                    }
+                });
+                
+                adminState[chatId] = { step: 'menu' };
+                bot.deleteMessage(chatId, msg.message_id).catch(()=>{});
+                return;
+            }
+
+            else if (step === 'corp_await_alias_reply') {
+                if (!userText) { bot.sendMessage(chatId, '❌ Debes enviar un texto con tu Alias.'); return; }
+                const alias = userText.trim();
+                const targetId = adminState[chatId].targetId;
+                
+                adminState[chatId] = { step: 'corp_chat_active', chatPartner: targetId, alias: alias };
+                adminState[targetId] = { step: 'corp_chat_active', chatPartner: chatId, alias: adminState[targetId]?.alias || 'Admin' };
+
+                const connectedMsg = `🟢 **SALA VIRTUAL CONECTADA**\n\nEstás chateando en vivo. Todo lo que escribas o envíes se reenviará automáticamente.\nPresiona el botón abajo para terminar.`;
+                const endMarkup = { inline_keyboard: [[{ text: '🛑 Finalizar Chat', callback_data: 'corp_chat_end' }]] };
+
+                bot.sendMessage(chatId, connectedMsg, { parse_mode: 'Markdown', reply_markup: endMarkup });
+                bot.sendMessage(targetId, `🟢 **SALA VIRTUAL CONECTADA**\n\n*${alias}* se ha unido al chat. Todo lo que escribas o envíes (fotos/videos) se reenviará automáticamente.`, { parse_mode: 'Markdown', reply_markup: endMarkup });
+                
+                bot.deleteMessage(chatId, msg.message_id).catch(()=>{});
+                return;
+            }
+
+            else if (step === 'corp_chat_active') {
+                if (userText && userText.startsWith('/')) return; 
+                const partnerId = adminState[chatId].chatPartner;
+                const myAlias = adminState[chatId].alias || 'Admin';
+
+                if (!partnerId) {
+                    adminState[chatId] = { step: 'menu' };
+                    return;
+                }
+
+                const prefix = `💬 *${myAlias}:*\n`;
+
+                try {
+                    if (msg.photo || msg.video) {
+                        const caption = msg.caption ? msg.caption : "";
+                        if (msg.photo) {
+                            const fileId = msg.photo[msg.photo.length - 1].file_id;
+                            await bot.sendPhoto(partnerId, fileId, { caption: prefix + caption, parse_mode: 'Markdown' });
+                        } else if (msg.video) {
+                            await bot.sendVideo(partnerId, msg.video.file_id, { caption: prefix + caption, parse_mode: 'Markdown' });
+                        }
+                    } else {
+                        await bot.sendMessage(partnerId, prefix + userText, { parse_mode: 'Markdown' });
+                    }
+                } catch(e) {
+                    bot.sendMessage(chatId, '⚠️ Error enviando mensaje al otro administrador. ¿Tal vez bloqueó el bot?');
+                }
+                return;
+            }
         }
 
         if (adminState[chatId] && adminState[chatId].step && adminState[chatId].step.startsWith('exc_')) {
