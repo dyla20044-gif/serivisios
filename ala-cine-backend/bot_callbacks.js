@@ -230,14 +230,34 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 return;
             }
 
+            // =========================================================
+            // BOTÓN DE RESPUESTA DIRECTO (AUTO-IDENTIFICACIÓN)
+            // =========================================================
             if (data.startsWith('corp_reply_')) {
                 const targetId = parseInt(data.replace('corp_reply_', ''));
-                adminState[chatId] = { step: 'corp_await_alias_reply', targetId: targetId, promptMessageId: msg.message_id };
                 
-                bot.sendMessage(chatId, '🏢 **Iniciando Respuesta**\n\nPara identificarte, escribe tu **Alias o Nombre** (Ej: Dylan):', {
-                    parse_mode: 'Markdown',
-                    reply_markup: { inline_keyboard: [[{ text: '❌ Cancelar', callback_data: 'back_to_menu' }]] }
-                });
+                // EXTRAEMOS EL NOMBRE DE TELEGRAM DIRECTAMENTE DEL USUARIO QUE PRESIONA EL BOTÓN
+                const receptorName = callbackQuery.from.first_name || msg.chat.first_name || 'Admin Secundario';
+                const iniciadorAlias = adminState[targetId]?.alias || 'Admin Principal';
+
+                // CONECTAMOS A AMBOS DIRECTAMENTE A LA SALA VIRTUAL
+                adminState[chatId] = { step: 'corp_chat_active', chatPartner: targetId, alias: receptorName };
+                
+                if (!adminState[targetId]) adminState[targetId] = {};
+                adminState[targetId].step = 'corp_chat_active';
+                adminState[targetId].chatPartner = chatId;
+                // No sobreescribimos el alias del admin principal para que mantenga su nombre original
+
+                const endMarkup = { inline_keyboard: [[{ text: '🛑 Finalizar Chat', callback_data: 'corp_chat_end' }]] };
+
+                // NOTIFICAMOS AL USUARIO QUE ACABA DE PRESIONAR "RESPONDER"
+                bot.sendMessage(chatId, `🟢 **SALA VIRTUAL CONECTADA**\n\nEstás chateando en vivo con *${iniciadorAlias}*. Todo lo que escribas o envíes (fotos/videos) se reenviará automáticamente.\nPresiona el botón abajo para terminar.`, { parse_mode: 'Markdown', reply_markup: endMarkup });
+                
+                // NOTIFICAMOS AL ADMIN QUE ENVIÓ EL COMUNICADO INICIALMENTE
+                bot.sendMessage(targetId, `🟢 **SALA VIRTUAL CONECTADA**\n\n*${receptorName}* ha respondido a tu comunicado y ha entrado al chat. Todo lo que escribas o envíes se reenviará automáticamente.`, { parse_mode: 'Markdown', reply_markup: endMarkup });
+                
+                // OCULTAMOS EL BOTÓN "RESPONDER" DEL COMUNICADO ORIGINAL PARA EVITAR DUPLICADOS
+                bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id }).catch(()=>{});
                 return;
             }
 
