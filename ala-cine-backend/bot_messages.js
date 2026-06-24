@@ -406,24 +406,6 @@ module.exports = function(botCtx, helpers) {
                 return;
             }
 
-            else if (step === 'corp_await_alias_reply') {
-                if (!userText) { bot.sendMessage(chatId, '❌ Debes enviar un texto con tu Alias.'); return; }
-                const alias = userText.trim();
-                const targetId = adminState[chatId].targetId;
-                
-                adminState[chatId] = { step: 'corp_chat_active', chatPartner: targetId, alias: alias };
-                adminState[targetId] = { step: 'corp_chat_active', chatPartner: chatId, alias: adminState[targetId]?.alias || 'Admin' };
-
-                const connectedMsg = `🟢 **SALA VIRTUAL CONECTADA**\n\nEstás chateando en vivo. Todo lo que escribas o envíes se reenviará automáticamente.\nPresiona el botón abajo para terminar.`;
-                const endMarkup = { inline_keyboard: [[{ text: '🛑 Finalizar Chat', callback_data: 'corp_chat_end' }]] };
-
-                bot.sendMessage(chatId, connectedMsg, { parse_mode: 'Markdown', reply_markup: endMarkup });
-                bot.sendMessage(targetId, `🟢 **SALA VIRTUAL CONECTADA**\n\n*${alias}* se ha unido al chat. Todo lo que escribas o envíes (fotos/videos) se reenviará automáticamente.`, { parse_mode: 'Markdown', reply_markup: endMarkup });
-                
-                bot.deleteMessage(chatId, msg.message_id).catch(()=>{});
-                return;
-            }
-
             else if (step === 'corp_chat_active') {
                 if (userText && userText.startsWith('/')) return; 
                 const partnerId = adminState[chatId].chatPartner;
