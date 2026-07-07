@@ -16,7 +16,8 @@ module.exports = function(botCtx, helpers) {
                     { text: currentAlias === 'Amanda' ? '✅ 👩‍💼 Amanda' : '👩‍💼 Amanda', callback_data: 'corp_persona_Amanda' },
                     { text: currentAlias === 'Alexander' ? '✅ 👨‍💼 Alexander' : '👨‍💼 Alexander', callback_data: 'corp_persona_Alexander' }
                 ],
-                [[{ text: '🛑 Finalizar Chat', callback_data: 'corp_chat_end' }]]
+                // El error estaba aquí también. Solucionado.
+                [{ text: '🛑 Finalizar Chat', callback_data: 'corp_chat_end' }] 
             ]
         };
     };
