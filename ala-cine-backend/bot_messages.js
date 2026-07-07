@@ -18,7 +18,8 @@ module.exports = function(botCtx, helpers) {
                     { text: currentAlias === 'Amanda' ? '✅ 👩‍💼 Amanda' : '👩‍💼 Amanda', callback_data: 'corp_persona_Amanda' },
                     { text: currentAlias === 'Alexander' ? '✅ 👨‍💼 Alexander' : '👨‍💼 Alexander', callback_data: 'corp_persona_Alexander' }
                 ],
-                [[{ text: '🛑 Finalizar Chat', callback_data: 'corp_chat_end' }]]
+                // El error estaba aquí: había un doble corchete [[ ]] que Telegram no acepta. Solucionado.
+                [{ text: '🛑 Finalizar Chat', callback_data: 'corp_chat_end' }] 
             ]
         };
     };
@@ -321,9 +322,6 @@ module.exports = function(botCtx, helpers) {
             return;
         }
 
-        // =========================================================
-        // LÓGICA DE MENSAJERÍA CORPORATIVA (CHAT INTERNO MULTIMEDIA)
-        // =========================================================
         if (adminState[chatId] && adminState[chatId].step && adminState[chatId].step.startsWith('corp_')) {
             const step = adminState[chatId].step;
 
@@ -359,7 +357,6 @@ module.exports = function(botCtx, helpers) {
                             await bot.sendMessage(targetId, header + userText + footer, { parse_mode: 'Markdown', reply_markup: replyMarkup });
                         }
 
-                        // Conectamos al Admin 1 directamente a la sala para que pueda seguir conversando sin salir al menú
                         adminState[chatId] = { step: 'corp_chat_active', chatPartner: targetId, alias: myAlias };
 
                         bot.editMessageText(`✅ **Enviado exitosamente a Admin 2**.\n\nYa estás en la sala de chat activo y puedes seguir escribiendo si lo necesitas.\nSi deseas cambiar de personaje para tu próximo mensaje, usa los botones:`, {
@@ -382,7 +379,6 @@ module.exports = function(botCtx, helpers) {
                 const partnerId = adminState[chatId].chatPartner;
                 let myAlias = adminState[chatId].alias || 'Admin';
 
-                // Si soy Admin 1 y no tengo uno de los alias oficiales configurados aún, inicializamos en Dylan Admin.
                 if (chatId === ADMIN_CHAT_IDS[0] && !['Dylan Admin', 'William', 'Amanda', 'Alexander'].includes(myAlias)) {
                     myAlias = 'Dylan Admin';
                     adminState[chatId].alias = myAlias;
@@ -401,13 +397,11 @@ module.exports = function(botCtx, helpers) {
                 try {
                     let optionsToPartner = { parse_mode: 'Markdown' };
 
-                    // 1. EL TRUCO MAESTRO: Si el mensaje va HACIA el Admin 1, le pegamos el teclado de personajes
                     if (partnerId === ADMIN_CHAT_IDS[0]) {
                         const admin1Alias = adminState[partnerId]?.alias || 'Dylan Admin';
                         optionsToPartner.reply_markup = getPersonaKeyboard(admin1Alias);
                     }
 
-                    // 2. Enviamos el mensaje al partner (Si es Admin 2, se va sin botones. Si es Admin 1, lleva botones)
                     if (msg.photo || msg.video) {
                         const caption = msg.caption ? msg.caption : "";
                         if (msg.photo) {
@@ -420,8 +414,6 @@ module.exports = function(botCtx, helpers) {
                         await bot.sendMessage(partnerId, prefix + userText, optionsToPartner);
                     }
                     
-                    // 3. Si YO (Admin 1) acabo de enviar un mensaje, me lanzo a mí mismo un menú de confirmación 
-                    // para tener los botones siempre a la mano y poder cambiar de identidad para la siguiente respuesta.
                     if (chatId === ADMIN_CHAT_IDS[0]) {
                         const confirmMsg = `✅ _Mensaje enviado como_ *${myAlias}*.\nSelecciona tu identidad para el próximo mensaje:`;
                         bot.sendMessage(chatId, confirmMsg, {
