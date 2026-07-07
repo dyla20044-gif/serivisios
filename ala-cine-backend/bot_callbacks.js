@@ -2,6 +2,25 @@ module.exports = function(botCtx, helpers) {
     const { bot, mongoDb, adminState, ADMIN_CHAT_IDS, TMDB_API_KEY, RENDER_BACKEND_URL, axios, pinnedCache, fs, path } = botCtx;
     const { clearLiveCache, clearAllCaches, getMainMenuKeyboard, showEarningsPanel, sendFinalSummary, handleManageSeries } = helpers;
 
+    // =========================================================
+    // HELPER: TECLADO MULTI-PERSONA (LOCAL PARA CALLBACKS)
+    // =========================================================
+    const getPersonaKeyboard = (currentAlias) => {
+        return {
+            inline_keyboard: [
+                [
+                    { text: currentAlias === 'Dylan Admin' ? '✅ 👑 Dylan' : '👑 Dylan', callback_data: 'corp_persona_Dylan Admin' },
+                    { text: currentAlias === 'William' ? '✅ 👤 William' : '👤 William', callback_data: 'corp_persona_William' }
+                ],
+                [
+                    { text: currentAlias === 'Amanda' ? '✅ 👩‍💼 Amanda' : '👩‍💼 Amanda', callback_data: 'corp_persona_Amanda' },
+                    { text: currentAlias === 'Alexander' ? '✅ 👨‍💼 Alexander' : '👨‍💼 Alexander', callback_data: 'corp_persona_Alexander' }
+                ],
+                [[{ text: '🛑 Finalizar Chat', callback_data: 'corp_chat_end' }]]
+            ]
+        };
+    };
+
     bot.on('callback_query', async (callbackQuery) => {
         const msg = callbackQuery.message;
         const data = callbackQuery.data;
@@ -28,6 +47,26 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
 
             if (!ADMIN_CHAT_IDS.includes(chatId)) {
                 bot.answerCallbackQuery(callbackQuery.id, { text: 'No tienes permiso.', show_alert: true });
+                return;
+            }
+
+            // =========================================================
+            // NUEVO: CAMBIO DE IDENTIDAD DEL ADMIN 1 AL VUELO
+            // =========================================================
+            if (data.startsWith('corp_persona_')) {
+                if (chatId !== ADMIN_CHAT_IDS[0]) {
+                    bot.answerCallbackQuery(callbackQuery.id, { text: 'No tienes permiso para usar identidades.', show_alert: true });
+                    return;
+                }
+                const newAlias = data.replace('corp_persona_', '');
+                
+                if (!adminState[chatId]) adminState[chatId] = {};
+                adminState[chatId].alias = newAlias;
+                
+                bot.answerCallbackQuery(callbackQuery.id, { text: `✅ Ahora escribes como: ${newAlias}` });
+                
+                // Actualizamos el teclado inline para mostrar el check ✅ en la nueva identidad
+                bot.editMessageReplyMarkup(getPersonaKeyboard(newAlias), { chat_id: chatId, message_id: msg.message_id }).catch(()=>{});
                 return;
             }
 
@@ -231,32 +270,56 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
             }
 
             // =========================================================
-            // BOTÓN DE RESPUESTA DIRECTO (AUTO-IDENTIFICACIÓN)
+            // BOTÓN DE RESPUESTA DIRECTO (CONEXIÓN A SALA)
             // =========================================================
             if (data.startsWith('corp_reply_')) {
                 const targetId = parseInt(data.replace('corp_reply_', ''));
                 
-                // EXTRAEMOS EL NOMBRE DE TELEGRAM DIRECTAMENTE DEL USUARIO QUE PRESIONA EL BOTÓN
+                // Extraemos el nombre real del usuario que tocó "Responder"
                 const receptorName = callbackQuery.from.first_name || msg.chat.first_name || 'Admin Secundario';
-                const iniciadorAlias = adminState[targetId]?.alias || 'Admin Principal';
-
-                // CONECTAMOS A AMBOS DIRECTAMENTE A LA SALA VIRTUAL
-                adminState[chatId] = { step: 'corp_chat_active', chatPartner: targetId, alias: receptorName };
                 
-                if (!adminState[targetId]) adminState[targetId] = {};
-                adminState[targetId].step = 'corp_chat_active';
-                adminState[targetId].chatPartner = chatId;
-                // No sobreescribimos el alias del admin principal para que mantenga su nombre original
+                // Mantenemos separados los Alias (El Admin 1 no pierde su menú, el Admin 2 solo es él mismo)
+                if (chatId === ADMIN_CHAT_IDS[0]) {
+                    // Si yo (Admin 1) toco "Responder"
+                    adminState[chatId] = { step: 'corp_chat_active', chatPartner: targetId, alias: adminState[chatId]?.alias || 'Dylan Admin' };
+                } else {
+                    // Si el Admin 2 toca "Responder", asume su nombre natural
+                    adminState[chatId] = { step: 'corp_chat_active', chatPartner: targetId, alias: receptorName };
+                }
 
-                const endMarkup = { inline_keyboard: [[{ text: '🛑 Finalizar Chat', callback_data: 'corp_chat_end' }]] };
+                if (targetId === ADMIN_CHAT_IDS[0]) {
+                    // Si la conexión entra hacia el Admin 1
+                    if (!adminState[targetId]) adminState[targetId] = {};
+                    adminState[targetId].step = 'corp_chat_active';
+                    adminState[targetId].chatPartner = chatId;
+                    adminState[targetId].alias = adminState[targetId].alias || 'Dylan Admin';
+                } else {
+                    // Si la conexión entra hacia el Admin 2
+                    if (!adminState[targetId]) adminState[targetId] = {};
+                    adminState[targetId].step = 'corp_chat_active';
+                    adminState[targetId].chatPartner = chatId;
+                }
 
-                // NOTIFICAMOS AL USUARIO QUE ACABA DE PRESIONAR "RESPONDER"
-                bot.sendMessage(chatId, `🟢 **SALA VIRTUAL CONECTADA**\n\nEstás chateando en vivo con *${iniciadorAlias}*. Todo lo que escribas o envíes (fotos/videos) se reenviará automáticamente.\nPresiona el botón abajo para terminar.`, { parse_mode: 'Markdown', reply_markup: endMarkup });
+                // Generamos los teclados diferenciados
+                const endMarkupAdmin2 = { inline_keyboard: [[{ text: '🛑 Finalizar Chat', callback_data: 'corp_chat_end' }]] };
+                const admin1Alias = adminState[ADMIN_CHAT_IDS[0]]?.alias || 'Dylan Admin';
+                const endMarkupAdmin1 = getPersonaKeyboard(admin1Alias);
+
+                // 1. Mensaje para la persona que presionó el botón "Responder"
+                if (chatId === ADMIN_CHAT_IDS[0]) {
+                    bot.sendMessage(chatId, `🟢 **SALA VIRTUAL CONECTADA**\n\nEstás chateando en vivo. Elige tu identidad para continuar:`, { parse_mode: 'Markdown', reply_markup: endMarkupAdmin1 });
+                } else {
+                    bot.sendMessage(chatId, `🟢 **SALA VIRTUAL CONECTADA**\n\nEstás chateando en vivo. Todo lo que escribas o envíes (fotos/videos) se reenviará automáticamente.\nPresiona el botón abajo para terminar.`, { parse_mode: 'Markdown', reply_markup: endMarkupAdmin2 });
+                }
+
+                // 2. Mensaje para el receptor del chat
+                if (targetId === ADMIN_CHAT_IDS[0]) {
+                    bot.sendMessage(targetId, `🟢 **SALA VIRTUAL CONECTADA**\n\n*${receptorName}* ha respondido y entrado al chat. Elige tu identidad para responderle:`, { parse_mode: 'Markdown', reply_markup: endMarkupAdmin1 });
+                } else {
+                    bot.sendMessage(targetId, `🟢 **SALA VIRTUAL CONECTADA**\n\nEl administrador ha respondido a tu comunicado y ha entrado al chat. Todo lo que escribas o envíes se reenviará automáticamente.`, { parse_mode: 'Markdown', reply_markup: endMarkupAdmin2 });
+                }
                 
-                // NOTIFICAMOS AL ADMIN QUE ENVIÓ EL COMUNICADO INICIALMENTE
-                bot.sendMessage(targetId, `🟢 **SALA VIRTUAL CONECTADA**\n\n*${receptorName}* ha respondido a tu comunicado y ha entrado al chat. Todo lo que escribas o envíes se reenviará automáticamente.`, { parse_mode: 'Markdown', reply_markup: endMarkup });
-                
-                // OCULTAMOS EL BOTÓN "RESPONDER" DEL COMUNICADO ORIGINAL PARA EVITAR DUPLICADOS
+                // Ocultamos el botón original "Responder" del comunicado para evitar duplicados
                 bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id }).catch(()=>{});
                 return;
             }
