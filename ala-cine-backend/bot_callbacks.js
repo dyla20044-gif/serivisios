@@ -201,9 +201,6 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 return;
             }
 
-            // =========================================================
-            // MANEJADOR OPTIMIZADO: Pagar y Reiniciar Ciclo
-            // =========================================================
             if (data.startsWith('pay_uploader_')) {
                 const parts = data.split('_');
                 const targetId = parseInt(parts[2]);
@@ -214,15 +211,12 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                     return;
                 }
 
-                // 1. Borramos la foto estadística para evitar el error de la API de Telegram
                 bot.deleteMessage(chatId, msg.message_id).catch(() => {});
 
-                // 2. Enviamos el mensaje de texto limpio y profesional
                 bot.sendMessage(chatId, `💸 **Procesando Liquidación**\n━━━━━━━━━━━━━━━━━━━━━━\n👤 **ID Usuario:** \`${targetId}\`\n💰 **Monto a liquidar:** **$${amountToPay.toFixed(2)} USD**\n\n📝 Escribe el **mensaje de notificación** que recibirá (Ej: "Pago de este mes completado, ¡sigue así!"):`, { 
                     parse_mode: 'Markdown', 
                     reply_markup: { inline_keyboard: [[{ text: '❌ Cancelar', callback_data: 'back_to_menu' }]] } 
                 }).then((sentMsg) => {
-                    // 3. Guardamos el estado y el ID del nuevo mensaje para editarlo al terminar
                     adminState[chatId] = {
                         step: 'awaiting_payment_message',
                         payTargetId: targetId,
@@ -239,19 +233,26 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
             // =========================================================
             
             if (data === 'corp_chat_start') {
-                adminState[chatId] = { step: 'corp_await_alias', promptMessageId: msg.message_id };
-                bot.editMessageText('🏢 **Mensajería Corporativa**\n\nPara iniciar, por favor escribe tu **Alias o Nombre** (Ej: Dylan, Soporte, Admin Principal):', {
+                const adminButtons = [];
+                ADMIN_CHAT_IDS.forEach(id => {
+                    if (id !== chatId) {
+                        adminButtons.push([{ text: `🗣 Escribir a Admin ID: ${id}`, callback_data: `corp_select_${id}` }]);
+                    }
+                });
+                adminButtons.push([{ text: '❌ Cancelar', callback_data: 'back_to_menu' }]);
+
+                bot.editMessageText('🏢 **Mensajería Corporativa**\n\nSelecciona a qué administrador deseas contactar:', {
                     chat_id: chatId,
                     message_id: msg.message_id,
                     parse_mode: 'Markdown',
-                    reply_markup: { inline_keyboard: [[{ text: '❌ Cancelar', callback_data: 'back_to_menu' }]] }
-                }).catch(e => { bot.sendMessage(chatId, '🏢 **Mensajería Corporativa**\n\nEscribe tu Alias/Nombre:'); });
+                    reply_markup: { inline_keyboard: adminButtons }
+                }).catch(()=>{});
                 return;
             }
 
             if (data.startsWith('corp_select_')) {
                 const targetId = parseInt(data.replace('corp_select_', ''));
-                const alias = adminState[chatId]?.alias || 'Admin';
+                const alias = adminState[chatId]?.alias || 'Dylan Admin'; 
                 
                 adminState[chatId] = {
                     step: 'corp_await_first_msg',
@@ -260,11 +261,11 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                     promptMessageId: msg.message_id
                 };
                 
-                bot.editMessageText(`✅ Destinatario seleccionado.\n👤 Identificado como: *${alias}*\n\n💬 **Escribe tu mensaje, o envía una foto/video** para enviarlo como COMUNICADO OFICIAL.`, {
+                bot.editMessageText(`✅ Destinatario seleccionado (ID: ${targetId}).\n\n👇 **Elige con quién quieres hablar** usando los botones y **escribe tu mensaje o envía una foto/video** para iniciar el chat.`, {
                     chat_id: chatId,
                     message_id: msg.message_id,
                     parse_mode: 'Markdown',
-                    reply_markup: { inline_keyboard: [[{ text: '❌ Cancelar', callback_data: 'back_to_menu' }]] }
+                    reply_markup: getPersonaKeyboard(alias)
                 }).catch(()=>{});
                 return;
             }
@@ -275,51 +276,41 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
             if (data.startsWith('corp_reply_')) {
                 const targetId = parseInt(data.replace('corp_reply_', ''));
                 
-                // Extraemos el nombre real del usuario que tocó "Responder"
                 const receptorName = callbackQuery.from.first_name || msg.chat.first_name || 'Admin Secundario';
                 
-                // Mantenemos separados los Alias (El Admin 1 no pierde su menú, el Admin 2 solo es él mismo)
                 if (chatId === ADMIN_CHAT_IDS[0]) {
-                    // Si yo (Admin 1) toco "Responder"
                     adminState[chatId] = { step: 'corp_chat_active', chatPartner: targetId, alias: adminState[chatId]?.alias || 'Dylan Admin' };
                 } else {
-                    // Si el Admin 2 toca "Responder", asume su nombre natural
                     adminState[chatId] = { step: 'corp_chat_active', chatPartner: targetId, alias: receptorName };
                 }
 
                 if (targetId === ADMIN_CHAT_IDS[0]) {
-                    // Si la conexión entra hacia el Admin 1
                     if (!adminState[targetId]) adminState[targetId] = {};
                     adminState[targetId].step = 'corp_chat_active';
                     adminState[targetId].chatPartner = chatId;
                     adminState[targetId].alias = adminState[targetId].alias || 'Dylan Admin';
                 } else {
-                    // Si la conexión entra hacia el Admin 2
                     if (!adminState[targetId]) adminState[targetId] = {};
                     adminState[targetId].step = 'corp_chat_active';
                     adminState[targetId].chatPartner = chatId;
                 }
 
-                // Generamos los teclados diferenciados
                 const endMarkupAdmin2 = { inline_keyboard: [[{ text: '🛑 Finalizar Chat', callback_data: 'corp_chat_end' }]] };
                 const admin1Alias = adminState[ADMIN_CHAT_IDS[0]]?.alias || 'Dylan Admin';
                 const endMarkupAdmin1 = getPersonaKeyboard(admin1Alias);
 
-                // 1. Mensaje para la persona que presionó el botón "Responder"
                 if (chatId === ADMIN_CHAT_IDS[0]) {
                     bot.sendMessage(chatId, `🟢 **SALA VIRTUAL CONECTADA**\n\nEstás chateando en vivo. Elige tu identidad para continuar:`, { parse_mode: 'Markdown', reply_markup: endMarkupAdmin1 });
                 } else {
                     bot.sendMessage(chatId, `🟢 **SALA VIRTUAL CONECTADA**\n\nEstás chateando en vivo. Todo lo que escribas o envíes (fotos/videos) se reenviará automáticamente.\nPresiona el botón abajo para terminar.`, { parse_mode: 'Markdown', reply_markup: endMarkupAdmin2 });
                 }
 
-                // 2. Mensaje para el receptor del chat
                 if (targetId === ADMIN_CHAT_IDS[0]) {
                     bot.sendMessage(targetId, `🟢 **SALA VIRTUAL CONECTADA**\n\n*${receptorName}* ha respondido y entrado al chat. Elige tu identidad para responderle:`, { parse_mode: 'Markdown', reply_markup: endMarkupAdmin1 });
                 } else {
                     bot.sendMessage(targetId, `🟢 **SALA VIRTUAL CONECTADA**\n\nEl administrador ha respondido a tu comunicado y ha entrado al chat. Todo lo que escribas o envíes se reenviará automáticamente.`, { parse_mode: 'Markdown', reply_markup: endMarkupAdmin2 });
                 }
                 
-                // Ocultamos el botón original "Responder" del comunicado para evitar duplicados
                 bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id }).catch(()=>{});
                 return;
             }
