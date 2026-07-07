@@ -1,6 +1,5 @@
 module.exports = function(botCtx, helpers) {
     const { bot, mongoDb, adminState, ADMIN_CHAT_IDS, COMMUNITY_GROUP_ID, TMDB_API_KEY, RENDER_BACKEND_URL, axios, sendNotificationToTopic } = botCtx;
-    // IMPORTANTE: Ahora jalamos handleManageSeries desde los helpers
     const { clearAllCaches, clearLiveCache, getMainMenuKeyboard, handleManageSeries } = helpers;
 
     const cleanCommunityId = COMMUNITY_GROUP_ID ? COMMUNITY_GROUP_ID.toString().trim() : null;
@@ -31,7 +30,7 @@ module.exports = function(botCtx, helpers) {
     const smartBotCache = {
         catalog: [],
         lastUpdate: 0,
-        ttl: 15 * 60 * 1000 // 15 minutos
+        ttl: 15 * 60 * 1000 
     };
 
     async function ensureCacheWarmed() {
@@ -99,27 +98,22 @@ module.exports = function(botCtx, helpers) {
         }
     };
 
-    // =========================================================
-    // COMANDOS DE INICIO Y WEB APP
-    // =========================================================
-
     bot.onText(/^\/start(?:\s+(.+))?$|^\/subir$/, async (msg, match) => {
         const chatId = msg.chat.id;
         if (!ADMIN_CHAT_IDS.includes(msg.from.id)) return;
         
         const param = match && match[1];
 
-        // 🟢 INTERCEPTOR WEB APP CON DIFERENCIADOR PELI/SERIE
         if (param && param.startsWith('req_')) {
             const parts = param.split('_');
             let type = 'movie';
             let tmdbId = '';
 
             if (parts.length === 3) {
-                type = parts[1]; // 'movie' o 'tv'
+                type = parts[1];
                 tmdbId = parts[2];
             } else {
-                tmdbId = parts[1]; // Legado
+                tmdbId = parts[1];
             }
 
             if (type === 'tv') {
@@ -167,32 +161,23 @@ module.exports = function(botCtx, helpers) {
             return;
         }
 
-        // SALVAGUARDA: No borramos el alias si el usuario presiona /start por accidente
         adminState[chatId] = { step: 'menu', alias: adminState[chatId]?.alias };
         const inline_keyboard = getMainMenuKeyboard(chatId);
         bot.sendMessage(chatId, `¡Hola ${msg.from.first_name || 'Admin'}! ¿Qué quieres hacer hoy?`, { reply_markup: { inline_keyboard } });
     });
-
-    // =========================================================
-    // MANEJADOR PRINCIPAL DE MENSAJES
-    // =========================================================
 
     bot.on('message', async (msg) => {
         const chatId = msg.chat.id;
         const isAdmin = ADMIN_CHAT_IDS.includes(msg.from.id);
         const isCommunity = cleanCommunityId && chatId.toString() === cleanCommunityId;
 
-        // 1. LIMPIEZA AUTOMÁTICA DE MENSAJES DEL SISTEMA
         if (msg.new_chat_members || msg.left_chat_member) {
             if (isCommunity) {
-                try {
-                    await bot.deleteMessage(chatId, msg.message_id);
-                } catch (e) { }
+                try { await bot.deleteMessage(chatId, msg.message_id); } catch (e) { }
             }
             return; 
         }
 
-        // 2. ANTI-SPAM DE ENLACES PARA USUARIOS NORMALES
         const hasLinks = msg.entities && msg.entities.some(e => e.type === 'url' || e.type === 'text_link' || e.type === 'mention');
         if (hasLinks && !isAdmin) {
             try {
@@ -203,20 +188,14 @@ module.exports = function(botCtx, helpers) {
             return;
         }
 
-        // 3. CAPTURA UNIVERSAL DE TEXTO O MULTIMEDIA (Adaptado para Chat Corporativo)
         const userText = msg.text || msg.caption || "";
         if (!userText && !msg.photo && !msg.video) return;
 
-        // =========================================================
-        // IA DEL GRUPO (ASISTENTE HUMANO Y MODERADOR)
-        // =========================================================
-        
         if (isCommunity) {
-            if (!userText) return; // En la comunidad solo procesamos texto para el bot
+            if (!userText) return; 
             
             const textLower = userText.toLowerCase();
 
-            // A. FILTRO ANTI-GROSERÍAS
             const badWords = ['puta', 'mierda', 'pendejo', 'cabron', 'verga', 'imbecil', 'idiota', 'estupido', 'conchetumare', 'hijo de puta', 'malparido'];
             const hasBadWord = badWords.some(word => new RegExp(`\\b${word}\\b`, 'i').test(textLower));
             
@@ -229,7 +208,6 @@ module.exports = function(botCtx, helpers) {
                 return;
             }
 
-            // B. CHARLAS SOCIALES
             if (textLower.includes('hola') || textLower.includes('buenas') || textLower.includes('saludos')) {
                 return bot.sendMessage(chatId, dict.getRandom('smallTalkHello'), { reply_to_message_id: msg.message_id });
             }
@@ -237,7 +215,6 @@ module.exports = function(botCtx, helpers) {
                 return bot.sendMessage(chatId, dict.getRandom('smallTalkThanks'), { reply_to_message_id: msg.message_id });
             }
 
-            // C. FAQ: Descargar / App
             if (textLower.match(/(d[oó]nde descargo|pasar la app|como descargo|link de la app|instalar la app|apk|descargar sala cine|la aplicaci[oó]n|su app)/)) {
                 return bot.sendMessage(chatId, dict.getRandom('faqDownload'), {
                     reply_to_message_id: msg.message_id,
@@ -245,7 +222,6 @@ module.exports = function(botCtx, helpers) {
                 });
             }
 
-            // C2. FAQ: Cómo ver
             if (textLower.match(/(c[oó]mo (lo|la) veo|puedo ver esta|d[oó]nde la veo|como funciona|ayuda para ver|puedo ver una pel[ií]cula)/)) {
                 return bot.sendMessage(chatId, dict.getRandom('faqHowToWatch'), {
                     reply_to_message_id: msg.message_id,
@@ -253,7 +229,6 @@ module.exports = function(botCtx, helpers) {
                 });
             }
 
-            // D. FAQ: En Vivo
             if (textLower.match(/(en vivo|partido|deportes|tv en vivo|canales|donde veo el partido)/)) {
                 return bot.sendMessage(chatId, dict.getRandom('faqLive'), {
                     reply_to_message_id: msg.message_id,
@@ -261,7 +236,6 @@ module.exports = function(botCtx, helpers) {
                 });
             }
 
-            // E. FAQ: Pedidos
             if (textLower.match(/(como pido|agregar pelicula|subir pelicula|pueden subir|como solicito|agreguen)/)) {
                 return bot.sendMessage(chatId, dict.getRandom('faqRequests'), {
                     reply_to_message_id: msg.message_id,
@@ -269,7 +243,6 @@ module.exports = function(botCtx, helpers) {
                 });
             }
 
-            // F. BÚSQUEDA INTELIGENTE
             const searchMatch = textLower.match(/(?:busco|tienes|tienen|quiero ver|ponme|b[uú]scame|pel[ií]cula(?: de)?|serie(?: de)?|donde veo|hay|est[aá])\s+(.+)/i);
             
             if (searchMatch && searchMatch[1].length > 2) {
@@ -306,10 +279,6 @@ module.exports = function(botCtx, helpers) {
             if (isAdmin) return; 
         }
 
-        // =========================================================
-        // LÓGICA DE ADMINISTRADOR Y ESTADOS
-        // =========================================================
-        
         if (isAdmin && userText.startsWith('/')) {
             const command = userText.split(' ')[0];
             
@@ -358,45 +327,19 @@ module.exports = function(botCtx, helpers) {
         if (adminState[chatId] && adminState[chatId].step && adminState[chatId].step.startsWith('corp_')) {
             const step = adminState[chatId].step;
 
-            if (step === 'corp_await_alias') {
-                if (!userText) { bot.sendMessage(chatId, '❌ Debes enviar un texto con tu Alias.'); return; }
-                const alias = userText.trim();
-                adminState[chatId].alias = alias;
-                adminState[chatId].step = 'corp_select_target'; 
-
-                const adminButtons = [];
-                ADMIN_CHAT_IDS.forEach(id => {
-                    if (id !== chatId) {
-                        adminButtons.push([{ text: `👤 Admin ID: ${id}`, callback_data: `corp_select_${id}` }]);
-                    }
-                });
-                adminButtons.push([{ text: '❌ Cancelar', callback_data: 'back_to_menu' }]);
-
-                const textToEdit = `🏢 **Mensajería Corporativa**\n\n✅ Alias guardado: *${alias}*\n\nSelecciona a quién deseas enviar el comunicado:`;
-                if (adminState[chatId].promptMessageId) {
-                    bot.editMessageText(textToEdit, { chat_id: chatId, message_id: adminState[chatId].promptMessageId, parse_mode: 'Markdown', reply_markup: { inline_keyboard: adminButtons } }).catch(() => {
-                        bot.sendMessage(chatId, textToEdit, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: adminButtons } });
-                    });
-                } else {
-                    bot.sendMessage(chatId, textToEdit, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: adminButtons } });
-                }
-                bot.deleteMessage(chatId, msg.message_id).catch(()=>{});
-                return;
-            }
-
-            else if (step === 'corp_await_first_msg') {
+            if (step === 'corp_await_first_msg') {
                 const targetId = adminState[chatId].targetId;
-                const alias = adminState[chatId].alias;
+                const myAlias = adminState[chatId].alias || 'Dylan Admin';
                 
-                let header = `🏢 **COMUNICADO OFICIAL** 🏢\n━━━━━━━━━━━━━━━━━━━━━━\n👤 **De:** ${alias}\n\n`;
-                if (alias === 'Dylan Admin') {
+                let header = `🏢 **COMUNICADO OFICIAL** 🏢\n━━━━━━━━━━━━━━━━━━━━━━\n👤 **De:** ${myAlias}\n\n`;
+                if (myAlias === 'Dylan Admin') {
                     header = `🏢 **COMUNICADO OFICIAL** 🏢\n━━━━━━━━━━━━━━━━━━━━━━\n👑 **De:** Dylan Admin (CEO)\n\n`;
                 }
 
                 const footer = `\n━━━━━━━━━━━━━━━━━━━━━━`;
                 const replyMarkup = {
                     inline_keyboard: [
-                        [{ text: `💬 Responder a ${alias}`, callback_data: `corp_reply_${chatId}` }]
+                        [{ text: `💬 Responder a ${myAlias}`, callback_data: `corp_reply_${chatId}` }]
                     ]
                 };
 
@@ -416,17 +359,20 @@ module.exports = function(botCtx, helpers) {
                             await bot.sendMessage(targetId, header + userText + footer, { parse_mode: 'Markdown', reply_markup: replyMarkup });
                         }
 
-                        bot.editMessageText(`✅ **Comunicado enviado a ID: ${targetId}**\nTe notificaremos si responde.`, {
-                            chat_id: chatId, message_id: waitMsg.message_id, parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '🏠 Menú Principal', callback_data: 'back_to_menu' }]] }
+                        // Conectamos al Admin 1 directamente a la sala para que pueda seguir conversando sin salir al menú
+                        adminState[chatId] = { step: 'corp_chat_active', chatPartner: targetId, alias: myAlias };
+
+                        bot.editMessageText(`✅ **Enviado exitosamente a Admin 2**.\n\nYa estás en la sala de chat activo y puedes seguir escribiendo si lo necesitas.\nSi deseas cambiar de personaje para tu próximo mensaje, usa los botones:`, {
+                            chat_id: chatId, message_id: waitMsg.message_id, parse_mode: 'Markdown', 
+                            reply_markup: getPersonaKeyboard(myAlias)
                         });
                         
                     } catch (err) {
-                        bot.editMessageText(`❌ Error al enviar el mensaje al Admin ${targetId}.`, { chat_id: chatId, message_id: waitMsg.message_id });
+                        bot.editMessageText(`❌ **ERROR:** No se pudo enviar el mensaje.\n\n⚠️ **Explicación:** El Administrador 2 (ID: ${targetId}) todavía no ha iniciado el bot en su Telegram. Dile que abra el bot y presione /start.\n\nTelegram bloquea automáticamente cualquier mensaje hacia usuarios que no hayan iniciado el bot primero.`, { chat_id: chatId, message_id: waitMsg.message_id, reply_markup: { inline_keyboard: [[{ text: '🏠 Volver al Menú', callback_data: 'back_to_menu' }]] } });
+                        adminState[chatId] = { step: 'menu' };
                     }
                 });
                 
-                // MANTENEMOS EL ALIAS AQUÍ PARA QUE NO SE PIERDA Y APAREZCA BIEN EN EL CHAT ACTIVO
-                adminState[chatId] = { step: 'menu', alias: alias };
                 bot.deleteMessage(chatId, msg.message_id).catch(()=>{});
                 return;
             }
@@ -485,7 +431,7 @@ module.exports = function(botCtx, helpers) {
                     }
 
                 } catch(e) {
-                    bot.sendMessage(chatId, '⚠️ Error enviando mensaje al otro administrador. ¿Tal vez bloqueó el bot?');
+                    bot.sendMessage(chatId, `⚠️ **ERROR:** No se pudo enviar el mensaje.\n\nEl Administrador 2 no ha iniciado el bot en su cuenta (no le ha dado a /start) o configuraste un ID incorrecto.`);
                 }
                 return;
             }
@@ -709,11 +655,8 @@ module.exports = function(botCtx, helpers) {
             return;
         }
 
-        // =========================================================
-        // NUEVA SECCIÓN: PROCESAR PAGO AL UPLOADER Y REINICIAR CICLO
-        // =========================================================
         if (adminState[chatId] && adminState[chatId].step === 'awaiting_payment_message') {
-            if (userText.startsWith('/')) return; // IGNORA LOS COMANDOS AQUÍ
+            if (userText.startsWith('/')) return; 
             
             const targetId = adminState[chatId].payTargetId;
             const amount = adminState[chatId].payAmount;
@@ -725,7 +668,6 @@ module.exports = function(botCtx, helpers) {
             const currentMonthId = dayId.substring(0, 7);
 
             try {
-                // 1. Guardar historial de liquidación (Para que el usuario lo vea en su panel)
                 await mongoDb.collection('payment_history').insertOne({
                     uploaderId: targetId,
                     amount: amount,
@@ -734,22 +676,16 @@ module.exports = function(botCtx, helpers) {
                     message: customMessage
                 });
 
-                // 2. Reiniciar el ciclo contable mensual (SISTEMA DE LEDGER)
-                // En lugar de restarle al día actual y dañar sus estadísticas diarias de hoy,
-                // creamos un registro de "Balance de Cierre" negativo con un ID único. 
-                // Así, la sumatoria del mes vuelve a cero, pero lo generado en el día actual
-                // sigue visible en sus métricas y se traslada perfectamente al próximo ciclo.
                 await mongoDb.collection('uploader_daily_stats').insertOne({
                     uploaderId: targetId,
-                    dayId: `cierre_${Date.now()}`, // ID único para no sobreescribir el día actual
+                    dayId: `cierre_${Date.now()}`,
                     monthId: currentMonthId,
-                    today_earned: -amount,         // Balancea la suma del mes a $0.00
+                    today_earned: -amount,         
                     isPaymentOffset: true,
                     description: "Reinicio de ciclo por liquidación",
                     createdAt: now
                 });
 
-                // 3. Notificar trabajador con un mensaje muy profesional
                 const notification = `🧾 **LIQUIDACIÓN DE CICLO** 🧾\n` +
                                      `━━━━━━━━━━━━━━━━━━━━━━\n` +
                                      `Hola, se ha procesado tu pago correspondiente a tus subidas en Sala Cine.\n\n` +
@@ -762,7 +698,6 @@ module.exports = function(botCtx, helpers) {
                 
                 await bot.sendMessage(targetId, notification, { parse_mode: 'Markdown' }).catch(()=>{});
 
-                // 4. Avisar al admin
                 const successMsg = `✅ **¡Pago Registrado y Ciclo Reiniciado!**\n\n` +
                                    `Se ha liquidado el monto de **$${amount.toFixed(2)} USD** al usuario \`${targetId}\`.\n` +
                                    `El historial ha sido guardado y el sistema contable está balanceado en cero para su nuevo ciclo. Todo lo facturado hoy se pasa al siguiente mes automáticamente.`;
@@ -937,7 +872,7 @@ module.exports = function(botCtx, helpers) {
         }
 
         else if (adminState[chatId] && adminState[chatId].step === 'search_movie') {
-            if (userText.startsWith('/')) return; // IGNORA LOS COMANDOS AQUÍ Y EVITA EL BUG
+            if (userText.startsWith('/')) return; 
             try {
                 let queryText = userText.trim();
                 let yearFilter = "";
@@ -978,7 +913,7 @@ module.exports = function(botCtx, helpers) {
 
         } 
         else if (adminState[chatId] && adminState[chatId].step === 'search_series') {
-            if (userText.startsWith('/')) return; // IGNORA LOS COMANDOS AQUÍ
+            if (userText.startsWith('/')) return; 
             try {
                 let queryText = userText.trim();
                 let yearFilter = "";
@@ -1018,7 +953,7 @@ module.exports = function(botCtx, helpers) {
             } catch (error) { bot.sendMessage(chatId, 'Error buscando. Intenta de nuevo.'); }
 
         } else if (adminState[chatId] && adminState[chatId].step === 'search_delete') {
-            if (userText.startsWith('/')) return; // IGNORA LOS COMANDOS AQUÍ
+            if (userText.startsWith('/')) return; 
             try {
                 const searchUrl = `https://api.themoviedb.org/3/search/multi?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(userText)}&language=es-ES`;
                 const response = await axios.get(searchUrl);
