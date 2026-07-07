@@ -6,6 +6,25 @@ module.exports = function(botCtx, helpers) {
     const cleanCommunityId = COMMUNITY_GROUP_ID ? COMMUNITY_GROUP_ID.toString().trim() : null;
 
     // =========================================================
+    // HELPER: TECLADO MULTI-PERSONA (SOLO PARA ADMIN 1)
+    // =========================================================
+    const getPersonaKeyboard = (currentAlias) => {
+        return {
+            inline_keyboard: [
+                [
+                    { text: currentAlias === 'Dylan Admin' ? '✅ 👑 Dylan' : '👑 Dylan', callback_data: 'corp_persona_Dylan Admin' },
+                    { text: currentAlias === 'William' ? '✅ 👤 William' : '👤 William', callback_data: 'corp_persona_William' }
+                ],
+                [
+                    { text: currentAlias === 'Amanda' ? '✅ 👩‍💼 Amanda' : '👩‍💼 Amanda', callback_data: 'corp_persona_Amanda' },
+                    { text: currentAlias === 'Alexander' ? '✅ 👨‍💼 Alexander' : '👨‍💼 Alexander', callback_data: 'corp_persona_Alexander' }
+                ],
+                [[{ text: '🛑 Finalizar Chat', callback_data: 'corp_chat_end' }]]
+            ]
+        };
+    };
+
+    // =========================================================
     // SISTEMA IA: CACHÉ EN RAM Y DICCIONARIO HUMANO AVANZADO
     // =========================================================
     
@@ -369,7 +388,11 @@ module.exports = function(botCtx, helpers) {
                 const targetId = adminState[chatId].targetId;
                 const alias = adminState[chatId].alias;
                 
-                const header = `🏢 **COMUNICADO OFICIAL** 🏢\n━━━━━━━━━━━━━━━━━━━━━━\n👤 **De:** ${alias}\n\n`;
+                let header = `🏢 **COMUNICADO OFICIAL** 🏢\n━━━━━━━━━━━━━━━━━━━━━━\n👤 **De:** ${alias}\n\n`;
+                if (alias === 'Dylan Admin') {
+                    header = `🏢 **COMUNICADO OFICIAL** 🏢\n━━━━━━━━━━━━━━━━━━━━━━\n👑 **De:** Dylan Admin (CEO)\n\n`;
+                }
+
                 const footer = `\n━━━━━━━━━━━━━━━━━━━━━━`;
                 const replyMarkup = {
                     inline_keyboard: [
@@ -411,27 +434,56 @@ module.exports = function(botCtx, helpers) {
             else if (step === 'corp_chat_active') {
                 if (userText && userText.startsWith('/')) return; 
                 const partnerId = adminState[chatId].chatPartner;
-                const myAlias = adminState[chatId].alias || 'Admin';
+                let myAlias = adminState[chatId].alias || 'Admin';
+
+                // Si soy Admin 1 y no tengo uno de los alias oficiales configurados aún, inicializamos en Dylan Admin.
+                if (chatId === ADMIN_CHAT_IDS[0] && !['Dylan Admin', 'William', 'Amanda', 'Alexander'].includes(myAlias)) {
+                    myAlias = 'Dylan Admin';
+                    adminState[chatId].alias = myAlias;
+                }
 
                 if (!partnerId) {
                     adminState[chatId] = { step: 'menu', alias: adminState[chatId]?.alias };
                     return;
                 }
 
-                const prefix = `💬 *${myAlias}:*\n`;
+                let prefix = `💬 *${myAlias}:*\n`;
+                if (myAlias === 'Dylan Admin') {
+                    prefix = `👑 *Dylan Admin (CEO):*\n`;
+                }
 
                 try {
+                    let optionsToPartner = { parse_mode: 'Markdown' };
+
+                    // 1. EL TRUCO MAESTRO: Si el mensaje va HACIA el Admin 1, le pegamos el teclado de personajes
+                    if (partnerId === ADMIN_CHAT_IDS[0]) {
+                        const admin1Alias = adminState[partnerId]?.alias || 'Dylan Admin';
+                        optionsToPartner.reply_markup = getPersonaKeyboard(admin1Alias);
+                    }
+
+                    // 2. Enviamos el mensaje al partner (Si es Admin 2, se va sin botones. Si es Admin 1, lleva botones)
                     if (msg.photo || msg.video) {
                         const caption = msg.caption ? msg.caption : "";
                         if (msg.photo) {
                             const fileId = msg.photo[msg.photo.length - 1].file_id;
-                            await bot.sendPhoto(partnerId, fileId, { caption: prefix + caption, parse_mode: 'Markdown' });
+                            await bot.sendPhoto(partnerId, fileId, { caption: prefix + caption, ...optionsToPartner });
                         } else if (msg.video) {
-                            await bot.sendVideo(partnerId, msg.video.file_id, { caption: prefix + caption, parse_mode: 'Markdown' });
+                            await bot.sendVideo(partnerId, msg.video.file_id, { caption: prefix + caption, ...optionsToPartner });
                         }
                     } else {
-                        await bot.sendMessage(partnerId, prefix + userText, { parse_mode: 'Markdown' });
+                        await bot.sendMessage(partnerId, prefix + userText, optionsToPartner);
                     }
+                    
+                    // 3. Si YO (Admin 1) acabo de enviar un mensaje, me lanzo a mí mismo un menú de confirmación 
+                    // para tener los botones siempre a la mano y poder cambiar de identidad para la siguiente respuesta.
+                    if (chatId === ADMIN_CHAT_IDS[0]) {
+                        const confirmMsg = `✅ _Mensaje enviado como_ *${myAlias}*.\nSelecciona tu identidad para el próximo mensaje:`;
+                        bot.sendMessage(chatId, confirmMsg, {
+                            parse_mode: 'Markdown',
+                            reply_markup: getPersonaKeyboard(myAlias)
+                        });
+                    }
+
                 } catch(e) {
                     bot.sendMessage(chatId, '⚠️ Error enviando mensaje al otro administrador. ¿Tal vez bloqueó el bot?');
                 }
