@@ -11,13 +11,6 @@ module.exports = function(botCtx, helpers) {
         return {
             inline_keyboard: [
                 [
-                    { text: currentAlias === 'Dylan Admin' ? '✅ 👑 Dylan' : '👑 Dylan', callback_data: 'corp_persona_Dylan Admin' },
-                    { text: currentAlias === 'William' ? '✅ 👤 William' : '👤 William', callback_data: 'corp_persona_William' }
-                ],
-                [
-                    { text: currentAlias === 'Amanda' ? '✅ 👩‍💼 Amanda' : '👩‍💼 Amanda', callback_data: 'corp_persona_Amanda' },
-                    { text: currentAlias === 'Alexander' ? '✅ 👨‍💼 Alexander' : '👨‍💼 Alexander', callback_data: 'corp_persona_Alexander' }
-                ],
                 // El error estaba aquí: había un doble corchete [[ ]] que Telegram no acepta. Solucionado.
                 [{ text: '🛑 Finalizar Chat', callback_data: 'corp_chat_end' }] 
             ]
