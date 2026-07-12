@@ -3,23 +3,36 @@ module.exports = function(botCtx, helpers) {
     const { clearLiveCache, clearAllCaches, getMainMenuKeyboard, showEarningsPanel, sendFinalSummary, handleManageSeries } = helpers;
 
     // =========================================================
-    // HELPER: TECLADO MULTI-PERSONA (LOCAL PARA CALLBACKS)
+    // HELPER: TECLADO MULTI-PERSONA (SALA DE CHAT SIMULADA)
     // =========================================================
     const getPersonaKeyboard = (currentAlias) => {
-        return {
-            inline_keyboard: [
-                [
-                    { text: currentAlias === 'Dylan Admin' ? '✅ 👑 Dylan' : '👑 Dylan', callback_data: 'corp_persona_Dylan Admin' },
-                    { text: currentAlias === 'William' ? '✅ 👤 William' : '👤 William', callback_data: 'corp_persona_William' }
-                ],
-                [
-                    { text: currentAlias === 'Amanda' ? '✅ 👩‍💼 Amanda' : '👩‍💼 Amanda', callback_data: 'corp_persona_Amanda' },
-                    { text: currentAlias === 'Alexander' ? '✅ 👨‍💼 Alexander' : '👨‍💼 Alexander', callback_data: 'corp_persona_Alexander' }
-                ],
-                // El error estaba aquí también. Solucionado.
-                [{ text: '🛑 Finalizar Chat', callback_data: 'corp_chat_end' }] 
-            ]
-        };
+        // 9 Identidades Oficiales (Mujeres y Hombres comunes de Ecuador/México)
+        const personas = [
+            'Amanda', 'Ximena', 'Valentina',
+            'Camila', 'Sofia', 'Daniela',
+            'Mateo', 'Sebastián', 'Alejandro'
+        ];
+        
+        let rows = [];
+        let currentRow = [];
+        
+        personas.forEach((p) => {
+            const isSelected = currentAlias === p;
+            const icon = ['Amanda', 'Ximena', 'Valentina', 'Camila', 'Sofia', 'Daniela'].includes(p) ? '👩' : '👨';
+            currentRow.push({
+                text: isSelected ? `✅ ${p}` : `${icon} ${p}`,
+                callback_data: `corp_persona_${p}`
+            });
+            
+            if (currentRow.length === 3) {
+                rows.push(currentRow);
+                currentRow = [];
+            }
+        });
+        
+        rows.push([{ text: '🛑 Finalizar y Cerrar Sala', callback_data: 'corp_chat_end' }]);
+        
+        return { inline_keyboard: rows };
     };
 
     bot.on('callback_query', async (callbackQuery) => {
@@ -52,7 +65,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
             }
 
             // =========================================================
-            // NUEVO: CAMBIO DE IDENTIDAD DEL ADMIN 1 AL VUELO
+            // CAMBIO DE IDENTIDAD DEL ADMIN 1 AL VUELO
             // =========================================================
             if (data.startsWith('corp_persona_')) {
                 if (chatId !== ADMIN_CHAT_IDS[0]) {
@@ -66,7 +79,6 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 
                 bot.answerCallbackQuery(callbackQuery.id, { text: `✅ Ahora escribes como: ${newAlias}` });
                 
-                // Actualizamos el teclado inline para mostrar el check ✅ en la nueva identidad
                 bot.editMessageReplyMarkup(getPersonaKeyboard(newAlias), { chat_id: chatId, message_id: msg.message_id }).catch(()=>{});
                 return;
             }
@@ -214,7 +226,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
 
                 bot.deleteMessage(chatId, msg.message_id).catch(() => {});
 
-                bot.sendMessage(chatId, `💸 **Procesando Liquidación**\n━━━━━━━━━━━━━━━━━━━━━━\n👤 **ID Usuario:** \`${targetId}\`\n💰 **Monto a liquidar:** **$${amountToPay.toFixed(2)} USD**\n\n📝 Escribe el **mensaje de notificación** que recibirá (Ej: "Pago de este mes completado, ¡sigue así!"):`, { 
+                bot.sendMessage(chatId, `💸 **Procesando Liquidación**\n━━━━━━━━━━━━━━━━━━━━━━\n👤 **ID Usuario:** \`${targetId}\`\n💰 **Monto a liquidar:** **$${amountToPay.toFixed(2)} USD**\n\n📝 Escribe el **mensaje de notificación** que recibirá (Ej: "Pago completado, ¡sigue así!"):`, { 
                     parse_mode: 'Markdown', 
                     reply_markup: { inline_keyboard: [[{ text: '❌ Cancelar', callback_data: 'back_to_menu' }]] } 
                 }).then((sentMsg) => {
@@ -230,19 +242,27 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
             }
 
             // =========================================================
-            // FASE 2: LÓGICA DE INTERFAZ DEL CHAT CORPORATIVO
+            // LÓGICA DE INICIO Y GESTIÓN DE LA SALA CORPORATIVA
             // =========================================================
             
             if (data === 'corp_chat_start') {
+                if (chatId !== ADMIN_CHAT_IDS[0]) {
+                    bot.answerCallbackQuery(callbackQuery.id, { text: 'No tienes permiso.', show_alert: true });
+                    return;
+                }
+
                 const adminButtons = [];
+                // Opción para conectar a todos a la vez
+                adminButtons.push([{ text: `🟢 Abrir Sala Global (Todos los Admins)`, callback_data: `corp_room_start_all` }]);
+                
                 ADMIN_CHAT_IDS.forEach(id => {
                     if (id !== chatId) {
-                        adminButtons.push([{ text: `🗣 Escribir a Admin ID: ${id}`, callback_data: `corp_select_${id}` }]);
+                        adminButtons.push([{ text: `🟢 Conectar Sala con ID: ${id}`, callback_data: `corp_room_start_${id}` }]);
                     }
                 });
                 adminButtons.push([{ text: '❌ Cancelar', callback_data: 'back_to_menu' }]);
 
-                bot.editMessageText('🏢 **Mensajería Corporativa**\n\nSelecciona a qué administrador deseas contactar:', {
+                bot.editMessageText('🏢 **Control de Sala Corporativa**\n\n¿Con quién deseas iniciar la sala de chat simulada?', {
                     chat_id: chatId,
                     message_id: msg.message_id,
                     parse_mode: 'Markdown',
@@ -251,82 +271,83 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 return;
             }
 
-            if (data.startsWith('corp_select_')) {
-                const targetId = parseInt(data.replace('corp_select_', ''));
-                const alias = adminState[chatId]?.alias || 'Dylan Admin'; 
+            if (data.startsWith('corp_room_start_')) {
+                const target = data.replace('corp_room_start_', '');
+                let targets = [];
                 
+                if (target === 'all') {
+                    targets = ADMIN_CHAT_IDS.filter(id => id !== chatId);
+                } else {
+                    targets.push(parseInt(target));
+                }
+
+                if (targets.length === 0) {
+                    bot.answerCallbackQuery(callbackQuery.id, { text: 'No hay otros administradores configurados.', show_alert: true });
+                    return;
+                }
+
+                const simulatedMembers = 9; 
+                const defaultAlias = 'Amanda';
+
+                // 1. Forzamos al Admin 1 a estar "Dentro de la Sala"
                 adminState[chatId] = {
-                    step: 'corp_await_first_msg',
-                    targetId: targetId,
-                    alias: alias,
-                    promptMessageId: msg.message_id
+                    step: 'corp_chat_active',
+                    alias: defaultAlias,
+                    activeRoomTargets: targets, // Array con los IDs conectados
+                    chatPartner: targets[0] // Fallback temporal para retrocompatibilidad
                 };
-                
-                bot.editMessageText(`✅ Destinatario seleccionado (ID: ${targetId}).\n\n👇 **Elige con quién quieres hablar** usando los botones y **escribe tu mensaje o envía una foto/video** para iniciar el chat.`, {
+
+                const admin1Msg = `🟢 **[SALA CONECTADA - ${simulatedMembers} miembros activos]**\n\n` +
+                                  `La sala ha sido creada. Los administradores invitados han sido enlazados silenciosamente.\n` +
+                                  `Selecciona tu identidad abajo y comienza a escribir en el grupo:`;
+
+                bot.editMessageText(admin1Msg, {
                     chat_id: chatId,
                     message_id: msg.message_id,
                     parse_mode: 'Markdown',
-                    reply_markup: getPersonaKeyboard(alias)
+                    reply_markup: getPersonaKeyboard(defaultAlias)
                 }).catch(()=>{});
+
+                // 2. Forzamos a los Administradores Invitados a la Sala SIN preguntar
+                targets.forEach(tId => {
+                    adminState[tId] = {
+                        step: 'corp_chat_active',
+                        chatPartner: chatId // Su mensaje siempre va al Admin 1
+                    };
+                    
+                    const targetMsg = `🟢 **[SALA CORPORATIVA CONECTADA - ${simulatedMembers} miembros activos]**\n\n` +
+                                      `_Has ingresado a la sala de chat del equipo._\n` +
+                                      `Todo lo que escribas aquí lo leerán los demás miembros.\n\n` +
+                                      `*(💡 Tip: Si necesitas usar un comando normal del bot como /start o /subir, puedes hacerlo en cualquier momento para salir de la sala).*`;
+
+                    bot.sendMessage(tId, targetMsg, { parse_mode: 'Markdown' }).catch(e => console.log('Error forcing target into room:', e.message));
+                });
+
                 return;
             }
 
             // =========================================================
-            // BOTÓN DE RESPUESTA DIRECTO (CONEXIÓN A SALA)
+            // CIERRE DE SALA POR PARTE DEL ADMIN 1
             // =========================================================
-            if (data.startsWith('corp_reply_')) {
-                const targetId = parseInt(data.replace('corp_reply_', ''));
-                
-                const receptorName = callbackQuery.from.first_name || msg.chat.first_name || 'Admin Secundario';
-                
-                if (chatId === ADMIN_CHAT_IDS[0]) {
-                    adminState[chatId] = { step: 'corp_chat_active', chatPartner: targetId, alias: adminState[chatId]?.alias || 'Dylan Admin' };
-                } else {
-                    adminState[chatId] = { step: 'corp_chat_active', chatPartner: targetId, alias: receptorName };
-                }
-
-                if (targetId === ADMIN_CHAT_IDS[0]) {
-                    if (!adminState[targetId]) adminState[targetId] = {};
-                    adminState[targetId].step = 'corp_chat_active';
-                    adminState[targetId].chatPartner = chatId;
-                    adminState[targetId].alias = adminState[targetId].alias || 'Dylan Admin';
-                } else {
-                    if (!adminState[targetId]) adminState[targetId] = {};
-                    adminState[targetId].step = 'corp_chat_active';
-                    adminState[targetId].chatPartner = chatId;
-                }
-
-                const endMarkupAdmin2 = { inline_keyboard: [[{ text: '🛑 Finalizar Chat', callback_data: 'corp_chat_end' }]] };
-                const admin1Alias = adminState[ADMIN_CHAT_IDS[0]]?.alias || 'Dylan Admin';
-                const endMarkupAdmin1 = getPersonaKeyboard(admin1Alias);
-
-                if (chatId === ADMIN_CHAT_IDS[0]) {
-                    bot.sendMessage(chatId, `🟢 **SALA VIRTUAL CONECTADA**\n\nEstás chateando en vivo. Elige tu identidad para continuar:`, { parse_mode: 'Markdown', reply_markup: endMarkupAdmin1 });
-                } else {
-                    bot.sendMessage(chatId, `🟢 **SALA VIRTUAL CONECTADA**\n\nEstás chateando en vivo. Todo lo que escribas o envíes (fotos/videos) se reenviará automáticamente.\nPresiona el botón abajo para terminar.`, { parse_mode: 'Markdown', reply_markup: endMarkupAdmin2 });
-                }
-
-                if (targetId === ADMIN_CHAT_IDS[0]) {
-                    bot.sendMessage(targetId, `🟢 **SALA VIRTUAL CONECTADA**\n\n*${receptorName}* ha respondido y entrado al chat. Elige tu identidad para responderle:`, { parse_mode: 'Markdown', reply_markup: endMarkupAdmin1 });
-                } else {
-                    bot.sendMessage(targetId, `🟢 **SALA VIRTUAL CONECTADA**\n\nEl administrador ha respondido a tu comunicado y ha entrado al chat. Todo lo que escribas o envíes se reenviará automáticamente.`, { parse_mode: 'Markdown', reply_markup: endMarkupAdmin2 });
-                }
-                
-                bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id }).catch(()=>{});
-                return;
-            }
-
             if (data === 'corp_chat_end') {
-                const partnerId = adminState[chatId]?.chatPartner;
-                if (partnerId) {
-                    bot.sendMessage(partnerId, '🛑 **SALA CERRADA**\n\nEl otro administrador ha finalizado la sesión de chat corporativo.', { 
-                        parse_mode: 'Markdown',
-                        reply_markup: { inline_keyboard: [[{ text: '🏠 Volver al Menú', callback_data: 'back_to_menu' }]] }
-                    }).catch(()=>{});
-                    adminState[partnerId] = { step: 'menu' };
-                }
+                if (chatId !== ADMIN_CHAT_IDS[0]) return; // Solo el Admin 1 cierra la sala
+                
+                const roomTargets = adminState[chatId]?.activeRoomTargets || [];
+                
+                // Desconectamos a los invitados
+                roomTargets.forEach(tId => {
+                    if (adminState[tId] && adminState[tId].step === 'corp_chat_active') {
+                        adminState[tId] = { step: 'menu' };
+                        bot.sendMessage(tId, '🛑 **[SALA CERRADA]**\n\nLa sesión corporativa ha sido finalizada por el Administrador Principal.', { 
+                            parse_mode: 'Markdown',
+                            reply_markup: { inline_keyboard: [[{ text: '🏠 Volver al Menú', callback_data: 'back_to_menu' }]] }
+                        }).catch(()=>{});
+                    }
+                });
+
+                // Desconectamos al Admin 1
                 adminState[chatId] = { step: 'menu' };
-                bot.editMessageText('🛑 **Sesión de chat finalizada exitosamente.**', {
+                bot.editMessageText('🛑 **Sesión de chat finalizada. Todos los usuarios han sido desconectados.**', {
                     chat_id: chatId,
                     message_id: msg.message_id,
                     parse_mode: 'Markdown',
@@ -334,6 +355,10 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 }).catch(()=>{});
                 return;
             }
+
+            // =========================================================
+            // CMS Y MANEJO DE PUBLICACIONES (INTACTO)
+            // =========================================================
 
             if (data === 'cms_announcement_menu') {
                 const options = {
