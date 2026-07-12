@@ -1,9 +1,5 @@
 module.exports = function(botCtx) {
     const { bot, mongoDb, adminState, ADMIN_CHAT_IDS, COMMUNITY_GROUP_ID, TMDB_API_KEY, axios, RENDER_BACKEND_URL } = botCtx;
-
-    // =========================================================
-    // COLA DE SUBIDAS (BATCH UPLOADS)
-    // =========================================================
     let uploadQueue = [];
     
     if (COMMUNITY_GROUP_ID) {
@@ -31,7 +27,6 @@ module.exports = function(botCtx) {
             }
         }, 900000); 
     }
-
     const clearLiveCache = () => {
         try {
             if (typeof global !== 'undefined' && global.ctx && global.ctx.caches && global.ctx.caches.liveCache) {
@@ -45,7 +40,6 @@ module.exports = function(botCtx) {
             console.warn("[Bot] Excepción intentando limpiar liveCache:", e.message);
         }
     };
-
     const clearAllCaches = () => {
         try {
             if (typeof global !== 'undefined' && global.ctx && global.ctx.caches) {
@@ -197,7 +191,6 @@ module.exports = function(botCtx) {
             bot.sendMessage(requestChatId, '❌ Ocurrió un error al consultar la base de datos de ganancias.');
         }
     }
-
     async function sendFinalSummary(chatId, title, isMovie = true, promptMsgId = null) {
         try {
             if (COMMUNITY_GROUP_ID) {
@@ -310,14 +303,8 @@ module.exports = function(botCtx) {
             bot.sendMessage(chatId, 'Error al obtener los detalles de la serie desde TMDB.');
         }
     }
-
-    // =========================================================
-    // NUEVO: SISTEMA DE AUTO-POSTING (ROUND-ROBIN & LIMPIEZA)
-    // =========================================================
-
     async function runAutoPoster(channelId) {
         try {
-            // 1. Verificar Tendencias en TMDB para modo "Noticia"
             let trendingTmdbIds = [];
             try {
                 const trendingUrl = `https://api.themoviedb.org/3/trending/movie/day?api_key=${TMDB_API_KEY}&language=es-ES`;
@@ -328,12 +315,8 @@ module.exports = function(botCtx) {
             } catch (e) { 
                 console.warn("[Auto-Poster] Error obteniendo tendencias TMDB:", e.message); 
             }
-
-            // 2. Obtener historial reciente para no repetir publicaciones
             const recentPosts = await mongoDb.collection('autopost_history').find().sort({ timestamp: -1 }).limit(80).toArray();
             const recentIds = recentPosts.map(p => p.tmdbId);
-
-            // 3. Buscar películas candidatas en la DB (Filtro mp4 y prioridad 2026)
             const linkRegex = /\.(mp4|mkv|avi|m3u8)/i;
             
             const pipeline = [
@@ -345,9 +328,8 @@ module.exports = function(botCtx) {
                         { links: { $elemMatch: { $regex: linkRegex } } }
                     ]
                 }},
-                // Agregamos un campo temporal para dar prioridad a las del 2026
                 { $addFields: { is2026: { $cond: [{ $regexMatch: { input: "$release_date", regex: /^2026/ } }, 1, 0] } } },
-                // Ordenamos primero por si es 2026 y luego por fecha descendente
+    
                 { $sort: { is2026: -1, release_date: -1 } },
                 { $limit: 20 } 
             ];
@@ -358,28 +340,21 @@ module.exports = function(botCtx) {
                 console.log("[Auto-Poster] No hay películas candidatas nuevas. Esperando próximo ciclo.");
                 return;
             }
-
-            // Seleccionar una al azar entre las mejores candidatas para dar variedad
             const selectedMovie = candidates[Math.floor(Math.random() * Math.min(candidates.length, 5))];
 
-            // 4. Formatear y preparar el Post Visual
             const isTrending = trendingTmdbIds.includes(selectedMovie.tmdbId);
             const posterUrl = selectedMovie.poster_path ? (selectedMovie.poster_path.startsWith('http') ? selectedMovie.poster_path : `https://image.tmdb.org/t/p/w500${selectedMovie.poster_path}`) : 'https://placehold.co/500x750?text=SALA+CINE';
-            
-            // Truncar sinopsis elegantemente
+    
             let overview = selectedMovie.overview || "Una increíble historia te espera...";
             if (overview.length > 160) {
                 overview = overview.substring(0, 157) + "...";
             }
 
             const releaseYear = selectedMovie.release_date ? selectedMovie.release_date.substring(0, 4) : "";
-            
-            // Link crudo a la tienda/app (en texto plano sin markdown oculto para Telegram)
             const rawAppLink = "https://play.google.com/store/apps/details?id=com.salacine.app";
 
             let messageText = "";
             if (isTrending) {
-                // Modo Noticia: Se mantiene la línea de "Momento de Tendencia"
                 messageText = `🔥 **¡MOMENTO DE TENDENCIA!** 🔥\n\n` +
                               `Esta película está siendo muy popular en este momento, ¡vayan a verla antes de que se la cuenten!\n\n` +
                               `🎬 *${selectedMovie.title}* ${releaseYear ? `(${releaseYear})` : ''}\n\n` +
@@ -393,22 +368,16 @@ module.exports = function(botCtx) {
                               `👇👇👇 **MIRA LA PELÍCULA AQUÍ:** 👇👇👇\n` +
                               `${rawAppLink}`;
             }
-
-            // 5. Enviar el Post
             const sentMsg = await bot.sendPhoto(channelId, posterUrl, {
                 caption: messageText,
                 parse_mode: 'Markdown'
             });
-
-            // 6. Guardar en active_posts para la auto-eliminación en 4 horas
             await mongoDb.collection('active_posts').insertOne({
                 messageId: sentMsg.message_id,
                 chatId: channelId,
                 timestamp: Date.now(),
                 tmdbId: selectedMovie.tmdbId
             });
-
-            // 7. Guardar en historial para no repetir
             await mongoDb.collection('autopost_history').insertOne({
                 tmdbId: selectedMovie.tmdbId,
                 timestamp: Date.now()
@@ -420,13 +389,9 @@ module.exports = function(botCtx) {
             console.error("[Auto-Poster] Error en runAutoPoster:", error.message);
         }
     }
-
     async function cleanupOldAutoPosts() {
         try {
-            // Tiempo límite: 4 horas atrás
             const fourHoursAgo = Date.now() - (4 * 60 * 60 * 1000);
-            
-            // Buscar todos los posts que se pasaron de las 4 horas
             const oldPosts = await mongoDb.collection('active_posts').find({ timestamp: { $lt: fourHoursAgo } }).toArray();
             
             for (const post of oldPosts) {
@@ -436,7 +401,6 @@ module.exports = function(botCtx) {
                 } catch (e) {
                     console.warn(`[Auto-Cleaner] No se pudo borrar el mensaje ${post.messageId} en ${post.chatId} (quizás ya fue borrado manualmente).`);
                 }
-                // Limpiar el registro de la DB sin importar si falló el borrado en Telegram
                 await mongoDb.collection('active_posts').deleteOne({ _id: post._id });
             }
         } catch (error) {
