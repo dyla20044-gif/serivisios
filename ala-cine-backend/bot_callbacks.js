@@ -9,11 +9,11 @@ module.exports = function(botCtx, helpers) {
         // Mantenemos los 4 Oficiales (CEOs/Admins reales) y agregamos 5 simulados para llegar a 9
         const personas = [
             { id: 'Dylan Admin', icon: '👑', label: 'Dylan' },
-            { id: 'William', icon: '👤', label: 'William' },
+            { id: 'William', icon: '👤', label: 'yuli' },
             { id: 'Amanda', icon: '👩‍💼', label: 'Amanda' },
-            { id: 'Alexander', icon: '👨‍💼', label: 'Alexander' },
+            { id: 'Alexander', icon: '👨‍💼', label: 'javi' },
             { id: 'Valentina', icon: '👩', label: 'Valentina' },
-            { id: 'Mateo', icon: '👨', label: 'Mateo' },
+            { id: 'Mateo', icon: '👨', label: 'luis' },
             { id: 'Camila', icon: '👩', label: 'Camila' },
             { id: 'Sebastián', icon: '👨', label: 'Sebastián' },
             { id: 'Ximena', icon: '👩', label: 'Ximena' }
