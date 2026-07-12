@@ -6,22 +6,27 @@ module.exports = function(botCtx, helpers) {
     // HELPER: TECLADO MULTI-PERSONA (SALA DE CHAT SIMULADA)
     // =========================================================
     const getPersonaKeyboard = (currentAlias) => {
-        // 9 Identidades Oficiales (Mujeres y Hombres comunes de Ecuador/México)
+        // Mantenemos los 4 Oficiales (CEOs/Admins reales) y agregamos 5 simulados para llegar a 9
         const personas = [
-            'Amanda', 'Ximena', 'Valentina',
-            'Camila', 'Sofia', 'Daniela',
-            'Mateo', 'Sebastián', 'Alejandro'
+            { id: 'Dylan Admin', icon: '👑', label: 'Dylan' },
+            { id: 'William', icon: '👤', label: 'William' },
+            { id: 'Amanda', icon: '👩‍💼', label: 'Amanda' },
+            { id: 'Alexander', icon: '👨‍💼', label: 'Alexander' },
+            { id: 'Valentina', icon: '👩', label: 'Valentina' },
+            { id: 'Mateo', icon: '👨', label: 'Mateo' },
+            { id: 'Camila', icon: '👩', label: 'Camila' },
+            { id: 'Sebastián', icon: '👨', label: 'Sebastián' },
+            { id: 'Ximena', icon: '👩', label: 'Ximena' }
         ];
         
         let rows = [];
         let currentRow = [];
         
         personas.forEach((p) => {
-            const isSelected = currentAlias === p;
-            const icon = ['Amanda', 'Ximena', 'Valentina', 'Camila', 'Sofia', 'Daniela'].includes(p) ? '👩' : '👨';
+            const isSelected = currentAlias === p.id;
             currentRow.push({
-                text: isSelected ? `✅ ${p}` : `${icon} ${p}`,
-                callback_data: `corp_persona_${p}`
+                text: isSelected ? `✅ ${p.icon} ${p.label}` : `${p.icon} ${p.label}`,
+                callback_data: `corp_persona_${p.id}`
             });
             
             if (currentRow.length === 3) {
@@ -287,7 +292,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 }
 
                 const simulatedMembers = 9; 
-                const defaultAlias = 'Amanda';
+                const defaultAlias = adminState[chatId]?.alias || 'Amanda';
 
                 // 1. Forzamos al Admin 1 a estar "Dentro de la Sala"
                 adminState[chatId] = {
