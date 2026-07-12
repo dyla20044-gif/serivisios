@@ -379,6 +379,7 @@ module.exports = function(botCtx) {
 
             let messageText = "";
             if (isTrending) {
+                // Modo Noticia: Se mantiene la línea de "Momento de Tendencia"
                 messageText = `🔥 **¡MOMENTO DE TENDENCIA!** 🔥\n\n` +
                               `Esta película está siendo muy popular en este momento, ¡vayan a verla antes de que se la cuenten!\n\n` +
                               `🎬 *${selectedMovie.title}* ${releaseYear ? `(${releaseYear})` : ''}\n\n` +
@@ -386,8 +387,8 @@ module.exports = function(botCtx) {
                               `👇👇👇 **DESCÁRGALA Y MÍRALA AQUÍ:** 👇👇👇\n` +
                               `${rawAppLink}`;
             } else {
-                messageText = `🟢 **¡DISPONIBLE PARA VER!** 🟢\n\n` +
-                              `🎬 *${selectedMovie.title}* ${releaseYear ? `(${releaseYear})` : ''}\n\n` +
+                // Post Estándar: Empieza directo con la claqueta y el título de la película
+                messageText = `🎬 *${selectedMovie.title}* ${releaseYear ? `(${releaseYear})` : ''}\n\n` +
                               `📝 _${overview}_\n\n` +
                               `👇👇👇 **MIRA LA PELÍCULA AQUÍ:** 👇👇👇\n` +
                               `${rawAppLink}`;
@@ -450,7 +451,7 @@ module.exports = function(botCtx) {
         showEarningsPanel,
         sendFinalSummary,
         handleManageSeries,
-        runAutoPoster,         // Exportado para usar en bot.js
-        cleanupOldAutoPosts    // Exportado para usar en bot.js
+        runAutoPoster,         
+        cleanupOldAutoPosts    
     };
 };
