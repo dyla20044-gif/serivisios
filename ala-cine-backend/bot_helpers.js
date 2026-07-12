@@ -75,6 +75,8 @@ module.exports = function(botCtx) {
             ]
         ];
 
+        // 🟢 MODIFICACIÓN CRÍTICA: Ocultamos el botón corporativo dentro de este bloque
+        // Solo el Admin 1 verá estos botones.
         if (chatId === ADMIN_CHAT_IDS[0]) {
             const adminRow = [];
             if (ADMIN_CHAT_IDS.length > 1) {
@@ -84,15 +86,16 @@ module.exports = function(botCtx) {
             inline_keyboard.push(adminRow);
             
             inline_keyboard.push([{ text: '📡 Gestionar Hub Especial', callback_data: 'manage_special_hub' }]);
+            
+            // 👉 El botón se movió aquí, exclusivo para Admin 1
+            inline_keyboard.push([
+                { text: '💬 Mensajería Corporativa', callback_data: 'corp_chat_start' }
+            ]);
         }
 
         inline_keyboard.push([
             { text: '📢 Alerta Global', callback_data: 'send_global_msg' },
             { text: '📰 Comunicados App', callback_data: 'cms_announcement_menu' }
-        ]);
-
-        inline_keyboard.push([
-            { text: '💬 Mensajería Corporativa', callback_data: 'corp_chat_start' }
         ]);
 
         inline_keyboard.push([
@@ -191,6 +194,7 @@ module.exports = function(botCtx) {
             bot.sendMessage(requestChatId, '❌ Ocurrió un error al consultar la base de datos de ganancias.');
         }
     }
+    
     async function sendFinalSummary(chatId, title, isMovie = true, promptMsgId = null) {
         try {
             if (COMMUNITY_GROUP_ID) {
@@ -362,7 +366,6 @@ module.exports = function(botCtx) {
                               `👇👇👇 **DESCÁRGALA Y MÍRALA AQUÍ:** 👇👇👇\n` +
                               `${rawAppLink}`;
             } else {
-                // Post Estándar: Empieza directo con la claqueta y el título de la película
                 messageText = `🎬 *${selectedMovie.title}* ${releaseYear ? `(${releaseYear})` : ''}\n\n` +
                               `📝 _${overview}_\n\n` +
                               `👇👇👇 **MIRA LA PELÍCULA AQUÍ:** 👇👇👇\n` +
