@@ -6,17 +6,18 @@ module.exports = function(botCtx, helpers) {
     // HELPER: TECLADO MULTI-PERSONA (SALA DE CHAT SIMULADA)
     // =========================================================
     const getPersonaKeyboard = (currentAlias) => {
-        // Mantenemos los 4 Oficiales (CEOs/Admins reales) y agregamos 5 simulados para llegar a 9
+        // 10 Identidades: Dylan + Amanda + mezcla natural de hombres y mujeres
         const personas = [
             { id: 'Dylan Admin', icon: '👑', label: 'Dylan' },
-            { id: 'William', icon: '👤', label: 'yuli' },
             { id: 'Amanda', icon: '👩‍💼', label: 'Amanda' },
-            { id: 'Alexander', icon: '👨‍💼', label: 'javi' },
             { id: 'Valentina', icon: '👩', label: 'Valentina' },
-            { id: 'Mateo', icon: '👨', label: 'luis' },
+            { id: 'Mateo', icon: '👨', label: 'Mateo' },
             { id: 'Camila', icon: '👩', label: 'Camila' },
             { id: 'Sebastián', icon: '👨', label: 'Sebastián' },
-            { id: 'Ximena', icon: '👩', label: 'Ximena' }
+            { id: 'Ximena', icon: '👩', label: 'Ximena' },
+            { id: 'Daniela', icon: '👩', label: 'Daniela' },
+            { id: 'Alejandro', icon: '👨', label: 'Alejandro' },
+            { id: 'Sofia', icon: '👩', label: 'Sofia' }
         ];
         
         let rows = [];
@@ -29,11 +30,16 @@ module.exports = function(botCtx, helpers) {
                 callback_data: `corp_persona_${p.id}`
             });
             
-            if (currentRow.length === 3) {
+            // Filas de 2 botones para que 10 identidades cuadren perfecto
+            if (currentRow.length === 2) {
                 rows.push(currentRow);
                 currentRow = [];
             }
         });
+        
+        if (currentRow.length > 0) {
+            rows.push(currentRow);
+        }
         
         rows.push([{ text: '🛑 Finalizar y Cerrar Sala', callback_data: 'corp_chat_end' }]);
         
@@ -291,7 +297,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                     return;
                 }
 
-                const simulatedMembers = 9; 
+                const simulatedMembers = 10; 
                 const defaultAlias = adminState[chatId]?.alias || 'Amanda';
 
                 // 1. Forzamos al Admin 1 a estar "Dentro de la Sala"
