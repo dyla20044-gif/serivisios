@@ -32,8 +32,45 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_IDS, TMDB_API_KE
 
     // 4. Inicializar los submódulos divididos
     const helpers = initHelpers(botCtx);
+    const { runAutoPoster, cleanupOldAutoPosts } = helpers; // Extraemos las funciones del Auto-Poster
+
     initMessages(botCtx, helpers);
     initCallbacks(botCtx, helpers);
+
+    // =========================================================
+    // NUEVO: SISTEMA DE AUTO-POSTING EN MÚLTIPLES CANALES
+    // =========================================================
+    
+    // Leemos los IDs de los canales separados por comas desde las variables de entorno
+    const autoPostChannelsRaw = process.env.AUTOPOST_CHANNELS || "";
+    const autopostChannels = autoPostChannelsRaw.split(',').map(id => id.trim()).filter(id => id !== "");
+
+    if (autopostChannels.length > 0) {
+        let currentChannelIndex = 0;
+
+        // 1. Cron Job de Publicación (Se ejecuta cada 5 minutos = 300,000 ms)
+        setInterval(async () => {
+            const channelId = autopostChannels[currentChannelIndex];
+            console.log(`[Auto-Poster] Iniciando ciclo para el canal: ${channelId}`);
+            
+            await runAutoPoster(channelId);
+
+            // Rotación Round-Robin: Avanzamos al siguiente canal, si llegamos al final, volvemos a cero.
+            currentChannelIndex++;
+            if (currentChannelIndex >= autopostChannels.length) {
+                currentChannelIndex = 0;
+            }
+        }, 300000); 
+
+        // 2. Cron Job de Limpieza (Se ejecuta cada 1 minuto = 60,000 ms para revisar mensajes viejos)
+        setInterval(async () => {
+            await cleanupOldAutoPosts();
+        }, 60000); 
+
+        console.log(`[Auto-Poster] Sistema iniciado correctamente. Canales configurados: ${autopostChannels.length}`);
+    } else {
+        console.log(`[Auto-Poster] Apagado. No se encontraron canales en la variable AUTOPOST_CHANNELS.`);
+    }
 
     // =========================================================
     // EVENTOS PASIVOS: AUTO-ACEPTACIÓN DE USUARIOS
