@@ -334,108 +334,85 @@ module.exports = function(botCtx, helpers) {
         }
 
         // =========================================================
-        // LÓGICA DE MENSAJERÍA CORPORATIVA (CHAT INTERNO MULTIMEDIA)
+        // LÓGICA DE MENSAJERÍA CORPORATIVA (SALA DE CHAT GRUPAL)
         // =========================================================
         if (adminState[chatId] && adminState[chatId].step && adminState[chatId].step.startsWith('corp_')) {
             const step = adminState[chatId].step;
 
-            if (step === 'corp_await_alias') {
-                if (!userText) { bot.sendMessage(chatId, '❌ Debes enviar un texto con tu Alias.'); return; }
-                const alias = userText.trim();
-                adminState[chatId].alias = alias;
-                adminState[chatId].step = 'corp_select_target'; 
-
-                const adminButtons = [];
-                ADMIN_CHAT_IDS.forEach(id => {
-                    if (id !== chatId) {
-                        adminButtons.push([{ text: `👤 Admin ID: ${id}`, callback_data: `corp_select_${id}` }]);
-                    }
-                });
-                adminButtons.push([{ text: '❌ Cancelar', callback_data: 'back_to_menu' }]);
-
-                const textToEdit = `🏢 **Mensajería Corporativa**\n\n✅ Alias guardado: *${alias}*\n\nSelecciona a quién deseas enviar el comunicado:`;
-                if (adminState[chatId].promptMessageId) {
-                    bot.editMessageText(textToEdit, { chat_id: chatId, message_id: adminState[chatId].promptMessageId, parse_mode: 'Markdown', reply_markup: { inline_keyboard: adminButtons } }).catch(() => {
-                        bot.sendMessage(chatId, textToEdit, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: adminButtons } });
-                    });
-                } else {
-                    bot.sendMessage(chatId, textToEdit, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: adminButtons } });
-                }
-                bot.deleteMessage(chatId, msg.message_id).catch(()=>{});
-                return;
-            }
-
-            else if (step === 'corp_await_first_msg') {
-                const targetId = adminState[chatId].targetId;
-                const alias = adminState[chatId].alias;
+            if (step === 'corp_chat_active') {
                 
-                const header = `🏢 **COMUNICADO OFICIAL** 🏢\n━━━━━━━━━━━━━━━━━━━━━━\n👤 **De:** ${alias}\n\n`;
-                const footer = `\n━━━━━━━━━━━━━━━━━━━━━━`;
-                const replyMarkup = {
-                    inline_keyboard: [
-                        [{ text: `💬 Responder a ${alias}`, callback_data: `corp_reply_${chatId}` }]
-                    ]
-                };
-
-                bot.sendMessage(chatId, `⏳ Enviando comunicado...`).then(async (waitMsg) => {
-                    try {
-                        if (msg.photo || msg.video) {
-                            const caption = msg.caption ? msg.caption : "";
-                            const mediaMsg = header + caption + footer;
-                            
-                            if (msg.photo) {
-                                const fileId = msg.photo[msg.photo.length - 1].file_id;
-                                await bot.sendPhoto(targetId, fileId, { caption: mediaMsg, parse_mode: 'Markdown', reply_markup: replyMarkup });
-                            } else if (msg.video) {
-                                await bot.sendVideo(targetId, msg.video.file_id, { caption: mediaMsg, parse_mode: 'Markdown', reply_markup: replyMarkup });
-                            }
-                        } else {
-                            await bot.sendMessage(targetId, header + userText + footer, { parse_mode: 'Markdown', reply_markup: replyMarkup });
-                        }
-
-                        bot.editMessageText(`✅ **Comunicado enviado a ID: ${targetId}**\nTe notificaremos si responde.`, {
-                            chat_id: chatId, message_id: waitMsg.message_id, parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '🏠 Menú Principal', callback_data: 'back_to_menu' }]] }
-                        });
-                        
-                    } catch (err) {
-                        bot.editMessageText(`❌ Error al enviar el mensaje al Admin ${targetId}.`, { chat_id: chatId, message_id: waitMsg.message_id });
-                    }
-                });
-                
-                // MANTENEMOS EL ALIAS AQUÍ PARA QUE NO SE PIERDA Y APAREZCA BIEN EN EL CHAT ACTIVO
-                adminState[chatId] = { step: 'menu', alias: alias };
-                bot.deleteMessage(chatId, msg.message_id).catch(()=>{});
-                return;
-            }
-
-            else if (step === 'corp_chat_active') {
-                if (userText && userText.startsWith('/')) return; 
-                const partnerId = adminState[chatId].chatPartner;
-                const myAlias = adminState[chatId].alias || 'Admin';
-
-                if (!partnerId) {
+                // 🚦 ESCAPE TÁCTICO: Si el administrador intenta usar un comando (ej: /subir)
+                // lo desconectamos de la sala silenciosamente y permitimos que siga su flujo normal.
+                if (userText && userText.startsWith('/')) {
                     adminState[chatId] = { step: 'menu', alias: adminState[chatId]?.alias };
-                    return;
+                    bot.sendMessage(chatId, "🔌 _Has pausado temporalmente tu conexión a la sala corporativa para usar comandos._", { parse_mode: 'Markdown' });
+                    return; 
                 }
 
+                // Definir identidad y prefijo visual
+                const myAlias = adminState[chatId].alias || msg.from.first_name || 'Admin';
                 const prefix = `💬 *${myAlias}:*\n`;
 
-                try {
-                    if (msg.photo || msg.video) {
-                        const caption = msg.caption ? msg.caption : "";
-                        if (msg.photo) {
-                            const fileId = msg.photo[msg.photo.length - 1].file_id;
-                            await bot.sendPhoto(partnerId, fileId, { caption: prefix + caption, parse_mode: 'Markdown' });
-                        } else if (msg.video) {
-                            await bot.sendVideo(partnerId, msg.video.file_id, { caption: prefix + caption, parse_mode: 'Markdown' });
-                        }
-                    } else {
-                        await bot.sendMessage(partnerId, prefix + userText, { parse_mode: 'Markdown' });
-                    }
-                } catch(e) {
-                    bot.sendMessage(chatId, '⚠️ Error enviando mensaje al otro administrador. ¿Tal vez bloqueó el bot?');
+                const isPhoto = !!msg.photo;
+                const isVideo = !!msg.video;
+                const caption = msg.caption ? msg.caption : "";
+                let fileId = null;
+                
+                if (isPhoto) {
+                    fileId = msg.photo[msg.photo.length - 1].file_id;
+                } else if (isVideo) {
+                    fileId = msg.video.file_id;
                 }
-                return;
+
+                // A. TITIRITERO (ADMIN 1) - Transmite a todos
+                if (chatId === ADMIN_CHAT_IDS[0]) {
+                    const targets = adminState[chatId].activeRoomTargets || [];
+                    
+                    if (targets.length === 0) {
+                        bot.sendMessage(chatId, '⚠️ La sala está activa pero no hay otros administradores conectados.');
+                        return;
+                    }
+
+                    // Transmitir a todos los miembros invitados conectados a la sala
+                    targets.forEach(async (tId) => {
+                        try {
+                            if (isPhoto) {
+                                await bot.sendPhoto(tId, fileId, { caption: prefix + caption, parse_mode: 'Markdown' });
+                            } else if (isVideo) {
+                                await bot.sendVideo(tId, fileId, { caption: prefix + caption, parse_mode: 'Markdown' });
+                            } else {
+                                await bot.sendMessage(tId, prefix + userText, { parse_mode: 'Markdown' });
+                            }
+                        } catch(e) {
+                            console.log(`No se pudo transmitir a ID: ${tId}`);
+                        }
+                    });
+                } 
+                // B. MIEMBROS INVITADOS (ADMIN 2, ADMIN 3, ETC) - Envían y Rebotan
+                else {
+                    // 1. Enviar el mensaje obligatoriamente al Admin 1
+                    try {
+                        if (isPhoto) await bot.sendPhoto(ADMIN_CHAT_IDS[0], fileId, { caption: prefix + caption, parse_mode: 'Markdown' });
+                        else if (isVideo) await bot.sendVideo(ADMIN_CHAT_IDS[0], fileId, { caption: prefix + caption, parse_mode: 'Markdown' });
+                        else await bot.sendMessage(ADMIN_CHAT_IDS[0], prefix + userText, { parse_mode: 'Markdown' });
+                    } catch(e) {}
+
+                    // 2. Simulador de Grupo: Rebotar el mensaje a los demás invitados en la sala
+                    const admin1State = adminState[ADMIN_CHAT_IDS[0]];
+                    const roomTargets = admin1State?.activeRoomTargets || [];
+                    
+                    roomTargets.forEach(async (tId) => {
+                        // Enviamos a todos los que estén conectados, excepto al que originó el mensaje
+                        if (tId !== chatId && adminState[tId] && adminState[tId].step === 'corp_chat_active') {
+                            try {
+                                if (isPhoto) await bot.sendPhoto(tId, fileId, { caption: prefix + caption, parse_mode: 'Markdown' });
+                                else if (isVideo) await bot.sendVideo(tId, fileId, { caption: prefix + caption, parse_mode: 'Markdown' });
+                                else await bot.sendMessage(tId, prefix + userText, { parse_mode: 'Markdown' });
+                            } catch(e) {}
+                        }
+                    });
+                }
+                return; // Importante: salir aquí para no gatillar otras búsquedas de películas
             }
         }
 
