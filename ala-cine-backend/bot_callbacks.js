@@ -8,15 +8,15 @@ module.exports = function(botCtx, helpers) {
     const getPersonaKeyboard = (currentAlias) => {
         // 10 Identidades: Dylan + Amanda + mezcla natural de hombres y mujeres
         const personas = [
-            { id: 'Dylan Admin', icon: '👑', label: 'Dylan' },
-            { id: 'Amanda', icon: '👩‍💼', label: 'Amanda' },
+            { id: 'Dylan admin CEO', icon: '👑', label: 'Dylan' },
+            { id: 'mati', icon: '👩‍💼', label: 'mati' },
             { id: 'Valentina', icon: '👩', label: 'Valentina' },
-            { id: 'Mateo', icon: '👨', label: 'Mateo' },
-            { id: 'Camila', icon: '👩', label: 'Camila' },
+            { id: 'María', icon: '👨', label: 'María' },
+            { id: 'José', icon: '👩', label: 'José' },
             { id: 'Sebastián', icon: '👨', label: 'Sebastián' },
-            { id: 'Ximena', icon: '👩', label: 'Ximena' },
-            { id: 'Daniela', icon: '👩', label: 'Daniela' },
-            { id: 'Alejandro', icon: '👨', label: 'Alejandro' },
+            { id: 'paula', icon: '👩', label: 'paula' },
+            { id: 'lusi', icon: '👩', label: 'lusi' },
+            { id: 'Jorge', icon: '👨', label: 'Jorge' },
             { id: 'Sofia', icon: '👩', label: 'Sofia' }
         ];
         
