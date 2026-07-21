@@ -27,6 +27,7 @@ module.exports = function(botCtx) {
             }
         }, 900000); 
     }
+    
     const clearLiveCache = () => {
         try {
             if (typeof global !== 'undefined' && global.ctx && global.ctx.caches && global.ctx.caches.liveCache) {
@@ -40,6 +41,7 @@ module.exports = function(botCtx) {
             console.warn("[Bot] Excepción intentando limpiar liveCache:", e.message);
         }
     };
+    
     const clearAllCaches = () => {
         try {
             if (typeof global !== 'undefined' && global.ctx && global.ctx.caches) {
@@ -75,8 +77,6 @@ module.exports = function(botCtx) {
             ]
         ];
 
-        // 🟢 MODIFICACIÓN CRÍTICA: Ocultamos el botón corporativo dentro de este bloque
-        // Solo el Admin 1 verá estos botones.
         if (chatId === ADMIN_CHAT_IDS[0]) {
             const adminRow = [];
             if (ADMIN_CHAT_IDS.length > 1) {
@@ -87,7 +87,6 @@ module.exports = function(botCtx) {
             
             inline_keyboard.push([{ text: '📡 Gestionar Hub Especial', callback_data: 'manage_special_hub' }]);
             
-            // 👉 El botón se movió aquí, exclusivo para Admin 1
             inline_keyboard.push([
                 { text: '💬 Mensajería Corporativa', callback_data: 'corp_chat_start' }
             ]);
@@ -307,102 +306,179 @@ module.exports = function(botCtx) {
             bot.sendMessage(chatId, 'Error al obtener los detalles de la serie desde TMDB.');
         }
     }
-    async function runAutoPoster(channelId) {
+
+    // =========================================================
+    // LÓGICA DE AUTO-POSTER CON TEMÁTICAS DIARIAS
+    // =========================================================
+    async function runAutoPoster(channelId, timeOfDay = 'noche') {
         try {
-            let trendingTmdbIds = [];
-            try {
-                const trendingUrl = `https://api.themoviedb.org/3/trending/movie/day?api_key=${TMDB_API_KEY}&language=es-ES`;
-                const trendRes = await axios.get(trendingUrl);
-                if (trendRes.data && trendRes.data.results) {
-                    trendingTmdbIds = trendRes.data.results.slice(0, 10).map(m => m.id.toString());
-                }
-            } catch (e) { 
-                console.warn("[Auto-Poster] Error obteniendo tendencias TMDB:", e.message); 
+            // Determinar el día de la semana basado en hora de Ecuador
+            const ecTime = new Date(new Date().toLocaleString("en-US", {timeZone: "America/Guayaquil"}));
+            const dayOfWeek = ecTime.getDay(); // 0: Dom, 1: Lun, 2: Mar, 3: Mie, 4: Jue, 5: Vie, 6: Sab
+
+            let themeText = "";
+            let targetCollection = 'media_catalog'; // Por defecto busca películas
+            let genreFilter = null;
+            let isEstrenoDay = false;
+
+            // Definición de las temáticas por día
+            switch (dayOfWeek) {
+                case 1: // Lunes: Comedia, Animación, Familia
+                    themeText = "🍿 **¡FELIZ LUNES!** Empieza la semana con la mejor energía y esta gran recomendación:";
+                    genreFilter = { $in: [35, 10751, 16] }; 
+                    break;
+                case 2: // Martes: Acción, Aventura
+                    themeText = "💥 **¡MARTES DE ACCIÓN!** Sube la adrenalina y prepárate para esta película:";
+                    genreFilter = { $in: [28, 12] }; 
+                    break;
+                case 3: // Miércoles: Series
+                    themeText = "📺 **¡MITAD DE SEMANA!** Hoy es día de apagar el cerebro y engancharte con una buena SERIE:";
+                    targetCollection = 'series_catalog'; // Cambiamos la búsqueda al catálogo de series
+                    break;
+                case 4: // Jueves: Terror, Suspenso
+                    themeText = "👻 **¡JUEVES DE TERROR Y SUSPENSO!** Apaga las luces, ponte los audífonos y disfruta:";
+                    genreFilter = { $in: [27, 53] }; 
+                    break;
+                case 5: // Viernes: Estrenos
+                    themeText = "🎉 **¡POR FIN VIERNES!** Arrancamos el fin de semana con lo mejor de la bóveda:";
+                    isEstrenoDay = true;
+                    break;
+                case 6: // Sábado: Estrenos
+                    themeText = "🚀 **¡SÁBADO DE ESTRENOS!** Prepara las palomitas porque hoy toca ver las películas más top:";
+                    isEstrenoDay = true;
+                    break;
+                case 0: // Domingo: Estrenos / General
+                    themeText = "🛋️ **¡DOMINGO DE RELAX!** Termina la semana descansando con este peliculón:";
+                    isEstrenoDay = true;
+                    break;
             }
-            const recentPosts = await mongoDb.collection('autopost_history').find().sort({ timestamp: -1 }).limit(80).toArray();
+
+            // Excluir contenido que ya fue publicado recientemente
+            const recentPosts = await mongoDb.collection('autopost_history').find().sort({ timestamp: -1 }).limit(100).toArray();
             const recentIds = recentPosts.map(p => p.tmdbId);
-            const linkRegex = /\.(mp4|mkv|avi|m3u8)/i;
             
-            const pipeline = [
-                { $match: { tmdbId: { $nin: recentIds } } },
-                { $match: { 
-                    $or: [
-                        { freeEmbedCode: { $regex: linkRegex } },
-                        { proEmbedCode: { $regex: linkRegex } },
-                        { links: { $elemMatch: { $regex: linkRegex } } }
-                    ]
-                }},
-                { $addFields: { is2026: { $cond: [{ $regexMatch: { input: "$release_date", regex: /^2026/ } }, 1, 0] } } },
-    
-                { $sort: { is2026: -1, release_date: -1 } },
-                { $limit: 20 } 
+            const linkRegex = /\.(mp4|mkv|avi|m3u8)/i;
+            let pipeline = [
+                { $match: { tmdbId: { $nin: recentIds } } }
             ];
 
-            const candidates = await mongoDb.collection('media_catalog').aggregate(pipeline).toArray();
+            // Configuramos la búsqueda dependiendo de si toca serie o película
+            if (targetCollection === 'series_catalog') {
+                pipeline.push({ $sample: { size: 10 } }); // Elegimos series al azar
+            } else {
+                // Filtramos asegurando que la película tenga enlaces válidos
+                pipeline.push({ $match: { 
+                    $or: [
+                        { freeEmbedCode: { $regex: linkRegex } },
+                        { links: { $elemMatch: { $regex: linkRegex } } }
+                    ]
+                }});
+
+                if (isEstrenoDay) {
+                    // Fin de semana: Filtramos los del año 2026 y los ordenamos por fecha
+                    pipeline.push({ $match: { release_date: { $regex: /^2026/ } } });
+                    pipeline.push({ $sort: { release_date: -1 } });
+                    pipeline.push({ $limit: 10 });
+                } else if (genreFilter) {
+                    // Entre semana: Filtramos por el género del día
+                    pipeline.push({ $match: { genres: genreFilter } });
+                    pipeline.push({ $sample: { size: 10 } });
+                } else {
+                    pipeline.push({ $sample: { size: 10 } });
+                }
+            }
+
+            let candidates = await mongoDb.collection(targetCollection).aggregate(pipeline).toArray();
+
+            // PLAN B (Fallback): Si no hay películas del género de hoy, buscamos una aleatoria para no dejar el canal vacío.
+            if (candidates.length === 0) {
+                console.log(`[Auto-Poster] No se encontraron candidatos para el filtro actual. Activando Plan B (Aleatorio).`);
+                candidates = await mongoDb.collection('media_catalog').aggregate([
+                    { $match: { tmdbId: { $nin: recentIds } } },
+                    { $match: { 
+                        $or: [
+                            { freeEmbedCode: { $regex: linkRegex } },
+                            { links: { $elemMatch: { $regex: linkRegex } } }
+                        ]
+                    }},
+                    { $sample: { size: 5 } }
+                ]).toArray();
+                
+                // Ajustamos el texto si tuvimos que usar el plan B y perdimos la temática
+                themeText = "🎬 **¡NUEVA RECOMENDACIÓN!** Tenemos esta joya guardada para ti:";
+                targetCollection = 'media_catalog';
+            }
 
             if (candidates.length === 0) {
-                console.log("[Auto-Poster] No hay películas candidatas nuevas. Esperando próximo ciclo.");
+                console.log("[Auto-Poster] No hay contenido candidato nuevo en absoluto. Esperando próximo ciclo.");
                 return;
             }
-            const selectedMovie = candidates[Math.floor(Math.random() * Math.min(candidates.length, 5))];
 
-            const isTrending = trendingTmdbIds.includes(selectedMovie.tmdbId);
-            const posterUrl = selectedMovie.poster_path ? (selectedMovie.poster_path.startsWith('http') ? selectedMovie.poster_path : `https://image.tmdb.org/t/p/w500${selectedMovie.poster_path}`) : 'https://placehold.co/500x750?text=SALA+CINE';
+            // Seleccionamos al azar uno de los candidatos encontrados
+            const selectedMedia = candidates[Math.floor(Math.random() * candidates.length)];
+            const posterUrl = selectedMedia.poster_path ? (selectedMedia.poster_path.startsWith('http') ? selectedMedia.poster_path : `https://image.tmdb.org/t/p/w500${selectedMedia.poster_path}`) : 'https://placehold.co/500x750?text=SALA+CINE';
     
-            let overview = selectedMovie.overview || "Una increíble historia te espera...";
+            let overview = selectedMedia.overview || "Una increíble historia te espera...";
             if (overview.length > 160) {
                 overview = overview.substring(0, 157) + "...";
             }
 
-            const releaseYear = selectedMovie.release_date ? selectedMovie.release_date.substring(0, 4) : "";
+            const releaseYear = (selectedMedia.release_date || selectedMedia.first_air_date) ? (selectedMedia.release_date || selectedMedia.first_air_date).substring(0, 4) : "";
             const rawAppLink = "https://play.google.com/store/apps/details?id=com.salacine.app";
+            const titleToShow = selectedMedia.title || selectedMedia.name;
+            const mediaTypeIcon = targetCollection === 'series_catalog' ? '📺' : '🎬';
 
-            let messageText = "";
-            if (isTrending) {
-                messageText = `🔥 **¡MOMENTO DE TENDENCIA!** 🔥\n\n` +
-                              `Esta película está siendo muy popular en este momento, ¡vayan a verla antes de que se la cuenten!\n\n` +
-                              `🎬 *${selectedMovie.title}* ${releaseYear ? `(${releaseYear})` : ''}\n\n` +
-                              `📝 _${overview}_\n\n` +
-                              `👇👇👇 **DESCÁRGALA Y MÍRALA AQUÍ:** 👇👇👇\n` +
-                              `${rawAppLink}`;
-            } else {
-                messageText = `🎬 *${selectedMovie.title}* ${releaseYear ? `(${releaseYear})` : ''}\n\n` +
-                              `📝 _${overview}_\n\n` +
-                              `👇👇👇 **MIRA LA PELÍCULA AQUÍ:** 👇👇👇\n` +
-                              `${rawAppLink}`;
+            let finalMessageText = `${themeText}\n\n` +
+                                   `${mediaTypeIcon} *${titleToShow}* ${releaseYear ? `(${releaseYear})` : ''}\n\n` +
+                                   `📝 _${overview}_\n\n` +
+                                   `👇👇👇 **DESCÁRGALA Y MÍRALA AQUÍ:** 👇👇👇\n` +
+                                   `${rawAppLink}`;
+
+            // Control de notificaciones: Silencio en la mañana y tarde, Sonido en la noche.
+            let disableNotification = false;
+            if (timeOfDay === 'mañana' || timeOfDay === 'tarde') {
+                disableNotification = true;
             }
+
             const sentMsg = await bot.sendPhoto(channelId, posterUrl, {
-                caption: messageText,
-                parse_mode: 'Markdown'
+                caption: finalMessageText,
+                parse_mode: 'Markdown',
+                disable_notification: disableNotification
             });
+
             await mongoDb.collection('active_posts').insertOne({
                 messageId: sentMsg.message_id,
                 chatId: channelId,
                 timestamp: Date.now(),
-                tmdbId: selectedMovie.tmdbId
+                tmdbId: selectedMedia.tmdbId
             });
             await mongoDb.collection('autopost_history').insertOne({
-                tmdbId: selectedMovie.tmdbId,
+                tmdbId: selectedMedia.tmdbId,
                 timestamp: Date.now()
             });
 
-            console.log(`[Auto-Poster] Publicada: ${selectedMovie.title} en el canal ${channelId}`);
+            console.log(`[Auto-Poster] Publicado: ${titleToShow} en el canal ${channelId} (Temática: Día ${dayOfWeek}, Sonido: ${!disableNotification})`);
 
         } catch (error) {
             console.error("[Auto-Poster] Error en runAutoPoster:", error.message);
         }
     }
+
+    // =========================================================
+    // LÓGICA DE LIMPIEZA AUTOMÁTICA (48 HORAS)
+    // =========================================================
     async function cleanupOldAutoPosts() {
         try {
-            const fourHoursAgo = Date.now() - (4 * 60 * 60 * 1000);
-            const oldPosts = await mongoDb.collection('active_posts').find({ timestamp: { $lt: fourHoursAgo } }).toArray();
+            // Ajustado a 48 horas exactas (2 días)
+            const fortyEightHoursAgo = Date.now() - (48 * 60 * 60 * 1000);
+            const oldPosts = await mongoDb.collection('active_posts').find({ timestamp: { $lt: fortyEightHoursAgo } }).toArray();
             
             for (const post of oldPosts) {
                 try {
                     await bot.deleteMessage(post.chatId, post.messageId);
                     console.log(`[Auto-Cleaner] Post ${post.messageId} eliminado exitosamente del canal ${post.chatId}`);
                 } catch (e) {
-                    console.warn(`[Auto-Cleaner] No se pudo borrar el mensaje ${post.messageId} en ${post.chatId} (quizás ya fue borrado manualmente).`);
+                    console.warn(`[Auto-Cleaner] No se pudo borrar el mensaje ${post.messageId} en el canal ${post.chatId}.`);
                 }
                 await mongoDb.collection('active_posts').deleteOne({ _id: post._id });
             }
