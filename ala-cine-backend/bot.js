@@ -38,7 +38,7 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_IDS, TMDB_API_KE
     initCallbacks(botCtx, helpers);
 
     // =========================================================
-    // NUEVO: SISTEMA DE AUTO-POSTING EN MÚLTIPLES CANALES
+    // NUEVO: SISTEMA DE AUTO-POSTING CON RECESOS Y PARRILLA
     // =========================================================
     
     // Leemos los IDs de los canales separados por comas desde las variables de entorno
@@ -48,26 +48,42 @@ function initializeBot(bot, db, mongoDb, adminState, ADMIN_CHAT_IDS, TMDB_API_KE
     if (autopostChannels.length > 0) {
         let currentChannelIndex = 0;
 
-        // 1. Cron Job de Publicación (Se ejecuta cada 5 minutos = 300,000 ms)
+        // 1. Cron Job de Publicación (Se ejecuta cada 1 HORA = 3,600,000 ms)
+        // Esto crea el "receso" secuencial entre cada canal.
         setInterval(async () => {
             const channelId = autopostChannels[currentChannelIndex];
-            console.log(`[Auto-Poster] Iniciando ciclo para el canal: ${channelId}`);
             
-            await runAutoPoster(channelId);
+            // Calculamos la hora actual en la zona horaria de Ecuador (Zaruma)
+            const ecTime = new Date(new Date().toLocaleString("en-US", {timeZone: "America/Guayaquil"}));
+            const hour = ecTime.getHours();
+            
+            // Estrategia de Parrilla (Mañana, Tarde, Noche)
+            let timeOfDay = 'noche'; // Por defecto el Prime Time
+            if (hour >= 6 && hour < 13) {
+                timeOfDay = 'mañana'; // De 6 AM a 12:59 PM
+            } else if (hour >= 13 && hour < 19) {
+                timeOfDay = 'tarde'; // De 1 PM a 6:59 PM
+            }
+            
+            console.log(`[Auto-Poster] Iniciando ciclo (${timeOfDay}) para el canal: ${channelId}`);
+            
+            // Le pasamos la etiqueta de tiempo a la función
+            await runAutoPoster(channelId, timeOfDay);
 
-            // Rotación Round-Robin: Avanzamos al siguiente canal, si llegamos al final, volvemos a cero.
+            // Rotación Round-Robin: Avanzamos al siguiente canal para la próxima hora
             currentChannelIndex++;
             if (currentChannelIndex >= autopostChannels.length) {
                 currentChannelIndex = 0;
             }
-        }, 300000); 
+        }, 3600000); // 3600000 ms = 1 HORA EXACTA de receso
 
-        // 2. Cron Job de Limpieza (Se ejecuta cada 1 minuto = 60,000 ms para revisar mensajes viejos)
+        // 2. Cron Job de Limpieza (Anti-Copyright)
+        // Se revisa cada 1 hora en lugar de cada minuto para ahorrar memoria RAM
         setInterval(async () => {
             await cleanupOldAutoPosts();
-        }, 60000); 
+        }, 3600000); 
 
-        console.log(`[Auto-Poster] Sistema iniciado correctamente. Canales configurados: ${autopostChannels.length}`);
+        console.log(`[Auto-Poster] Sistema iniciado con pausas de 1 hora. Canales configurados: ${autopostChannels.length}`);
     } else {
         console.log(`[Auto-Poster] Apagado. No se encontraron canales en la variable AUTOPOST_CHANNELS.`);
     }
