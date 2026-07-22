@@ -1,11 +1,9 @@
 document.addEventListener('DOMContentLoaded', () => {
-    // Modal Principal
     const modal = document.getElementById('legalModal');
     const mainApp = document.getElementById('mainApp');
     const acceptBtn = document.getElementById('acceptBtn');
     mainApp.style.filter = 'blur(8px)';
 
-    // Navegación Inferior (Tabs)
     const navItems = document.querySelectorAll('.nav-item');
     const tabSections = document.querySelectorAll('.tab-section');
 
@@ -24,7 +22,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // Modales Secundarios
     const closeBtns = document.querySelectorAll('.close-modal');
     closeBtns.forEach(btn => {
         btn.addEventListener('click', () => {
@@ -48,20 +45,16 @@ document.addEventListener('DOMContentLoaded', () => {
     // CONFIGURACIÓN DE USUARIOS (AVATARES Y NOMBRES)
     // ==========================================
     const ADMIN_2_ID = "00000000"; // <--- Pega aquí el ID de Telegram del Admin 2
-    const ADMIN_2_PHOTO = "https://iili.io/CTsdfdN.jpg"; // <--- URL de la foto del Admin 2
-    const ADMIN_2_NAME = "Nadia"; // Nombre a mostrar
+    const ADMIN_2_PHOTO = "https://iili.io/CTsdfdN.jpg"; 
+    const ADMIN_2_NAME = "Nadia"; 
 
     const ADMIN_1_ID = "11111111"; // <--- Pega aquí tu ID de Telegram (Dylan)
-    const ADMIN_1_PHOTO = "https://tu-imagen-aqui.jpg"; // <--- Tu foto de perfil
+    const ADMIN_1_PHOTO = "https://tu-imagen-aqui.jpg"; 
     const ADMIN_1_NAME = "Dylan (CEO)";
     
-    // ==========================================
-    // LÓGICA DE BOTONES DE RETIRO Y ADELANTO
-    // ==========================================
     const btnConfirmarAdelanto = document.getElementById('btnConfirmarAdelanto');
     if (btnConfirmarAdelanto) {
         btnConfirmarAdelanto.addEventListener('click', () => {
-            // Te redirige a tu usuario de Telegram
             window.location.href = 'https://t.me/Dylan_1m_oficial'; 
         });
     }
@@ -73,9 +66,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // ==========================================
-    // LÓGICA DE CONEXIÓN AL SERVIDOR
-    // ==========================================
     const urlParams = new URLSearchParams(window.location.search);
     const uploaderId = urlParams.get('uid');
 
@@ -109,7 +99,6 @@ document.addEventListener('DOMContentLoaded', () => {
     async function iniciarConexionServidor(uid) {
         document.getElementById('userIdDisplay').innerText = `ID: ${uid}`;
         
-        // Configurar Nombre y Foto de Perfil basado en el ID
         const userInitialSpan = document.getElementById('userInitial');
         const userAvatarImg = document.getElementById('userAvatarImg');
         const userNameDisplay = document.getElementById('userNameDisplay');
@@ -148,10 +137,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     document.getElementById('valPelisSubidas').innerText = f.moviesSubidas;
                     document.getElementById('valSeriesSubidas').innerText = f.episodiosSubidos;
 
-                    // LÓGICA DE FLECHA DE RENDIMIENTO (Sube / Baja comparado con ayer)
                     const trendIcon = document.getElementById('trendIcon');
                     const trendText = document.getElementById('trendText');
-                    const ayer = f.yesterdayEarned || 0.01; // Fallback si ayer hizo 0
+                    const ayer = f.yesterdayEarned || 0.01; 
                     const hoy = f.todayEarned;
 
                     if (hoy >= ayer) {
@@ -168,7 +156,6 @@ document.addEventListener('DOMContentLoaded', () => {
                         trendText.innerText = `-${percent}% bajando`;
                     }
 
-                    // Llenar películas más pedidas
                     const listPedidas = document.getElementById('topPedidasList');
                     listPedidas.innerHTML = '';
                     if (data.topRequests && data.topRequests.length > 0) {
@@ -179,13 +166,11 @@ document.addEventListener('DOMContentLoaded', () => {
                         listPedidas.innerHTML = '<li>No hay solicitudes pendientes.</li>';
                     }
 
+                    const listaRecientes = document.getElementById('listaGananciasRecientes');
                     if(f.todayEarned > 0) {
-                        const listaRecientes = document.getElementById('listaGananciasRecientes');
-                        const time = new Date().toLocaleTimeString('es-ES', {hour: '2-digit', minute:'2-digit', second:'2-digit'});
-                        const li = document.createElement('li');
-                        li.innerHTML = `<span><i class="fa-regular fa-clock"></i> Hoy ${time}</span> <strong class="text-green">+$${f.currentPayoutRate.toFixed(3)}</strong>`;
-                        listaRecientes.prepend(li);
-                        if(listaRecientes.children.length > 5) listaRecientes.lastChild.remove();
+                        listaRecientes.innerHTML = `<li><span><i class="fa-solid fa-check-circle text-green"></i> Sistema de monetización activo y registrando vistas</span></li>`;
+                    } else {
+                        listaRecientes.innerHTML = `<li><span><i class="fa-solid fa-clock text-muted"></i> Esperando nuevas visualizaciones...</span></li>`;
                     }
                 }
             } catch (e) { console.error("Error fetching stats:", e); }
