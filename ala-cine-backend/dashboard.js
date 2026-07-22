@@ -3,50 +3,77 @@ document.addEventListener('DOMContentLoaded', () => {
     const dashboard = document.getElementById('mainDashboard');
     const acceptBtn = document.getElementById('acceptBtn');
 
+    // 1. CAPTURAR EL ID DEL USUARIO DESDE LA URL DE TELEGRAM
+    const urlParams = new URLSearchParams(window.location.search);
+    const uploaderId = urlParams.get('uid');
+
     // Quitar modal al aceptar
     acceptBtn.addEventListener('click', () => {
         modal.style.opacity = '0';
         setTimeout(() => {
             modal.style.display = 'none';
             dashboard.classList.remove('blur-background');
-            iniciarSimulador();
+            
+            // Validar que el usuario sí entró desde el bot
+            if (uploaderId) {
+                iniciarActualizacionReal(uploaderId);
+            } else {
+                alert("⚠️ Error: No se encontró tu ID de usuario. Por favor, abre este panel directamente desde el menú del bot de Telegram.");
+            }
         }, 400);
     });
 
-    // Referencias a los IDs donde inyectaremos los números
+    // Referencias a los IDs en el HTML donde inyectaremos los números
     const elHoy = document.getElementById('valHoy');
     const elMes = document.getElementById('valMes');
     const elTotal = document.getElementById('valTotal');
 
-    // Valores iniciales exactos pasados por el usuario
-    let gananciasHoy = 1.00;
-    let gananciasMes = 11.00;
-    let gananciasTotal = 237.18;
+    // Variables locales para evitar animar si el número no ha cambiado
+    let currentHoy = -1;
+    let currentMes = -1;
+    let currentTotal = -1;
 
-    // Función para animar cambio de valor sin recargar
-    function updateValueHTML(element, value) {
-        element.innerText = `USD${value.toFixed(2)}`;
-        element.classList.remove('flash-update');
-        // Pequeño hack para reiniciar la animación CSS
-        void element.offsetWidth;
-        element.classList.add('flash-update');
+    // Función para animar cambio de valor visualmente (Flasheo verde)
+    function updateValueHTML(element, newValue, oldValue) {
+        if (newValue !== oldValue) {
+            element.innerText = `USD${newValue.toFixed(2)}`;
+            element.classList.remove('flash-update');
+            // Hack para reiniciar la animación CSS
+            void element.offsetWidth;
+            element.classList.add('flash-update');
+        }
     }
 
-    // Simulador de ingresos en tiempo real (Vistas entrando)
-    function iniciarSimulador() {
+    // 2. FUNCIÓN PARA LLAMAR AL SERVIDOR REAL (routes_stats.js)
+    async function obtenerFinanzasReales(uid) {
+        try {
+            const respuesta = await fetch(`/api/uploader-stats/${uid}`);
+            const data = await respuesta.json();
+
+            if (data.success) {
+                // Actualizar los valores en pantalla con lo que manda la base de datos
+                updateValueHTML(elHoy, data.finances.todayEarned, currentHoy);
+                updateValueHTML(elMes, data.finances.monthEarned, currentMes);
+                updateValueHTML(elTotal, data.finances.totalGeneradoGlobal, currentTotal);
+
+                // Guardar el estado actual
+                currentHoy = data.finances.todayEarned;
+                currentMes = data.finances.monthEarned;
+                currentTotal = data.finances.totalGeneradoGlobal;
+            }
+        } catch (error) {
+            console.error("Error conectando con el servidor de finanzas:", error);
+        }
+    }
+
+    // 3. INICIAR EL BUCLE EN TIEMPO REAL (Llama al backend cada 5 segundos)
+    function iniciarActualizacionReal(uid) {
+        // Primera llamada inmediata apenas cierra el modal
+        obtenerFinanzasReales(uid);
+
+        // Llamadas repetitivas cada 5 segundos para mantener el "Tiempo Real"
         setInterval(() => {
-            // Simulamos que entra una pequeña ganancia por vista (ej: $0.01 a $0.05)
-            const gananciaAleatoria = (Math.random() * 0.04 + 0.01);
-            
-            gananciasHoy += gananciaAleatoria;
-            gananciasMes += gananciaAleatoria;
-            gananciasTotal += gananciaAleatoria;
-
-            // Actualizamos el DOM
-            updateValueHTML(elHoy, gananciasHoy);
-            updateValueHTML(elMes, gananciasMes);
-            updateValueHTML(elTotal, gananciasTotal);
-
-        }, 4500); // Se actualiza cada 4.5 segundos para dar efecto de "Tiempo Real"
+            obtenerFinanzasReales(uid);
+        }, 5000); 
     }
 });
