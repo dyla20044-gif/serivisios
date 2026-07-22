@@ -78,7 +78,7 @@
                 <div class="ganancia-grid">
                     <div>
                         <h3 id="valTotal">$0.00</h3>
-                        <p>TOTAL GENERADO</p>
+                        <p>TOTAL</p>
                     </div>
                     <div>
                         <h3 class="text-yellow" id="valSinRetirar">$0.00</h3>
@@ -96,10 +96,20 @@
                 <i class="fa-solid fa-rocket"></i> ¿Quieres ganar más dinero? Mira qué subir
             </button>
 
+            <!-- NUEVO: TARJETA DE RENDIMIENTO (Flecha sube/baja) -->
+            <div class="card dark-card" id="rendimientoCard">
+                <div class="section-title space-between">
+                    <h3>RENDIMIENTO DIARIO</h3>
+                    <span id="trendIcon" class="text-green"><i class="fa-solid fa-arrow-trend-up"></i></span>
+                </div>
+                <p style="font-size: 13px; color: var(--text-muted);">Comparado con las ganancias de ayer:</p>
+                <h2 id="trendText" class="text-green" style="margin-top: 10px;">Calculando...</h2>
+            </div>
+
             <div class="card dark-card">
                 <div class="section-title">
                     <h3>GANANCIAS RECIENTES</h3>
-                    <p class="subtitle"><i class="fa-solid fa-circle-info"></i> En tiempo real, sistema anti-colapso.</p>
+                    <p class="subtitle"><i class="fa-solid fa-circle-info"></i> Actualizado en tiempo real.</p>
                 </div>
                 <ul class="lista-recientes" id="listaGananciasRecientes">
                     <!-- Se llena con JS -->
@@ -152,7 +162,7 @@
                     <div><h3 id="valSeriesSubidas">0</h3><p>EPISODIOS</p></div>
                 </div>
 
-                <button class="btn-primary" style="margin-bottom: 10px;"><i class="fa-solid fa-money-bill-transfer"></i> SOLICITAR RETIRO</button>
+                <button class="btn-primary" id="btnSolicitarRetiro" style="margin-bottom: 10px;"><i class="fa-solid fa-money-bill-transfer"></i> SOLICITAR RETIRO</button>
                 <button class="btn-outline" id="btnAbrirAdelanto"><i class="fa-solid fa-hand-holding-dollar"></i> PEDIR ADELANTO (50%)</button>
             </div>
 
@@ -175,10 +185,12 @@
             </div>
 
             <div class="profile-header">
+                <!-- NUEVO: Estructura de la foto de perfil -->
                 <div class="avatar">
                     <span id="userInitial">U</span>
+                    <img id="userAvatarImg" src="" alt="Perfil" style="display: none; width: 100%; height: 100%; border-radius: 50%; object-fit: cover;">
                 </div>
-                <h2 id="userNameDisplay">Uploader</h2>
+                <h2 id="userNameDisplay">Cargando...</h2>
                 <p class="text-muted" id="userIdDisplay">ID: -----</p>
             </div>
 
