@@ -2,12 +2,17 @@ module.exports = function(app, ctx) {
     const { mongoDb, caches, REVENUE_SETTINGS } = ctx;
     const { pendingViewsCache } = caches;
 
-    // 1. ENDPOINT PARA LA APP ANDROID (Registra vistas)
+    // 1. ENDPOINT PARA LA APP ANDROID (Registra vistas con Sistema Anti-Spam)
     app.post('/api/track-view/:tmdbId', (req, res) => {
         const tmdbId = req.params.tmdbId;
         if (!tmdbId) return res.status(400).send({ error: "Falta ID" });
+        
         const currentViews = pendingViewsCache.get(tmdbId) || 0;
-        pendingViewsCache.set(tmdbId, currentViews + 1);
+        
+        // SOLUCIÓN ANTI-SPAM: En lugar de sumar 1, sumamos 0.5. 
+        // Así se necesitan 2 peticiones (clics) para sumar 1 vista real pagada.
+        pendingViewsCache.set(tmdbId, currentViews + 0.5);
+        
         res.status(200).send({ success: true, cached: true });
     });
 
@@ -16,21 +21,36 @@ module.exports = function(app, ctx) {
         try {
             const uploaderId = parseInt(req.params.uploaderId);
             if (isNaN(uploaderId)) return res.status(400).json({ error: "ID inválido" });
-            const db = ctx.getMongoDb();
+            
+            const db = typeof ctx.getMongoDb === 'function' ? ctx.getMongoDb() : ctx.mongoDb;
             if (!db) return res.status(500).json({ error: "DB no conectada" });
 
+            // Configuraciones de Fechas (Hoy, Mes y Ayer)
             const now = new Date();
             const dayId = now.toISOString().split('T')[0];
             const monthId = dayId.substring(0, 7);
+            
+            // Calcular la fecha exacta de ayer para la flecha de rendimiento
+            const ayer = new Date(now);
+            ayer.setDate(ayer.getDate() - 1);
+            const yesterdayId = ayer.toISOString().split('T')[0];
 
-            // Estadísticas de hoy y del mes
+            // Estadísticas de hoy
             const todayStats = await db.collection('uploader_daily_stats').findOne({ uploaderId: uploaderId, dayId: dayId });
             const todayEarned = todayStats?.today_earned || 0;
 
-            const monthlyDocs = await db.collection('uploader_daily_stats').find({ uploaderId: uploaderId, monthId: monthId }).project({ today_earned: 1 }).toArray();
+            // Estadísticas de ayer (Para calcular el porcentaje Sube/Baja)
+            const yesterdayStats = await db.collection('uploader_daily_stats').findOne({ uploaderId: uploaderId, dayId: yesterdayId });
+            const yesterdayEarned = yesterdayStats?.today_earned || 0.01; // 0.01 de fallback para evitar divisiones por cero
+
+            // Estadísticas de todo el mes
+            const monthlyDocs = await db.collection('uploader_daily_stats')
+                .find({ uploaderId: uploaderId, monthId: monthId })
+                .project({ today_earned: 1 })
+                .toArray();
             const monthEarned = monthlyDocs.reduce((sum, doc) => sum + (doc.today_earned || 0), 0);
 
-            // Histórico global
+            // Histórico global y recolección de BONOS (Recompensas)
             const historicalStats = await db.collection('uploader_revenue').aggregate([
                 { $match: { uploaderId: uploaderId } },
                 { $group: {
@@ -38,6 +58,7 @@ module.exports = function(app, ctx) {
                     totalEarned: { $sum: "$earned" },
                     totalMovies: { $sum: { $cond: [{ $eq: ["$mediaType", "movie"] }, 1, 0] } },
                     totalEpisodes: { $sum: { $cond: [{ $eq: ["$mediaType", "tv"] }, 1, 0] } },
+                    // El servidor busca automáticamente los pagos manuales (bonos) que das desde el bot
                     bonusTotal: { $sum: { $cond: [{ $eq: ["$mediaType", "bonus"] }, "$earned", 0] } }
                 }}
             ]).toArray();
@@ -61,9 +82,10 @@ module.exports = function(app, ctx) {
                 success: true,
                 finances: {
                     todayEarned: todayEarned,
+                    yesterdayEarned: yesterdayEarned, // Dato enviado para la gráfica visual
                     monthEarned: monthEarned,
                     totalGeneradoGlobal: hist.totalEarned,
-                    bonos: hist.bonusTotal,
+                    bonos: hist.bonusTotal, // Envía las recompensas al frontend
                     moviesSubidas: hist.totalMovies,
                     episodiosSubidos: hist.totalEpisodes,
                     currentPayoutRate: dynamicRate
