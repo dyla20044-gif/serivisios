@@ -2,154 +2,233 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Panel de Ingresos | Trech Visionarios</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Trech Visionarios | Sala Cine Creators</title>
     <link rel="stylesheet" href="estilos.css">
-    <!-- FontAwesome para iconos -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700;900&display=swap" rel="stylesheet">
 </head>
 <body>
 
-    <!-- Modal de Términos Legales -->
+    <!-- MODAL LEGAL INICIAL -->
     <div id="legalModal" class="modal-overlay">
         <div class="modal-content">
             <div class="modal-header">
-                <i class="fa-solid fa-scale-balanced"></i>
-                <h2>Acuerdo de Trabajo y Términos</h2>
+                <i class="fa-solid fa-building-shield"></i>
+                <h2>Acuerdo Trech Visionarios</h2>
             </div>
             <div class="modal-body">
-                <p><strong>Por favor, lee esto detenidamente:</strong></p>
-                <p>Estás ingresando al panel de control de <strong>Trech Visionarios</strong>, una empresa completamente legal y constituida.</p>
-                <p>Garantizamos que todo tu trabajo, tiempo y esfuerzo invertido en subir contenido será <strong>contado y recompensado</strong> con total transparencia. Monitoreamos en tiempo real tus ganancias por subidas y visualizaciones.</p>
-                <p>Al continuar, aceptas nuestros términos de colaboración y los ciclos de facturación.</p>
+                <p>Estás ingresando al panel oficial de <strong>Trech Visionarios</strong>.</p>
+                <p>Somos una empresa legal de Ecuador respaldada internacionalmente por <strong>Westchester (Estados Unidos)</strong>.</p>
+                <p>Garantizamos que tu trabajo es monitoreado en tiempo real. Los retiros se habilitan automáticamente el <strong>21 de cada mes</strong>.</p>
             </div>
-            <button id="acceptBtn" class="btn-primary">Acepto y Comprendo</button>
+            <button id="acceptBtn" class="btn-primary">Aceptar y Entrar</button>
         </div>
     </div>
 
-    <!-- Panel Principal Estilo AdMob -->
-    <div class="dashboard-container blur-background" id="mainDashboard">
+    <!-- MODAL PELÍCULAS MÁS PEDIDAS -->
+    <div id="pedidasModal" class="modal-overlay" style="display: none; opacity: 0;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <i class="fa-solid fa-fire text-yellow"></i>
+                <h2>Películas Más Pedidas</h2>
+            </div>
+            <div class="modal-body">
+                <p>Sube estas películas para generar visualizaciones masivas rápidamente:</p>
+                <ul class="pedidas-list" id="topPedidasList">
+                    <li>Cargando solicitudes...</li>
+                </ul>
+            </div>
+            <button class="btn-outline close-modal" data-target="pedidasModal">Cerrar</button>
+        </div>
+    </div>
+
+    <!-- MODAL ADELANTOS -->
+    <div id="adelantoModal" class="modal-overlay" style="display: none; opacity: 0;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <i class="fa-solid fa-hand-holding-dollar text-cyan"></i>
+                <h2>Pedir Adelanto</h2>
+            </div>
+            <div class="modal-body">
+                <p>Puedes solicitar un adelanto de hasta el <strong>50%</strong> de tus ganancias "Sin Retirar".</p>
+                <h3 class="text-cyan" style="font-size: 24px; margin: 15px 0;" id="montoMaxAdelanto">$0.00</h3>
+            </div>
+            <button class="btn-primary" id="btnConfirmarAdelanto">Solicitar Ahora</button>
+            <button class="btn-outline close-modal" data-target="adelantoModal">Cancelar</button>
+        </div>
+    </div>
+
+    <div class="app-container" id="mainApp">
         
-        <header class="top-nav">
-            <div class="page-title">
-                <h1>Página principal</h1>
-                <a href="#" class="expand-link">Expandir lista de tareas (0) <i class="fa-regular fa-circle-question"></i></a>
+        <!-- PESTAÑA 1: INICIO -->
+        <section id="tab-inicio" class="tab-section active">
+            <div class="header-app">
+                <i class="fa-solid fa-cloud"></i> INICIO
             </div>
-        </header>
-
-        <main class="content">
             
-            <!-- TARJETA PRINCIPAL (ESTILO ADMOB GRIS) -->
-            <div class="admob-hero-card">
-                <div class="card-title">
-                    <h2>Total de ingresos estimados <i class="fa-regular fa-circle-question"></i></h2>
-                </div>
+            <div class="card dark-card">
+                <div class="badge-date"><i class="fa-regular fa-calendar"></i> <span id="fechaActual">Cargando...</span></div>
                 
-                <div class="earnings-grid">
-                    <div class="earn-box">
-                        <span class="label">Hoy hasta este momento</span>
-                        <span class="value text-update" id="valHoy">USD1.00</span>
+                <div class="ganancia-principal">
+                    <p>ÚLTIMA GANANCIA (HOY)</p>
+                    <h1 class="text-green flash-text" id="valHoy">$0.00</h1>
+                </div>
+
+                <div class="ganancia-grid">
+                    <div>
+                        <h3 id="valTotal">$0.00</h3>
+                        <p>TOTAL GENERADO</p>
                     </div>
-                    <div class="earn-box">
-                        <span class="label">Ayer</span>
-                        <span class="value">USD8.91</span>
+                    <div>
+                        <h3 class="text-yellow" id="valSinRetirar">$0.00</h3>
+                        <p>SIN RETIRAR</p>
                     </div>
-                    <div class="earn-box">
-                        <span class="label">Hasta ahora este mes (Este Ciclo)</span>
-                        <span class="value text-update" id="valMes">USD11.00</span>
-                    </div>
-                    <div class="earn-box">
-                        <span class="label">El mes pasado</span>
-                        <span class="value">USD80.06</span>
+                    <div>
+                        <h3 class="text-cyan" id="valRetirable">$0.00</h3>
+                        <p>RETIRABLE</p>
                     </div>
                 </div>
             </div>
 
-            <div class="date-selector">
-                <i class="fa-regular fa-calendar"></i>
-                <select>
-                    <option>Hoy hasta este momento</option>
-                    <option>Este mes</option>
-                    <option>Todo el tiempo</option>
-                </select>
+            <!-- Botón Ganar Más -->
+            <button class="btn-primary animated-pulse" id="btnGanarMas" style="margin-bottom: 20px;">
+                <i class="fa-solid fa-rocket"></i> ¿Quieres ganar más dinero? Mira qué subir
+            </button>
+
+            <div class="card dark-card">
+                <div class="section-title">
+                    <h3>GANANCIAS RECIENTES</h3>
+                    <p class="subtitle"><i class="fa-solid fa-circle-info"></i> En tiempo real, sistema anti-colapso.</p>
+                </div>
+                <ul class="lista-recientes" id="listaGananciasRecientes">
+                    <!-- Se llena con JS -->
+                </ul>
+            </div>
+        </section>
+
+        <!-- PESTAÑA 2: RECOMPENSAS -->
+        <section id="tab-recompensas" class="tab-section">
+            <div class="header-app">
+                <i class="fa-solid fa-cloud"></i> RECOMPENSAS
             </div>
 
-            <!-- TARJETAS SECUNDARIAS (ESTILO ADMOB BLANCO) -->
-            <div class="secondary-cards-container">
+            <div class="card dark-card text-center">
+                <div class="flex-badges">
+                    <div class="badge-date"><i class="fa-regular fa-calendar"></i> Mes Actual</div>
+                    <div class="badge-date text-yellow" style="background: rgba(255, 215, 0, 0.1);"><i class="fa-regular fa-clock"></i> En Progreso</div>
+                </div>
+                <p style="margin-top: 20px; color: #9e9e9e; font-size: 12px; letter-spacing: 2px;">MONTO DE BONOS</p>
+                <h1 class="text-green" id="valBonos">$0.00</h1>
+            </div>
+
+            <div class="card dark-card">
+                <div class="section-title space-between">
+                    <h3><i class="fa-solid fa-users text-yellow"></i> Referidos</h3>
+                    <button class="icon-btn"><i class="fa-solid fa-plus"></i></button>
+                </div>
+                <div class="referral-box">
+                    <i class="fa-solid fa-bed text-muted" style="font-size: 30px; margin-bottom: 10px;"></i>
+                    <h4>¡Genera ganancias mientras duermes!</h4>
+                    <p>Invita a otros uploaders y gana el <strong>25%</strong> de todo lo que ellos generen de por vida, sin afectar sus ganancias.</p>
+                    <button class="btn-outline text-yellow" style="margin-top: 15px;"><i class="fa-solid fa-link"></i> Copiar mi enlace de invitación</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- PESTAÑA 3: RETIROS -->
+        <section id="tab-retiros" class="tab-section">
+            <div class="header-app">
+                <i class="fa-solid fa-cloud"></i> RETIROS
+            </div>
+
+            <div class="card dark-card text-center">
+                <div class="badge-date"><i class="fa-regular fa-calendar"></i> Corte: 21 de cada mes</div>
+                <p style="margin-top: 20px; color: #9e9e9e; font-size: 12px; letter-spacing: 2px;">RETIRABLE ACTUAL</p>
+                <h1 class="text-cyan" id="valRetirableGrande" style="font-size: 45px; margin: 10px 0;">$0.00</h1>
                 
-                <!-- Estadísticas Históricas -->
-                <div class="admob-white-card">
-                    <div class="card-title-dark">
-                        <h2>Estadísticas Históricas</h2>
-                    </div>
-                    
-                    <div class="stats-list">
-                        <div class="stat-row">
-                            <div class="stat-label"><i class="fa-solid fa-trophy"></i> Total Generado</div>
-                            <div class="stat-value text-update" id="valTotal">USD237.18</div>
-                        </div>
-                        <div class="stat-row">
-                            <div class="stat-label"><i class="fa-solid fa-gift"></i> Bonos Recibidos</div>
-                            <div class="stat-value">USD12.43</div>
-                        </div>
-                        <div class="stat-row">
-                            <div class="stat-label"><i class="fa-solid fa-film"></i> Películas Subidas</div>
-                            <div class="stat-value">235</div>
-                        </div>
-                        <div class="stat-row">
-                            <div class="stat-label"><i class="fa-solid fa-tv"></i> Episodios Subidos</div>
-                            <div class="stat-value">649</div>
-                        </div>
-                    </div>
-                    <div class="chart-placeholder">
-                        <svg viewBox="0 0 100 30" class="sparkline"><polyline points="0,25 10,20 20,28 30,15 40,18 50,5 60,10 70,2 80,12 90,0 100,8"></polyline></svg>
-                    </div>
+                <div class="flex-stats" style="margin: 20px 0;">
+                    <div><h3 id="valPelisSubidas">0</h3><p>PELÍCULAS</p></div>
+                    <div><h3 id="valSeriesSubidas">0</h3><p>EPISODIOS</p></div>
                 </div>
 
-                <!-- Últimos Pagos y Facturación -->
-                <div class="admob-white-card">
-                    <div class="card-title-dark">
-                        <h2>Últimos Pagos</h2>
-                    </div>
-                    <div class="payments-list">
-                        <div class="payment-row">
-                            <div class="pay-date"><i class="fa-regular fa-calendar-check"></i> 2026-07-21</div>
-                            <div class="pay-amount">USD80.06</div>
-                        </div>
-                        <div class="payment-row">
-                            <div class="pay-date"><i class="fa-regular fa-calendar-check"></i> 2026-06-23</div>
-                            <div class="pay-amount">USD30.25</div>
-                        </div>
-                    </div>
+                <button class="btn-primary" style="margin-bottom: 10px;"><i class="fa-solid fa-money-bill-transfer"></i> SOLICITAR RETIRO</button>
+                <button class="btn-outline" id="btnAbrirAdelanto"><i class="fa-solid fa-hand-holding-dollar"></i> PEDIR ADELANTO (50%)</button>
+            </div>
 
-                    <hr class="divider">
-                    
-                    <div class="billing-info">
-                        <h3><i class="fa-solid fa-credit-card"></i> Información de Pagos:</h3>
-                        <p>Las fechas de corte son del <strong>21 al 25 de cada mes</strong>.</p>
-                        <div class="contact-box">
-                            <p>👉 Solicita tu retiro con:</p>
-                            <a href="https://t.me/Dylan1moficial" target="_blank" class="contact-btn"><i class="fa-brands fa-telegram"></i> @Dylan1moficial</a>
-                        </div>
-                    </div>
+            <div class="card dark-card">
+                <div class="section-title">
+                    <h3>TÉRMINOS Y CONDICIONES</h3>
                 </div>
+                <!-- CUADRO PARA VIDEO DE TÉRMINOS -->
+                <div class="video-placeholder">
+                    <iframe src="https://www.youtube.com/embed/dQw4w9WgXcQ" frameborder="0" allowfullscreen></iframe>
+                </div>
+                <p class="text-muted" style="font-size: 12px; text-align: center; margin-top: 10px;">Asegúrate de ver este video para entender cómo operan los pagos y las reglas de Trech Visionarios.</p>
+            </div>
+        </section>
 
+        <!-- PESTAÑA 4: PERFIL -->
+        <section id="tab-perfil" class="tab-section">
+            <div class="header-app">
+                <i class="fa-solid fa-cloud"></i> PERFIL
             </div>
 
-        </main>
-
-        <!-- Footer Legal -->
-        <footer>
-            <div class="company-info">
-                <h4>Trech Visionarios</h4>
-                <p class="founders">
-                    Fundador y creador: <span>Levin Dylan Narváez Ordóñez</span><br>
-                    Segundo fundador: <span>Nadia Trinidad Ordóñez Guamán</span>
-                </p>
-                <p class="copyright">&copy; 2026 Todos los derechos reservados. Operando legalmente.</p>
+            <div class="profile-header">
+                <div class="avatar">
+                    <span id="userInitial">U</span>
+                </div>
+                <h2 id="userNameDisplay">Uploader</h2>
+                <p class="text-muted" id="userIdDisplay">ID: -----</p>
             </div>
-        </footer>
+
+            <div class="menu-list">
+                <div class="menu-item">
+                    <div class="menu-icon"><i class="fa-solid fa-language text-yellow"></i></div>
+                    <div class="menu-text">
+                        <h4>Idioma</h4><p>Español</p>
+                    </div>
+                    <i class="fa-solid fa-chevron-right text-muted"></i>
+                </div>
+                <div class="menu-item">
+                    <div class="menu-icon"><i class="fa-solid fa-wallet text-yellow"></i></div>
+                    <div class="menu-text">
+                        <h4>Método de Pago</h4><p>USDT / Transferencia</p>
+                    </div>
+                    <i class="fa-solid fa-chevron-right text-muted"></i>
+                </div>
+            </div>
+
+            <div class="card dark-card" style="margin-top: 20px; text-align: center;">
+                <h3 class="text-yellow" style="letter-spacing: 2px;">TRECH VISIONARIOS</h3>
+                <p class="text-muted" style="font-size: 13px; margin: 10px 0;">Empresa legalmente constituida en Ecuador, respaldada internacionalmente por Westchester (Estados Unidos).</p>
+                <div class="founders-box">
+                    <p><strong>Fundador y CEO:</strong><br>Levin Dylan Narváez Ordóñez</p>
+                    <p style="margin-top: 10px;"><strong>Segunda Fundadora:</strong><br>Nadia Trinidad Ordóñez Guamán</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- NAVEGACIÓN INFERIOR -->
+        <nav class="bottom-nav">
+            <a href="#" class="nav-item active" data-target="tab-inicio">
+                <i class="fa-solid fa-house"></i>
+                <span>INICIO</span>
+            </a>
+            <a href="#" class="nav-item" data-target="tab-recompensas">
+                <i class="fa-solid fa-gift"></i>
+                <span>RECOMPENSAS</span>
+            </a>
+            <a href="#" class="nav-item" data-target="tab-retiros">
+                <i class="fa-solid fa-money-bill"></i>
+                <span>RETIROS</span>
+            </a>
+            <a href="#" class="nav-item" data-target="tab-perfil">
+                <i class="fa-solid fa-user"></i>
+                <span>PERFIL</span>
+            </a>
+        </nav>
+
     </div>
 
     <script src="dashboard.js"></script>
