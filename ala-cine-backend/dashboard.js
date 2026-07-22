@@ -45,30 +45,37 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // ==========================================
-    // NUEVO: LÓGICA DE BOTONES DE RETIRO
+    // CONFIGURACIÓN DE USUARIOS (AVATARES Y NOMBRES)
     // ==========================================
+    const ADMIN_2_ID = "00000000"; // <--- Pega aquí el ID de Telegram del Admin 2
+    const ADMIN_2_PHOTO = "https://iili.io/CTsdfdN.jpg"; // <--- URL de la foto del Admin 2
+    const ADMIN_2_NAME = "Nadia"; // Nombre a mostrar
 
-    // Botón Confirmar Adelanto -> Redirige a Telegram
+    const ADMIN_1_ID = "11111111"; // <--- Pega aquí tu ID de Telegram (Dylan)
+    const ADMIN_1_PHOTO = "https://tu-imagen-aqui.jpg"; // <--- Tu foto de perfil
+    const ADMIN_1_NAME = "Dylan (CEO)";
+    
+    // ==========================================
+    // LÓGICA DE BOTONES DE RETIRO Y ADELANTO
+    // ==========================================
     const btnConfirmarAdelanto = document.getElementById('btnConfirmarAdelanto');
     if (btnConfirmarAdelanto) {
         btnConfirmarAdelanto.addEventListener('click', () => {
-            // Te redirige a tu usuario
+            // Te redirige a tu usuario de Telegram
             window.location.href = 'https://t.me/Dylan_1m_oficial'; 
         });
     }
 
-    // Botón Solicitar Retiro -> Muestra la alerta de pago bancario
-    // Seleccionamos el botón azul de la pestaña de retiros
-    const btnSolicitarRetiro = document.querySelector('#tab-retiros .btn-primary');
+    const btnSolicitarRetiro = document.getElementById('btnSolicitarRetiro');
     if (btnSolicitarRetiro) {
         btnSolicitarRetiro.addEventListener('click', () => {
-            alert("Al solicitar el retiro completo, el dinero llegará directamente a su cuenta bancaria. Los cortes y pagos se realizan el 21 de cada mes.");
+            alert("Al solicitar el retiro completo, el dinero llegará directamente a su cuenta bancaria. Los cortes y pagos automáticos se realizan el 21 de cada mes.");
         });
     }
 
     // ==========================================
-
-    // Validar Usuario y Conectar API
+    // LÓGICA DE CONEXIÓN AL SERVIDOR
+    // ==========================================
     const urlParams = new URLSearchParams(window.location.search);
     const uploaderId = urlParams.get('uid');
 
@@ -85,11 +92,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 300);
     });
 
-    // Setear Fecha Actual en UI
     const options = { day: 'numeric', month: 'short' };
     document.getElementById('fechaActual').innerText = new Date().toLocaleDateString('es-ES', options);
 
-    // Funciones de Actualización de Interfaz
     function updateVal(id, value, prefix = "$") {
         const el = document.getElementById(id);
         const text = `${prefix}${value.toFixed(2)}`;
@@ -104,16 +109,25 @@ document.addEventListener('DOMContentLoaded', () => {
     async function iniciarConexionServidor(uid) {
         document.getElementById('userIdDisplay').innerText = `ID: ${uid}`;
         
-        // ==========================================
-        // LÓGICA DEL AVATAR (IMAGEN DE PERFIL)
-        // ==========================================
-        const avatarContainer = document.querySelector('.avatar');
-        
-        // Aquí detectamos si el ID de la URL le pertenece al Admin 2.
-        // Pondremos la lógica completa cuando editemos el HTML.
-        // Por defecto pone la inicial del ID o una 'U':
-        document.getElementById('userInitial').innerText = uid.toString().charAt(0) || 'U';
+        // Configurar Nombre y Foto de Perfil basado en el ID
+        const userInitialSpan = document.getElementById('userInitial');
+        const userAvatarImg = document.getElementById('userAvatarImg');
+        const userNameDisplay = document.getElementById('userNameDisplay');
 
+        if (uid === ADMIN_2_ID) {
+            userInitialSpan.style.display = 'none';
+            userAvatarImg.style.display = 'block';
+            userAvatarImg.src = ADMIN_2_PHOTO;
+            userNameDisplay.innerText = ADMIN_2_NAME;
+        } else if (uid === ADMIN_1_ID) {
+            userInitialSpan.style.display = 'none';
+            userAvatarImg.style.display = 'block';
+            userAvatarImg.src = ADMIN_1_PHOTO;
+            userNameDisplay.innerText = ADMIN_1_NAME;
+        } else {
+            userInitialSpan.innerText = uid.toString().charAt(0) || 'U';
+            userNameDisplay.innerText = "Uploader";
+        }
 
         const fetchStats = async () => {
             try {
@@ -126,15 +140,33 @@ document.addEventListener('DOMContentLoaded', () => {
                     updateVal('valTotal', f.totalGeneradoGlobal);
                     
                     updateVal('valSinRetirar', f.monthEarned);
-                    updateVal('valRetirable', f.monthEarned);
+                    updateVal('valRetirable', f.monthEarned); 
                     updateVal('valRetirableGrande', f.monthEarned);
                     updateVal('valBonos', f.bonos);
 
-                    // Límites de adelanto (Máx 50% de lo sin retirar)
                     document.getElementById('montoMaxAdelanto').innerText = `$${(f.monthEarned * 0.5).toFixed(2)}`;
-
                     document.getElementById('valPelisSubidas').innerText = f.moviesSubidas;
                     document.getElementById('valSeriesSubidas').innerText = f.episodiosSubidos;
+
+                    // LÓGICA DE FLECHA DE RENDIMIENTO (Sube / Baja comparado con ayer)
+                    const trendIcon = document.getElementById('trendIcon');
+                    const trendText = document.getElementById('trendText');
+                    const ayer = f.yesterdayEarned || 0.01; // Fallback si ayer hizo 0
+                    const hoy = f.todayEarned;
+
+                    if (hoy >= ayer) {
+                        trendIcon.innerHTML = '<i class="fa-solid fa-arrow-trend-up"></i>';
+                        trendIcon.className = 'text-green';
+                        trendText.className = 'text-green';
+                        const percent = ayer > 0 ? ((hoy - ayer) / ayer * 100).toFixed(1) : 100;
+                        trendText.innerText = `+${percent}% subiendo`;
+                    } else {
+                        trendIcon.innerHTML = '<i class="fa-solid fa-arrow-trend-down"></i>';
+                        trendIcon.className = 'text-red';
+                        trendText.className = 'text-red';
+                        const percent = ayer > 0 ? ((ayer - hoy) / ayer * 100).toFixed(1) : 0;
+                        trendText.innerText = `-${percent}% bajando`;
+                    }
 
                     // Llenar películas más pedidas
                     const listPedidas = document.getElementById('topPedidasList');
@@ -147,7 +179,6 @@ document.addEventListener('DOMContentLoaded', () => {
                         listPedidas.innerHTML = '<li>No hay solicitudes pendientes.</li>';
                     }
 
-                    // Historial simulado de actividad reciente para dar efecto vivo
                     if(f.todayEarned > 0) {
                         const listaRecientes = document.getElementById('listaGananciasRecientes');
                         const time = new Date().toLocaleTimeString('es-ES', {hour: '2-digit', minute:'2-digit', second:'2-digit'});
@@ -161,6 +192,6 @@ document.addEventListener('DOMContentLoaded', () => {
         };
 
         fetchStats();
-        setInterval(fetchStats, 5000); // Llama al backend cada 5 segundos
+        setInterval(fetchStats, 5000); 
     }
 });
