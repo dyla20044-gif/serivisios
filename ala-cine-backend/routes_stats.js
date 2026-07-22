@@ -2,43 +2,35 @@ module.exports = function(app, ctx) {
     const { mongoDb, caches, REVENUE_SETTINGS } = ctx;
     const { pendingViewsCache } = caches;
 
-    // 1. ENDPOINT PARA ANDROID (Registra vistas sin saturar MongoDB)
+    // 1. ENDPOINT PARA LA APP ANDROID (Registra vistas)
     app.post('/api/track-view/:tmdbId', (req, res) => {
         const tmdbId = req.params.tmdbId;
         if (!tmdbId) return res.status(400).send({ error: "Falta ID" });
-        
-        // Lo guardamos en RAM temporalmente
         const currentViews = pendingViewsCache.get(tmdbId) || 0;
         pendingViewsCache.set(tmdbId, currentViews + 1);
-        
         res.status(200).send({ success: true, cached: true });
     });
 
-    // 2. ENDPOINT PARA EL PANEL HTML (Manda las finanzas reales)
+    // 2. ENDPOINT PARA EL DASHBOARD MÓVIL (Conecta todas las funciones visuales)
     app.get('/api/uploader-stats/:uploaderId', async (req, res) => {
         try {
             const uploaderId = parseInt(req.params.uploaderId);
-            if (isNaN(uploaderId)) return res.status(400).json({ error: "ID de usuario inválido" });
-
+            if (isNaN(uploaderId)) return res.status(400).json({ error: "ID inválido" });
             const db = ctx.getMongoDb();
-            if (!db) return res.status(500).json({ error: "Base de datos no conectada" });
+            if (!db) return res.status(500).json({ error: "DB no conectada" });
 
             const now = new Date();
             const dayId = now.toISOString().split('T')[0];
             const monthId = dayId.substring(0, 7);
 
-            // A) Estadísticas de hoy
+            // Estadísticas de hoy y del mes
             const todayStats = await db.collection('uploader_daily_stats').findOne({ uploaderId: uploaderId, dayId: dayId });
             const todayEarned = todayStats?.today_earned || 0;
 
-            // B) Estadísticas de todo el ciclo actual (Mes)
-            const monthlyDocs = await db.collection('uploader_daily_stats')
-                .find({ uploaderId: uploaderId, monthId: monthId })
-                .project({ today_earned: 1 })
-                .toArray();
+            const monthlyDocs = await db.collection('uploader_daily_stats').find({ uploaderId: uploaderId, monthId: monthId }).project({ today_earned: 1 }).toArray();
             const monthEarned = monthlyDocs.reduce((sum, doc) => sum + (doc.today_earned || 0), 0);
 
-            // C) Estadísticas Históricas y Conteos Totales
+            // Histórico global
             const historicalStats = await db.collection('uploader_revenue').aggregate([
                 { $match: { uploaderId: uploaderId } },
                 { $group: {
@@ -52,28 +44,36 @@ module.exports = function(app, ctx) {
 
             const hist = historicalStats[0] || { totalEarned: 0, totalMovies: 0, totalEpisodes: 0, bonusTotal: 0 };
 
-            // D) Lógica de "Decadencia" para acercarse suavemente al límite de $500
-            // Entre más dinero hace en el mes, menos paga cada vista para no pasarse
-            let dynamicRate = REVENUE_SETTINGS.payout_per_view; // Empieza normal (0.005)
-            if (monthEarned > 300) dynamicRate = REVENUE_SETTINGS.payout_per_view * 0.5; // Si pasa $300, baja a la mitad (0.0025)
-            if (monthEarned > 450) dynamicRate = REVENUE_SETTINGS.payout_per_view * 0.2; // Si roza los $450, paga súper bajito (0.001)
+            // OBTENER LAS PELÍCULAS MÁS PEDIDAS PARA EL BOTÓN "GANAR MÁS"
+            const topRequests = await db.collection('movie_requests')
+                .find({ status: { $ne: 'subido' } })
+                .sort({ votes: -1 })
+                .limit(5)
+                .toArray();
+
+            // REGLA DE NEGOCIO: Reducción dinámica si se acerca a $140 mensuales
+            let dynamicRate = REVENUE_SETTINGS.payout_per_view || 0.005; 
+            if (monthEarned > 100) dynamicRate = dynamicRate * 0.5;   // Baja a la mitad al pasar $100
+            if (monthEarned > 130) dynamicRate = dynamicRate * 0.2;   // Baja drásticamente al llegar a $130
+            if (monthEarned >= 140) dynamicRate = 0;                  // Tope máximo.
 
             res.json({
                 success: true,
                 finances: {
                     todayEarned: todayEarned,
                     monthEarned: monthEarned,
-                    totalGeneradoGlobal: hist.totalEarned + todayEarned,
+                    totalGeneradoGlobal: hist.totalEarned,
                     bonos: hist.bonusTotal,
                     moviesSubidas: hist.totalMovies,
                     episodiosSubidos: hist.totalEpisodes,
                     currentPayoutRate: dynamicRate
-                }
+                },
+                topRequests: topRequests.map(req => ({ title: req.title || req.name, votes: req.votes }))
             });
 
         } catch (error) {
-            console.error("Error al despachar finanzas al HTML:", error);
-            res.status(500).json({ error: "Error en el cálculo financiero" });
+            console.error("Error en rutas de stats:", error);
+            res.status(500).json({ error: "Error interno" });
         }
     });
 };
