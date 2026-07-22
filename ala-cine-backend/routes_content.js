@@ -2,7 +2,7 @@ module.exports = function(app, ctx) {
     const { getMongoDb, TMDB_API_KEY, ADMIN_CHAT_IDS, bot } = ctx;
     const { 
         pinnedCache, kdramaCache, catalogCache, tmdbCache, 
-        recentCache, requestsCache, localDetailsCache, embedCache, countsCache 
+        recentCache, requestsCache, localDetailsCache, embedCache, countsCache, pendingViewsCache 
     } = ctx.caches;
     const { 
         PINNED_CACHE_KEY, KDRAMA_CACHE_KEY, CATALOG_CACHE_KEY, 
@@ -235,7 +235,6 @@ module.exports = function(app, ctx) {
         } catch (error) { res.status(500).json({ error: "Error interno." }); }
     });
 
-    // --- LÓGICA DE PEDIDOS CORREGIDA (Notificaciones originales y arreglo de App) ---
     app.post('/request-movie', async (req, res) => {
         const mongoDb = getMongoDb();
         if (!mongoDb) return res.status(503).json({ error: "BD no disponible." });
@@ -244,18 +243,16 @@ module.exports = function(app, ctx) {
 
         try {
             const cleanId = String(tmdbId).trim();
-            // Restauramos la lógica para que respete tu configuración original y agregamos el estado inicial 'pendiente'
             await mongoDb.collection('movie_requests').updateOne(
                 { tmdbId: cleanId }, 
                 { 
                     $set: { title, poster_path, latestPriority: priority || 'regular', updatedAt: new Date() }, 
-                    $setOnInsert: { status: 'pendiente' }, // IMPORTANTE: Agrega el estado inicial para la App
+                    $setOnInsert: { status: 'pendiente' },
                     $inc: { votes: 1 } 
                 }, 
                 { upsert: true }
             );
 
-            // Las notificaciones quedan igual a como las tenías originalmente
             if (priority && priority !== 'regular') {
                 const posterUrl = poster_path ? `https://image.tmdb.org/t/p/w500${poster_path}` : 'https://placehold.co/500x750?text=No+Poster';
                 let pt = priority === 'fast' ? '⚡ Rápido (~24h)' : (priority === 'immediate' ? '🚀 Inmediato (~1h)' : '👑 PREMIUM');
@@ -265,7 +262,7 @@ module.exports = function(app, ctx) {
                 }
             }
             
-            requestsCache.del(REQUESTS_CACHE_KEY); // Limpieza de caché forzada e inmediata
+            requestsCache.del(REQUESTS_CACHE_KEY);
             res.status(200).json({ message: 'Solicitud guardada.' });
         } catch (error) { res.status(500).json({ error: 'Error al procesar solicitud.' }); }
     });
@@ -276,8 +273,6 @@ module.exports = function(app, ctx) {
         const cachedReqs = requestsCache.get(REQUESTS_CACHE_KEY);
         if (cachedReqs) return res.status(200).json(cachedReqs);
         try {
-            // CORRECCIÓN CLAVE: Enviamos los 300 pedidos MÁS RECIENTES por fecha, para que no se entierren. 
-            // Tu app en el frontend (updates.js) ya se encarga de ordenarlos por votos internamente.
             const allRequests = await mongoDb.collection('movie_requests')
                 .find({})
                 .sort({ updatedAt: -1, fulfilledAt: -1 }) 
@@ -386,7 +381,6 @@ module.exports = function(app, ctx) {
         } catch (error) { res.status(500).json({ error: "Error interno." }); }
     });
 
-    // --- NUEVA RUTA: ACTUALIZACIÓN EXCLUSIVA DE ENLACES PARA NO BORRAR IMÁGENES ---
     app.post('/update-movie-links', async (req, res) => {
         const mongoDb = getMongoDb();
         if (!mongoDb) return res.status(503).json({ error: "BD no disponible." });
@@ -431,7 +425,6 @@ module.exports = function(app, ctx) {
             let rev = null;
             if (eraFantasma && uploaderId) rev = await calculateAndRecordRevenue({ uploaderId, tmdbId: cleanId, mediaType: 'movie', title });
             
-            // Actualizamos la base de datos de solicitudes y LIMPIAMOS EL CACHÉ EXACTO
             try { 
                 await mongoDb.collection('movie_requests').updateOne({ tmdbId: cleanId }, { $set: { status: 'subido', fulfilledAt: new Date() } }); 
                 requestsCache.del(REQUESTS_CACHE_KEY); 
@@ -462,7 +455,6 @@ module.exports = function(app, ctx) {
             let rev = null;
             if (!teniaLinks && uploaderId) rev = await calculateAndRecordRevenue({ uploaderId, tmdbId: cleanId, mediaType: 'tv', title: `${title} S${sNum}E${eNum}`, season: sNum, episode: eNum });
             
-            // Actualizamos la base de datos de solicitudes y LIMPIAMOS EL CACHÉ EXACTO
             try { 
                 await mongoDb.collection('movie_requests').updateOne({ tmdbId: cleanId }, { $set: { status: 'subido', fulfilledAt: new Date() } }); 
                 requestsCache.del(REQUESTS_CACHE_KEY);
@@ -497,5 +489,21 @@ module.exports = function(app, ctx) {
             if (result.success) res.status(200).json({ success: true, message: result.message, details: result.response });
             else res.status(500).json({ success: false, error: 'Error FCM.', details: result.error });
         } catch (error) { res.status(500).json({ success: false, error: "Error interno." }); }
+    });
+
+    // ==========================================
+    // NUEVO: ENDPOINT PARA LA APP ANDROID (Registra vistas)
+    // ==========================================
+    app.post('/api/track-view/:tmdbId', (req, res) => {
+        const tmdbId = req.params.tmdbId;
+        if (!tmdbId) return res.status(400).send({ error: "Falta ID de la película" });
+        
+        // Obtener el contador de la RAM (o 0 si no hay)
+        const currentViews = pendingViewsCache.get(tmdbId) || 0;
+        
+        // SUMAMOS 0.5 por cada petición. Esto obliga al usuario a generar 2 peticiones para 1 vista real.
+        pendingViewsCache.set(tmdbId, currentViews + 0.5);
+        
+        res.status(200).send({ success: true, cached: true });
     });
 };
