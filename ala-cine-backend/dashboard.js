@@ -44,6 +44,30 @@ document.addEventListener('DOMContentLoaded', () => {
         mod.style.opacity = '1';
     });
 
+    // ==========================================
+    // NUEVO: LÓGICA DE BOTONES DE RETIRO
+    // ==========================================
+
+    // Botón Confirmar Adelanto -> Redirige a Telegram
+    const btnConfirmarAdelanto = document.getElementById('btnConfirmarAdelanto');
+    if (btnConfirmarAdelanto) {
+        btnConfirmarAdelanto.addEventListener('click', () => {
+            // Te redirige a tu usuario
+            window.location.href = 'https://t.me/Dylan_1m_oficial'; 
+        });
+    }
+
+    // Botón Solicitar Retiro -> Muestra la alerta de pago bancario
+    // Seleccionamos el botón azul de la pestaña de retiros
+    const btnSolicitarRetiro = document.querySelector('#tab-retiros .btn-primary');
+    if (btnSolicitarRetiro) {
+        btnSolicitarRetiro.addEventListener('click', () => {
+            alert("Al solicitar el retiro completo, el dinero llegará directamente a su cuenta bancaria. Los cortes y pagos se realizan el 21 de cada mes.");
+        });
+    }
+
+    // ==========================================
+
     // Validar Usuario y Conectar API
     const urlParams = new URLSearchParams(window.location.search);
     const uploaderId = urlParams.get('uid');
@@ -79,8 +103,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function iniciarConexionServidor(uid) {
         document.getElementById('userIdDisplay').innerText = `ID: ${uid}`;
-        // Extrae inicial para el Avatar (simulado por el número de ID)
+        
+        // ==========================================
+        // LÓGICA DEL AVATAR (IMAGEN DE PERFIL)
+        // ==========================================
+        const avatarContainer = document.querySelector('.avatar');
+        
+        // Aquí detectamos si el ID de la URL le pertenece al Admin 2.
+        // Pondremos la lógica completa cuando editemos el HTML.
+        // Por defecto pone la inicial del ID o una 'U':
         document.getElementById('userInitial').innerText = uid.toString().charAt(0) || 'U';
+
 
         const fetchStats = async () => {
             try {
@@ -92,10 +125,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     updateVal('valHoy', f.todayEarned);
                     updateVal('valTotal', f.totalGeneradoGlobal);
                     
-                    // Cálculo de retirable y sin retirar (Lógica interna del Frontend)
-                    // Para el diseño: "Sin retirar" es lo de este mes. "Retirable" es el saldo total histórico no pagado (simularemos que es lo mismo para el demo visual).
                     updateVal('valSinRetirar', f.monthEarned);
-                    updateVal('valRetirable', f.monthEarned); // O la variable de la DB que uses para saldo vivo
+                    updateVal('valRetirable', f.monthEarned);
                     updateVal('valRetirableGrande', f.monthEarned);
                     updateVal('valBonos', f.bonos);
 
