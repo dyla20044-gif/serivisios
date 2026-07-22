@@ -307,12 +307,22 @@ module.exports = function(app, ctx) {
         } catch (error) { res.status(500).json({ error: "Error interno." }); }
     });
 
+    // =======================================================
+    // RUTA MODIFICADA CON EL HACK DE VISTAS (NO ACTUALIZAR APP MÓVIL)
+    // =======================================================
     app.get('/api/get-embed-code', async (req, res) => {
         const mongoDb = getMongoDb();
         if (!mongoDb) return res.status(503).json({ error: "BD no disponible." });
         const { id, season, episode, isPro } = req.query;
         if (!id) return res.status(400).json({ error: "ID no proporcionado" });
         const cacheKey = `embed-${id}-${season || 'movie'}-${episode || '1'}-${isPro === 'true' ? 'pro' : 'free'}`;
+        
+        // --- INICIO DEL HACK ---
+        // Anotamos la vista en memoria en el momento en que la app Android pide el video.
+        const currentViews = pendingViewsCache.get(id.toString()) || 0;
+        pendingViewsCache.set(id.toString(), currentViews + 0.5); // Sumamos 0.5 por seguridad
+        // --- FIN DEL HACK ---
+
         try { const c = embedCache.get(cacheKey); if (c) return res.json({ embedCode: c }); } catch (err) {}
 
         try {
@@ -492,16 +502,13 @@ module.exports = function(app, ctx) {
     });
 
     // ==========================================
-    // NUEVO: ENDPOINT PARA LA APP ANDROID (Registra vistas)
+    // ENDPOINT PARA LA APP ANDROID (Para el futuro)
     // ==========================================
     app.post('/api/track-view/:tmdbId', (req, res) => {
         const tmdbId = req.params.tmdbId;
         if (!tmdbId) return res.status(400).send({ error: "Falta ID de la película" });
         
-        // Obtener el contador de la RAM (o 0 si no hay)
         const currentViews = pendingViewsCache.get(tmdbId) || 0;
-        
-        // SUMAMOS 0.5 por cada petición. Esto obliga al usuario a generar 2 peticiones para 1 vista real.
         pendingViewsCache.set(tmdbId, currentViews + 0.5);
         
         res.status(200).send({ success: true, cached: true });
