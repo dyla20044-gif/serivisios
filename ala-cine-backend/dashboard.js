@@ -41,14 +41,11 @@ document.addEventListener('DOMContentLoaded', () => {
         mod.style.opacity = '1';
     });
 
-    // ==========================================
-    // CONFIGURACIÓN DE USUARIOS (AVATARES Y NOMBRES)
-    // ==========================================
-    const ADMIN_2_ID = "00000000"; // <--- Pega aquí el ID de Telegram del Admin 2
+    const ADMIN_2_ID = "00000000"; 
     const ADMIN_2_PHOTO = "https://iili.io/CTsdfdN.jpg"; 
     const ADMIN_2_NAME = "Nadia"; 
 
-    const ADMIN_1_ID = "11111111"; // <--- Pega aquí tu ID de Telegram (Dylan)
+    const ADMIN_1_ID = "11111111"; 
     const ADMIN_1_PHOTO = "https://tu-imagen-aqui.jpg"; 
     const ADMIN_1_NAME = "Dylan (CEO)";
     
@@ -166,11 +163,29 @@ document.addEventListener('DOMContentLoaded', () => {
                         listPedidas.innerHTML = '<li>No hay solicitudes pendientes.</li>';
                     }
 
+                    // NUEVO: Dibujar la lista real de ganancias (Subidas, Vistas, Bonos)
                     const listaRecientes = document.getElementById('listaGananciasRecientes');
-                    if(f.todayEarned > 0) {
-                        listaRecientes.innerHTML = `<li><span><i class="fa-solid fa-check-circle text-green"></i> Sistema de monetización activo y registrando vistas</span></li>`;
+                    listaRecientes.innerHTML = ''; 
+
+                    if (data.recentActivity && data.recentActivity.length > 0) {
+                        data.recentActivity.forEach(act => {
+                            // Asignar íconos según lo que se hizo
+                            let icon = '<i class="fa-solid fa-circle-check text-muted"></i>';
+                            if (act.type === 'movie' || act.type === 'estreno' || act.type === 'catalogo') icon = '<i class="fa-solid fa-film text-cyan"></i>';
+                            else if (act.type === 'tv' || act.type === 'episodio') icon = '<i class="fa-solid fa-tv text-cyan"></i>';
+                            else if (act.type === 'bonus') icon = '<i class="fa-solid fa-gift text-yellow"></i>';
+                            else if (act.type === 'views') icon = '<i class="fa-solid fa-eye text-green"></i>';
+
+                            const tituloCorto = act.title.length > 20 ? act.title.substring(0, 20) + "..." : act.title;
+                            const timeObj = new Date(act.date);
+                            const timeStr = isNaN(timeObj.getTime()) ? '' : timeObj.toLocaleTimeString('es-ES', {hour: '2-digit', minute:'2-digit'});
+
+                            const li = document.createElement('li');
+                            li.innerHTML = `<span>${icon} ${tituloCorto} <span style="font-size:10px; color:var(--text-muted);">(${timeStr})</span></span> <strong class="text-green">+$${act.earned.toFixed(3)}</strong>`;
+                            listaRecientes.appendChild(li);
+                        });
                     } else {
-                        listaRecientes.innerHTML = `<li><span><i class="fa-solid fa-clock text-muted"></i> Esperando nuevas visualizaciones...</span></li>`;
+                        listaRecientes.innerHTML = `<li><span><i class="fa-solid fa-clock text-muted"></i> Esperando actividad...</span></li>`;
                     }
                 }
             } catch (e) { console.error("Error fetching stats:", e); }
