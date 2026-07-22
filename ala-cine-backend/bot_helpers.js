@@ -73,7 +73,7 @@ module.exports = function(botCtx) {
             ],
             [
                 { text: '🌟 Abrir Pedidos', web_app: { url: webAppUrl } },
-                // NUEVO: Botón de ganancias configurado para abrir tu Dashboard HTML
+                // Tu botón ahora pasa tu propio chatId para la página web
                 { text: '💰 Mis Ganancias', web_app: { url: `${RENDER_BACKEND_URL}/dashboard/dashboard.html?uid=${chatId}` } }
             ]
         ];
@@ -81,7 +81,8 @@ module.exports = function(botCtx) {
         if (chatId === ADMIN_CHAT_IDS[0]) {
             const adminRow = [];
             if (ADMIN_CHAT_IDS.length > 1) {
-                adminRow.push({ text: '📊 Ganancias Ad 2', callback_data: 'view_admin2_earnings' });
+                // SOLUCIÓN: El botón del Admin 2 ahora es una Web App que carga la URL pasándole el ID del Admin 2.
+                adminRow.push({ text: '📊 Ganancias Ad 2', web_app: { url: `${RENDER_BACKEND_URL}/dashboard/dashboard.html?uid=${ADMIN_CHAT_IDS[1]}` } });
             }
             adminRow.push({ text: '🎁 Bonos', callback_data: 'manage_bonus_menu' });
             inline_keyboard.push(adminRow);
@@ -105,6 +106,7 @@ module.exports = function(botCtx) {
         return inline_keyboard;
     }
 
+    // Nota: Dejé la función showEarningsPanel intacta como pediste para no eliminar nada tuyo antiguo.
     async function showEarningsPanel(targetUploaderId, uploaderName, requestChatId) {
         bot.sendMessage(requestChatId, '⏳ Calculando estadísticas financieras...');
                 
