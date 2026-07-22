@@ -1,1 +1,157 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Panel de Ingresos | Trech Visionarios</title>
+    <link rel="stylesheet" href="estilos.css">
+    <!-- FontAwesome para iconos -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+</head>
+<body>
 
+    <!-- Modal de Términos Legales -->
+    <div id="legalModal" class="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header">
+                <i class="fa-solid fa-scale-balanced"></i>
+                <h2>Acuerdo de Trabajo y Términos</h2>
+            </div>
+            <div class="modal-body">
+                <p><strong>Por favor, lee esto detenidamente:</strong></p>
+                <p>Estás ingresando al panel de control de <strong>Trech Visionarios</strong>, una empresa completamente legal y constituida.</p>
+                <p>Garantizamos que todo tu trabajo, tiempo y esfuerzo invertido en subir contenido será <strong>contado y recompensado</strong> con total transparencia. Monitoreamos en tiempo real tus ganancias por subidas y visualizaciones.</p>
+                <p>Al continuar, aceptas nuestros términos de colaboración y los ciclos de facturación.</p>
+            </div>
+            <button id="acceptBtn" class="btn-primary">Acepto y Comprendo</button>
+        </div>
+    </div>
+
+    <!-- Panel Principal Estilo AdMob -->
+    <div class="dashboard-container blur-background" id="mainDashboard">
+        
+        <header class="top-nav">
+            <div class="page-title">
+                <h1>Página principal</h1>
+                <a href="#" class="expand-link">Expandir lista de tareas (0) <i class="fa-regular fa-circle-question"></i></a>
+            </div>
+        </header>
+
+        <main class="content">
+            
+            <!-- TARJETA PRINCIPAL (ESTILO ADMOB GRIS) -->
+            <div class="admob-hero-card">
+                <div class="card-title">
+                    <h2>Total de ingresos estimados <i class="fa-regular fa-circle-question"></i></h2>
+                </div>
+                
+                <div class="earnings-grid">
+                    <div class="earn-box">
+                        <span class="label">Hoy hasta este momento</span>
+                        <span class="value text-update" id="valHoy">USD1.00</span>
+                    </div>
+                    <div class="earn-box">
+                        <span class="label">Ayer</span>
+                        <span class="value">USD8.91</span>
+                    </div>
+                    <div class="earn-box">
+                        <span class="label">Hasta ahora este mes (Este Ciclo)</span>
+                        <span class="value text-update" id="valMes">USD11.00</span>
+                    </div>
+                    <div class="earn-box">
+                        <span class="label">El mes pasado</span>
+                        <span class="value">USD80.06</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="date-selector">
+                <i class="fa-regular fa-calendar"></i>
+                <select>
+                    <option>Hoy hasta este momento</option>
+                    <option>Este mes</option>
+                    <option>Todo el tiempo</option>
+                </select>
+            </div>
+
+            <!-- TARJETAS SECUNDARIAS (ESTILO ADMOB BLANCO) -->
+            <div class="secondary-cards-container">
+                
+                <!-- Estadísticas Históricas -->
+                <div class="admob-white-card">
+                    <div class="card-title-dark">
+                        <h2>Estadísticas Históricas</h2>
+                    </div>
+                    
+                    <div class="stats-list">
+                        <div class="stat-row">
+                            <div class="stat-label"><i class="fa-solid fa-trophy"></i> Total Generado</div>
+                            <div class="stat-value text-update" id="valTotal">USD237.18</div>
+                        </div>
+                        <div class="stat-row">
+                            <div class="stat-label"><i class="fa-solid fa-gift"></i> Bonos Recibidos</div>
+                            <div class="stat-value">USD12.43</div>
+                        </div>
+                        <div class="stat-row">
+                            <div class="stat-label"><i class="fa-solid fa-film"></i> Películas Subidas</div>
+                            <div class="stat-value">235</div>
+                        </div>
+                        <div class="stat-row">
+                            <div class="stat-label"><i class="fa-solid fa-tv"></i> Episodios Subidos</div>
+                            <div class="stat-value">649</div>
+                        </div>
+                    </div>
+                    <div class="chart-placeholder">
+                        <svg viewBox="0 0 100 30" class="sparkline"><polyline points="0,25 10,20 20,28 30,15 40,18 50,5 60,10 70,2 80,12 90,0 100,8"></polyline></svg>
+                    </div>
+                </div>
+
+                <!-- Últimos Pagos y Facturación -->
+                <div class="admob-white-card">
+                    <div class="card-title-dark">
+                        <h2>Últimos Pagos</h2>
+                    </div>
+                    <div class="payments-list">
+                        <div class="payment-row">
+                            <div class="pay-date"><i class="fa-regular fa-calendar-check"></i> 2026-07-21</div>
+                            <div class="pay-amount">USD80.06</div>
+                        </div>
+                        <div class="payment-row">
+                            <div class="pay-date"><i class="fa-regular fa-calendar-check"></i> 2026-06-23</div>
+                            <div class="pay-amount">USD30.25</div>
+                        </div>
+                    </div>
+
+                    <hr class="divider">
+                    
+                    <div class="billing-info">
+                        <h3><i class="fa-solid fa-credit-card"></i> Información de Pagos:</h3>
+                        <p>Las fechas de corte son del <strong>21 al 25 de cada mes</strong>.</p>
+                        <div class="contact-box">
+                            <p>👉 Solicita tu retiro con:</p>
+                            <a href="https://t.me/Dylan1moficial" target="_blank" class="contact-btn"><i class="fa-brands fa-telegram"></i> @Dylan1moficial</a>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+        </main>
+
+        <!-- Footer Legal -->
+        <footer>
+            <div class="company-info">
+                <h4>Trech Visionarios</h4>
+                <p class="founders">
+                    Fundador y creador: <span>Levin Dylan Narváez Ordóñez</span><br>
+                    Segundo fundador: <span>Nadia Trinidad Ordóñez Guamán</span>
+                </p>
+                <p class="copyright">&copy; 2026 Todos los derechos reservados. Operando legalmente.</p>
+            </div>
+        </footer>
+    </div>
+
+    <script src="dashboard.js"></script>
+</body>
+</html>
