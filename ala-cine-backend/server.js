@@ -344,7 +344,7 @@ const ctx = {
         embedCache, countsCache, tmdbCache, recentCache,
         historyCache, localDetailsCache, pinnedCache,
         kdramaCache, catalogCache, userCache, requestsCache, zyroCache,
-        pendingViewsCache // Añadido el caché de vistas
+        pendingViewsCache
     },
     cacheKeys: { PINNED_CACHE_KEY, KDRAMA_CACHE_KEY, CATALOG_CACHE_KEY, RECENT_CACHE_KEY, REQUESTS_CACHE_KEY },
     middlewares: { verifyIdToken, verifyInternalAdmin },
@@ -360,7 +360,6 @@ require('./routes_stats.js')(app, ctx);
 
 app.get('/', (req, res) => { res.send('Activo'); });
 
-// SOLUCIÓN: Sirve los archivos HTML directamente desde la raíz donde están ubicados (sin carpetas extra).
 app.use('/dashboard', express.static(__dirname));
 
 if (process.env.NODE_ENV === 'production' && token) {
@@ -452,6 +451,7 @@ cron.schedule('*/5 * * * *', async () => {
 
     console.log(`[Cron] Sincronizando vistas de ${keys.length} contenidos a MongoDB...`);
     const bulkOps = [];
+    const bulkRevenueOps = []; 
     const now = new Date();
     const dayId = now.toISOString().split('T')[0];
     const monthId = dayId.substring(0, 7);
@@ -460,11 +460,18 @@ cron.schedule('*/5 * * * *', async () => {
         const viewsCount = pendingViewsCache.get(tmdbId);
         if (viewsCount > 0) {
             let uploaderId = null;
+            let titleMedia = "Contenido";
+            
             const movie = await mongoDb.collection('media_catalog').findOne({ tmdbId: tmdbId });
-            if (movie && movie.uploaderId) { uploaderId = movie.uploaderId; }
-            else {
+            if (movie && movie.uploaderId) { 
+                uploaderId = movie.uploaderId; 
+                titleMedia = movie.title || movie.name;
+            } else {
                 const series = await mongoDb.collection('series_catalog').findOne({ tmdbId: tmdbId });
-                if (series && series.uploaderId) uploaderId = series.uploaderId;
+                if (series && series.uploaderId) {
+                    uploaderId = series.uploaderId;
+                    titleMedia = series.title || series.name;
+                }
             }
 
             if (uploaderId) {
@@ -480,6 +487,22 @@ cron.schedule('*/5 * * * *', async () => {
                         upsert: true
                     }
                 });
+
+                if (earned > 0) {
+                    bulkRevenueOps.push({
+                        insertOne: {
+                            document: {
+                                uploaderId: parseInt(uploaderId),
+                                mediaType: 'views',
+                                title: `Vistas: ${titleMedia}`,
+                                earned: earned,
+                                timestamp: now,
+                                dayId: dayId,
+                                monthId: monthId
+                            }
+                        }
+                    });
+                }
             }
         }
     }
@@ -487,8 +510,11 @@ cron.schedule('*/5 * * * *', async () => {
     if (bulkOps.length > 0) {
         try {
             await mongoDb.collection(COLL_DAILY_STATS).bulkWrite(bulkOps);
+            if (bulkRevenueOps.length > 0) {
+                await mongoDb.collection(COLL_REVENUE).bulkWrite(bulkRevenueOps);
+            }
             pendingViewsCache.flushAll(); 
-            console.log(`[Cron] Se han sincronizado $ generados por vistas con éxito.`);
+            console.log(`[Cron] Se han sincronizado $ generados por vistas y guardado el historial.`);
         } catch (e) {
             console.error("[Cron] Error sincronizando vistas masivas:", e);
         }
