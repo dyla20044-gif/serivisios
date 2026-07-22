@@ -8,15 +8,13 @@ module.exports = function(app, ctx) {
         if (!tmdbId) return res.status(400).send({ error: "Falta ID" });
         
         const currentViews = pendingViewsCache.get(tmdbId) || 0;
-        
-        // SOLUCIÓN ANTI-SPAM: En lugar de sumar 1, sumamos 0.5. 
-        // Así se necesitan 2 peticiones (clics) para sumar 1 vista real pagada.
+        // SOLUCIÓN ANTI-SPAM: Sumamos 0.5. Se necesitan 2 peticiones (clics) para sumar 1 vista.
         pendingViewsCache.set(tmdbId, currentViews + 0.5);
         
         res.status(200).send({ success: true, cached: true });
     });
 
-    // 2. ENDPOINT PARA EL DASHBOARD MÓVIL (Conecta todas las funciones visuales)
+    // 2. ENDPOINT PARA EL DASHBOARD MÓVIL
     app.get('/api/uploader-stats/:uploaderId', async (req, res) => {
         try {
             const uploaderId = parseInt(req.params.uploaderId);
@@ -58,6 +56,13 @@ module.exports = function(app, ctx) {
 
             const hist = historicalStats[0] || { totalEarned: 0, totalMovies: 0, totalEpisodes: 0, bonusTotal: 0 };
 
+            // NUEVO: Obtener los últimos 10 movimientos reales (Subidas, vistas, bonos)
+            const recentActivity = await db.collection('uploader_revenue')
+                .find({ uploaderId: uploaderId })
+                .sort({ timestamp: -1 })
+                .limit(10)
+                .toArray();
+
             const topRequests = await db.collection('movie_requests')
                 .find({ status: { $ne: 'subido' } })
                 .sort({ votes: -1 })
@@ -81,6 +86,12 @@ module.exports = function(app, ctx) {
                     episodiosSubidos: hist.totalEpisodes,
                     currentPayoutRate: dynamicRate
                 },
+                recentActivity: recentActivity.map(act => ({
+                    type: act.mediaType || act.contentType,
+                    title: act.title,
+                    earned: act.earned,
+                    date: act.timestamp
+                })),
                 topRequests: topRequests.map(req => ({ title: req.title || req.name, votes: req.votes }))
             });
 
