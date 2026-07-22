@@ -32,6 +32,9 @@ const zyroCache = new NodeCache({ stdTTL: 86400, checkperiod: 3600 });
 const requestsCache = new NodeCache({ stdTTL: 604800, checkperiod: 3600 });
 const REQUESTS_CACHE_KEY = 'all_movie_requests';
 
+// NUEVO: Caché en memoria para las visualizaciones entrantes (Protección anti-saturación)
+const pendingViewsCache = new NodeCache({ stdTTL: 0 }); 
+
 const app = express();
 dotenv.config();
 const PORT = process.env.PORT || 3000;
@@ -67,12 +70,14 @@ const BUILD_ID_UNDER_REVIEW = 24;
 const MONGO_URI = process.env.MONGO_URI;
 const MONGO_DB_NAME = process.env.MONGO_DB_NAME || 'sala_cine';
 
+// NUEVO: Estructura de Finanzas Actualizada (Estrenos $0.50, Catálogo $0.10, Vistas $0.005)
 const REVENUE_SETTINGS = {
-    estreno_peli: 1.00,
-    catalogo_peli: 0.50,
-    episodio_serie: 0.25,
-    limit_daily: 10.00,
-    limit_monthly: 80.00,
+    estreno_peli: 0.50,
+    catalogo_peli: 0.10,
+    episodio_serie: 0.10,
+    payout_per_view: 0.005, // Equivalente a $5 USD por 1000 vistas
+    limit_daily: 40.00,
+    limit_monthly: 500.00,
     months_to_be_estreno: 6
 };
 
@@ -145,7 +150,6 @@ try {
     console.warn("Advertencia: No se pudo cargar bridge.js:", error.message);
 }
 
-// === CORRECCIÓN CLAVE: BLOQUEAR PETICIONES SIN TOKEN VÁLIDO ===
 async function verifyIdToken(req, res, next) {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -241,11 +245,12 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
             limitReached = true;
             status = 'limit_daily_reached';
         } else {
+            // Lógica de desescalado dinámico que tenías, la mantenemos pero adaptada a la nueva meta
             let currentBase = basePrice;
-            if (currentDaily >= 9.00) {
+            if (currentDaily >= 30.00) { // Si ya ganó $30 hoy, le bajamos la cuota al 25% para evitar sobrepagos masivos
                 currentBase = basePrice * 0.25;
                 rateApplied = "25%";
-            } else if (currentDaily >= 7.00) {
+            } else if (currentDaily >= 20.00) { // Si ya ganó $20 hoy, baja al 50%
                 currentBase = basePrice * 0.50;
                 rateApplied = "50%";
             }
@@ -339,7 +344,8 @@ const ctx = {
     caches: {
         embedCache, countsCache, tmdbCache, recentCache,
         historyCache, localDetailsCache, pinnedCache,
-        kdramaCache, catalogCache, userCache, requestsCache, zyroCache
+        kdramaCache, catalogCache, userCache, requestsCache, zyroCache,
+        pendingViewsCache // Añadido el caché de vistas
     },
     cacheKeys: { PINNED_CACHE_KEY, KDRAMA_CACHE_KEY, CATALOG_CACHE_KEY, RECENT_CACHE_KEY, REQUESTS_CACHE_KEY },
     middlewares: { verifyIdToken, verifyInternalAdmin },
@@ -351,8 +357,12 @@ global.ctx = ctx;
 require('./routes_user.js')(app, ctx);
 require('./routes_content.js')(app, ctx);
 require('./routes_live.js')(app, ctx);
+require('./routes_stats.js')(app, ctx); // NUEVO: Controlador financiero
 
 app.get('/', (req, res) => { res.send('Activo'); });
+
+// NUEVO: Servir los archivos HTML y CSS del Dashboard
+app.use('/dashboard', express.static(path.join(__dirname, 'public/dashboard')));
 
 if (process.env.NODE_ENV === 'production' && token) {
     app.post(`/bot${token}`, (req, res) => {
@@ -375,13 +385,12 @@ app.get('/app/details/:tmdbId', (req, res) => {
     res.send(htmlResponse);
 });
 
+// ... Resto de Endpoints base ...
 app.get('/api/streaming-status', (req, res) => {
     const clientBuildId = parseInt(req.query.build_id) || 0;
     const clientVersion = parseInt(req.query.version) || 0;
     const receivedId = clientBuildId || clientVersion;
-    if (receivedId === BUILD_ID_UNDER_REVIEW) {
-        return res.status(200).json({ isStreamingActive: false }); 
-    }
+    if (receivedId === BUILD_ID_UNDER_REVIEW) { return res.status(200).json({ isStreamingActive: false }); }
     res.status(200).json({ isStreamingActive: GLOBAL_STREAMING_ACTIVE });
 });
 
@@ -394,101 +403,113 @@ app.get('/api/announcement', (req, res) => {
         const json = JSON.parse(data);
         if (json.siempreVisible === true) json.id = Date.now().toString();
         return res.status(200).json(json);
-    } catch (error) {
-        return res.status(204).send();
-    }
+    } catch (error) { return res.status(204).send(); }
 });
 
-app.get('/api/app-update', (req, res) => {
-    const updateInfo = { "latest_version_code": 22, "update_url": "https://play.google.com/store/apps/details?id=com.salacine.app&pcampaignid=web_share", "force_update": true, "update_message": "Nueva versión de Sala Cine disponible." };
-    res.status(200).json(updateInfo);
-});
-
-app.get('/api/app-status', (req, res) => {
-    res.json({ isAppApproved: true, safeContentIds: [11104, 539, 4555, 27205, 33045] });
-});
-
+app.get('/api/app-update', (req, res) => { res.status(200).json({ "latest_version_code": 22, "update_url": "https://play.google.com/store/apps/details?id=com.salacine.app", "force_update": true, "update_message": "Nueva versión disponible." }); });
+app.get('/api/app-status', (req, res) => { res.json({ isAppApproved: true, safeContentIds: [11104, 539, 4555, 27205, 33045] }); });
 app.get('/.well-known/assetlinks.json', (req, res) => { res.sendFile('assetlinks.json', { root: __dirname }); });
 
+// ... Rutas Admin de Pedidos intactas ...
 app.get('/admin/pedidos', async (req, res) => {
     try {
         const htmlPath = path.join(__dirname, 'pedidos.html');
-        if (!fs.existsSync(htmlPath)) {
-            return res.status(404).send("Error");
-        }
-        
+        if (!fs.existsSync(htmlPath)) return res.status(404).send("Error");
         let html = fs.readFileSync(htmlPath, 'utf8');
         const botInfo = await bot.getMe();
         html = html.replace(/{{BOT_USERNAME}}/g, botInfo.username);
-        
         res.send(html);
-    } catch (error) {
-        res.status(500).send("Error");
-    }
+    } catch (error) { res.status(500).send("Error"); }
 });
 
 app.get('/api/admin/pedidos/list', async (req, res) => {
     try {
         if (!mongoDb) return res.status(500).json({ error: "DB no conectada" });
-        
         const page = parseInt(req.query.page) || 0;
         const type = req.query.type || 'alta';
-        const limit = 20; 
-        const skip = page * limit;
-
+        const limit = 20; const skip = page * limit;
         let query = { status: { $ne: 'subido' } };
-        
-        if (type === 'alta') {
-            query.latestPriority = { $in: ['immediate', 'premium', 'fast'] };
-        } else {
-            query.latestPriority = { $nin: ['immediate', 'premium', 'fast'] };
-        }
-
-        const requests = await mongoDb.collection('movie_requests')
-            .find(query)
-            .sort({ votes: -1, updatedAt: -1 })
-            .skip(skip)
-            .limit(limit)
-            .toArray();
-            
+        if (type === 'alta') { query.latestPriority = { $in: ['immediate', 'premium', 'fast'] }; } 
+        else { query.latestPriority = { $nin: ['immediate', 'premium', 'fast'] }; }
+        const requests = await mongoDb.collection('movie_requests').find(query).sort({ votes: -1, updatedAt: -1 }).skip(skip).limit(limit).toArray();
         res.json(requests);
-    } catch (error) {
-        res.status(500).json({ error: "Error obteniendo pedidos" });
-    }
+    } catch (error) { res.status(500).json({ error: "Error obteniendo pedidos" }); }
 });
 
 app.delete('/api/admin/pedidos/:id', async (req, res) => {
     try {
         if (!mongoDb) return res.status(500).json({ error: "DB no conectada" });
-        const tmdbId = req.params.id;
-        
-        await mongoDb.collection('movie_requests').deleteOne({ tmdbId: tmdbId.toString() });
-        
-        if (global.ctx && global.ctx.caches && global.ctx.caches.requestsCache) {
-            global.ctx.caches.requestsCache.flushAll();
-        }
-        
+        await mongoDb.collection('movie_requests').deleteOne({ tmdbId: req.params.id.toString() });
+        if (global.ctx?.caches?.requestsCache) global.ctx.caches.requestsCache.flushAll();
         res.json({ success: true });
-    } catch (error) {
-        res.status(500).json({ error: "Error eliminando" });
+    } catch (error) { res.status(500).json({ error: "Error eliminando" }); }
+});
+
+
+// ==========================================================
+// NUEVO CRON JOB: Sincronizar vistas a MongoDB cada 5 minutos
+// ==========================================================
+cron.schedule('*/5 * * * *', async () => {
+    const keys = pendingViewsCache.keys();
+    if (keys.length === 0 || !mongoDb) return;
+
+    console.log(`[Cron] Sincronizando vistas de ${keys.length} contenidos a MongoDB...`);
+    const bulkOps = [];
+    const now = new Date();
+    const dayId = now.toISOString().split('T')[0];
+    const monthId = dayId.substring(0, 7);
+
+    for (const tmdbId of keys) {
+        const viewsCount = pendingViewsCache.get(tmdbId);
+        if (viewsCount > 0) {
+            
+            // 1. Buscar a quién le pertenece este contenido (¿Quién lo subió?)
+            let uploaderId = null;
+            const movie = await mongoDb.collection('media_catalog').findOne({ tmdbId: tmdbId });
+            if (movie && movie.uploaderId) { uploaderId = movie.uploaderId; }
+            else {
+                const series = await mongoDb.collection('series_catalog').findOne({ tmdbId: tmdbId });
+                if (series && series.uploaderId) uploaderId = series.uploaderId;
+            }
+
+            // 2. Si encontramos al dueño, le pagamos
+            if (uploaderId) {
+                const earned = viewsCount * REVENUE_SETTINGS.payout_per_view;
+                
+                bulkOps.push({
+                    updateOne: {
+                        filter: { uploaderId: parseInt(uploaderId), dayId: dayId },
+                        update: { 
+                            $inc: { today_earned: earned, total_views: viewsCount },
+                            $setOnInsert: { monthId: monthId, today_content_count: 0 }
+                        },
+                        upsert: true
+                    }
+                });
+            }
+        }
+    }
+
+    if (bulkOps.length > 0) {
+        try {
+            await mongoDb.collection(COLL_DAILY_STATS).bulkWrite(bulkOps);
+            pendingViewsCache.flushAll(); // Limpiar RAM para el siguiente ciclo
+            console.log(`[Cron] Se han sincronizado $ generados por vistas con éxito.`);
+        } catch (e) {
+            console.error("[Cron] Error sincronizando vistas masivas:", e);
+        }
     }
 });
 
-cron.schedule('0 18 * * *', () => {
-    if (ADMIN_CHAT_ID_2) {
-        bot.sendMessage(ADMIN_CHAT_ID_2, 'Hora pico detectada.');
-    }
-}, { scheduled: true, timezone: "America/Guayaquil" });
 
+cron.schedule('0 18 * * *', () => { if (ADMIN_CHAT_ID_2) bot.sendMessage(ADMIN_CHAT_ID_2, 'Hora pico detectada.'); }, { scheduled: true, timezone: "America/Guayaquil" });
 cron.schedule('0 0 * * *', async () => {
     try {
         const now = new Date();
         const snapshot = await db.collection('users').where('isPro', '==', true).where('premiumExpiry', '<', now).get();
         if (!snapshot.empty) {
             const batch = db.batch();
-            snapshot.docs.forEach(doc => {
-                batch.update(doc.ref, { isPro: false });
-            });
+            snapshot.docs.forEach(doc => { batch.update(doc.ref, { isPro: false }); });
             await batch.commit();
         }
     } catch(e) {}
@@ -514,9 +535,7 @@ async function startServer() {
             } catch (err) {}
         }, 3000);
 
-        client.on('close', () => {
-            setTimeout(connectToMongo, 5000);
-        });
+        client.on('close', () => { setTimeout(connectToMongo, 5000); });
     });
 }
 
