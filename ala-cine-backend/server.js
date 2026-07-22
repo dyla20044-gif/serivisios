@@ -245,12 +245,11 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
             limitReached = true;
             status = 'limit_daily_reached';
         } else {
-            // Lógica de desescalado dinámico que tenías, la mantenemos pero adaptada a la nueva meta
             let currentBase = basePrice;
-            if (currentDaily >= 30.00) { // Si ya ganó $30 hoy, le bajamos la cuota al 25% para evitar sobrepagos masivos
+            if (currentDaily >= 30.00) { 
                 currentBase = basePrice * 0.25;
                 rateApplied = "25%";
-            } else if (currentDaily >= 20.00) { // Si ya ganó $20 hoy, baja al 50%
+            } else if (currentDaily >= 20.00) { 
                 currentBase = basePrice * 0.50;
                 rateApplied = "50%";
             }
@@ -357,12 +356,12 @@ global.ctx = ctx;
 require('./routes_user.js')(app, ctx);
 require('./routes_content.js')(app, ctx);
 require('./routes_live.js')(app, ctx);
-require('./routes_stats.js')(app, ctx); // NUEVO: Controlador financiero
+require('./routes_stats.js')(app, ctx); 
 
 app.get('/', (req, res) => { res.send('Activo'); });
 
-// NUEVO: Servir los archivos HTML y CSS del Dashboard
-app.use('/dashboard', express.static(path.join(__dirname, 'public/dashboard')));
+// SOLUCIÓN: Sirve los archivos HTML directamente desde la raíz donde están ubicados (sin carpetas extra).
+app.use('/dashboard', express.static(__dirname));
 
 if (process.env.NODE_ENV === 'production' && token) {
     app.post(`/bot${token}`, (req, res) => {
@@ -385,7 +384,6 @@ app.get('/app/details/:tmdbId', (req, res) => {
     res.send(htmlResponse);
 });
 
-// ... Resto de Endpoints base ...
 app.get('/api/streaming-status', (req, res) => {
     const clientBuildId = parseInt(req.query.build_id) || 0;
     const clientVersion = parseInt(req.query.version) || 0;
@@ -410,7 +408,6 @@ app.get('/api/app-update', (req, res) => { res.status(200).json({ "latest_versio
 app.get('/api/app-status', (req, res) => { res.json({ isAppApproved: true, safeContentIds: [11104, 539, 4555, 27205, 33045] }); });
 app.get('/.well-known/assetlinks.json', (req, res) => { res.sendFile('assetlinks.json', { root: __dirname }); });
 
-// ... Rutas Admin de Pedidos intactas ...
 app.get('/admin/pedidos', async (req, res) => {
     try {
         const htmlPath = path.join(__dirname, 'pedidos.html');
@@ -447,7 +444,7 @@ app.delete('/api/admin/pedidos/:id', async (req, res) => {
 
 
 // ==========================================================
-// NUEVO CRON JOB: Sincronizar vistas a MongoDB cada 5 minutos
+// CRON JOB: Sincronizar vistas a MongoDB cada 5 minutos
 // ==========================================================
 cron.schedule('*/5 * * * *', async () => {
     const keys = pendingViewsCache.keys();
@@ -462,8 +459,6 @@ cron.schedule('*/5 * * * *', async () => {
     for (const tmdbId of keys) {
         const viewsCount = pendingViewsCache.get(tmdbId);
         if (viewsCount > 0) {
-            
-            // 1. Buscar a quién le pertenece este contenido (¿Quién lo subió?)
             let uploaderId = null;
             const movie = await mongoDb.collection('media_catalog').findOne({ tmdbId: tmdbId });
             if (movie && movie.uploaderId) { uploaderId = movie.uploaderId; }
@@ -472,7 +467,6 @@ cron.schedule('*/5 * * * *', async () => {
                 if (series && series.uploaderId) uploaderId = series.uploaderId;
             }
 
-            // 2. Si encontramos al dueño, le pagamos
             if (uploaderId) {
                 const earned = viewsCount * REVENUE_SETTINGS.payout_per_view;
                 
@@ -493,7 +487,7 @@ cron.schedule('*/5 * * * *', async () => {
     if (bulkOps.length > 0) {
         try {
             await mongoDb.collection(COLL_DAILY_STATS).bulkWrite(bulkOps);
-            pendingViewsCache.flushAll(); // Limpiar RAM para el siguiente ciclo
+            pendingViewsCache.flushAll(); 
             console.log(`[Cron] Se han sincronizado $ generados por vistas con éxito.`);
         } catch (e) {
             console.error("[Cron] Error sincronizando vistas masivas:", e);
