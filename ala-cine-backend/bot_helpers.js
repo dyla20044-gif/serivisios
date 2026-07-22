@@ -73,7 +73,8 @@ module.exports = function(botCtx) {
             ],
             [
                 { text: '🌟 Abrir Pedidos', web_app: { url: webAppUrl } },
-                { text: '💰 Mis Ganancias', callback_data: 'view_earnings' }
+                // NUEVO: Botón de ganancias configurado para abrir tu Dashboard HTML
+                { text: '💰 Mis Ganancias', web_app: { url: `${RENDER_BACKEND_URL}/dashboard/dashboard.html?uid=${chatId}` } }
             ]
         ];
 
