@@ -54,6 +54,7 @@ body {
 .text-yellow { color: var(--accent-yellow) !important; }
 .text-cyan { color: var(--accent-cyan) !important; }
 .text-muted { color: var(--text-muted) !important; }
+.text-red { color: var(--accent-red) !important; } /* NUEVO: Agregado para la flecha de bajada */
 
 /* Contenedor de la App */
 .app-container {
