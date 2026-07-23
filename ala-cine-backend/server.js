@@ -32,7 +32,7 @@ const zyroCache = new NodeCache({ stdTTL: 86400, checkperiod: 3600 });
 const requestsCache = new NodeCache({ stdTTL: 604800, checkperiod: 3600 });
 const REQUESTS_CACHE_KEY = 'all_movie_requests';
 
-// NUEVO: Caché en memoria para las visualizaciones entrantes (Protección anti-saturación)
+// Caché en memoria para las visualizaciones entrantes (Protección anti-saturación)
 const pendingViewsCache = new NodeCache({ stdTTL: 0 }); 
 
 const app = express();
@@ -70,14 +70,11 @@ const BUILD_ID_UNDER_REVIEW = 24;
 const MONGO_URI = process.env.MONGO_URI;
 const MONGO_DB_NAME = process.env.MONGO_DB_NAME || 'sala_cine';
 
-// NUEVO: Estructura de Finanzas Actualizada (Estrenos $0.50, Catálogo $0.10, Vistas $0.005)
+// Configuración de Finanzas (Límites actualizados)
 const REVENUE_SETTINGS = {
-    estreno_peli: 0.50,
-    catalogo_peli: 0.10,
-    episodio_serie: 0.10,
-    payout_per_view: 0.005, // Equivalente a $5 USD por 1000 vistas
+    payout_per_view: 0.005, // Medio centavo por vista
     limit_daily: 40.00,
-    limit_monthly: 500.00,
+    limit_monthly: 140.00, // NUEVO: Límite mensual global configurado en 140
     months_to_be_estreno: 6
 };
 
@@ -111,10 +108,8 @@ async function connectToMongo() {
         await mongoDb.collection('series_catalog').createIndex({ isPinned: 1, addedAt: -1 });
         await mongoDb.collection('movie_requests').createIndex({ updatedAt: -1 });
         
-        console.log("Índices de MongoDB optimizados y verificados.");
         return mongoDb;
     } catch (e) {
-        console.error("Error al conectar a MongoDB Atlas:", e);
         process.exit(1);
     }
 }
@@ -122,17 +117,24 @@ const adminState = {};
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
+// Lógica de Tráfico y Multiplicador de CPM
 let trafficCount = 0;
 let lastTrafficAlert = 0;
+let currentCpmMultiplier = 1.0; // Multiplicador base dinámico
 const TRAFFIC_THRESHOLD = 300; 
+
 setInterval(() => { trafficCount = 0; }, 60000);
 
 app.use((req, res, next) => {
     trafficCount++;
     if (trafficCount > TRAFFIC_THRESHOLD && (Date.now() - lastTrafficAlert > 3600000)) {
         lastTrafficAlert = Date.now();
+        // Aumenta el pago en un 50% temporalmente por la avalancha de vistas
+        currentCpmMultiplier = 1.5; 
+        setTimeout(() => { currentCpmMultiplier = 1.0; }, 3600000); // Vuelve a la normalidad en 1 hora
+
         if (ADMIN_CHAT_ID_2) {
-            bot.sendMessage(ADMIN_CHAT_ID_2, 'Tráfico alto detectado ahora. El CPM está subiendo.');
+            bot.sendMessage(ADMIN_CHAT_ID_2, '🔥 *Tráfico pico detectado*. El CPM está subiendo y el multiplicador x1.5 se ha activado para incentivar subidas.', { parse_mode: 'Markdown' });
         }
     }
 
@@ -145,7 +147,6 @@ app.use((req, res, next) => {
 
 try {
     require('./bridge.js')(app);
-    console.log("Módulo Bridge cargado correctamente.");
 } catch (error) {
     console.warn("Advertencia: No se pudo cargar bridge.js:", error.message);
 }
@@ -153,7 +154,7 @@ try {
 async function verifyIdToken(req, res, next) {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return res.status(401).json({ error: "No autorizado. Faltan credenciales." }); 
+        return res.status(401).json({ error: "No autorizado." }); 
     }
     const idToken = authHeader.split(' ')[1];
     try {
@@ -162,7 +163,7 @@ async function verifyIdToken(req, res, next) {
         req.email = decodedToken.email;
         next();
     } catch (error) {
-        return res.status(401).json({ error: "No autorizado. Token inválido." });
+        return res.status(401).json({ error: "Token inválido." });
     }
 }
 
@@ -170,7 +171,12 @@ function verifyInternalAdmin(req, res, next) {
     if (req.uid) return next();
     const internalToken = req.headers['x-salacine-internal-token'];
     if (internalToken && internalToken === process.env.INTERNAL_SECURITY_TOKEN) return next();
-    return res.status(403).json({ error: "Acceso denegado. Autenticación de administrador requerida." });
+    return res.status(403).json({ error: "Acceso denegado." });
+}
+
+// Generador de recompensa aleatoria (Gamificación)
+function getRandomPayout(min, max) {
+    return parseFloat((Math.random() * (max - min) + min).toFixed(2));
 }
 
 async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title, season = null, episode = null }) {
@@ -193,6 +199,7 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
     const monthId = dayId.substring(0, 7);
 
     try {
+        // SISTEMA DE RECOMPENSA VARIABLE
         if (mediaType === 'movie') {
             const tmdbUrl = `https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${TMDB_API_KEY}&language=es-MX`;
             try {
@@ -204,21 +211,24 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
                     
                     if (diffMonths < REVENUE_SETTINGS.months_to_be_estreno) {
                         contentType = 'estreno';
-                        basePrice = REVENUE_SETTINGS.estreno_peli;
+                        basePrice = getRandomPayout(0.30, 0.50); // Estrenos pagan al azar entre 0.30 y 0.50
                     } else {
                         contentType = 'catalogo';
-                        basePrice = REVENUE_SETTINGS.catalogo_peli;
+                        basePrice = getRandomPayout(0.10, 0.25); // Catálogo paga entre 0.10 y 0.25
                     }
                 } else {
-                    basePrice = REVENUE_SETTINGS.catalogo_peli;
+                    basePrice = getRandomPayout(0.10, 0.25);
                 }
             } catch (tmdbErr) {
-                basePrice = REVENUE_SETTINGS.catalogo_peli; 
+                basePrice = getRandomPayout(0.10, 0.25); 
             }
         } else {
             contentType = 'episodio';
-            basePrice = REVENUE_SETTINGS.episodio_serie;
+            basePrice = getRandomPayout(0.05, 0.35); // Capítulos varían entre 5 y 35 centavos (adictivo)
         }
+
+        // Aplicamos multiplicador de CPM de las horas pico
+        basePrice = parseFloat((basePrice * currentCpmMultiplier).toFixed(2));
 
         let dailyStats = await mongoDb.collection(COLL_DAILY_STATS).findOne({ uploaderId: uploaderNum, dayId });
         let currentDaily = dailyStats ? (dailyStats.today_earned || 0) : 0;
@@ -233,31 +243,25 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
         let finalEarned = 0;
         let limitReached = false;
         let status = '';
-        let rateApplied = "100%";
 
+        // DIFICULTAD DINÁMICA: Cuidando el presupuesto de 140 al mes
         if (currentMonthEarned >= REVENUE_SETTINGS.limit_monthly) {
             finalEarned = 0;
             limitReached = true;
             status = 'limit_monthly_reached';
-        }
-        else if (currentDaily >= REVENUE_SETTINGS.limit_daily) {
-            finalEarned = 0; 
-            limitReached = true;
-            status = 'limit_daily_reached';
         } else {
             let currentBase = basePrice;
-            if (currentDaily >= 30.00) { 
-                currentBase = basePrice * 0.25;
-                rateApplied = "25%";
-            } else if (currentDaily >= 20.00) { 
-                currentBase = basePrice * 0.50;
-                rateApplied = "50%";
+            
+            if (currentMonthEarned >= 120.00) { 
+                currentBase = basePrice * 0.10; // Si roza los $140, paga el 10% (Freno fuerte)
+            } else if (currentMonthEarned >= 80.00) { 
+                currentBase = basePrice * 0.40; // Si pasa $80, paga el 40%
             }
 
             if (currentDaily + currentBase > REVENUE_SETTINGS.limit_daily) {
                 finalEarned = REVENUE_SETTINGS.limit_daily - currentDaily;
             } else {
-                finalEarned = currentBase;
+                finalEarned = parseFloat(currentBase.toFixed(3));
             }
             status = 'applied';
         }
@@ -302,7 +306,9 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
             monthId
         };
 
-        await mongoDb.collection(COLL_REVENUE).insertOne(revenueRecord);
+        if (finalEarned > 0) {
+            await mongoDb.collection(COLL_REVENUE).insertOne(revenueRecord);
+        }
         
         return { appliedRevenue: finalEarned, status };
     } catch (error) {
@@ -344,7 +350,7 @@ const ctx = {
         embedCache, countsCache, tmdbCache, recentCache,
         historyCache, localDetailsCache, pinnedCache,
         kdramaCache, catalogCache, userCache, requestsCache, zyroCache,
-        pendingViewsCache
+        pendingViewsCache 
     },
     cacheKeys: { PINNED_CACHE_KEY, KDRAMA_CACHE_KEY, CATALOG_CACHE_KEY, RECENT_CACHE_KEY, REQUESTS_CACHE_KEY },
     middlewares: { verifyIdToken, verifyInternalAdmin },
@@ -475,7 +481,8 @@ cron.schedule('*/5 * * * *', async () => {
             }
 
             if (uploaderId) {
-                const earned = viewsCount * REVENUE_SETTINGS.payout_per_view;
+                // Multiplicamos las vistas x precio x el bono de hora pico actual
+                const earned = parseFloat((viewsCount * REVENUE_SETTINGS.payout_per_view * currentCpmMultiplier).toFixed(3));
                 
                 bulkOps.push({
                     updateOne: {
