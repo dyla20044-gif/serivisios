@@ -2,14 +2,14 @@ module.exports = function(app, ctx) {
     const { mongoDb, caches, REVENUE_SETTINGS } = ctx;
     const { pendingViewsCache } = caches;
 
-    // 1. ENDPOINT PARA LA APP ANDROID (Registra vistas con Sistema Anti-Spam)
+    // 1. ENDPOINT PARA LA APP ANDROID (Registra vistas)
     app.post('/api/track-view/:tmdbId', (req, res) => {
         const tmdbId = req.params.tmdbId;
         if (!tmdbId) return res.status(400).send({ error: "Falta ID" });
         
         const currentViews = pendingViewsCache.get(tmdbId) || 0;
-        // SOLUCIÓN ANTI-SPAM: Sumamos 0.5. Se necesitan 2 peticiones (clics) para sumar 1 vista.
-        pendingViewsCache.set(tmdbId, currentViews + 0.5);
+        // Restricción removida: Sumamos de 1 en 1 sin filtros
+        pendingViewsCache.set(tmdbId, currentViews + 1);
         
         res.status(200).send({ success: true, cached: true });
     });
@@ -56,7 +56,6 @@ module.exports = function(app, ctx) {
 
             const hist = historicalStats[0] || { totalEarned: 0, totalMovies: 0, totalEpisodes: 0, bonusTotal: 0 };
 
-            // NUEVO: Obtener los últimos 10 movimientos reales (Subidas, vistas, bonos)
             const recentActivity = await db.collection('uploader_revenue')
                 .find({ uploaderId: uploaderId })
                 .sort({ timestamp: -1 })
@@ -69,10 +68,11 @@ module.exports = function(app, ctx) {
                 .limit(5)
                 .toArray();
 
+            // Ajustado al nuevo límite de 200
             let dynamicRate = REVENUE_SETTINGS.payout_per_view || 0.005; 
             if (monthEarned > 100) dynamicRate = dynamicRate * 0.5;  
-            if (monthEarned > 130) dynamicRate = dynamicRate * 0.2;   
-            if (monthEarned >= 140) dynamicRate = 0;                  
+            if (monthEarned > 180) dynamicRate = dynamicRate * 0.2;   
+            if (monthEarned >= 200) dynamicRate = 0;                  
 
             res.json({
                 success: true,
