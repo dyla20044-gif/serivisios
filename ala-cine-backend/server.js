@@ -70,11 +70,11 @@ const BUILD_ID_UNDER_REVIEW = 24;
 const MONGO_URI = process.env.MONGO_URI;
 const MONGO_DB_NAME = process.env.MONGO_DB_NAME || 'sala_cine';
 
-// Configuración de Finanzas (Límites actualizados)
+// Configuración de Finanzas (Límite mensual actualizado a 200)
 const REVENUE_SETTINGS = {
-    payout_per_view: 0.005, // Medio centavo por vista
+    payout_per_view: 0.005, // Medio centavo por vista ($5 cada 1000)
     limit_daily: 40.00,
-    limit_monthly: 140.00, // NUEVO: Límite mensual global configurado en 140
+    limit_monthly: 200.00, // Límite mensual global configurado en 200
     months_to_be_estreno: 6
 };
 
@@ -120,7 +120,7 @@ app.use(bodyParser.urlencoded({ extended: true }));
 // Lógica de Tráfico y Multiplicador de CPM
 let trafficCount = 0;
 let lastTrafficAlert = 0;
-let currentCpmMultiplier = 1.0; // Multiplicador base dinámico
+let currentCpmMultiplier = 1.0; 
 const TRAFFIC_THRESHOLD = 300; 
 
 setInterval(() => { trafficCount = 0; }, 60000);
@@ -129,9 +129,8 @@ app.use((req, res, next) => {
     trafficCount++;
     if (trafficCount > TRAFFIC_THRESHOLD && (Date.now() - lastTrafficAlert > 3600000)) {
         lastTrafficAlert = Date.now();
-        // Aumenta el pago en un 50% temporalmente por la avalancha de vistas
         currentCpmMultiplier = 1.5; 
-        setTimeout(() => { currentCpmMultiplier = 1.0; }, 3600000); // Vuelve a la normalidad en 1 hora
+        setTimeout(() => { currentCpmMultiplier = 1.0; }, 3600000); 
 
         if (ADMIN_CHAT_ID_2) {
             bot.sendMessage(ADMIN_CHAT_ID_2, '🔥 *Tráfico pico detectado*. El CPM está subiendo y el multiplicador x1.5 se ha activado para incentivar subidas.', { parse_mode: 'Markdown' });
@@ -174,10 +173,40 @@ function verifyInternalAdmin(req, res, next) {
     return res.status(403).json({ error: "Acceso denegado." });
 }
 
-// Generador de recompensa aleatoria (Gamificación)
 function getRandomPayout(min, max) {
     return parseFloat((Math.random() * (max - min) + min).toFixed(2));
 }
+
+// Variables y CRON Jobs para "La Hora Feliz" y Notificaciones
+let isHappyHour = false;
+
+// 10:00 AM (Familia)
+cron.schedule('0 10 * * *', async () => {
+    isHappyHour = true;
+    await sendNotificationToTopic(
+        "🔥 ¡Hora Ideal para Subir!", 
+        "De 10:00 a 11:00 AM pagamos $0.50 por cada estreno en familia que subas.", 
+        null, null, null, 'new_content'
+    );
+}, { scheduled: true, timezone: "America/Guayaquil" });
+
+cron.schedule('0 11 * * *', () => { 
+    isHappyHour = false; 
+}, { scheduled: true, timezone: "America/Guayaquil" });
+
+// 3:00 PM (Fin de semana)
+cron.schedule('0 15 * * *', async () => {
+    isHappyHour = true;
+    await sendNotificationToTopic(
+        "🍿 ¡Tarde de Películas!", 
+        "La gente busca qué ver este fin de semana. Sube películas ahora y gana más.", 
+        null, null, null, 'new_content'
+    );
+}, { scheduled: true, timezone: "America/Guayaquil" });
+
+cron.schedule('0 16 * * *', () => { 
+    isHappyHour = false; 
+}, { scheduled: true, timezone: "America/Guayaquil" });
 
 async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title, season = null, episode = null }) {
     const uploaderNum = Number(uploaderId);
@@ -199,7 +228,7 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
     const monthId = dayId.substring(0, 7);
 
     try {
-        // SISTEMA DE RECOMPENSA VARIABLE
+        // SISTEMA DE RECOMPENSA VARIABLE Y RESTRICCIÓN DE AÑO
         if (mediaType === 'movie') {
             const tmdbUrl = `https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${TMDB_API_KEY}&language=es-MX`;
             try {
@@ -207,14 +236,24 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
                 const releaseDateStr = resp.data.release_date;
                 if (releaseDateStr) {
                     const releaseDate = new Date(releaseDateStr);
-                    const diffMonths = (now.getFullYear() - releaseDate.getFullYear()) * 12 + (now.getMonth() - releaseDate.getMonth());
+                    const releaseYear = releaseDate.getFullYear();
+
+                    // Restricción: Solo películas del 2021 en adelante (no antiguas)
+                    if (releaseYear < 2021) {
+                        return { appliedRevenue: 0, status: 'rechazado_pelicula_antigua' };
+                    }
+
+                    const diffMonths = (now.getFullYear() - releaseYear) * 12 + (now.getMonth() - releaseDate.getMonth());
                     
-                    if (diffMonths < REVENUE_SETTINGS.months_to_be_estreno) {
+                    if (isHappyHour) {
+                        contentType = 'estreno_especial';
+                        basePrice = 0.50; 
+                    } else if (diffMonths < REVENUE_SETTINGS.months_to_be_estreno) {
                         contentType = 'estreno';
-                        basePrice = getRandomPayout(0.30, 0.50); // Estrenos pagan al azar entre 0.30 y 0.50
+                        basePrice = getRandomPayout(0.30, 0.50); 
                     } else {
                         contentType = 'catalogo';
-                        basePrice = getRandomPayout(0.10, 0.25); // Catálogo paga entre 0.10 y 0.25
+                        basePrice = getRandomPayout(0.10, 0.25); 
                     }
                 } else {
                     basePrice = getRandomPayout(0.10, 0.25);
@@ -224,10 +263,9 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
             }
         } else {
             contentType = 'episodio';
-            basePrice = getRandomPayout(0.05, 0.35); // Capítulos varían entre 5 y 35 centavos (adictivo)
+            basePrice = getRandomPayout(0.05, 0.35); 
         }
 
-        // Aplicamos multiplicador de CPM de las horas pico
         basePrice = parseFloat((basePrice * currentCpmMultiplier).toFixed(2));
 
         let dailyStats = await mongoDb.collection(COLL_DAILY_STATS).findOne({ uploaderId: uploaderNum, dayId });
@@ -244,7 +282,7 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
         let limitReached = false;
         let status = '';
 
-        // DIFICULTAD DINÁMICA: Cuidando el presupuesto de 140 al mes
+        // DIFICULTAD DINÁMICA: Límite mensual global
         if (currentMonthEarned >= REVENUE_SETTINGS.limit_monthly) {
             finalEarned = 0;
             limitReached = true;
@@ -252,18 +290,27 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
         } else {
             let currentBase = basePrice;
             
-            if (currentMonthEarned >= 120.00) { 
-                currentBase = basePrice * 0.10; // Si roza los $140, paga el 10% (Freno fuerte)
+            // Si se acerca a los $100 dólares, cuesta un poquito más subir (paga menos)
+            if (currentMonthEarned >= 100.00) { 
+                currentBase = basePrice * 0.10; 
             } else if (currentMonthEarned >= 80.00) { 
-                currentBase = basePrice * 0.40; // Si pasa $80, paga el 40%
+                currentBase = basePrice * 0.40; 
             }
 
-            if (currentDaily + currentBase > REVENUE_SETTINGS.limit_daily) {
+            // BONO POR 4 PELÍCULAS SUBIDAS EN EL DÍA
+            let bonoPorVolumen = 0;
+            const totalSubidasHoy = (dailyStats ? (dailyStats.today_content_count || 0) : 0) + 1;
+            
+            if (totalSubidasHoy === 4) {
+                bonoPorVolumen = 5.00;
+            }
+
+            if (currentDaily + currentBase + bonoPorVolumen > REVENUE_SETTINGS.limit_daily) {
                 finalEarned = REVENUE_SETTINGS.limit_daily - currentDaily;
             } else {
-                finalEarned = parseFloat(currentBase.toFixed(3));
+                finalEarned = parseFloat(currentBase.toFixed(3)) + bonoPorVolumen;
             }
-            status = 'applied';
+            status = bonoPorVolumen > 0 ? 'bono_aplicado' : 'applied';
         }
 
         if (!dailyStats) {
@@ -447,7 +494,6 @@ app.delete('/api/admin/pedidos/:id', async (req, res) => {
     } catch (error) { res.status(500).json({ error: "Error eliminando" }); }
 });
 
-
 // ==========================================================
 // CRON JOB: Sincronizar vistas a MongoDB cada 5 minutos
 // ==========================================================
@@ -527,7 +573,6 @@ cron.schedule('*/5 * * * *', async () => {
         }
     }
 });
-
 
 cron.schedule('0 18 * * *', () => { if (ADMIN_CHAT_ID_2) bot.sendMessage(ADMIN_CHAT_ID_2, 'Hora pico detectada.'); }, { scheduled: true, timezone: "America/Guayaquil" });
 cron.schedule('0 0 * * *', async () => {
