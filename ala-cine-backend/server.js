@@ -173,41 +173,31 @@ function verifyInternalAdmin(req, res, next) {
     return res.status(403).json({ error: "Acceso denegado." });
 }
 
-function getRandomPayout(min, max) {
-    return parseFloat((Math.random() * (max - min) + min).toFixed(2));
-}
+// ==========================================================
+// NOTIFICACIONES AUTOMÁTICAS PARA ATRAER USUARIOS A LA APP
+// ==========================================================
 
-// Variables y CRON Jobs para "La Hora Feliz" y Notificaciones
-let isHappyHour = false;
-
-// 10:00 AM (Familia)
-cron.schedule('0 10 * * *', async () => {
-    isHappyHour = true;
+// 7:00 PM (19:00) - Noche de películas
+cron.schedule('0 19 * * *', async () => {
     await sendNotificationToTopic(
-        "🔥 ¡Hora Ideal para Subir!", 
-        "De 10:00 a 11:00 AM pagamos $0.50 por cada estreno en familia que subas.", 
+        "🍿 ¡Noche de Películas!", 
+        "Prepara tus snacks. Entra y descubre las películas más recientes que se han agregado.", 
         null, null, null, 'new_content'
     );
 }, { scheduled: true, timezone: "America/Guayaquil" });
 
-cron.schedule('0 11 * * *', () => { 
-    isHappyHour = false; 
-}, { scheduled: true, timezone: "America/Guayaquil" });
-
-// 3:00 PM (Fin de semana)
-cron.schedule('0 15 * * *', async () => {
-    isHappyHour = true;
+// 9:00 PM (21:00) - Tendencias nocturnas
+cron.schedule('0 21 * * *', async () => {
     await sendNotificationToTopic(
-        "🍿 ¡Tarde de Películas!", 
-        "La gente busca qué ver este fin de semana. Sube películas ahora y gana más.", 
+        "🔥 ¡Todos están viendo esto!", 
+        "Muchas personas están viendo películas ahora mismo. ¡Únete y descubre qué hay de nuevo en la app!", 
         null, null, null, 'new_content'
     );
 }, { scheduled: true, timezone: "America/Guayaquil" });
 
-cron.schedule('0 16 * * *', () => { 
-    isHappyHour = false; 
-}, { scheduled: true, timezone: "America/Guayaquil" });
-
+// ==========================================================
+// CÁLCULO DE GANANCIAS CON PRECIOS FIJOS
+// ==========================================================
 async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title, season = null, episode = null }) {
     const uploaderNum = Number(uploaderId);
 
@@ -228,7 +218,7 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
     const monthId = dayId.substring(0, 7);
 
     try {
-        // SISTEMA DE RECOMPENSA VARIABLE Y RESTRICCIÓN DE AÑO
+        // SISTEMA DE PRECIOS FIJOS
         if (mediaType === 'movie') {
             const tmdbUrl = `https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${TMDB_API_KEY}&language=es-MX`;
             try {
@@ -242,28 +232,20 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
                     if (releaseYear < 2021) {
                         return { appliedRevenue: 0, status: 'rechazado_pelicula_antigua' };
                     }
-
-                    const diffMonths = (now.getFullYear() - releaseYear) * 12 + (now.getMonth() - releaseDate.getMonth());
-                    
-                    if (isHappyHour) {
-                        contentType = 'estreno_especial';
-                        basePrice = 0.50; 
-                    } else if (diffMonths < REVENUE_SETTINGS.months_to_be_estreno) {
-                        contentType = 'estreno';
-                        basePrice = getRandomPayout(0.30, 0.50); 
-                    } else {
-                        contentType = 'catalogo';
-                        basePrice = getRandomPayout(0.10, 0.25); 
-                    }
-                } else {
-                    basePrice = getRandomPayout(0.10, 0.25);
                 }
+                
+                contentType = 'pelicula';
+                basePrice = 0.50; // $0.50 por película
             } catch (tmdbErr) {
-                basePrice = getRandomPayout(0.10, 0.25); 
+                contentType = 'pelicula';
+                basePrice = 0.50;
             }
+        } else if (mediaType === 'tv' || mediaType === 'tv_season') {
+            contentType = 'serie';
+            basePrice = 0.25; // $0.25 por serie completa
         } else {
             contentType = 'episodio';
-            basePrice = getRandomPayout(0.05, 0.35); 
+            basePrice = 0.15; // $0.15 por capítulo
         }
 
         basePrice = parseFloat((basePrice * currentCpmMultiplier).toFixed(2));
@@ -282,7 +264,7 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
         let limitReached = false;
         let status = '';
 
-        // DIFICULTAD DINÁMICA: Límite mensual global
+        // Límite mensual global
         if (currentMonthEarned >= REVENUE_SETTINGS.limit_monthly) {
             finalEarned = 0;
             limitReached = true;
@@ -495,8 +477,10 @@ app.delete('/api/admin/pedidos/:id', async (req, res) => {
 });
 
 // ==========================================================
-// CRON JOB: Sincronizar vistas a MongoDB cada 5 minutos
+// CRON JOB: Sincronizar vistas y MONITOREO DE TENDENCIAS (cada 5 min)
 // ==========================================================
+let lastTrendingAlert = 0; // Para no hacer spam de notificaciones
+
 cron.schedule('*/5 * * * *', async () => {
     const keys = pendingViewsCache.keys();
     if (keys.length === 0 || !mongoDb) return;
@@ -507,6 +491,11 @@ cron.schedule('*/5 * * * *', async () => {
     const now = new Date();
     const dayId = now.toISOString().split('T')[0];
     const monthId = dayId.substring(0, 7);
+
+    // Variables para buscar la película más vista en este ciclo de 5 minutos
+    let maxViews = 0;
+    let trendingTitle = "Contenido";
+    let trendingTmdbId = "";
 
     for (const tmdbId of keys) {
         const viewsCount = pendingViewsCache.get(tmdbId);
@@ -527,6 +516,13 @@ cron.schedule('*/5 * * * *', async () => {
             }
 
             if (uploaderId) {
+                // Rastrear si esta es la película más vista para la notificación de tendencia
+                if (viewsCount > maxViews) {
+                    maxViews = viewsCount;
+                    trendingTitle = titleMedia;
+                    trendingTmdbId = tmdbId;
+                }
+
                 // Multiplicamos las vistas x precio x el bono de hora pico actual
                 const earned = parseFloat((viewsCount * REVENUE_SETTINGS.payout_per_view * currentCpmMultiplier).toFixed(3));
                 
@@ -558,6 +554,17 @@ cron.schedule('*/5 * * * *', async () => {
                 }
             }
         }
+    }
+
+    // DISPARADOR DE NOTIFICACIÓN POR TENDENCIA
+    // Si una película tuvo más de 30 vistas de golpe y han pasado al menos 4 horas desde la última alerta
+    if (maxViews >= 30 && (Date.now() - lastTrendingAlert > 14400000)) { 
+        lastTrendingAlert = Date.now();
+        await sendNotificationToTopic(
+            "📈 ¡Tendencia Actual!", 
+            `¡Muchas personas están viendo "${trendingTitle}" justo ahora! Entra a verla tú también.`, 
+            null, trendingTmdbId, 'general', 'new_content'
+        );
     }
 
     if (bulkOps.length > 0) {
