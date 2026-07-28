@@ -219,6 +219,10 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
     const monthId = dayId.substring(0, 7);
 
     try {
+        // Consultamos las estadísticas diarias PRIMERO para poder alternar los precios por cantidad
+        let dailyStats = await mongoDb.collection(COLL_DAILY_STATS).findOne({ uploaderId: uploaderNum, dayId });
+        let currentDaily = dailyStats ? (dailyStats.today_earned || 0) : 0;
+
         if (mediaType === 'movie') {
             const tmdbUrl = `https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${TMDB_API_KEY}&language=es-MX`;
             try {
@@ -235,29 +239,39 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
                 }
                 
                 contentType = 'pelicula';
-                basePrice = 0.50; // $0.50 por película
+                
+                // Extraemos cuántas películas ha subido hoy para alternar $0.50 y $0.40
+                const peliculasSubidas = dailyStats ? (dailyStats.month_pelicula_count || 0) : 0;
+                
+                if (peliculasSubidas % 2 === 0) {
+                    basePrice = 0.50; // Películas 1, 3, 5... pagan $0.50
+                } else {
+                    basePrice = 0.40; // Películas 2, 4, 6... pagan $0.40
+                }
+
             } catch (tmdbErr) {
                 contentType = 'pelicula';
-                basePrice = 0.50;
+                const peliculasSubidas = dailyStats ? (dailyStats.month_pelicula_count || 0) : 0;
+                basePrice = (peliculasSubidas % 2 === 0) ? 0.50 : 0.40;
             }
+        } else if (mediaType === 'tv' || mediaType === 'tv_season') {
+            // Lógica para Temporada/Serie Completa
+            contentType = 'serie';
+            basePrice = 0.25;
         } else {
-            // Lógica para Series y Capítulos
+            // Lógica para Capítulos individuales
             contentType = 'episodio';
+            const numEpisodio = parseInt(episode) || 1; 
             
             // Alterna entre $0.25 y $0.15 dependiendo de si el episodio es impar o par
-            const numEpisodio = parseInt(episode) || 1; // Si no envían el episodio, asume 1 por defecto
-            
             if (numEpisodio % 2 !== 0) {
-                basePrice = 0.25; // Episodios impares (1, 3, 5, 7...) pagan $0.25
+                basePrice = 0.25; // Episodios impares (1, 3, 5...) pagan $0.25
             } else {
-                basePrice = 0.15; // Episodios pares (2, 4, 6, 8...) pagan $0.15
+                basePrice = 0.15; // Episodios pares (2, 4, 6...) pagan $0.15
             }
         }
 
         basePrice = parseFloat((basePrice * currentCpmMultiplier).toFixed(2));
-
-        let dailyStats = await mongoDb.collection(COLL_DAILY_STATS).findOne({ uploaderId: uploaderNum, dayId });
-        let currentDaily = dailyStats ? (dailyStats.today_earned || 0) : 0;
 
         const monthlyDocs = await mongoDb.collection(COLL_DAILY_STATS)
             .find({ uploaderId: uploaderNum, monthId })
