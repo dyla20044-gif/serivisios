@@ -195,8 +195,9 @@ cron.schedule('0 21 * * *', async () => {
     );
 }, { scheduled: true, timezone: "America/Guayaquil" });
 
+
 // ==========================================================
-// CÁLCULO DE GANANCIAS CON PRECIOS FIJOS
+// CÁLCULO DE GANANCIAS CON PRECIOS FIJOS Y ALTERNADOS
 // ==========================================================
 async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title, season = null, episode = null }) {
     const uploaderNum = Number(uploaderId);
@@ -218,7 +219,6 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
     const monthId = dayId.substring(0, 7);
 
     try {
-        // SISTEMA DE PRECIOS FIJOS
         if (mediaType === 'movie') {
             const tmdbUrl = `https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${TMDB_API_KEY}&language=es-MX`;
             try {
@@ -228,7 +228,7 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
                     const releaseDate = new Date(releaseDateStr);
                     const releaseYear = releaseDate.getFullYear();
 
-                    // Restricción: Solo películas del 2021 en adelante (no antiguas)
+                    // Restricción: Solo películas del 2021 en adelante
                     if (releaseYear < 2021) {
                         return { appliedRevenue: 0, status: 'rechazado_pelicula_antigua' };
                     }
@@ -240,12 +240,18 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
                 contentType = 'pelicula';
                 basePrice = 0.50;
             }
-        } else if (mediaType === 'tv' || mediaType === 'tv_season') {
-            contentType = 'serie';
-            basePrice = 0.25; // $0.25 por serie completa
         } else {
+            // Lógica para Series y Capítulos
             contentType = 'episodio';
-            basePrice = 0.15; // $0.15 por capítulo
+            
+            // Alterna entre $0.25 y $0.15 dependiendo de si el episodio es impar o par
+            const numEpisodio = parseInt(episode) || 1; // Si no envían el episodio, asume 1 por defecto
+            
+            if (numEpisodio % 2 !== 0) {
+                basePrice = 0.25; // Episodios impares (1, 3, 5, 7...) pagan $0.25
+            } else {
+                basePrice = 0.15; // Episodios pares (2, 4, 6, 8...) pagan $0.15
+            }
         }
 
         basePrice = parseFloat((basePrice * currentCpmMultiplier).toFixed(2));
@@ -479,7 +485,7 @@ app.delete('/api/admin/pedidos/:id', async (req, res) => {
 // ==========================================================
 // CRON JOB: Sincronizar vistas y MONITOREO DE TENDENCIAS (cada 5 min)
 // ==========================================================
-let lastTrendingAlert = 0; // Para no hacer spam de notificaciones
+let lastTrendingAlert = 0; 
 
 cron.schedule('*/5 * * * *', async () => {
     const keys = pendingViewsCache.keys();
@@ -492,7 +498,6 @@ cron.schedule('*/5 * * * *', async () => {
     const dayId = now.toISOString().split('T')[0];
     const monthId = dayId.substring(0, 7);
 
-    // Variables para buscar la película más vista en este ciclo de 5 minutos
     let maxViews = 0;
     let trendingTitle = "Contenido";
     let trendingTmdbId = "";
@@ -516,14 +521,12 @@ cron.schedule('*/5 * * * *', async () => {
             }
 
             if (uploaderId) {
-                // Rastrear si esta es la película más vista para la notificación de tendencia
                 if (viewsCount > maxViews) {
                     maxViews = viewsCount;
                     trendingTitle = titleMedia;
                     trendingTmdbId = tmdbId;
                 }
 
-                // Multiplicamos las vistas x precio x el bono de hora pico actual
                 const earned = parseFloat((viewsCount * REVENUE_SETTINGS.payout_per_view * currentCpmMultiplier).toFixed(3));
                 
                 bulkOps.push({
