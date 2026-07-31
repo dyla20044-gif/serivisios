@@ -32,7 +32,6 @@ const zyroCache = new NodeCache({ stdTTL: 86400, checkperiod: 3600 });
 const requestsCache = new NodeCache({ stdTTL: 604800, checkperiod: 3600 });
 const REQUESTS_CACHE_KEY = 'all_movie_requests';
 
-// Caché en memoria para las visualizaciones entrantes (Protección anti-saturación)
 const pendingViewsCache = new NodeCache({ stdTTL: 0 }); 
 
 const app = express();
@@ -70,11 +69,10 @@ const BUILD_ID_UNDER_REVIEW = 24;
 const MONGO_URI = process.env.MONGO_URI;
 const MONGO_DB_NAME = process.env.MONGO_DB_NAME || 'sala_cine';
 
-// Configuración de Finanzas (Límite mensual actualizado a 200)
 const REVENUE_SETTINGS = {
-    payout_per_view: 0.005, // Medio centavo por vista ($5 cada 1000)
+    payout_per_view: 0.005,
     limit_daily: 40.00,
-    limit_monthly: 200.00, // Límite mensual global configurado en 200
+    limit_monthly: 200.00,
     months_to_be_estreno: 6
 };
 
@@ -117,7 +115,6 @@ const adminState = {};
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// Lógica de Tráfico y Multiplicador de CPM
 let trafficCount = 0;
 let lastTrafficAlert = 0;
 let currentCpmMultiplier = 1.0; 
@@ -173,32 +170,38 @@ function verifyInternalAdmin(req, res, next) {
     return res.status(403).json({ error: "Acceso denegado." });
 }
 
-// ==========================================================
-// NOTIFICACIONES AUTOMÁTICAS PARA ATRAER USUARIOS A LA APP
-// ==========================================================
+function getRandomPayout(min, max) {
+    return parseFloat((Math.random() * (max - min) + min).toFixed(2));
+}
 
-// 7:00 PM (19:00) - Noche de películas
-cron.schedule('0 19 * * *', async () => {
+let isHappyHour = false;
+
+cron.schedule('0 10 * * *', async () => {
+    isHappyHour = true;
     await sendNotificationToTopic(
-        "🍿 ¡Noche de Películas!", 
-        "Prepara tus snacks. Entra y descubre las películas más recientes que se han agregado.", 
+        "🔥 ¡Hora Ideal para Subir!", 
+        "De 10:00 a 11:00 AM pagamos $0.50 por cada estreno en familia que subas.", 
         null, null, null, 'new_content'
     );
 }, { scheduled: true, timezone: "America/Guayaquil" });
 
-// 9:00 PM (21:00) - Tendencias nocturnas
-cron.schedule('0 21 * * *', async () => {
+cron.schedule('0 11 * * *', () => { 
+    isHappyHour = false; 
+}, { scheduled: true, timezone: "America/Guayaquil" });
+
+cron.schedule('0 15 * * *', async () => {
+    isHappyHour = true;
     await sendNotificationToTopic(
-        "🔥 ¡Todos están viendo esto!", 
-        "Muchas personas están viendo películas ahora mismo. ¡Únete y descubre qué hay de nuevo en la app!", 
+        "🍿 ¡Tarde de Películas!", 
+        "La gente busca qué ver este fin de semana. Sube películas ahora y gana más.", 
         null, null, null, 'new_content'
     );
 }, { scheduled: true, timezone: "America/Guayaquil" });
 
+cron.schedule('0 16 * * *', () => { 
+    isHappyHour = false; 
+}, { scheduled: true, timezone: "America/Guayaquil" });
 
-// ==========================================================
-// CÁLCULO DE GANANCIAS CON PRECIOS FIJOS Y ALTERNADOS
-// ==========================================================
 async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title, season = null, episode = null }) {
     const uploaderNum = Number(uploaderId);
 
@@ -219,10 +222,6 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
     const monthId = dayId.substring(0, 7);
 
     try {
-        // Consultamos las estadísticas diarias PRIMERO para poder alternar los precios por cantidad
-        let dailyStats = await mongoDb.collection(COLL_DAILY_STATS).findOne({ uploaderId: uploaderNum, dayId });
-        let currentDaily = dailyStats ? (dailyStats.today_earned || 0) : 0;
-
         if (mediaType === 'movie') {
             const tmdbUrl = `https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${TMDB_API_KEY}&language=es-MX`;
             try {
@@ -232,46 +231,37 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
                     const releaseDate = new Date(releaseDateStr);
                     const releaseYear = releaseDate.getFullYear();
 
-                    // Restricción: Solo películas del 2021 en adelante
                     if (releaseYear < 2021) {
                         return { appliedRevenue: 0, status: 'rechazado_pelicula_antigua' };
                     }
-                }
-                
-                contentType = 'pelicula';
-                
-                // Extraemos cuántas películas ha subido hoy para alternar $0.50 y $0.40
-                const peliculasSubidas = dailyStats ? (dailyStats.month_pelicula_count || 0) : 0;
-                
-                if (peliculasSubidas % 2 === 0) {
-                    basePrice = 0.50; // Películas 1, 3, 5... pagan $0.50
-                } else {
-                    basePrice = 0.40; // Películas 2, 4, 6... pagan $0.40
-                }
 
+                    const diffMonths = (now.getFullYear() - releaseYear) * 12 + (now.getMonth() - releaseDate.getMonth());
+                    
+                    if (isHappyHour) {
+                        contentType = 'estreno_especial';
+                        basePrice = 0.50; 
+                    } else if (diffMonths < REVENUE_SETTINGS.months_to_be_estreno) {
+                        contentType = 'estreno';
+                        basePrice = getRandomPayout(0.30, 0.50); 
+                    } else {
+                        contentType = 'catalogo';
+                        basePrice = getRandomPayout(0.10, 0.25); 
+                    }
+                } else {
+                    basePrice = getRandomPayout(0.10, 0.25);
+                }
             } catch (tmdbErr) {
-                contentType = 'pelicula';
-                const peliculasSubidas = dailyStats ? (dailyStats.month_pelicula_count || 0) : 0;
-                basePrice = (peliculasSubidas % 2 === 0) ? 0.50 : 0.40;
+                basePrice = getRandomPayout(0.10, 0.25); 
             }
-        } else if (mediaType === 'tv' || mediaType === 'tv_season') {
-            // Lógica para Temporada/Serie Completa
-            contentType = 'serie';
-            basePrice = 0.25;
         } else {
-            // Lógica para Capítulos individuales
             contentType = 'episodio';
-            const numEpisodio = parseInt(episode) || 1; 
-            
-            // Alterna entre $0.25 y $0.15 dependiendo de si el episodio es impar o par
-            if (numEpisodio % 2 !== 0) {
-                basePrice = 0.25; // Episodios impares (1, 3, 5...) pagan $0.25
-            } else {
-                basePrice = 0.15; // Episodios pares (2, 4, 6...) pagan $0.15
-            }
+            basePrice = getRandomPayout(0.05, 0.35); 
         }
 
         basePrice = parseFloat((basePrice * currentCpmMultiplier).toFixed(2));
+
+        let dailyStats = await mongoDb.collection(COLL_DAILY_STATS).findOne({ uploaderId: uploaderNum, dayId });
+        let currentDaily = dailyStats ? (dailyStats.today_earned || 0) : 0;
 
         const monthlyDocs = await mongoDb.collection(COLL_DAILY_STATS)
             .find({ uploaderId: uploaderNum, monthId })
@@ -284,7 +274,6 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
         let limitReached = false;
         let status = '';
 
-        // Límite mensual global
         if (currentMonthEarned >= REVENUE_SETTINGS.limit_monthly) {
             finalEarned = 0;
             limitReached = true;
@@ -292,14 +281,12 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
         } else {
             let currentBase = basePrice;
             
-            // Si se acerca a los $100 dólares, cuesta un poquito más subir (paga menos)
             if (currentMonthEarned >= 100.00) { 
                 currentBase = basePrice * 0.10; 
             } else if (currentMonthEarned >= 80.00) { 
                 currentBase = basePrice * 0.40; 
             }
 
-            // BONO POR 4 PELÍCULAS SUBIDAS EN EL DÍA
             let bonoPorVolumen = 0;
             const totalSubidasHoy = (dailyStats ? (dailyStats.today_content_count || 0) : 0) + 1;
             
@@ -497,10 +484,52 @@ app.delete('/api/admin/pedidos/:id', async (req, res) => {
 });
 
 // ==========================================================
-// CRON JOB: Sincronizar vistas y MONITOREO DE TENDENCIAS (cada 5 min)
+// NUEVAS RUTAS: PANEL CEO (Trechos Visionarios)
 // ==========================================================
-let lastTrendingAlert = 0; 
 
+app.post('/api/ceo/login', (req, res) => {
+    const { email } = req.body;
+    const validEmail = process.env.CEO_EMAIL;
+    
+    // Si el correo coincide con la variable de entorno, permite el paso
+    if (email && validEmail && email.toLowerCase() === validEmail.toLowerCase()) {
+        res.json({ success: true });
+    } else {
+        res.json({ success: false });
+    }
+});
+
+app.get('/api/ceo/workers', async (req, res) => {
+    if (!mongoDb) return res.status(503).json({ error: "DB no conectada" });
+    try {
+        const now = new Date();
+        const dayId = now.toISOString().split('T')[0];
+        
+        // Extraemos las estadísticas del día para los trabajadores
+        const stats = await mongoDb.collection(COLL_DAILY_STATS).find({ dayId }).toArray();
+        
+        const workers = stats.map(s => {
+            let name = "Trabajador ID: " + s.uploaderId;
+            if (s.uploaderId === ADMIN_CHAT_IDS[0]) name = "CEO (Tú)";
+            else if (s.uploaderId === ADMIN_CHAT_IDS[1]) name = "Administrador 2";
+            
+            return {
+                id: s.uploaderId,
+                name: name,
+                earnedToday: s.today_earned || 0,
+                totalUploads: s.today_content_count || 0
+            };
+        });
+        
+        res.json(workers);
+    } catch (error) {
+        res.status(500).json({ error: "Error al obtener estadísticas del equipo" });
+    }
+});
+
+// ==========================================================
+// CRON JOB: Sincronizar vistas a MongoDB cada 5 minutos
+// ==========================================================
 cron.schedule('*/5 * * * *', async () => {
     const keys = pendingViewsCache.keys();
     if (keys.length === 0 || !mongoDb) return;
@@ -511,10 +540,6 @@ cron.schedule('*/5 * * * *', async () => {
     const now = new Date();
     const dayId = now.toISOString().split('T')[0];
     const monthId = dayId.substring(0, 7);
-
-    let maxViews = 0;
-    let trendingTitle = "Contenido";
-    let trendingTmdbId = "";
 
     for (const tmdbId of keys) {
         const viewsCount = pendingViewsCache.get(tmdbId);
@@ -535,12 +560,6 @@ cron.schedule('*/5 * * * *', async () => {
             }
 
             if (uploaderId) {
-                if (viewsCount > maxViews) {
-                    maxViews = viewsCount;
-                    trendingTitle = titleMedia;
-                    trendingTmdbId = tmdbId;
-                }
-
                 const earned = parseFloat((viewsCount * REVENUE_SETTINGS.payout_per_view * currentCpmMultiplier).toFixed(3));
                 
                 bulkOps.push({
@@ -571,17 +590,6 @@ cron.schedule('*/5 * * * *', async () => {
                 }
             }
         }
-    }
-
-    // DISPARADOR DE NOTIFICACIÓN POR TENDENCIA
-    // Si una película tuvo más de 30 vistas de golpe y han pasado al menos 4 horas desde la última alerta
-    if (maxViews >= 30 && (Date.now() - lastTrendingAlert > 14400000)) { 
-        lastTrendingAlert = Date.now();
-        await sendNotificationToTopic(
-            "📈 ¡Tendencia Actual!", 
-            `¡Muchas personas están viendo "${trendingTitle}" justo ahora! Entra a verla tú también.`, 
-            null, trendingTmdbId, 'general', 'new_content'
-        );
     }
 
     if (bulkOps.length > 0) {
