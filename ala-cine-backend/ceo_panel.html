@@ -1,1 +1,181 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CEO Panel - Trechos Visionarios</title>
+    <!-- Enlazamos el CSS que crearemos a continuación -->
+    <link rel="stylesheet" href="ceo_panel.css">
+    <!-- Librería para el gráfico de rendimiento animado -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Iconos profesionales -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
 
+    <!-- PANTALLA DE SEGURIDAD (Login) -->
+    <div id="login-screen" class="active">
+        <div class="login-box">
+            <h2><i class="fas fa-crown text-yellow"></i> Acceso Corporativo</h2>
+            <p>Trechos Visionarios - Sala Cine</p>
+            <input type="email" id="ceo-email" placeholder="Correo del CEO autorizado">
+            <button id="btn-login" class="btn-primary">Ingresar al Sistema</button>
+            <p id="login-error" class="error-msg"></p>
+        </div>
+    </div>
+
+    <!-- PANEL PRINCIPAL CORPORATIVO (Oculto hasta validar el login) -->
+    <div id="ceo-dashboard" class="hidden">
+        
+        <!-- BARRA LATERAL DE NAVEGACIÓN -->
+        <nav class="sidebar">
+            <div class="brand">
+                <h3>Trechos <span>Visionarios</span></h3>
+                <small>CEO Dashboard</small>
+            </div>
+            <ul class="nav-links">
+                <li class="active" data-tab="tab-inicio"><i class="fas fa-chart-line"></i> Rendimiento</li>
+                <li data-tab="tab-trabajo"><i class="fas fa-upload"></i> Subir Contenido</li>
+                <li data-tab="tab-equipo"><i class="fas fa-users"></i> Trabajadores</li>
+                <li data-tab="tab-boveda"><i class="fas fa-server"></i> Infraestructura</li>
+            </ul>
+            <div class="logout" id="btn-logout">
+                <i class="fas fa-sign-out-alt"></i> Salir
+            </div>
+        </nav>
+
+        <!-- ÁREA CENTRAL DE DATOS -->
+        <main class="content-area">
+            
+            <!-- SECCIÓN 1: GRÁFICOS Y RENDIMIENTO -->
+            <section id="tab-inicio" class="tab-content active">
+                <header class="top-bar">
+                    <h2>Rendimiento en Tiempo Real</h2>
+                    <div class="ceo-profile">
+                        <span>Fundador, Dylan</span>
+                        <div class="avatar">D</div>
+                    </div>
+                </header>
+                
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <i class="fas fa-dollar-sign text-yellow"></i>
+                        <div>
+                            <h4>Ingresos Globales (Hoy)</h4>
+                            <p id="ingresos-hoy">$0.00</p>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <i class="fas fa-film text-yellow"></i>
+                        <div>
+                            <h4>Total Contenido Bóveda</h4>
+                            <p id="total-peliculas">Calculando...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="chart-container">
+                    <canvas id="revenueChart"></canvas>
+                </div>
+            </section>
+
+            <!-- SECCIÓN 2: ZONA DE TRABAJO (Tú subiendo contenido) -->
+            <section id="tab-trabajo" class="tab-content hidden">
+                <header class="top-bar">
+                    <h2>Gestión Directa de Catálogo</h2>
+                </header>
+                <div class="work-panel">
+                    <div class="form-group">
+                        <label>ID de TMDB (Película/Serie):</label>
+                        <div class="input-row">
+                            <input type="text" id="tmdb-id-input" placeholder="Ej: 533535">
+                            <button class="btn-primary" id="btn-fetch-tmdb"><i class="fas fa-search"></i> Extraer Datos</button>
+                        </div>
+                    </div>
+                    
+                    <!-- Previsualización de la película extraída de internet -->
+                    <div id="movie-preview" class="hidden">
+                        <img id="preview-poster" src="" alt="Poster">
+                        <div class="preview-info">
+                            <h3 id="preview-title">Título</h3>
+                            <p id="preview-overview">Sinopsis...</p>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Enlace del Servidor (m3u8, mp4):</label>
+                        <input type="text" id="video-url-input" placeholder="https://...">
+                    </div>
+                    <button class="btn-success" id="btn-publish"><i class="fas fa-cloud-upload-alt"></i> Inyectar a Sala Cine</button>
+                </div>
+            </section>
+
+            <!-- SECCIÓN 3: SUPERVISIÓN DE EQUIPO -->
+            <section id="tab-equipo" class="tab-content hidden">
+                <header class="top-bar">
+                    <h2>Monitor de Trabajadores</h2>
+                </header>
+                <div class="workers-grid" id="workers-list">
+                    <!-- Tarjeta de ejemplo de un trabajador (Se generarán con JS) -->
+                    <div class="worker-card">
+                        <div class="worker-header">
+                            <div class="worker-avatar">A2</div>
+                            <h4>Administrador 2</h4>
+                        </div>
+                        <div class="worker-stats">
+                            <p>Generado hoy: <span>$15.00</span></p>
+                            <p>Películas subidas: <span>12</span></p>
+                        </div>
+                        <button class="btn-pay"><i class="fas fa-wallet"></i> Enviar Pago</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SECCIÓN 4: BÓVEDA Y SERVIDORES (Con animación "Trabajando") -->
+            <section id="tab-boveda" class="tab-content hidden">
+                <header class="top-bar">
+                    <h2>Estado de la Infraestructura</h2>
+                </header>
+                <div class="servers-container">
+                    <div class="server-card active-server">
+                        <div class="flag">🇪🇨</div>
+                        <h4>Servidor Central (Ecuador)</h4>
+                        <div class="status-indicator">
+                            <div class="dot blinking"></div>
+                            <span>Procesando...</span>
+                        </div>
+                    </div>
+                    <div class="server-card active-server">
+                        <div class="flag">🇲🇽</div>
+                        <h4>CDN Norte (México)</h4>
+                        <div class="status-indicator">
+                            <div class="dot blinking"></div>
+                            <span>Enrutando...</span>
+                        </div>
+                    </div>
+                    <div class="server-card active-server">
+                        <div class="flag">🇺🇸</div>
+                        <h4>Respaldos (USA)</h4>
+                        <div class="status-indicator">
+                            <div class="dot blinking"></div>
+                            <span>Sincronizando...</span>
+                        </div>
+                    </div>
+                    <div class="server-card active-server">
+                        <div class="flag">🇪🇸</div>
+                        <h4>Proxy (España)</h4>
+                        <div class="status-indicator">
+                            <div class="dot blinking"></div>
+                            <span>Operativo</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+        </main>
+    </div>
+
+    <!-- Enlazamos el archivo lógico -->
+    <script src="ceo_panel.js"></script>
+</body>
+</html>
