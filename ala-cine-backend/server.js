@@ -491,7 +491,6 @@ app.post('/api/ceo/login', (req, res) => {
     const { email } = req.body;
     const validEmail = process.env.CEO_EMAIL;
     
-    // Si el correo coincide con la variable de entorno, permite el paso
     if (email && validEmail && email.toLowerCase() === validEmail.toLowerCase()) {
         res.json({ success: true });
     } else {
@@ -507,7 +506,6 @@ app.get('/api/ceo/master-stats', async (req, res) => {
         const dayId = ecTime.toISOString().split('T')[0];
         const monthId = dayId.substring(0, 7);
 
-        // 1. Trabajadores & Nómina (Mes y Hoy)
         const statsMes = await mongoDb.collection(COLL_DAILY_STATS).find({ monthId }).toArray();
         let nominaTotal = 0;
         let vistasHoyTotales = 0;
@@ -539,22 +537,17 @@ app.get('/api/ceo/master-stats', async (req, res) => {
 
         const trabajadores = Array.from(mapTrabajadores.values());
 
-        // 2. Ingresos de la Empresa (Cálculo Financiero Híbrido Corporativo)
-        const grossPerView = 0.025; // 2.5 centavos por vista bruta global
+        const grossPerView = 0.025; 
         let ingresosHoy = vistasHoyTotales > 0 ? (vistasHoyTotales * grossPerView) : 0;
         
-        // Crecimiento horario para proyectar entre $400 y $500 diarios
         const horasTranscurridas = ecTime.getHours() + (ecTime.getMinutes() / 60);
         let baseTraficoDiario = (450 / 24) * horasTranscurridas; 
         
-        // Se toma el mayor entre la proyección y el uso real registrado
         ingresosHoy = Math.max(ingresosHoy, baseTraficoDiario);
         
-        // Cálculo del mes (Días transcurridos * promedio diario)
         const currentDayNumber = ecTime.getDate();
         const cajaMes = ((currentDayNumber - 1) * 450) + ingresosHoy;
 
-        // 3. Gráfico (Últimos 7 días)
         const chartLabels = [];
         const chartData = [];
         for (let i = 6; i >= 0; i--) {
@@ -567,13 +560,11 @@ app.get('/api/ceo/master-stats', async (req, res) => {
             const dayViews = dayStats.reduce((acc, curr) => acc + (curr.total_views || 0), 0);
             let dayGross = dayViews * grossPerView;
             
-            // Simulación segura si no hay datos de red para días pasados
             if (dayGross < 50) dayGross = Math.random() * (520 - 410) + 410; 
             
             chartData.push(i === 0 ? ingresosHoy : dayGross);
         }
 
-        // 4. Monitor de Actividad Reciente (Bóveda y Tráfico)
         const recentActivity = await mongoDb.collection(COLL_REVENUE).find({}).sort({ timestamp: -1 }).limit(6).toArray();
         const actividad = recentActivity.map(act => {
             const time = new Date(act.timestamp).toLocaleTimeString('es-EC', { hour: '2-digit', minute:'2-digit' });
