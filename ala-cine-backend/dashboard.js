@@ -84,8 +84,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function updateVal(id, value, prefix = "$") {
         const el = document.getElementById(id);
-        const text = `${prefix}${value.toFixed(2)}`;
-        if (el && el.innerText !== text) {
+        if (!el) return; // Validación por si el elemento no existe
+        const text = `${prefix}${(value || 0).toFixed(2)}`; // Aseguramos que value no sea null
+        if (el.innerText !== text) {
             el.innerText = text;
             el.classList.remove('flash-update');
             void el.offsetWidth;
@@ -126,6 +127,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     updateVal('valTotal', f.totalGeneradoGlobal);
                     
                     updateVal('valSinRetirar', f.monthEarned);
+                    
+                    // --- AQUÍ ESTÁ LA LÍNEA NUEVA QUE CONECTA EL MES PASADO ---
+                    updateVal('valMesPasado', f.lastMonthEarned);
+                    
                     updateVal('valRetirable', f.monthEarned); 
                     updateVal('valRetirableGrande', f.monthEarned);
                     updateVal('valBonos', f.bonos);
@@ -163,13 +168,12 @@ document.addEventListener('DOMContentLoaded', () => {
                         listPedidas.innerHTML = '<li>No hay solicitudes pendientes.</li>';
                     }
 
-                    // NUEVO: Dibujar la lista real de ganancias (Subidas, Vistas, Bonos)
+                    // Dibujar la lista real de ganancias
                     const listaRecientes = document.getElementById('listaGananciasRecientes');
                     listaRecientes.innerHTML = ''; 
 
                     if (data.recentActivity && data.recentActivity.length > 0) {
                         data.recentActivity.forEach(act => {
-                            // Asignar íconos según lo que se hizo
                             let icon = '<i class="fa-solid fa-circle-check text-muted"></i>';
                             if (act.type === 'movie' || act.type === 'estreno' || act.type === 'catalogo') icon = '<i class="fa-solid fa-film text-cyan"></i>';
                             else if (act.type === 'tv' || act.type === 'episodio') icon = '<i class="fa-solid fa-tv text-cyan"></i>';
