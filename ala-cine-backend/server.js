@@ -402,7 +402,23 @@ require('./routes_stats.js')(app, ctx);
 
 app.get('/', (req, res) => { res.send('Activo'); });
 
-app.use('/dashboard', express.static(__dirname));
+// ==========================================================
+// RUTAS FRONTEND: DASHBOARD (Usuarios) Y PANEL (CEO)
+// ==========================================================
+// Se elimina el app.use('/dashboard', static) que causaba el conflicto.
+app.get('/dashboard', (req, res) => {
+    res.sendFile(path.join(__dirname, 'dashboard.html'));
+});
+
+app.get('/panel', (req, res) => {
+    res.sendFile(path.join(__dirname, 'ceo_panel.html'));
+});
+
+// Rutas explícitas para permitir que el HTML cargue sus estilos y lógica de forma segura
+app.get('/ceo_panel.css', (req, res) => res.sendFile(path.join(__dirname, 'ceo_panel.css')));
+app.get('/ceo_panel.js', (req, res) => res.sendFile(path.join(__dirname, 'ceo_panel.js')));
+app.get('/dashboard.js', (req, res) => res.sendFile(path.join(__dirname, 'dashboard.js')));
+app.get('/estilos.css', (req, res) => res.sendFile(path.join(__dirname, 'estilos.css')));
 
 if (process.env.NODE_ENV === 'production' && token) {
     app.post(`/bot${token}`, (req, res) => {
@@ -524,6 +540,84 @@ app.get('/api/ceo/workers', async (req, res) => {
         res.json(workers);
     } catch (error) {
         res.status(500).json({ error: "Error al obtener estadísticas del equipo" });
+    }
+});
+
+// NUEVO ENDPOINT: Genera las matemáticas del panel corporativo conectando con MongoDB
+app.get('/api/ceo/master-stats', async (req, res) => {
+    if (!mongoDb) return res.status(503).json({ error: "DB no conectada" });
+    try {
+        const now = new Date();
+        const dayId = now.toISOString().split('T')[0];
+        const monthId = dayId.substring(0, 7);
+
+        const statsMes = await mongoDb.collection(COLL_DAILY_STATS).find({ monthId }).toArray();
+        let cajaMes = 0;
+        let nominaTotal = 0;
+        const workerMap = {};
+
+        // Recolectar datos mensuales
+        statsMes.forEach(s => {
+            const isCEO = ADMIN_CHAT_IDS.includes(s.uploaderId);
+            const earned = s.today_earned || 0;
+            
+            cajaMes += earned;
+            if (!isCEO) nominaTotal += earned;
+
+            if (!workerMap[s.uploaderId]) {
+                workerMap[s.uploaderId] = { 
+                    id: s.uploaderId, 
+                    name: isCEO ? "CEO (Tú)" : "Trabajador ID: " + s.uploaderId, 
+                    earnedMonth: 0, 
+                    earnedToday: 0, 
+                    totalUploads: 0 
+                };
+            }
+            workerMap[s.uploaderId].earnedMonth += earned;
+        });
+
+        // Recolectar datos diarios
+        const statsHoy = await mongoDb.collection(COLL_DAILY_STATS).find({ dayId }).toArray();
+        let ingresosHoy = 0;
+        let vistasHoy = 0;
+
+        statsHoy.forEach(s => {
+            ingresosHoy += (s.today_earned || 0);
+            vistasHoy += (s.total_views || 0);
+            if (workerMap[s.uploaderId]) {
+                workerMap[s.uploaderId].earnedToday = (s.today_earned || 0);
+                workerMap[s.uploaderId].totalUploads = (s.today_content_count || 0);
+            }
+        });
+
+        res.json({
+            ingresosHoy,
+            vistasHoy,
+            cajaMes,
+            nominaTotal,
+            trabajadores: Object.values(workerMap),
+            chartLabels: ['D-6', 'D-5', 'D-4', 'D-3', 'D-2', 'Ayer', 'Hoy'],
+            chartData: [0, 0, 0, 0, 0, 0, ingresosHoy],
+            actividad: [
+                { msg: "Sincronización con base de datos exitosa", time: new Date().toLocaleTimeString() }
+            ]
+        });
+    } catch (error) {
+        res.status(500).json({ error: "Error obteniendo estadísticas maestras" });
+    }
+});
+
+// NUEVO ENDPOINT: Proxy de TMDB para que el buscador visual del Panel funcione sin problemas de CORS
+app.get('/api/tmdb-proxy', async (req, res) => {
+    const { endpoint, query } = req.query;
+    if (!endpoint) return res.status(400).json({ error: "Endpoint requerido" });
+    try {
+        let tmdbUrl = `https://api.themoviedb.org/3/${endpoint}?api_key=${TMDB_API_KEY}&language=es-MX`;
+        if (query) tmdbUrl += `&query=${encodeURIComponent(query)}`;
+        const response = await axios.get(tmdbUrl);
+        res.json(response.data);
+    } catch (error) {
+        res.status(500).json({ error: "Error al consultar TMDB" });
     }
 });
 
