@@ -402,7 +402,26 @@ require('./routes_stats.js')(app, ctx);
 
 app.get('/', (req, res) => { res.send('Activo'); });
 
-app.use('/dashboard', express.static(__dirname));
+// ==========================================================
+// CONFIGURACIÓN ESTÁTICA Y RUTAS INDEPENDIENTES (Dashboard y Panel CEO)
+// ==========================================================
+app.use(express.static(__dirname));
+
+app.get('/dashboard', (req, res) => {
+    res.sendFile(path.join(__dirname, 'dashboard.html'));
+});
+
+app.get('/dashboard.html', (req, res) => {
+    res.sendFile(path.join(__dirname, 'dashboard.html'));
+});
+
+app.get('/dashboard/dashboard.html', (req, res) => {
+    res.sendFile(path.join(__dirname, 'dashboard.html'));
+});
+
+app.get('/panel', (req, res) => {
+    res.sendFile(path.join(__dirname, 'ceo_panel.html'));
+});
 
 if (process.env.NODE_ENV === 'production' && token) {
     app.post(`/bot${token}`, (req, res) => {
@@ -491,7 +510,6 @@ app.post('/api/ceo/login', (req, res) => {
     const { email } = req.body;
     const validEmail = process.env.CEO_EMAIL;
     
-    // Si el correo coincide con la variable de entorno, permite el paso
     if (email && validEmail && email.toLowerCase() === validEmail.toLowerCase()) {
         res.json({ success: true });
     } else {
@@ -505,7 +523,6 @@ app.get('/api/ceo/workers', async (req, res) => {
         const now = new Date();
         const dayId = now.toISOString().split('T')[0];
         
-        // Extraemos las estadísticas del día para los trabajadores
         const stats = await mongoDb.collection(COLL_DAILY_STATS).find({ dayId }).toArray();
         
         const workers = stats.map(s => {
@@ -527,6 +544,80 @@ app.get('/api/ceo/workers', async (req, res) => {
     }
 });
 
+app.get('/api/ceo/master-stats', async (req, res) => {
+    if (!mongoDb) return res.status(503).json({ error: "DB no conectada" });
+    try {
+        const now = new Date();
+        const dayId = now.toISOString().split('T')[0];
+        const monthId = dayId.substring(0, 7);
+
+        const statsMes = await mongoDb.collection(COLL_DAILY_STATS).find({ monthId }).toArray();
+        let cajaMes = 0;
+        let nominaTotal = 0;
+        const workerMap = {};
+
+        statsMes.forEach(s => {
+            const isCEO = ADMIN_CHAT_IDS.includes(s.uploaderId);
+            const earned = s.today_earned || 0;
+            
+            cajaMes += earned;
+            if (!isCEO) nominaTotal += earned;
+
+            if (!workerMap[s.uploaderId]) {
+                workerMap[s.uploaderId] = { 
+                    id: s.uploaderId, 
+                    name: isCEO ? "CEO (Tú)" : "Trabajador ID: " + s.uploaderId, 
+                    earnedMonth: 0, 
+                    earnedToday: 0, 
+                    totalUploads: 0 
+                };
+            }
+            workerMap[s.uploaderId].earnedMonth += earned;
+        });
+
+        const statsHoy = await mongoDb.collection(COLL_DAILY_STATS).find({ dayId }).toArray();
+        let ingresosHoy = 0;
+        let vistasHoy = 0;
+
+        statsHoy.forEach(s => {
+            ingresosHoy += (s.today_earned || 0);
+            vistasHoy += (s.total_views || 0);
+            if (workerMap[s.uploaderId]) {
+                workerMap[s.uploaderId].earnedToday = (s.today_earned || 0);
+                workerMap[s.uploaderId].totalUploads = (s.today_content_count || 0);
+            }
+        });
+
+        res.json({
+            ingresosHoy,
+            vistasHoy,
+            cajaMes,
+            nominaTotal,
+            trabajadores: Object.values(workerMap),
+            chartLabels: ['D-6', 'D-5', 'D-4', 'D-3', 'D-2', 'Ayer', 'Hoy'],
+            chartData: [0, 0, 0, 0, 0, 0, ingresosHoy],
+            actividad: [
+                { msg: "Sincronización con base de datos exitosa", time: new Date().toLocaleTimeString() }
+            ]
+        });
+    } catch (error) {
+        res.status(500).json({ error: "Error obteniendo estadísticas maestras" });
+    }
+});
+
+app.get('/api/tmdb-proxy', async (req, res) => {
+    const { endpoint, query } = req.query;
+    if (!endpoint) return res.status(400).json({ error: "Endpoint requerido" });
+    try {
+        let tmdbUrl = `https://api.themoviedb.org/3/${endpoint}?api_key=${TMDB_API_KEY}&language=es-MX`;
+        if (query) tmdbUrl += `&query=${encodeURIComponent(query)}`;
+        const response = await axios.get(tmdbUrl);
+        res.json(response.data);
+    } catch (error) {
+        res.status(500).json({ error: "Error al consultar TMDB" });
+    }
+});
+
 // ==========================================================
 // CRON JOB: Sincronizar vistas a MongoDB cada 5 minutos
 // ==========================================================
@@ -534,7 +625,6 @@ cron.schedule('*/5 * * * *', async () => {
     const keys = pendingViewsCache.keys();
     if (keys.length === 0 || !mongoDb) return;
 
-    console.log(`[Cron] Sincronizando vistas de ${keys.length} contenidos a MongoDB...`);
     const bulkOps = [];
     const bulkRevenueOps = []; 
     const now = new Date();
@@ -599,10 +689,7 @@ cron.schedule('*/5 * * * *', async () => {
                 await mongoDb.collection(COLL_REVENUE).bulkWrite(bulkRevenueOps);
             }
             pendingViewsCache.flushAll(); 
-            console.log(`[Cron] Se han sincronizado $ generados por vistas y guardado el historial.`);
-        } catch (e) {
-            console.error("[Cron] Error sincronizando vistas masivas:", e);
-        }
+        } catch (e) {}
     }
 });
 
