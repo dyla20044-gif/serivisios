@@ -75,7 +75,6 @@
                     <h1 class="text-green flash-text" id="valHoy">$0.00</h1>
                 </div>
 
-                <!-- AQUÍ ES DONDE SE AGREGÓ EL BLOQUE "MES PASADO" -->
                 <div class="ganancia-grid" style="display: flex; flex-wrap: wrap; justify-content: space-around; gap: 10px;">
                     <div style="flex: 1 1 45%;">
                         <h3 id="valTotal">$0.00</h3>
@@ -101,7 +100,7 @@
                 <i class="fa-solid fa-rocket"></i> ¿Quieres ganar más dinero? Mira qué subir
             </button>
 
-            <!-- NUEVO: TARJETA DE RENDIMIENTO (Flecha sube/baja) -->
+            <!-- TARJETA DE RENDIMIENTO (Flecha sube/baja) -->
             <div class="card dark-card" id="rendimientoCard">
                 <div class="section-title space-between">
                     <h3>RENDIMIENTO DIARIO</h3>
@@ -171,11 +170,21 @@
                 <button class="btn-outline" id="btnAbrirAdelanto"><i class="fa-solid fa-hand-holding-dollar"></i> PEDIR ADELANTO (50%)</button>
             </div>
 
+            <!-- NUEVO BLOQUE: HISTORIAL DE PAGOS -->
+            <div class="card dark-card" style="margin-bottom: 15px;">
+                <div class="section-title space-between">
+                    <h3>HISTORIAL DE PAGOS</h3>
+                    <i class="fa-solid fa-file-invoice-dollar text-green"></i>
+                </div>
+                <ul class="lista-recientes" id="listaHistorialPagos">
+                    <li><span><i class="fa-solid fa-spinner fa-spin text-muted"></i> Cargando comprobantes...</span></li>
+                </ul>
+            </div>
+
             <div class="card dark-card">
                 <div class="section-title">
                     <h3>TÉRMINOS Y CONDICIONES</h3>
                 </div>
-                <!-- CUADRO PARA VIDEO DE TÉRMINOS -->
                 <div class="video-placeholder">
                     <iframe src="https://www.youtube.com/embed/dQw4w9WgXcQ" frameborder="0" allowfullscreen></iframe>
                 </div>
