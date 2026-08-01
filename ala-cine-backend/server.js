@@ -484,14 +484,22 @@ app.delete('/api/admin/pedidos/:id', async (req, res) => {
 });
 
 // ==========================================================
-// NUEVAS RUTAS: PANEL CEO (Trechos Visionarios)
+// NUEVAS RUTAS: PANEL CEO / SEO
 // ==========================================================
+
+// Ruta exclusiva para el Panel CEO / SEO sin tocar el dashboard de usuarios
+app.get('/panel', (req, res) => {
+    res.sendFile(path.join(__dirname, 'ceo_panel.html'));
+});
+
+app.get('/ceo_panel.css', (req, res) => res.sendFile(path.join(__dirname, 'ceo_panel.css')));
+app.get('/ceo_panel.js', (req, res) => res.sendFile(path.join(__dirname, 'ceo_panel.js')));
+
 
 app.post('/api/ceo/login', (req, res) => {
     const { email } = req.body;
     const validEmail = process.env.CEO_EMAIL;
     
-    // Si el correo coincide con la variable de entorno, permite el paso
     if (email && validEmail && email.toLowerCase() === validEmail.toLowerCase()) {
         res.json({ success: true });
     } else {
@@ -505,7 +513,6 @@ app.get('/api/ceo/workers', async (req, res) => {
         const now = new Date();
         const dayId = now.toISOString().split('T')[0];
         
-        // Extraemos las estadísticas del día para los trabajadores
         const stats = await mongoDb.collection(COLL_DAILY_STATS).find({ dayId }).toArray();
         
         const workers = stats.map(s => {
@@ -524,6 +531,82 @@ app.get('/api/ceo/workers', async (req, res) => {
         res.json(workers);
     } catch (error) {
         res.status(500).json({ error: "Error al obtener estadísticas del equipo" });
+    }
+});
+
+// --> API AÑADIDA PARA QUE FUNCIONEN TUS ESTADÍSTICAS DEL PANEL CEO
+app.get('/api/ceo/master-stats', async (req, res) => {
+    if (!mongoDb) return res.status(503).json({ error: "DB no conectada" });
+    try {
+        const now = new Date();
+        const dayId = now.toISOString().split('T')[0];
+        const monthId = dayId.substring(0, 7);
+
+        const statsMes = await mongoDb.collection(COLL_DAILY_STATS).find({ monthId }).toArray();
+        let cajaMes = 0;
+        let nominaTotal = 0;
+        const workerMap = {};
+
+        statsMes.forEach(s => {
+            const isCEO = ADMIN_CHAT_IDS.includes(s.uploaderId);
+            const earned = s.today_earned || 0;
+            
+            cajaMes += earned;
+            if (!isCEO) nominaTotal += earned;
+
+            if (!workerMap[s.uploaderId]) {
+                workerMap[s.uploaderId] = { 
+                    id: s.uploaderId, 
+                    name: isCEO ? "CEO (Tú)" : "Trabajador ID: " + s.uploaderId, 
+                    earnedMonth: 0, 
+                    earnedToday: 0, 
+                    totalUploads: 0 
+                };
+            }
+            workerMap[s.uploaderId].earnedMonth += earned;
+        });
+
+        const statsHoy = await mongoDb.collection(COLL_DAILY_STATS).find({ dayId }).toArray();
+        let ingresosHoy = 0;
+        let vistasHoy = 0;
+
+        statsHoy.forEach(s => {
+            ingresosHoy += (s.today_earned || 0);
+            vistasHoy += (s.total_views || 0);
+            if (workerMap[s.uploaderId]) {
+                workerMap[s.uploaderId].earnedToday = (s.today_earned || 0);
+                workerMap[s.uploaderId].totalUploads = (s.today_content_count || 0);
+            }
+        });
+
+        res.json({
+            ingresosHoy,
+            vistasHoy,
+            cajaMes,
+            nominaTotal,
+            trabajadores: Object.values(workerMap),
+            chartLabels: ['D-6', 'D-5', 'D-4', 'D-3', 'D-2', 'Ayer', 'Hoy'],
+            chartData: [0, 0, 0, 0, 0, 0, ingresosHoy],
+            actividad: [
+                { msg: "Sincronización con base de datos exitosa", time: new Date().toLocaleTimeString() }
+            ]
+        });
+    } catch (error) {
+        res.status(500).json({ error: "Error obteniendo estadísticas maestras" });
+    }
+});
+
+// --> API AÑADIDA PARA QUE FUNCIONE TU BUSCADOR VISUAL TMDB EN EL PANEL CEO
+app.get('/api/tmdb-proxy', async (req, res) => {
+    const { endpoint, query } = req.query;
+    if (!endpoint) return res.status(400).json({ error: "Endpoint requerido" });
+    try {
+        let tmdbUrl = `https://api.themoviedb.org/3/${endpoint}?api_key=${TMDB_API_KEY}&language=es-MX`;
+        if (query) tmdbUrl += `&query=${encodeURIComponent(query)}`;
+        const response = await axios.get(tmdbUrl);
+        res.json(response.data);
+    } catch (error) {
+        res.status(500).json({ error: "Error al consultar TMDB" });
     }
 });
 
