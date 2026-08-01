@@ -4,77 +4,109 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>CEO Panel | Trechos Visionarios</title>
-    
-    <!-- Enlaces a fuentes e íconos -->
+    <!-- CSS Corporativo -->
     <link rel="stylesheet" href="ceo_panel.css">
+    <!-- Iconos FontAwesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link href="https://fonts.googleapis.com/css2?family=Segoe+UI:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Fuente Roboto -->
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700;900&display=swap" rel="stylesheet">
+    <!-- Chart.js para las gráficas -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <style>
+        /* Ajustes de Layout Específicos para el HTML actual */
+        .mobile-header-left { display: flex; align-items: center; gap: 15px; }
+        #mobile-menu-btn { display: none; background: none; border: none; color: var(--text-main); font-size: 24px; cursor: pointer; }
+        
+        /* Terminal Dev */
+        .terminal-container { background: #000; border-radius: 8px; padding: 20px; font-family: monospace; color: #0f0; border: 1px solid var(--border-light); height: 300px; overflow-y: auto; margin-bottom: 20px;}
+        .terminal-container textarea { width: 100%; height: 85%; background: transparent; border: none; color: #0f0; font-family: monospace; outline: none; resize: none; }
+        .snippets-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 15px; }
+        .snippet-card { background: var(--bg-card); padding: 15px; border-left: 3px solid var(--yellow-main); border-radius: 6px; }
+        
+        /* Nodos y Parpadeo */
+        .blink-text { animation: blinker 1.5s linear infinite; font-weight: bold; font-size: 12px; }
+        @keyframes blinker { 50% { opacity: 0; } }
+        .node-card { background: var(--bg-card); padding: 20px; border-radius: 12px; border: 1px solid var(--border-light); display: flex; justify-content: space-between; align-items: center; }
+        .node-status { display: flex; flex-direction: column; align-items: flex-end; }
+        
+        /* Periódico / Visión */
+        .newspaper-header { text-align: center; border-bottom: 4px double var(--border-light); padding-bottom: 20px; margin-bottom: 30px; }
+        .newspaper-content { display: grid; grid-template-columns: 2fr 1fr; gap: 30px; }
+        .article-img { width: 100%; border-radius: 8px; margin-bottom: 15px; border: 1px solid var(--border-light); }
+
+        /* Media Queries para A16 / Móviles */
+        @media (max-width: 768px) {
+            #mobile-menu-btn { display: block; }
+            .sidebar { position: fixed; left: -100%; top: 0; height: 100vh; width: 280px; transition: 0.3s; z-index: 1000; }
+            .sidebar.active-mobile { left: 0; }
+            .global-header { flex-direction: row; justify-content: space-between; align-items: center; padding-bottom: 10px;}
+            .ceo-profile { gap: 10px; }
+            .user-info span { display: none; } /* Ocultar el subtítulo en móvil para ahorrar espacio */
+            .newspaper-content { grid-template-columns: 1fr; }
+        }
+    </style>
 </head>
 <body>
 
     <!-- =========================================
-         PANTALLA DE LOGIN (Oculta por defecto)
+         PANTALLA DE SEGURIDAD ENCRIPTADA
          ========================================= -->
-    <div id="login-screen" class="hidden">
+    <div id="login-screen">
         <div class="login-box">
             <div class="login-logo">
                 <i class="fa-solid fa-fingerprint text-yellow"></i>
             </div>
             <h2>Acceso Restringido</h2>
-            <p>Infraestructura Corporativa Central</p>
-            <input type="email" id="ceo-email" placeholder="Correo de Administración">
-            <button id="btn-login" class="btn-primary">Verificar Credenciales</button>
-            <p id="login-error" class="error-msg hidden">Acceso denegado.</p>
+            <p>Infraestructura Corporativa - Trechos Visionarios</p>
+            <input type="email" id="ceo-email" placeholder="Correo de Fundador / CEO" autocomplete="off">
+            <button id="btn-login" class="btn-primary">Verificar Identidad</button>
+            <div id="login-error" class="error-msg"></div>
         </div>
     </div>
 
     <!-- =========================================
-         DASHBOARD PRINCIPAL
+         DASHBOARD PRINCIPAL CORPORATIVO
          ========================================= -->
-    <div id="ceo-dashboard">
+    <div id="ceo-dashboard" class="hidden">
         
-        <!-- BARRA LATERAL (Sidebar) -->
-        <aside class="sidebar" id="sidebar">
+        <!-- BARRA LATERAL -->
+        <nav class="sidebar">
             <div class="brand">
                 <h2>Trechos <span>Visionarios</span></h2>
-                <small>Corporate Management</small>
+                <small>Corporate Core</small>
             </div>
             <ul class="nav-links">
-                <li class="active" data-target="tab-general"><i class="fa-solid fa-border-all"></i> Panel General</li>
-                <li data-target="tab-servidores"><i class="fa-solid fa-server"></i> Infraestructura</li>
-                <li data-target="tab-finanzas"><i class="fa-solid fa-file-invoice-dollar"></i> Contabilidad</li>
-                <li data-target="tab-catalogo"><i class="fa-solid fa-clapperboard"></i> Trabajar Catálogo</li>
-                <li data-target="tab-desarrollo"><i class="fa-solid fa-terminal"></i> Entorno Dev</li>
-                <li data-target="tab-equipo"><i class="fa-solid fa-users-gear"></i> Equipo y Nómina</li>
-                <li data-target="tab-apps"><i class="fa-solid fa-mobile-screen-button"></i> Red de Apps</li>
-                <li data-target="tab-periodico"><i class="fa-solid fa-newspaper"></i> Visión Corporativa</li>
+                <li class="active" data-tab="tab-general"><i class="fa-solid fa-chart-pie"></i> Panel General</li>
+                <li data-tab="tab-servers"><i class="fa-solid fa-server"></i> Infraestructura</li>
+                <li data-tab="tab-finance"><i class="fa-solid fa-wallet"></i> Contabilidad</li>
+                <li data-tab="tab-catalog"><i class="fa-solid fa-film"></i> Trabajar Catálogo</li>
+                <li data-tab="tab-dev"><i class="fa-solid fa-terminal"></i> Terminal Dev</li>
+                <li data-tab="tab-team"><i class="fa-solid fa-users-gear"></i> Equipo & Roles</li>
+                <li data-tab="tab-apps"><i class="fa-solid fa-mobile-screen"></i> Red de Apps</li>
+                <li data-tab="tab-news"><i class="fa-solid fa-newspaper"></i> Visión Corporativa</li>
             </ul>
             <div class="legal-footer">
-                <p>Sala Cine App Ecosystem<br>© 2026 Trechos Visionarios</p>
-                <button class="logout" id="btn-logout"><i class="fa-solid fa-right-from-bracket"></i> Cerrar Sesión</button>
+                <p>&copy; 2026 Trechos Visionarios.<br>Zaruma, El Oro, Ecuador.</p>
+                <button id="btn-logout" class="btn-secondary logout"><i class="fa-solid fa-lock"></i> Bloquear Terminal</button>
             </div>
-        </aside>
+        </nav>
 
-        <!-- ÁREA DE CONTENIDO PRINCIPAL -->
+        <!-- ÁREA PRINCIPAL -->
         <main class="content-area">
             
-            <!-- HEADER GLOBAL -->
+            <!-- HEADER FIJO GLOBAL -->
             <header class="global-header">
-                <div class="header-left">
-                    <button id="mobile-menu-btn" class="hamburger-btn">
-                        <i class="fa-solid fa-bars"></i>
-                    </button>
+                <div class="mobile-header-left">
+                    <button id="mobile-menu-btn"><i class="fa-solid fa-bars"></i></button>
                     <div>
-                        <h1>Panel de Control</h1>
-                        <p class="date-subtitle" id="currentDate">Cargando fecha en tiempo real...</p>
+                        <h1 id="current-tab-title">Panel General</h1>
+                        <span class="date-subtitle" id="current-date">Viernes, 31 Julio 2026</span>
                     </div>
                 </div>
                 
                 <div class="ceo-profile">
-                    <div class="notifications">
-                        <i class="fa-regular fa-bell"></i>
-                        <span class="badge">3</span>
-                    </div>
+                    <div class="notifications"><i class="fa-solid fa-bell"></i><span class="badge">4</span></div>
                     <div class="user-info">
                         <strong>Levin Dylan Narváez</strong>
                         <span>Fundador & CEO</span>
@@ -84,48 +116,53 @@
             </header>
 
             <!-- =========================================
-                 A. PANEL GENERAL (Bento Grid)
+                 A. PANEL GENERAL (BENTO GRID)
                  ========================================= -->
-            <section id="tab-general" class="tab-content active">
+            <section id="tab-general" class="tab-content">
                 <div class="kpi-grid">
                     <div class="kpi-card">
-                        <span>Ingresos Proyectados (Hoy)</span>
-                        <h3 class="text-green" id="kpi-ingresos">$500.00</h3>
-                        <p class="trend-up"><i class="fa-solid fa-arrow-trend-up"></i> +12% vs ayer</p>
+                        <span>Caja Mensual Proyectada</span>
+                        <h3 class="text-green" id="dash-caja">$0.00</h3>
+                        <span class="trend-up"><i class="fa-solid fa-arrow-trend-up"></i> +12.5% vs Mes Anterior</span>
                     </div>
                     <div class="kpi-card">
-                        <span>Tráfico Global Activo</span>
-                        <h3 id="kpi-trafico">14,250</h3>
-                        <p class="text-muted">Usuarios en línea</p>
+                        <span>Ingresos Diarios (Meta $500+)</span>
+                        <h3 class="text-yellow" id="dash-diario">$0.00</h3>
+                        <span class="trend-up" style="color: var(--text-muted);">Tráfico en tiempo real</span>
                     </div>
                     <div class="kpi-card">
-                        <span>Estado de Nodos</span>
-                        <h3 class="text-yellow">100% Online</h3>
-                        <p class="text-muted">Sin latencia detectada</p>
+                        <span>Flujo de Vistas Globales</span>
+                        <h3 id="dash-vistas">0</h3>
+                        <span class="trend-up" style="color: var(--text-muted);"><i class="fa-solid fa-bolt"></i> Sistema Híbrido Activo</span>
                     </div>
                     <div class="kpi-card">
-                        <span>Nómina Activa</span>
-                        <h3 id="kpi-nomina">$145.50</h3>
-                        <p class="text-danger">Gasto operativo de hoy</p>
+                        <span>Nómina Activa (Hoy)</span>
+                        <h3 class="text-danger" id="dash-nomina">$0.00</h3>
+                        <span class="trend-up" style="color: var(--text-muted);">Costos operativos</span>
                     </div>
                 </div>
 
                 <div class="dashboard-middle">
                     <div class="chart-box">
                         <div class="box-header">
-                            <h4>Flujo Financiero en Tiempo Real</h4>
+                            <h4>Rendimiento Financiero (Últimos 7 Días)</h4>
                         </div>
-                        <div class="canvas-container" id="mainChartContainer">
-                            <!-- Aquí renderizará Chart.js -->
-                            <canvas id="financeChart"></canvas>
+                        <div class="canvas-container">
+                            <canvas id="mainChart"></canvas>
                         </div>
                     </div>
                     <div class="activity-feed">
                         <div class="box-header">
-                            <h4>Monitor de Actividad</h4>
+                            <h4>Actividad de Bóveda y Tráfico</h4>
                         </div>
-                        <ul class="feed-list" id="recentActivityList">
-                            <!-- Inyección JS -->
+                        <ul class="feed-list" id="feed-list-container">
+                            <li class="feed-item">
+                                <div class="feed-icon"><i class="fa-solid fa-server"></i></div>
+                                <div class="feed-info">
+                                    <p>Sincronización inicial exitosa.</p>
+                                    <small>Hace un momento</small>
+                                </div>
+                            </li>
                         </ul>
                     </div>
                 </div>
@@ -134,78 +171,119 @@
             <!-- =========================================
                  B. SERVIDORES E INFRAESTRUCTURA
                  ========================================= -->
-            <section id="tab-servidores" class="tab-content hidden">
+            <section id="tab-servers" class="tab-content hidden">
                 <div class="action-bar">
-                    <h3>Monitor de Nodos Globales</h3>
-                    <button class="btn-primary"><i class="fa-solid fa-rotate"></i> Forzar Sincronización</button>
+                    <h3>Estado de Nodos Globales</h3>
+                    <button class="btn-primary"><i class="fa-solid fa-rotate-right"></i> Refrescar Ping</button>
                 </div>
                 
-                <div class="kpi-grid">
-                    <div class="server-card online">
-                        <div class="server-header">
-                            <i class="fa-solid fa-server"></i>
-                            <span class="status-blink">Trabajando...</span>
+                <div class="kpi-grid" style="margin-bottom: 30px;">
+                    <div class="node-card">
+                        <div>
+                            <h4 style="margin-bottom: 5px;"><i class="fa-solid fa-location-dot text-yellow"></i> Nodo Ecuador</h4>
+                            <span class="text-muted" style="font-size: 12px;">Latencia: 12ms</span>
                         </div>
-                        <h4>Nodo Ecuador 🇪🇨</h4>
-                        <p>Latencia: 12ms | Carga: 45%</p>
+                        <div class="node-status">
+                            <span class="blink-text text-green">Trabajando...</span>
+                            <span style="font-size: 11px; margin-top: 5px;">99.9% Uptime</span>
+                        </div>
                     </div>
-                    <div class="server-card online">
-                        <div class="server-header">
-                            <i class="fa-solid fa-server"></i>
-                            <span class="status-blink">Trabajando...</span>
+                    <div class="node-card">
+                        <div>
+                            <h4 style="margin-bottom: 5px;"><i class="fa-solid fa-location-dot text-yellow"></i> Nodo México</h4>
+                            <span class="text-muted" style="font-size: 12px;">Latencia: 45ms</span>
                         </div>
-                        <h4>Nodo México 🇲🇽</h4>
-                        <p>Latencia: 38ms | Carga: 62%</p>
+                        <div class="node-status">
+                            <span class="blink-text text-green">Trabajando...</span>
+                            <span style="font-size: 11px; margin-top: 5px;">Carga 68%</span>
+                        </div>
                     </div>
-                    <div class="server-card online">
-                        <div class="server-header">
-                            <i class="fa-solid fa-server"></i>
-                            <span class="status-blink">Trabajando...</span>
+                    <div class="node-card">
+                        <div>
+                            <h4 style="margin-bottom: 5px;"><i class="fa-solid fa-location-dot text-yellow"></i> Nodo EE. UU.</h4>
+                            <span class="text-muted" style="font-size: 12px;">Latencia: 28ms</span>
                         </div>
-                        <h4>Nodo EE. UU. 🇺🇸</h4>
-                        <p>Latencia: 25ms | Carga: 80%</p>
+                        <div class="node-status">
+                            <span class="blink-text text-green">Trabajando...</span>
+                            <span style="font-size: 11px; margin-top: 5px;">Balanceador Activo</span>
+                        </div>
                     </div>
-                    <div class="server-card online">
-                        <div class="server-header">
-                            <i class="fa-solid fa-server"></i>
-                            <span class="status-blink">Trabajando...</span>
+                    <div class="node-card">
+                        <div>
+                            <h4 style="margin-bottom: 5px;"><i class="fa-solid fa-location-dot text-yellow"></i> Nodo España</h4>
+                            <span class="text-muted" style="font-size: 12px;">Latencia: 110ms</span>
                         </div>
-                        <h4>Nodo España 🇪🇸</h4>
-                        <p>Latencia: 110ms | Carga: 30%</p>
+                        <div class="node-status">
+                            <span class="blink-text text-yellow">Trabajando...</span>
+                            <span style="font-size: 11px; margin-top: 5px;">Tráfico Moderado</span>
+                        </div>
                     </div>
                 </div>
 
-                <div class="dashboard-middle" style="margin-top: 25px;">
+                <div class="dashboard-middle">
                     <div class="server-costs-box">
                         <div class="box-header">
-                            <h4>Costos Fijos de Infraestructura</h4>
+                            <h4>Estructura de Costos Fijos (Infraestructura)</h4>
                         </div>
-                        <h2 class="text-danger" style="font-size: 36px; margin-bottom: 10px;">$4,500.00 <small style="font-size: 14px; color: var(--text-muted);">/ mes</small></h2>
                         <table class="corporate-table">
-                            <tr>
-                                <td>Bases de Datos MongoDB</td>
-                                <td style="text-align: right;">$1,200.00</td>
-                            </tr>
-                            <tr>
-                                <td>Balanceadores de Carga AWS</td>
-                                <td style="text-align: right;">$1,800.00</td>
-                            </tr>
-                            <tr>
-                                <td>Ancho de Banda CDN</td>
-                                <td style="text-align: right;">$1,500.00</td>
-                            </tr>
+                            <thead>
+                                <tr>
+                                    <th>Servicio / Proveedor</th>
+                                    <th>Región</th>
+                                    <th>Uso</th>
+                                    <th>Costo Mensual</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>MongoDB Atlas Premium</td>
+                                    <td>Global</td>
+                                    <td>Bases de Datos & Caché</td>
+                                    <td>$ 1,200.00</td>
+                                </tr>
+                                <tr>
+                                    <td>Render / AWS EC2</td>
+                                    <td>US/EU</td>
+                                    <td>Cómputo Backend & APIs</td>
+                                    <td>$ 1,800.00</td>
+                                </tr>
+                                <tr>
+                                    <td>Firebase / FCM</td>
+                                    <td>Global</td>
+                                    <td>Autenticación & Notificaciones</td>
+                                    <td>$ 500.00</td>
+                                </tr>
+                                <tr>
+                                    <td>CDNs & Dominios</td>
+                                    <td>Multi</td>
+                                    <td>Distribución de estáticos</td>
+                                    <td>$ 1,000.00</td>
+                                </tr>
+                                <tr class="total-row">
+                                    <td colspan="3" style="text-align: right; color: var(--text-muted);">TOTAL FIJO ESTIMADO:</td>
+                                    <td class="text-danger" style="font-weight: 700;">$ 4,500.00 / mes</td>
+                                </tr>
+                            </tbody>
                         </table>
                     </div>
+
                     <div class="team-management">
                         <div class="box-header">
-                            <h4>Ingenieros de Infraestructura</h4>
+                            <h4>Ingenieros y Admins. de Infraestructura</h4>
                         </div>
                         <ul class="feed-list">
                             <li class="feed-item">
                                 <div class="feed-icon"><i class="fa-solid fa-user-shield"></i></div>
                                 <div class="feed-info">
-                                    <p><strong>Admin 2 (Soporte)</strong></p>
-                                    <small class="text-green">Mantenimiento de bases de datos</small>
+                                    <p><strong>Levin Dylan Narváez</strong></p>
+                                    <small class="text-yellow">Arquitecto Principal / CEO</small>
+                                </div>
+                            </li>
+                            <li class="feed-item">
+                                <div class="feed-icon" style="background-color: rgba(255,255,255,0.05); color: #fff;"><i class="fa-solid fa-code-merge"></i></div>
+                                <div class="feed-info">
+                                    <p><strong>Admin Sistema 2</strong></p>
+                                    <small>Mantenimiento de Nodos y Scrapers</small>
                                 </div>
                             </li>
                         </ul>
@@ -216,69 +294,90 @@
             <!-- =========================================
                  C. CONTABILIDAD Y FINANZAS
                  ========================================= -->
-            <section id="tab-finanzas" class="tab-content hidden">
+            <section id="tab-finance" class="tab-content hidden">
                 <div class="action-bar">
-                    <h3>Libro Mayor Corporativo</h3>
-                    <button class="btn-primary" id="btn-export-pdf"><i class="fa-solid fa-file-pdf"></i> Exportar Balance PDF</button>
+                    <h3>Reporte Financiero Corporativo</h3>
+                    <button class="btn-secondary" onclick="alert('Generando PDF...')"><i class="fa-solid fa-file-pdf text-danger"></i> Exportar Balance a PDF</button>
                 </div>
+
                 <div class="finance-grid">
                     <div class="finance-card">
-                        <h4>Caja Mensual Bruta</h4>
-                        <h2 class="text-green" id="caja-mensual">$0.00</h2>
-                        <p>Acumulado del 1 al 31</p>
+                        <h4>Ingresos Brutos (Mes)</h4>
+                        <h2 class="text-green" id="fin-ingresos">$0.00</h2>
+                        <p>Total facturado por redes (AdMob/Tráfico)</p>
                     </div>
                     <div class="finance-card">
-                        <h4>Utilidad Neta (Proyectada)</h4>
-                        <h2 class="text-yellow" id="utilidad-neta">$0.00</h2>
-                        <p>Libre después de nómina e infra</p>
+                        <h4>Costos Operativos</h4>
+                        <h2 class="text-danger" id="fin-costos">-$4,500.00</h2>
+                        <p>Infraestructura fija mensual</p>
                     </div>
                     <div class="finance-card">
-                        <h4>Retiros Pendientes</h4>
-                        <h2 class="text-danger" id="retiros-pendientes">$0.00</h2>
-                        <p>Corte al 21 de cada mes</p>
+                        <h4>Nómina de Trabajadores</h4>
+                        <h2 class="text-danger" id="fin-nomina">$0.00</h2>
+                        <p>Comisiones y sueldos fijos</p>
                     </div>
+                    <div class="finance-card" style="border-color: var(--yellow-main);">
+                        <h4>Utilidad Neta (Caja)</h4>
+                        <h2 class="text-yellow" id="fin-utilidad">$0.00</h2>
+                        <p>Margen de ganancia empresa</p>
+                    </div>
+                </div>
+
+                <div class="work-station">
+                    <div class="box-header">
+                        <h4>Desglose de Caja Fuerte</h4>
+                    </div>
+                    <p class="text-muted" style="font-size: 14px; line-height: 1.6;">
+                        El sistema recalcula automáticamente las utilidades restando los costos de los servidores (Nodos) y la nómina generada en la pestaña de Equipo. Los reportes PDF incluyen timbrado apto para presentación contable corporativa.
+                    </p>
                 </div>
             </section>
 
             <!-- =========================================
                  D. TRABAJAR CATÁLOGO
                  ========================================= -->
-            <section id="tab-catalogo" class="tab-content hidden">
+            <section id="tab-catalog" class="tab-content hidden">
                 <div class="action-bar">
-                    <h3>Inyección a la Bóveda (Películas y Series)</h3>
+                    <h3>Inyección de Contenido (Películas y Series)</h3>
                 </div>
                 
-                <!-- Reglas de ganancia corporativa -->
-                <div class="rules-banner">
-                    <i class="fa-solid fa-circle-info text-yellow"></i>
-                    <p><strong>Reglas de Uploader:</strong> Pago fijo inmediato por subida en base a categoría + Pago variable recurrente según volumen de reproducciones generadas en la red.</p>
+                <div style="background: rgba(255, 184, 0, 0.1); border: 1px solid var(--yellow-main); padding: 15px; border-radius: 8px; margin-bottom: 25px; display: flex; gap: 15px; align-items: center;">
+                    <i class="fa-solid fa-circle-exclamation text-yellow" style="font-size: 24px;"></i>
+                    <div>
+                        <h4 style="margin-bottom: 5px;">Reglas de Ganancia - Uploader</h4>
+                        <p style="font-size: 13px; color: var(--text-muted);">Pago fijo por subida validada + pago variable continuo por reproducciones (vistas). <br><strong style="color: #fff;">Nota de diseño UI:</strong> La interfaz de reproducción cliente es minimalista, sin barras de progreso ni indicadores de seguimiento visual.</p>
+                    </div>
                 </div>
 
                 <div class="search-bar-visual">
                     <i class="fa-solid fa-magnifying-glass"></i>
-                    <input type="text" id="tmdb-search-input" placeholder="Buscar título en base de datos global (TMDB)...">
+                    <input type="text" id="tmdb-search-input" placeholder="Buscar por título (TMDB)...">
                     <button class="btn-primary" id="btn-search-tmdb">Buscar</button>
                 </div>
 
                 <div class="posters-grid" id="tmdb-results">
-                    <!-- Resultados visuales inyectados aquí -->
+                    <!-- Los pósters se inyectarán vía JS -->
+                    <p class="text-muted" style="grid-column: 1 / -1; text-align: center; padding: 20px;">Realiza una búsqueda para visualizar los pósters.</p>
                 </div>
 
-                <div class="injection-form hidden" id="injection-panel">
+                <div class="injection-form hidden" id="injection-form-container">
                     <div class="selected-media">
                         <img id="inject-poster" src="" alt="Poster">
                         <div class="media-details">
                             <h4 id="inject-title">Título</h4>
-                            <p id="inject-overview">Sinopsis...</p>
+                            <p id="inject-overview">Descripción...</p>
+                            <span class="badge-success" style="margin-top: 10px; display: inline-block;" id="inject-date">Estreno</span>
                         </div>
                     </div>
+
                     <div class="input-group">
-                        <label>Enlace del Servidor (Embed/MP4)</label>
-                        <input type="url" id="inject-url" placeholder="https://...">
+                        <label>URL Directa de Inyección (Video / Scraper ID)</label>
+                        <input type="text" id="inject-url" placeholder="https://...">
                     </div>
+                    
                     <div class="form-actions">
                         <button class="btn-secondary" id="btn-cancel-inject">Cancelar</button>
-                        <button class="btn-success" id="btn-confirm-inject"><i class="fa-solid fa-cloud-arrow-up"></i> Inyectar al Servidor</button>
+                        <button class="btn-success" id="btn-confirm-inject"><i class="fa-solid fa-cloud-arrow-up"></i> Inyectar al Catálogo</button>
                     </div>
                 </div>
             </section>
@@ -286,35 +385,34 @@
             <!-- =========================================
                  E. ENTORNO DE DESARROLLO (NUEVO)
                  ========================================= -->
-            <section id="tab-desarrollo" class="tab-content hidden">
+            <section id="tab-dev" class="tab-content hidden">
                 <div class="action-bar">
-                    <h3>Terminal de Código y Snippets</h3>
-                    <button class="btn-primary"><i class="fa-solid fa-plus"></i> Nuevo Bloque</button>
+                    <h3>Terminal de Programación Backend</h3>
+                    <button class="btn-primary"><i class="fa-solid fa-floppy-disk"></i> Guardar Snippet</button>
                 </div>
-                <div class="dev-environment">
-                    <div class="dev-sidebar">
-                        <ul class="snippet-list">
-                            <li class="active"><i class="fa-brands fa-js text-yellow"></i> Lógica AdMob V2</li>
-                            <li><i class="fa-brands fa-css3-alt text-yellow"></i> Tema UI Player</li>
-                            <li><i class="fa-solid fa-database text-yellow"></i> Índices MongoDB</li>
-                        </ul>
+
+                <div class="terminal-container">
+                    <div style="margin-bottom: 10px; color: var(--text-muted); font-size: 12px; border-bottom: 1px solid #333; padding-bottom: 5px;">
+                        root@trechos-visionarios-core:~# node env
                     </div>
-                    <div class="dev-editor">
-                        <div class="editor-header">
-                            <span>Lógica AdMob V2</span>
-                            <button class="btn-success btn-sm"><i class="fa-solid fa-floppy-disk"></i> Guardar en BD</button>
+                    <textarea spellcheck="false" placeholder="// Redacta, prueba y guarda bloques de código aquí...&#10;const ecosystem = require('./zyroEngine');"></textarea>
+                </div>
+
+                <h4 style="margin-bottom: 15px;">Librería de Snippets (Base de Datos)</h4>
+                <div class="snippets-grid">
+                    <div class="snippet-card">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                            <strong style="font-size: 14px;">Web Scraper Jetpack</strong>
+                            <i class="fa-solid fa-copy text-muted" style="cursor: pointer;"></i>
                         </div>
-                        <textarea class="code-area" spellcheck="false">
-// Configuración de caché publicitaria para Sala Cine
-function preloadAdNetwork() {
-    const adConfig = {
-        threshold: 300,
-        cpmMultiplier: 1.5,
-        priority: 'high'
-    };
-    initZyroEngine(adConfig);
-}
-                        </textarea>
+                        <p style="font-size: 12px; color: var(--text-muted); font-family: monospace;">const fetch = require('axios');<br>...</p>
+                    </div>
+                    <div class="snippet-card">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                            <strong style="font-size: 14px;">Auth Bot Telegram</strong>
+                            <i class="fa-solid fa-copy text-muted" style="cursor: pointer;"></i>
+                        </div>
+                        <p style="font-size: 12px; color: var(--text-muted); font-family: monospace;">bot.onText(/\/start/, (msg) => {<br>...</p>
                     </div>
                 </div>
             </section>
@@ -322,63 +420,59 @@ function preloadAdNetwork() {
             <!-- =========================================
                  F. EQUIPO, NÓMINA Y MULTI-PUESTOS
                  ========================================= -->
-            <section id="tab-equipo" class="tab-content hidden">
+            <section id="tab-team" class="tab-content hidden">
                 <div class="action-bar">
-                    <h3>Gestión de Talento Humano</h3>
+                    <h3>Gestión Corporativa de RR.HH.</h3>
                 </div>
-                
+
                 <div class="dashboard-middle">
-                    <div class="team-management">
+                    <!-- Formulario de Alta -->
+                    <div class="work-station">
                         <div class="box-header">
-                            <h4>Alta de Nuevo Personal</h4>
+                            <h4>Alta y Asignación de Puestos</h4>
                         </div>
-                        <form id="form-alta-trabajador" class="form-alta">
-                            <div class="input-group">
-                                <label>ID de Telegram o Correo</label>
-                                <input type="text" placeholder="Ej: 123456789 o admin@empresa.com">
-                            </div>
-                            <div class="input-group">
-                                <label>Especialidad / Rol</label>
-                                <select class="corporate-select">
-                                    <option value="uploader">Subida de Contenido (Comisión)</option>
-                                    <option value="sysadmin">Gestión de Servidores (Sueldo Fijo)</option>
-                                    <option value="marketing">Marketing TikTok (Tarifa x Tráfico)</option>
-                                    <option value="backend">Desarrollo Backend (Sueldo Fijo)</option>
-                                </select>
-                            </div>
-                            <div class="input-group">
-                                <label>Asignación Salarial Base ($)</label>
-                                <input type="number" placeholder="Ej: 15.00 diarios" step="0.01">
-                            </div>
-                            <button type="button" class="btn-primary"><i class="fa-solid fa-user-plus"></i> Asignar Puesto</button>
-                        </form>
+                        <div class="input-group">
+                            <label>Identificador del Trabajador (Correo o ID de Telegram)</label>
+                            <input type="text" placeholder="Ej: 123456789 o correo@empresa.com">
+                        </div>
+                        <div class="input-group">
+                            <label>Nombre Real o Corporativo (Editable)</label>
+                            <input type="text" placeholder="Ej: Editor Senior 1">
+                        </div>
+                        <div class="input-group">
+                            <label>Especialidad y Esquema de Pago</label>
+                            <select style="width: 100%; padding: 14px; background: var(--bg-base); border: 1px solid var(--border-light); color: white; border-radius: 8px; outline: none; margin-bottom: 15px;">
+                                <option value="subida">Subida de Contenido (Genera por comisión: Subidas + Vistas)</option>
+                                <option value="servidores">Gestión de Servidores (Sueldo Fijo Diario)</option>
+                                <option value="marketing">Marketing en Redes / TikTok (Tarifa por volumen de tráfico)</option>
+                                <option value="programacion">Programación / Backend (Sueldo Fijo Mensual/Diario)</option>
+                            </select>
+                        </div>
+                        <div class="input-group" id="salario-fijo-container">
+                            <label>Monto a Asignar (USD - Solo aplica a roles fijos/tarifas)</label>
+                            <input type="number" placeholder="$ 0.00">
+                        </div>
+                        <button class="btn-primary" style="width: 100%;"><i class="fa-solid fa-user-plus"></i> Integrar a la Nómina</button>
                     </div>
 
+                    <!-- Lista de Trabajadores -->
                     <div class="team-management">
                         <div class="box-header">
-                            <h4>Trabajadores Activos</h4>
+                            <h4>Nómina Activa</h4>
                         </div>
-                        <table class="corporate-table">
-                            <thead>
-                                <tr>
-                                    <th>Nombre/Alias</th>
-                                    <th>Rol</th>
-                                    <th>Generado Hoy</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr>
-                                    <td>Uploader #1244</td>
-                                    <td><span class="badge-success">Contenido</span></td>
-                                    <td class="text-green">$12.50</td>
-                                </tr>
-                                <tr>
-                                    <td>SysAdmin Carlos</td>
-                                    <td><span class="badge-success" style="color: var(--yellow-main); border-color: var(--yellow-main);">Infra</span></td>
-                                    <td class="text-green">$30.00 (Fijo)</td>
-                                </tr>
-                            </tbody>
-                        </table>
+                        <ul class="feed-list" id="team-list-container">
+                            <li class="feed-item">
+                                <div class="feed-icon"><i class="fa-solid fa-star text-yellow"></i></div>
+                                <div class="feed-info" style="flex-grow: 1;">
+                                    <p style="display: flex; justify-content: space-between;">
+                                        <strong>Levin Dylan Narváez</strong>
+                                        <span class="text-green">CEO</span>
+                                    </p>
+                                    <small>Programador Principal / Fundador</small>
+                                </div>
+                            </li>
+                            <!-- Trabajadores generados dinámicamente -->
+                        </ul>
                     </div>
                 </div>
             </section>
@@ -388,74 +482,166 @@ function preloadAdNetwork() {
                  ========================================= -->
             <section id="tab-apps" class="tab-content hidden">
                 <div class="action-bar">
-                    <h3>Ecosistema de Aplicaciones</h3>
+                    <h3>Ecosistema de Plataformas</h3>
+                    <button class="btn-secondary"><i class="fa-solid fa-plus"></i> Añadir Plataforma</button>
                 </div>
+                
+                <p class="text-muted" style="margin-bottom: 20px;">Monitoreo de tráfico y estado en línea de la red de aplicaciones (Híbridas y Web-based Telegram Apps).</p>
+
                 <div class="apps-grid">
+                    <!-- Sala Cine -->
                     <div class="app-card">
                         <div class="app-header">
-                            <i class="fa-solid fa-film text-yellow"></i>
-                            <h4>Sala Cine (Principal)</h4>
+                            <i class="fa-solid fa-play text-yellow"></i>
+                            <h4 style="font-size: 18px;">Sala Cine</h4>
                         </div>
                         <div class="app-stats">
-                            <p>Instalaciones <span>250K+</span></p>
-                            <p>Estado <span class="text-green">En Línea</span></p>
-                            <p>Play Console <span class="text-yellow">V2.4 Activa</span></p>
+                            <p>Estado <span><i class="fa-solid fa-circle text-green" style="font-size: 10px;"></i> En línea</span></p>
+                            <p>Tipo <span class="text-muted">App Híbrida / Play Store</span></p>
+                            <p>Tráfico Hoy <span>24.5K Vistas</span></p>
                         </div>
                     </div>
-                    <!-- Generar dinámicamente las otras 9 aplicaciones -->
+                    <!-- ZYRO -->
                     <div class="app-card">
                         <div class="app-header">
-                            <i class="fa-solid fa-music text-muted"></i>
-                            <h4>App Secundaria #2</h4>
+                            <i class="fa-solid fa-compass text-cyan"></i>
+                            <h4 style="font-size: 18px;">ZYRO</h4>
                         </div>
                         <div class="app-stats">
-                            <p>Instalaciones <span>15K+</span></p>
-                            <p>Estado <span class="text-green">En Línea</span></p>
-                            <p>Play Console <span class="text-yellow">Fase Cerrada</span></p>
+                            <p>Estado <span><i class="fa-solid fa-circle text-green" style="font-size: 10px;"></i> En línea</span></p>
+                            <p>Tipo <span class="text-muted">Contenedor Web (Jetpack/Node)</span></p>
+                            <p>Búsquedas Hoy <span>8.2K Consultas</span></p>
+                        </div>
+                    </div>
+                    <!-- Peli Noova -->
+                    <div class="app-card">
+                        <div class="app-header">
+                            <i class="fa-solid fa-clapperboard text-danger"></i>
+                            <h4 style="font-size: 18px;">Peli Noova</h4>
+                        </div>
+                        <div class="app-stats">
+                            <p>Estado <span><i class="fa-solid fa-circle text-yellow" style="font-size: 10px;"></i> En desarrollo</span></p>
+                            <p>Tipo <span class="text-muted">Web Media Corporativa</span></p>
+                            <p>Layout <span>Minimalista Aprobado</span></p>
+                        </div>
+                    </div>
+                    <!-- Telegram Mini App -->
+                    <div class="app-card" style="border-style: dashed;">
+                        <div class="app-header">
+                            <i class="fa-brands fa-telegram text-muted"></i>
+                            <h4 style="font-size: 18px; color: var(--text-muted);">Plataforma WebBot</h4>
+                        </div>
+                        <div class="app-stats">
+                            <p>Estado <span><i class="fa-solid fa-circle text-green" style="font-size: 10px;"></i> Operativo</span></p>
+                            <p>Tipo <span class="text-muted">Telegram Web-App</span></p>
+                            <p>Interacciones <span>12K / día</span></p>
                         </div>
                     </div>
                 </div>
             </section>
 
             <!-- =========================================
-                 H. PERIÓDICO CORPORATIVO (NUEVO)
+                 H. PERIÓDICO CORPORATIVO (VISIÓN)
                  ========================================= -->
-            <section id="tab-periodico" class="tab-content hidden">
-                <div class="newspaper-header">
-                    <h2>Nuestra Visión y Legado</h2>
-                    <p class="date-subtitle">Publicación Institucional de Trechos Visionarios</p>
-                </div>
-                
-                <div class="newspaper-grid">
-                    <div class="news-main">
-                        <div class="founder-image-placeholder">
-                            <!-- Espacio para foto del CEO -->
-                            <i class="fa-solid fa-image"></i>
-                            <span>Fotografía del Fundador</span>
-                        </div>
-                        <div class="news-content">
-                            <h3>De una idea a un ecosistema global</h3>
-                            <p>Fundada en las históricas calles de <strong>Zaruma, El Oro, Ecuador</strong>, Trechos Visionarios nació con la convicción de crear un software que rompiera fronteras. Lo que comenzó como un modelo de escalabilidad local, hoy alimenta servidores en múltiples continentes, proveyendo entretenimiento fluido a miles de usuarios diarios.</p>
-                            <p>La filosofía siempre ha sido clara: construir tecnología robusta, mantener la resiliencia ante picos de tráfico masivos y crear oportunidades económicas para un equipo de trabajo descentralizado.</p>
-                            <a href="#" class="news-link">Leer manifiesto completo en la web <i class="fa-solid fa-arrow-right"></i></a>
-                        </div>
-                    </div>
+            <section id="tab-news" class="tab-content hidden">
+                <div class="work-station" style="background: var(--bg-card); padding: 40px; border-radius: 12px; border: 1px solid var(--border-light);">
                     
-                    <div class="news-side">
-                        <div class="side-article">
-                            <h4>Filosofía de Desarrollo</h4>
-                            <p>Código limpio, bases de datos no relacionales optimizadas para lecturas instantáneas (MongoDB) y un enfoque 'Mobile-First' absoluto. La experiencia del usuario es el rey.</p>
+                    <div class="newspaper-header">
+                        <h1 style="font-size: 42px; font-family: 'Times New Roman', serif; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 10px;">Trechos Visionarios</h1>
+                        <p style="font-size: 14px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 4px;">Edición Corporativa • Zaruma, El Oro, Ecuador • 2026</p>
+                    </div>
+
+                    <div class="newspaper-content">
+                        <!-- Columna Principal -->
+                        <div>
+                            <h2 style="font-size: 28px; margin-bottom: 15px; line-height: 1.3;">Más allá del código: La visión que está transformando el ecosistema digital desde El Oro</h2>
+                            <!-- Placeholder de la foto principal del CEO -->
+                            <div class="article-img" style="height: 350px; background: linear-gradient(to bottom right, #2a2b36, #14151a); display: flex; justify-content: center; align-items: center;">
+                                <div style="text-align: center;">
+                                    <i class="fa-solid fa-camera text-muted" style="font-size: 40px; margin-bottom: 15px;"></i>
+                                    <p class="text-muted" style="font-size: 12px;">[ Espacio para Fotografía Oficial del Fundador ]</p>
+                                </div>
+                            </div>
+                            
+                            <p style="font-size: 16px; line-height: 1.8; color: #d1d5db; margin-bottom: 20px;">
+                                La historia de Trechos Visionarios no comienza en Silicon Valley, sino en las históricas calles de <strong>Zaruma, El Oro, Ecuador</strong>. Lo que empezó como líneas de código redactadas por un joven desarrollador independiente, se ha consolidado en una red de plataformas híbridas y aplicaciones de mensajería avanzada.
+                            </p>
+                            <p style="font-size: 16px; line-height: 1.8; color: #d1d5db; margin-bottom: 20px;">
+                                Como Fundador y CEO, Levin Dylan Narváez ha establecido una filosofía corporativa clara: crear herramientas ultra responsivas (como ZYRO y Sala Cine) que funcionen perfectamente desde un entorno móvil hasta una estación de trabajo completa, integrando soluciones de Telegram y bases de datos robustas.
+                            </p>
                         </div>
-                        <div class="side-article">
-                            <h4>Próximos Hitos 2026</h4>
-                            <p>Expansión a comercio electrónico, integrando logística regional e importaciones directas, apalancando nuestra red actual de aplicaciones.</p>
+                        
+                        <!-- Columna Secundaria -->
+                        <div style="border-left: 1px solid var(--border-light); padding-left: 30px;">
+                            <h3 style="font-size: 20px; border-bottom: 2px solid var(--yellow-main); padding-bottom: 10px; margin-bottom: 20px;">Filosofía de la Empresa</h3>
+                            <ul style="list-style: none; padding: 0;">
+                                <li style="margin-bottom: 15px; font-size: 14px; line-height: 1.6;">
+                                    <strong class="text-yellow">Independencia Tecnológica:</strong> Control total sobre el backend, scrapers y bases de datos.
+                                </li>
+                                <li style="margin-bottom: 15px; font-size: 14px; line-height: 1.6;">
+                                    <strong class="text-yellow">Minimalismo Funcional:</strong> Interfaces limpias, sin cargas innecesarias.
+                                </li>
+                                <li style="margin-bottom: 15px; font-size: 14px; line-height: 1.6;">
+                                    <strong class="text-yellow">Expansión Híbrida:</strong> Presencia en tiendas de apps y ecosistemas web al mismo tiempo.
+                                </li>
+                            </ul>
+
+                            <div class="article-img" style="height: 180px; background: #1c1d24; display: flex; justify-content: center; align-items: center; margin-top: 30px;">
+                                <p class="text-muted" style="font-size: 11px; text-align: center;">[ Fotos del Equipo de Desarrollo ]</p>
+                            </div>
+
+                            <a href="#" class="btn-outline text-yellow" style="display: block; text-align: center; margin-top: 25px; padding: 12px; text-decoration: none; border: 1px solid var(--yellow-main); border-radius: 6px;">
+                                <i class="fa-solid fa-arrow-up-right-from-square"></i> Visitar Web Institucional
+                            </a>
                         </div>
                     </div>
+
                 </div>
             </section>
 
         </main>
     </div>
 
+    <!-- Scripts locales para control de navegación móvil/pestañas -->
+    <script>
+        // Lógica súper básica incrustada para el menú móvil de 3 rayitas
+        const mobileBtn = document.getElementById('mobile-menu-btn');
+        const sidebarEl = document.querySelector('.sidebar');
+        const navLinks = document.querySelectorAll('.nav-links li');
+        const tabContents = document.querySelectorAll('.tab-content');
+        const tabTitle = document.getElementById('current-tab-title');
+
+        if(mobileBtn) {
+            mobileBtn.addEventListener('click', () => {
+                sidebarEl.classList.toggle('active-mobile');
+            });
+        }
+
+        navLinks.forEach(link => {
+            link.addEventListener('click', function() {
+                if(this.id === 'btn-logout') return;
+                
+                // Remover active de todos los links
+                navLinks.forEach(l => l.classList.remove('active'));
+                this.classList.add('active');
+
+                // Cambiar el título
+                tabTitle.textContent = this.textContent.trim();
+
+                // Ocultar todos los tabs y mostrar el seleccionado
+                tabContents.forEach(content => content.classList.add('hidden'));
+                const targetTab = document.getElementById(this.getAttribute('data-tab'));
+                if(targetTab) {
+                    targetTab.classList.remove('hidden');
+                }
+
+                // Cerrar sidebar en móvil si estaba abierta
+                sidebarEl.classList.remove('active-mobile');
+            });
+        });
+    </script>
+    
+    <!-- Script principal (El que construirás luego en ceo_panel.js) -->
+    <script src="ceo_panel.js"></script>
 </body>
 </html>
