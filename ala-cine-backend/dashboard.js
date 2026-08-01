@@ -84,8 +84,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function updateVal(id, value, prefix = "$") {
         const el = document.getElementById(id);
-        if (!el) return; // Validación por si el elemento no existe
-        const text = `${prefix}${(value || 0).toFixed(2)}`; // Aseguramos que value no sea null
+        if (!el) return;
+        const text = `${prefix}${(value || 0).toFixed(2)}`;
         if (el.innerText !== text) {
             el.innerText = text;
             el.classList.remove('flash-update');
@@ -125,12 +125,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     const f = data.finances;
                     updateVal('valHoy', f.todayEarned);
                     updateVal('valTotal', f.totalGeneradoGlobal);
-                    
                     updateVal('valSinRetirar', f.monthEarned);
-                    
-                    // --- AQUÍ ESTÁ LA LÍNEA NUEVA QUE CONECTA EL MES PASADO ---
                     updateVal('valMesPasado', f.lastMonthEarned);
-                    
                     updateVal('valRetirable', f.monthEarned); 
                     updateVal('valRetirableGrande', f.monthEarned);
                     updateVal('valBonos', f.bonos);
@@ -168,7 +164,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         listPedidas.innerHTML = '<li>No hay solicitudes pendientes.</li>';
                     }
 
-                    // Dibujar la lista real de ganancias
+                    // 1. Dibujar la lista de Ganancias Recientes
                     const listaRecientes = document.getElementById('listaGananciasRecientes');
                     listaRecientes.innerHTML = ''; 
 
@@ -190,6 +186,24 @@ document.addEventListener('DOMContentLoaded', () => {
                         });
                     } else {
                         listaRecientes.innerHTML = `<li><span><i class="fa-solid fa-clock text-muted"></i> Esperando actividad...</span></li>`;
+                    }
+
+                    // 2. NUEVO: Dibujar el Historial de Pagos (Liquidaciones CEO)
+                    const listaPagos = document.getElementById('listaHistorialPagos');
+                    if (listaPagos) {
+                        listaPagos.innerHTML = '';
+                        if (data.payoutHistory && data.payoutHistory.length > 0) {
+                            data.payoutHistory.forEach(pago => {
+                                const timeObj = new Date(pago.date);
+                                const fechaStr = timeObj.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' });
+                                
+                                const li = document.createElement('li');
+                                li.innerHTML = `<span><i class="fa-solid fa-check-double text-green"></i> Ciclo cerrado <span style="font-size:10px; color:var(--text-muted);">(${fechaStr} - ${pago.method})</span></span> <strong class="text-green">$${pago.amount.toFixed(2)}</strong>`;
+                                listaPagos.appendChild(li);
+                            });
+                        } else {
+                            listaPagos.innerHTML = `<li><span class="text-muted"><i class="fa-solid fa-box-open"></i> Aún no hay liquidaciones registradas.</span></li>`;
+                        }
                     }
                 }
             } catch (e) { console.error("Error fetching stats:", e); }
