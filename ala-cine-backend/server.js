@@ -403,25 +403,24 @@ require('./routes_stats.js')(app, ctx);
 app.get('/', (req, res) => { res.send('Activo'); });
 
 // ==========================================================
-// CONFIGURACIÓN ESTÁTICA Y RUTAS INDEPENDIENTES (Dashboard y Panel CEO)
+// RUTAS CORREGIDAS PARA EL DASHBOARD DE USUARIOS Y PANEL CEO
 // ==========================================================
-app.use(express.static(__dirname));
 
+// 1. Ruta específica para el bot de usuarios (sirve el dashboard correctamente)
 app.get('/dashboard', (req, res) => {
     res.sendFile(path.join(__dirname, 'dashboard.html'));
 });
 
-app.get('/dashboard.html', (req, res) => {
-    res.sendFile(path.join(__dirname, 'dashboard.html'));
-});
+// 2. Mapeo estático bajo /dashboard para que el CSS y JS carguen sin errores 404
+app.use('/dashboard', express.static(__dirname));
 
-app.get('/dashboard/dashboard.html', (req, res) => {
-    res.sendFile(path.join(__dirname, 'dashboard.html'));
-});
-
+// 3. Ruta independiente para tu Panel CEO
 app.get('/panel', (req, res) => {
     res.sendFile(path.join(__dirname, 'ceo_panel.html'));
 });
+
+// 4. Mapeo estático general para archivos sueltos de la raíz
+app.use(express.static(__dirname));
 
 if (process.env.NODE_ENV === 'production' && token) {
     app.post(`/bot${token}`, (req, res) => {
