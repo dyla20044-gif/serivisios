@@ -507,30 +507,86 @@ app.post('/api/ceo/login', (req, res) => {
     }
 });
 
+// NUEVO MAPEO DINÁMICO DE TRABAJADORES DESDE MONGODB
 app.get('/api/ceo/workers', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "DB no conectada" });
     try {
         const now = new Date();
         const dayId = now.toISOString().split('T')[0];
-        
+
+        // Buscamos las estadísticas de hoy
         const stats = await mongoDb.collection(COLL_DAILY_STATS).find({ dayId }).toArray();
-        
+
+        // Obtenemos los nombres reales de la colección de Recursos Humanos
+        const hrWorkers = await mongoDb.collection('hr_workers').find({}).toArray();
+        const workerDict = {};
+        hrWorkers.forEach(w => workerDict[w.telegramId] = w);
+
         const workers = stats.map(s => {
-            let name = "Trabajador ID: " + s.uploaderId;
-            if (s.uploaderId === ADMIN_CHAT_IDS[0]) name = "CEO (Tú)";
-            else if (s.uploaderId === ADMIN_CHAT_IDS[1]) name = "Administrador 2";
-            
+            const uid = s.uploaderId.toString();
+            // Si existe en HR, usa su nombre real y rol, si no, usa el ID
+            const hrData = workerDict[uid] || { name: "Nuevo Trabajador (" + uid + ")", role: "Uploader" };
+
             return {
-                id: s.uploaderId,
-                name: name,
+                id: uid,
+                name: hrData.name,
+                role: hrData.role,
                 earnedToday: s.today_earned || 0,
                 totalUploads: s.today_content_count || 0
             };
         });
-        
+
         res.json(workers);
     } catch (error) {
         res.status(500).json({ error: "Error al obtener estadísticas del equipo" });
+    }
+});
+
+// RUTA PARA AÑADIR TRABAJADORES (HR) DESDE EL PANEL CEO
+app.post('/api/ceo/workers/add', async (req, res) => {
+    const { name, telegramId, role, salary } = req.body;
+    if (!mongoDb) return res.status(503).json({ error: "DB no conectada" });
+
+    try {
+        const workerData = {
+            name,
+            telegramId,
+            role,
+            salary,
+            addedAt: new Date()
+        };
+
+        await mongoDb.collection('hr_workers').updateOne(
+            { telegramId: telegramId },
+            { $set: workerData },
+            { upsert: true }
+        );
+
+        res.json({ success: true, message: "Trabajador registrado/actualizado en RRHH." });
+    } catch (error) {
+        res.status(500).json({ error: "Error al registrar trabajador en RRHH." });
+    }
+});
+
+// RUTA PARA EL BOTÓN "PAGAR" DEL PANEL CEO
+app.post('/api/ceo/pay-worker', async (req, res) => {
+    const { uploaderId, amount, paymentMethod } = req.body;
+    if (!mongoDb) return res.status(503).json({ error: "DB no conectada" });
+
+    try {
+        const payoutRecord = {
+            uploaderId: parseInt(uploaderId),
+            amountPaid: parseFloat(amount),
+            paymentMethod: paymentMethod || "Transferencia",
+            status: "Pagado",
+            date: new Date()
+        };
+
+        // Guardamos el recibo en el historial
+        await mongoDb.collection('payout_history').insertOne(payoutRecord);
+        res.json({ success: true, message: "Liquidación registrada exitosamente." });
+    } catch (error) {
+        res.status(500).json({ error: "Error al procesar el pago." });
     }
 });
 
