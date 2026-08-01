@@ -25,7 +25,6 @@ module.exports = function(app, ctx) {
 
             const now = new Date();
             const dayId = now.toISOString().split('T')[0];
-            const monthId = dayId.substring(0, 7);
             
             const ayer = new Date(now);
             ayer.setDate(ayer.getDate() - 1);
@@ -37,11 +36,63 @@ module.exports = function(app, ctx) {
             const yesterdayStats = await db.collection('uploader_daily_stats').findOne({ uploaderId: uploaderId, dayId: yesterdayId });
             const yesterdayEarned = yesterdayStats?.today_earned || 0.01; 
 
-            const monthlyDocs = await db.collection('uploader_daily_stats')
-                .find({ uploaderId: uploaderId, monthId: monthId })
+            // --- NUEVA LÓGICA DE CORTES (DEL 21 AL 20) CON ZONA HORARIA ECUADOR ---
+            const ecuadorTimeStr = new Date().toLocaleString("en-US", {timeZone: "America/Guayaquil"});
+            const nowEcuador = new Date(ecuadorTimeStr);
+            
+            const anioActual = nowEcuador.getFullYear();
+            const mesActual = nowEcuador.getMonth(); // 0 es Enero, 11 es Diciembre
+            const diaActual = nowEcuador.getDate();
+
+            let inicioCicloActual, finCicloActual, inicioMesPasado, finMesPasado;
+
+            // Si hoy es 21 o mayor, el ciclo actual va de este mes al 20 del próximo
+            if (diaActual >= 21) {
+                inicioCicloActual = new Date(anioActual, mesActual, 21);
+                finCicloActual = new Date(anioActual, mesActual + 1, 20);
+                inicioMesPasado = new Date(anioActual, mesActual - 1, 21);
+                finMesPasado = new Date(anioActual, mesActual, 20);
+            } else {
+                // Si hoy es menor a 21, el ciclo actual empezó el 21 del mes pasado hasta el 20 de este mes
+                inicioCicloActual = new Date(anioActual, mesActual - 1, 21);
+                finCicloActual = new Date(anioActual, mesActual, 20);
+                inicioMesPasado = new Date(anioActual, mesActual - 2, 21);
+                finMesPasado = new Date(anioActual, mesActual - 1, 20);
+            }
+
+            // Función auxiliar para convertir la fecha a "YYYY-MM-DD"
+            const formatYMD = (dateObj) => {
+                const y = dateObj.getFullYear();
+                const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+                const d = String(dateObj.getDate()).padStart(2, '0');
+                return `${y}-${m}-${d}`;
+            };
+
+            const strInicioCiclo = formatYMD(inicioCicloActual);
+            const strFinCiclo = formatYMD(finCicloActual);
+            const strInicioPasado = formatYMD(inicioMesPasado);
+            const strFinPasado = formatYMD(finMesPasado);
+
+            // Obtener ganancias del ciclo actual (Sin retirar / Retirable)
+            const docsActuales = await db.collection('uploader_daily_stats')
+                .find({
+                    uploaderId: uploaderId,
+                    dayId: { $gte: strInicioCiclo, $lte: strFinCiclo }
+                })
                 .project({ today_earned: 1 })
                 .toArray();
-            const monthEarned = monthlyDocs.reduce((sum, doc) => sum + (doc.today_earned || 0), 0);
+            const monthEarned = docsActuales.reduce((sum, doc) => sum + (doc.today_earned || 0), 0);
+
+            // Obtener ganancias del ciclo pasado (Mes Pasado)
+            const docsPasados = await db.collection('uploader_daily_stats')
+                .find({
+                    uploaderId: uploaderId,
+                    dayId: { $gte: strInicioPasado, $lte: strFinPasado }
+                })
+                .project({ today_earned: 1 })
+                .toArray();
+            const lastMonthEarned = docsPasados.reduce((sum, doc) => sum + (doc.today_earned || 0), 0);
+            // ---------------------------------------------------------------------
 
             const historicalStats = await db.collection('uploader_revenue').aggregate([
                 { $match: { uploaderId: uploaderId } },
@@ -80,6 +131,7 @@ module.exports = function(app, ctx) {
                     todayEarned: todayEarned,
                     yesterdayEarned: yesterdayEarned,
                     monthEarned: monthEarned,
+                    lastMonthEarned: lastMonthEarned, // <--- AQUÍ SE ENVÍA EL MES PASADO AL DASHBOARD
                     totalGeneradoGlobal: hist.totalEarned,
                     bonos: hist.bonusTotal, 
                     moviesSubidas: hist.totalMovies,
