@@ -499,109 +499,31 @@ app.post('/api/ceo/login', (req, res) => {
     }
 });
 
-app.get('/api/ceo/master-stats', async (req, res) => {
+app.get('/api/ceo/workers', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "DB no conectada" });
     try {
         const now = new Date();
-        const ecTime = new Date(now.toLocaleString("en-US", {timeZone: "America/Guayaquil"}));
-        const dayId = ecTime.toISOString().split('T')[0];
-        const monthId = dayId.substring(0, 7);
-
-        // 1. Trabajadores & Nómina (Mes y Hoy)
-        const statsMes = await mongoDb.collection(COLL_DAILY_STATS).find({ monthId }).toArray();
-        let nominaTotal = 0;
-        let vistasHoyTotales = 0;
+        const dayId = now.toISOString().split('T')[0];
         
-        const mapTrabajadores = new Map();
+        // Extraemos las estadísticas del día para los trabajadores
+        const stats = await mongoDb.collection(COLL_DAILY_STATS).find({ dayId }).toArray();
         
-        statsMes.forEach(s => {
-            nominaTotal += (s.today_earned || 0);
+        const workers = stats.map(s => {
+            let name = "Trabajador ID: " + s.uploaderId;
+            if (s.uploaderId === ADMIN_CHAT_IDS[0]) name = "CEO (Tú)";
+            else if (s.uploaderId === ADMIN_CHAT_IDS[1]) name = "Administrador 2";
             
-            if (!mapTrabajadores.has(s.uploaderId)) {
-                mapTrabajadores.set(s.uploaderId, { 
-                    id: s.uploaderId, 
-                    name: s.uploaderId === ADMIN_CHAT_IDS[0] ? "Fundador (CEO)" : (s.uploaderId === ADMIN_CHAT_IDS[1] ? "Administrador 2" : "Trabajador ID: " + s.uploaderId),
-                    earnedToday: 0, 
-                    earnedMonth: 0, 
-                    totalUploads: 0 
-                });
-            }
-            
-            const w = mapTrabajadores.get(s.uploaderId);
-            w.earnedMonth += (s.today_earned || 0);
-            w.totalUploads += (s.today_content_count || 0);
-            
-            if (s.dayId === dayId) {
-                w.earnedToday += (s.today_earned || 0);
-                vistasHoyTotales += (s.total_views || 0);
-            }
+            return {
+                id: s.uploaderId,
+                name: name,
+                earnedToday: s.today_earned || 0,
+                totalUploads: s.today_content_count || 0
+            };
         });
-
-        const trabajadores = Array.from(mapTrabajadores.values());
-
-        // 2. Ingresos de la Empresa (Cálculo Financiero Híbrido Corporativo)
-        const grossPerView = 0.025; // 2.5 centavos por vista bruta global
-        let ingresosHoy = vistasHoyTotales > 0 ? (vistasHoyTotales * grossPerView) : 0;
         
-        // Crecimiento horario para proyectar entre $400 y $500 diarios
-        const horasTranscurridas = ecTime.getHours() + (ecTime.getMinutes() / 60);
-        let baseTraficoDiario = (450 / 24) * horasTranscurridas; 
-        
-        // Se toma el mayor entre la proyección y el uso real registrado
-        ingresosHoy = Math.max(ingresosHoy, baseTraficoDiario);
-        
-        // Cálculo del mes (Días transcurridos * promedio diario)
-        const currentDayNumber = ecTime.getDate();
-        const cajaMes = ((currentDayNumber - 1) * 450) + ingresosHoy;
-
-        // 3. Gráfico (Últimos 7 días)
-        const chartLabels = [];
-        const chartData = [];
-        for (let i = 6; i >= 0; i--) {
-            const d = new Date(ecTime);
-            d.setDate(d.getDate() - i);
-            const dStr = d.toISOString().split('T')[0];
-            chartLabels.push(i === 0 ? 'Hoy' : (i === 1 ? 'Ayer' : `D-${i}`));
-            
-            const dayStats = statsMes.filter(s => s.dayId === dStr);
-            const dayViews = dayStats.reduce((acc, curr) => acc + (curr.total_views || 0), 0);
-            let dayGross = dayViews * grossPerView;
-            
-            // Simulación segura si no hay datos de red para días pasados
-            if (dayGross < 50) dayGross = Math.random() * (520 - 410) + 410; 
-            
-            chartData.push(i === 0 ? ingresosHoy : dayGross);
-        }
-
-        // 4. Monitor de Actividad Reciente (Bóveda y Tráfico)
-        const recentActivity = await mongoDb.collection(COLL_REVENUE).find({}).sort({ timestamp: -1 }).limit(6).toArray();
-        const actividad = recentActivity.map(act => {
-            const time = new Date(act.timestamp).toLocaleTimeString('es-EC', { hour: '2-digit', minute:'2-digit' });
-            let msg = "";
-            if (act.mediaType === 'views') msg = `Tráfico de red procesado: ${act.title}`;
-            else msg = `Activo inyectado a la bóveda: ${act.title}`;
-            return { msg, time };
-        });
-
-        if (actividad.length === 0) {
-            actividad.push({ msg: "Infraestructura Trechos Visionarios sincronizada", time: "00:00" });
-        }
-
-        res.json({
-            success: true,
-            ingresosHoy,
-            vistasHoy: vistasHoyTotales > 0 ? vistasHoyTotales : Math.floor(ingresosHoy / grossPerView),
-            cajaMes,
-            nominaTotal,
-            trabajadores,
-            chartLabels,
-            chartData,
-            actividad
-        });
-
+        res.json(workers);
     } catch (error) {
-        console.error("Error en telemetria corporativa master-stats:", error);
-        res.status(500).json({ error: "Error interno procesando finanzas corporativas." });
+        res.status(500).json({ error: "Error al obtener estadísticas del equipo" });
     }
 });
 
