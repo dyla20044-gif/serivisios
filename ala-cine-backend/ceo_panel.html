@@ -2,13 +2,12 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Trechos Visionarios | CEO Workspace</title>
     
     <!-- CSS y Librerías Corporativas -->
     <link rel="stylesheet" href="ceo_panel.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <!-- Librería para exportar reportes a PDF -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
 </head>
@@ -20,10 +19,10 @@
             <div class="login-logo">
                 <i class="fas fa-fingerprint text-yellow"></i>
             </div>
-            <h2>Acceso Restringido</h2>
+            <h2>Acceso Máximo</h2>
             <p>Trechos Visionarios Corp.</p>
             <input type="email" id="ceo-email" placeholder="Credencial de Fundador (Correo)">
-            <button id="btn-login" class="btn-primary">Verificar Identidad</button>
+            <button id="btn-login" class="btn-primary">Autorizar Ingreso</button>
             <p id="login-error" class="error-msg"></p>
         </div>
     </div>
@@ -31,22 +30,31 @@
     <!-- DASHBOARD CORPORATIVO -->
     <div id="ceo-dashboard" class="hidden">
         
+        <!-- HEADER MÓVIL (Menú Hamburguesa) -->
+        <div class="mobile-header">
+            <button id="mobile-menu-btn"><i class="fas fa-bars"></i></button>
+            <h2 class="mobile-brand">Trechos <span>Corp.</span></h2>
+        </div>
+
         <!-- BARRA LATERAL (Sidebar) -->
-        <nav class="sidebar">
+        <nav class="sidebar" id="sidebar">
             <div class="brand">
                 <h2>Trechos <span>Visionarios</span></h2>
                 <small>Operaciones Centrales</small>
             </div>
             <ul class="nav-links">
                 <li class="active" data-tab="tab-general"><i class="fas fa-th-large"></i> Panel General</li>
-                <li data-tab="tab-finanzas"><i class="fas fa-file-invoice-dollar"></i> Contabilidad y PDF</li>
+                <li data-tab="tab-infra"><i class="fas fa-server"></i> Infraestructura</li>
+                <li data-tab="tab-finanzas"><i class="fas fa-file-invoice-dollar"></i> Contabilidad</li>
                 <li data-tab="tab-catalogo"><i class="fas fa-film"></i> Trabajar Catálogo</li>
-                <li data-tab="tab-equipo"><i class="fas fa-users-cog"></i> Nómina y Equipo</li>
-                <li data-tab="tab-apps"><i class="fas fa-mobile-alt"></i> Red de Aplicaciones</li>
+                <li data-tab="tab-dev"><i class="fas fa-code"></i> Entorno Dev</li>
+                <li data-tab="tab-equipo"><i class="fas fa-users-cog"></i> Nómina y Roles</li>
+                <li data-tab="tab-apps"><i class="fas fa-mobile-alt"></i> Red de Apps</li>
+                <li data-tab="tab-prensa"><i class="fas fa-newspaper"></i> Visión Corp.</li>
             </ul>
             <div class="legal-footer">
-                <p>Sede: Zaruma, El Oro, EC.</p>
-                <p>Infraestructura Regularizada</p>
+                <p>Matriz: Zaruma, El Oro, EC.</p>
+                <p>Infraestructura Global</p>
                 <button class="logout" id="btn-logout"><i class="fas fa-sign-out-alt"></i> Cerrar Sesión</button>
             </div>
         </nav>
@@ -54,58 +62,51 @@
         <!-- ÁREA CENTRAL DE TRABAJO -->
         <main class="content-area" id="export-pdf-area">
             
-            <!-- HEADER GLOBAL -->
+            <!-- HEADER GLOBAL FIJO -->
             <header class="global-header">
-                <div>
+                <div class="header-title-area">
                     <h1 id="current-tab-title">Panel General</h1>
-                    <p class="date-subtitle">Julio 2026 | Ciclo Fiscal Activo</p>
+                    <p class="date-subtitle" id="live-date">Cargando ciclo fiscal...</p>
                 </div>
                 <div class="ceo-profile">
                     <div class="notifications">
                         <i class="fas fa-bell"></i>
-                        <span class="badge">3</span>
+                        <span class="badge">Sist</span>
                     </div>
                     <div class="user-info">
-                        <strong>Dylan</strong>
+                        <strong>Levin Dylan Narváez</strong>
                         <span>Fundador & CEO</span>
                     </div>
-                    <div class="avatar">D</div>
+                    <div class="avatar"><img src="https://ui-avatars.com/api/?name=Dylan+Narvaez&background=ffb800&color=000&bold=true" alt="CEO"></div>
                 </div>
             </header>
 
             <!-- ==========================================
-                 TAB 1: PANEL GENERAL (Bento Grid)
+                 A. PANEL GENERAL (Bento Grid)
                  ========================================== -->
             <section id="tab-general" class="tab-content active">
-                <!-- Métricas Top (KPIs) -->
                 <div class="kpi-grid">
                     <div class="kpi-card">
-                        <span>Ingresos del Día</span>
-                        <h3 class="text-yellow" id="kpi-ingresos-dia">$0.00</h3>
-                        <small class="trend-up"><i class="fas fa-arrow-up"></i> Flujo activo</small>
+                        <span>Proyección del Día</span>
+                        <h3 class="text-yellow" id="kpi-ingresos-dia">$520.00</h3>
+                        <small class="trend-up"><i class="fas fa-arrow-up"></i> Variable aleatoria activa</small>
                     </div>
                     <div class="kpi-card">
                         <span>Tráfico Global (Hoy)</span>
                         <h3 id="kpi-vistas-dia">0</h3>
-                        <small>Vistas en la red</small>
+                        <small>Usuarios concurrentes</small>
                     </div>
                     <div class="kpi-card">
-                        <span>Estado de Caja (Mes)</span>
-                        <h3 class="text-green" id="kpi-caja-mes">$0.00</h3>
-                        <small>Bruto acumulado</small>
-                    </div>
-                    <div class="kpi-card">
-                        <span>Apps Activas</span>
-                        <h3>10/10</h3>
-                        <small class="trend-up">100% Operativas</small>
+                        <span>Caja Base Mensual</span>
+                        <h3 class="text-green" id="kpi-caja-mes">$1,000.00</h3>
+                        <small>Fondo inicial establecido</small>
                     </div>
                 </div>
 
-                <!-- Gráfico y Actividad en Vivo -->
                 <div class="dashboard-middle">
                     <div class="chart-box">
                         <div class="box-header">
-                            <h4>Rendimiento Financiero (7 Días)</h4>
+                            <h4>Flujo Bruto Consolidado</h4>
                         </div>
                         <div class="canvas-container">
                             <canvas id="mainRevenueChart"></canvas>
@@ -114,15 +115,15 @@
                     
                     <div class="activity-feed">
                         <div class="box-header">
-                            <h4>Monitor en Vivo</h4>
+                            <h4>Monitor en Vivo (Más Vistos)</h4>
                         </div>
                         <ul class="feed-list" id="live-activity-list">
-                            <!-- Los items se inyectan con JS -->
+                            <!-- JS inyectará qué están viendo los usuarios -->
                             <li class="feed-item">
-                                <div class="feed-icon"><i class="fas fa-robot"></i></div>
+                                <div class="feed-icon"><i class="fas fa-eye text-yellow"></i></div>
                                 <div class="feed-info">
-                                    <p>Conectando al servidor central...</p>
-                                    <small>Hace un momento</small>
+                                    <p>Película <strong>Deadpool & Wolverine</strong> en alta demanda.</p>
+                                    <small>Hace unos segundos</small>
                                 </div>
                             </li>
                         </ul>
@@ -131,99 +132,107 @@
             </section>
 
             <!-- ==========================================
-                 TAB 2: FINANZAS, SERVIDORES Y REPORTES
+                 B. SERVIDORES E INFRAESTRUCTURA
                  ========================================== -->
-            <section id="tab-finanzas" class="tab-content hidden">
+            <section id="tab-infra" class="tab-content hidden">
                 <div class="action-bar">
-                    <h3>Reporte Financiero Mensual</h3>
-                    <button class="btn-primary" id="btn-export-pdf"><i class="fas fa-download"></i> Descargar Facturación (PDF)</button>
+                    <h3>Centro de Datos Global</h3>
                 </div>
 
-                <div class="finance-grid">
-                    <!-- Ingresos y Gastos -->
-                    <div class="finance-card">
-                        <h4>Ingresos Brutos Estimados</h4>
-                        <h2 class="text-yellow" id="fin-bruto">$15,000.00</h2>
-                        <p>Basado en un promedio de $500/día.</p>
+                <div class="server-status-grid">
+                    <div class="server-node">
+                        <div class="node-header"><i class="flag">🇪🇨</i> <h4>Core Ecuador</h4></div>
+                        <span class="status-blink working">Trabajando...</span>
+                        <p>Base de Datos Principal</p>
                     </div>
-                    <div class="finance-card">
-                        <h4>Nómina de Trabajadores</h4>
-                        <h2 class="text-danger" id="fin-nomina">-$1,850.00</h2>
-                        <p>Total a dispersar al equipo.</p>
+                    <div class="server-node">
+                        <div class="node-header"><i class="flag">🇺🇸</i> <h4>Bóveda EE.UU.</h4></div>
+                        <span class="status-blink working">Trabajando...</span>
+                        <p>Almacenamiento de Medios</p>
                     </div>
-                    <div class="finance-card">
-                        <h4>Margen Neto (CEO)</h4>
-                        <h2 class="text-green" id="fin-neto">$8,650.00</h2>
-                        <p>Utilidad libre de impuestos.</p>
+                    <div class="server-node">
+                        <div class="node-header"><i class="flag">🇲🇽</i> <h4>CDN México</h4></div>
+                        <span class="status-blink working">Trabajando...</span>
+                        <p>Enrutamiento Latam Norte</p>
+                    </div>
+                    <div class="server-node">
+                        <div class="node-header"><i class="flag">🇪🇸</i> <h4>Proxy España</h4></div>
+                        <span class="status-blink standby">Standby...</span>
+                        <p>Balanceo de Carga Europa</p>
                     </div>
                 </div>
 
-                <!-- Desglose de Servidores -->
-                <div class="server-costs-box">
-                    <h4>Desglose de Infraestructura (Egresos Fijos)</h4>
-                    <table class="corporate-table">
-                        <thead>
-                            <tr>
-                                <th>Nodo / Región</th>
-                                <th>Tipo de Servidor</th>
-                                <th>Estado</th>
-                                <th>Costo Mensual</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td><i class="flag">🇺🇸</i> Estados Unidos</td>
-                                <td>Almacenamiento Principal (Bóveda)</td>
-                                <td><span class="badge-success">Activo</span></td>
-                                <td>$3,000.00</td>
-                            </tr>
-                            <tr>
-                                <td><i class="flag">🇲🇽</i> México</td>
-                                <td>CDN Norte y Enrutamiento</td>
-                                <td><span class="badge-success">Activo</span></td>
-                                <td>$800.00</td>
-                            </tr>
-                            <tr>
-                                <td><i class="flag">🇪🇸</i> España</td>
-                                <td>Proxy Tier 1 (Latencia Europa)</td>
-                                <td><span class="badge-success">Activo</span></td>
-                                <td>$500.00</td>
-                            </tr>
-                            <tr>
-                                <td><i class="flag">🇪🇨</i> Ecuador</td>
-                                <td>Servidor Central & Base de Datos</td>
-                                <td><span class="badge-success">Activo</span></td>
-                                <td>$200.00</td>
-                            </tr>
-                            <tr class="total-row">
-                                <td colspan="3" style="text-align: right;"><strong>Total Infraestructura:</strong></td>
-                                <td class="text-danger"><strong>-$4,500.00</strong></td>
-                            </tr>
-                        </tbody>
-                    </table>
+                <div class="infrastructure-details">
+                    <div class="server-costs-box">
+                        <h4>Costos Fijos Mensuales</h4>
+                        <table class="corporate-table">
+                            <tbody>
+                                <tr><td>Almacenamiento Principal</td><td>$3,000.00</td></tr>
+                                <tr><td>CDN y Enrutamiento</td><td>$800.00</td></tr>
+                                <tr><td>Proxy Tier 1</td><td>$500.00</td></tr>
+                                <tr><td>Servidor Central Zaruma</td><td>$200.00</td></tr>
+                                <tr class="total-row"><td><strong>Total Infraestructura:</strong></td><td class="text-danger"><strong>-$4,500.00</strong></td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="engineers-box">
+                        <h4>Ingenieros de Mantenimiento</h4>
+                        <ul class="engineers-list">
+                            <li><i class="fas fa-user-shield"></i> <strong>L. Dylan</strong> - DevOps & SysAdmin Master</li>
+                            <li><i class="fas fa-user-hard-hat"></i> <strong>Admin 2</strong> - Soporte Nodos Secundarios</li>
+                        </ul>
+                    </div>
                 </div>
             </section>
 
             <!-- ==========================================
-                 TAB 3: TRABAJAR CATÁLOGO (Buscador Visual)
+                 C. CONTABILIDAD Y FINANZAS
+                 ========================================== -->
+            <section id="tab-finanzas" class="tab-content hidden">
+                <div class="action-bar">
+                    <h3>Auditoría Financiera</h3>
+                    <button class="btn-primary" id="btn-export-pdf"><i class="fas fa-download"></i> Exportar Balance PDF</button>
+                </div>
+                <div class="finance-grid">
+                    <div class="finance-card">
+                        <h4>Total Bruto Acumulado</h4>
+                        <h2 class="text-yellow" id="fin-bruto">$0.00</h2>
+                        <p>Facturación total del mes en curso.</p>
+                    </div>
+                    <div class="finance-card">
+                        <h4>Descuento de Nómina</h4>
+                        <h2 class="text-danger" id="fin-nomina">-$0.00</h2>
+                        <p>Pagos y liquidaciones a trabajadores.</p>
+                    </div>
+                    <div class="finance-card">
+                        <h4>Utilidad Neta (Caja Libre)</h4>
+                        <h2 class="text-green" id="fin-neto">$0.00</h2>
+                        <p>Ganancia real tras servidores y nómina.</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ==========================================
+                 D. TRABAJAR CATÁLOGO
                  ========================================== -->
             <section id="tab-catalogo" class="tab-content hidden">
                 <div class="work-station">
-                    <h3>Inyección Directa de Contenido</h3>
-                    <p>Busca la película o serie por su nombre. El sistema extraerá los datos automáticamente.</p>
+                    <h3>Inyección a la Bóveda</h3>
                     
+                    <div class="corporate-note">
+                        <i class="fas fa-info-circle text-yellow"></i>
+                        <strong>Reglas de Ganancia:</strong> El sistema asigna un pago inicial fijo por subida + ingresos pasivos variables por cada reproducción (CPM) generada por el contenido.
+                    </div>
+
                     <div class="search-bar-visual">
                         <i class="fas fa-search"></i>
-                        <input type="text" id="visual-search-input" placeholder="Ej: Deadpool, Batman, Shrek...">
-                        <button class="btn-primary" id="btn-visual-search">Buscar en la Red</button>
+                        <input type="text" id="visual-search-input" placeholder="Ej: Spider-Man, The Boys...">
+                        <button class="btn-primary" id="btn-visual-search">Buscar en TMDB</button>
                     </div>
 
-                    <!-- Resultados Visuales (Pósters) -->
-                    <div class="posters-grid" id="search-results-grid">
-                        <!-- Aquí aparecerán las imágenes de las películas tras buscar -->
-                    </div>
+                    <div class="posters-grid" id="search-results-grid"></div>
 
-                    <!-- Formulario de Inyección (Oculto hasta seleccionar póster) -->
                     <div class="injection-form hidden" id="injection-panel">
                         <div class="selected-media">
                             <img id="inject-poster" src="" alt="">
@@ -233,8 +242,8 @@
                             </div>
                         </div>
                         <div class="input-group">
-                            <label>Enlace del Servidor (m3u8, mp4, etc):</label>
-                            <input type="text" id="inject-url" placeholder="https://...">
+                            <label>Source URL (m3u8, mp4):</label>
+                            <input type="text" id="inject-url" placeholder="https://servidor.com/video.mp4">
                         </div>
                         <div class="form-actions">
                             <button class="btn-secondary" id="btn-cancel-inject">Cancelar</button>
@@ -245,59 +254,138 @@
             </section>
 
             <!-- ==========================================
-                 TAB 4: NÓMINA Y EQUIPO
+                 E. ENTORNO DE DESARROLLO (DEV)
                  ========================================== -->
-            <section id="tab-equipo" class="tab-content hidden">
-                <div class="team-management">
-                    <div class="add-worker-box">
-                        <h4>Integrar Nuevo Trabajador</h4>
-                        <div class="input-group-row">
-                            <input type="text" id="new-worker-id" placeholder="Correo electrónico o ID de Telegram">
-                            <button class="btn-primary" id="btn-add-worker"><i class="fas fa-user-plus"></i> Dar de Alta</button>
+            <section id="tab-dev" class="tab-content hidden">
+                <div class="dev-environment">
+                    <h3>Terminal de Programación</h3>
+                    <p>Espacio seguro para redactar, probar y guardar Snippets de código.</p>
+                    
+                    <div class="console-box">
+                        <div class="console-header">
+                            <span><i class="fas fa-terminal"></i> root@trechos-visionarios:~</span>
+                            <div class="console-actions">
+                                <button class="btn-micro" id="btn-run-code"><i class="fas fa-play"></i> Run</button>
+                                <button class="btn-micro btn-save" id="btn-save-code"><i class="fas fa-save"></i> Save</button>
+                            </div>
                         </div>
+                        <textarea class="code-editor" id="dev-code-area" placeholder="// Escribe tu código Node.js, JS o JSON aquí..." spellcheck="false"></textarea>
                     </div>
 
-                    <div class="workers-payroll" id="workers-list">
-                        <!-- El JS inyectará las tarjetas de nómina aquí -->
+                    <h4>Snippets Guardados</h4>
+                    <div class="snippets-grid" id="saved-snippets">
+                        <!-- Las tarjetas de código se guardarán aquí -->
+                        <div class="snippet-card">
+                            <h5>Script: Auto-Restart Servidor</h5>
+                            <small>JS - Modificado hoy</small>
+                        </div>
                     </div>
                 </div>
             </section>
 
             <!-- ==========================================
-                 TAB 5: RED DE APLICACIONES
+                 F. NÓMINA, EQUIPO Y ROLES
+                 ========================================== -->
+            <section id="tab-equipo" class="tab-content hidden">
+                <div class="team-management">
+                    <div class="add-worker-box">
+                        <h4>Integrar Nuevo Trabajador</h4>
+                        <div class="form-grid">
+                            <input type="text" id="new-worker-id" placeholder="Correo o ID de Telegram">
+                            <select id="worker-role" class="custom-select">
+                                <option value="uploader">Subida de Contenido (Pago por comisión + vistas)</option>
+                                <option value="server_admin">Gestión de Servidores (Sueldo fijo diario)</option>
+                                <option value="marketing">Marketing TikTok (Tarifa por volumen de vistas)</option>
+                                <option value="backend">Programador Backend (Sueldo mensual)</option>
+                            </select>
+                            <input type="number" id="worker-salary" placeholder="Tarifa base ($)">
+                            <button class="btn-primary" id="btn-add-worker"><i class="fas fa-user-plus"></i> Dar de Alta</button>
+                        </div>
+                    </div>
+
+                    <div class="workers-payroll" id="workers-list">
+                        <!-- Tarjetas de trabajadores generadas dinámicamente -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- ==========================================
+                 G. RED DE APLICACIONES
                  ========================================== -->
             <section id="tab-apps" class="tab-content hidden">
                 <h3>Monitoreo de Ecosistema Android</h3>
                 <div class="apps-grid">
-                    <!-- App 1: Sala Cine Principal -->
-                    <div class="app-card">
+                    <div class="app-card highlight-app">
                         <div class="app-header">
                             <i class="fab fa-android text-green"></i>
                             <h4>Sala Cine (Principal)</h4>
                         </div>
                         <div class="app-stats">
                             <p>Estado: <span class="badge-success">En Línea</span></p>
-                            <p>Tráfico: <span>Alto</span></p>
+                            <p>Tráfico: <span>Masivo</span></p>
+                            <p>Versión: <span>v22.0</span></p>
                         </div>
                     </div>
-                    <!-- App 2 a 10 (Generadas simuladamente o por JS) -->
+                    <!-- Mock de apps secundarias -->
                     <div class="app-card">
-                        <div class="app-header">
-                            <i class="fab fa-android text-green"></i>
-                            <h4>App Secundaria 1</h4>
+                        <div class="app-header"><i class="fab fa-android text-yellow"></i><h4>App Secundaria 1</h4></div>
+                        <div class="app-stats"><p>Estado: <span class="badge-success">En Línea</span></p><p>Tráfico: <span>Estable</span></p></div>
+                    </div>
+                    <div class="app-card">
+                        <div class="app-header"><i class="fab fa-android text-yellow"></i><h4>App Secundaria 2</h4></div>
+                        <div class="app-stats"><p>Estado: <span class="badge-success">En Línea</span></p><p>Tráfico: <span>Estable</span></p></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ==========================================
+                 H. PERIÓDICO CORPORATIVO (VISIÓN)
+                 ========================================== -->
+            <section id="tab-prensa" class="tab-content hidden">
+                <div class="magazine-layout">
+                    <div class="magazine-hero">
+                        <!-- Espacio para foto del CEO -->
+                        <div class="hero-image-placeholder">
+                            <i class="fas fa-building text-yellow"></i>
+                            <h2>Trechos Visionarios</h2>
                         </div>
-                        <div class="app-stats">
-                            <p>Estado: <span class="badge-success">En Línea</span></p>
-                            <p>Tráfico: <span>Estable</span></p>
+                        <div class="hero-content">
+                            <h1>De Zaruma para el Mundo.</h1>
+                            <p class="author">Por Levin Dylan Narváez - Fundador</p>
                         </div>
                     </div>
-                    <!-- Se pueden añadir más dinámicamente -->
+
+                    <div class="magazine-articles">
+                        <article class="corp-article">
+                            <h3>Nuestras Raíces: El Oro, Ecuador</h3>
+                            <p>Trechos Visionarios no nació en Silicon Valley, nació con la fuerza y la historia de Zaruma. Nuestra filosofía de trabajo está basada en la resiliencia y la capacidad de construir ecosistemas tecnológicos masivos desde cualquier rincón del mundo, rompiendo fronteras mediante el código y la innovación.</p>
+                        </article>
+
+                        <article class="corp-article">
+                            <h3>Nuestra Filosofía de Trabajo</h3>
+                            <p>Creemos en la justa distribución de la riqueza digital. Nuestros colaboradores y uploaders son socios estratégicos. Por eso desarrollamos un sistema propio donde el esfuerzo en curación de contenido y administración de servidores se traduce en un flujo de caja real, constante y escalable.</p>
+                        </article>
+                        
+                        <article class="corp-article team-photos">
+                            <h3>El Equipo de Desarrollo</h3>
+                            <div class="photo-grid">
+                                <div class="photo-slot"><i class="fas fa-user-astronaut"></i><p>CEO</p></div>
+                                <div class="photo-slot"><i class="fas fa-users"></i><p>Infraestructura</p></div>
+                                <div class="photo-slot"><i class="fas fa-code"></i><p>Devs</p></div>
+                            </div>
+                        </article>
+                    </div>
+
+                    <div class="magazine-footer">
+                        <a href="#" class="btn-primary" target="_blank"><i class="fas fa-globe"></i> Visitar Web Corporativa</a>
+                    </div>
                 </div>
             </section>
 
         </main>
     </div>
 
+    <!-- Scripts -->
     <script src="ceo_panel.js"></script>
 </body>
 </html>
