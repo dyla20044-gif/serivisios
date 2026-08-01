@@ -403,10 +403,17 @@ require('./routes_stats.js')(app, ctx);
 app.get('/', (req, res) => { res.send('Activo'); });
 
 // ==========================================================
-// RUTAS FRONTEND: DASHBOARD (Usuarios) Y PANEL (CEO)
+// RUTAS FRONTEND CORREGIDAS (Dashboard y Panel CEO independientes)
 // ==========================================================
-// Se elimina el app.use('/dashboard', static) que causaba el conflicto.
 app.get('/dashboard', (req, res) => {
+    res.sendFile(path.join(__dirname, 'dashboard.html'));
+});
+
+app.get('/dashboard.html', (req, res) => {
+    res.sendFile(path.join(__dirname, 'dashboard.html'));
+});
+
+app.get('/dashboard/dashboard.html', (req, res) => {
     res.sendFile(path.join(__dirname, 'dashboard.html'));
 });
 
@@ -414,11 +421,11 @@ app.get('/panel', (req, res) => {
     res.sendFile(path.join(__dirname, 'ceo_panel.html'));
 });
 
-// Rutas explícitas para permitir que el HTML cargue sus estilos y lógica de forma segura
-app.get('/ceo_panel.css', (req, res) => res.sendFile(path.join(__dirname, 'ceo_panel.css')));
-app.get('/ceo_panel.js', (req, res) => res.sendFile(path.join(__dirname, 'ceo_panel.js')));
+// Archivos estáticos individuales para asegurar carga sin fallos de ruta
 app.get('/dashboard.js', (req, res) => res.sendFile(path.join(__dirname, 'dashboard.js')));
 app.get('/estilos.css', (req, res) => res.sendFile(path.join(__dirname, 'estilos.css')));
+app.get('/ceo_panel.css', (req, res) => res.sendFile(path.join(__dirname, 'ceo_panel.css')));
+app.get('/ceo_panel.js', (req, res) => res.sendFile(path.join(__dirname, 'ceo_panel.js')));
 
 if (process.env.NODE_ENV === 'production' && token) {
     app.post(`/bot${token}`, (req, res) => {
@@ -507,7 +514,6 @@ app.post('/api/ceo/login', (req, res) => {
     const { email } = req.body;
     const validEmail = process.env.CEO_EMAIL;
     
-    // Si el correo coincide con la variable de entorno, permite el paso
     if (email && validEmail && email.toLowerCase() === validEmail.toLowerCase()) {
         res.json({ success: true });
     } else {
@@ -521,7 +527,6 @@ app.get('/api/ceo/workers', async (req, res) => {
         const now = new Date();
         const dayId = now.toISOString().split('T')[0];
         
-        // Extraemos las estadísticas del día para los trabajadores
         const stats = await mongoDb.collection(COLL_DAILY_STATS).find({ dayId }).toArray();
         
         const workers = stats.map(s => {
@@ -543,7 +548,6 @@ app.get('/api/ceo/workers', async (req, res) => {
     }
 });
 
-// NUEVO ENDPOINT: Genera las matemáticas del panel corporativo conectando con MongoDB
 app.get('/api/ceo/master-stats', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "DB no conectada" });
     try {
@@ -556,7 +560,6 @@ app.get('/api/ceo/master-stats', async (req, res) => {
         let nominaTotal = 0;
         const workerMap = {};
 
-        // Recolectar datos mensuales
         statsMes.forEach(s => {
             const isCEO = ADMIN_CHAT_IDS.includes(s.uploaderId);
             const earned = s.today_earned || 0;
@@ -576,7 +579,6 @@ app.get('/api/ceo/master-stats', async (req, res) => {
             workerMap[s.uploaderId].earnedMonth += earned;
         });
 
-        // Recolectar datos diarios
         const statsHoy = await mongoDb.collection(COLL_DAILY_STATS).find({ dayId }).toArray();
         let ingresosHoy = 0;
         let vistasHoy = 0;
@@ -607,7 +609,6 @@ app.get('/api/ceo/master-stats', async (req, res) => {
     }
 });
 
-// NUEVO ENDPOINT: Proxy de TMDB para que el buscador visual del Panel funcione sin problemas de CORS
 app.get('/api/tmdb-proxy', async (req, res) => {
     const { endpoint, query } = req.query;
     if (!endpoint) return res.status(400).json({ error: "Endpoint requerido" });
@@ -621,14 +622,10 @@ app.get('/api/tmdb-proxy', async (req, res) => {
     }
 });
 
-// ==========================================================
-// CRON JOB: Sincronizar vistas a MongoDB cada 5 minutos
-// ==========================================================
 cron.schedule('*/5 * * * *', async () => {
     const keys = pendingViewsCache.keys();
     if (keys.length === 0 || !mongoDb) return;
 
-    console.log(`[Cron] Sincronizando vistas de ${keys.length} contenidos a MongoDB...`);
     const bulkOps = [];
     const bulkRevenueOps = []; 
     const now = new Date();
@@ -693,10 +690,7 @@ cron.schedule('*/5 * * * *', async () => {
                 await mongoDb.collection(COLL_REVENUE).bulkWrite(bulkRevenueOps);
             }
             pendingViewsCache.flushAll(); 
-            console.log(`[Cron] Se han sincronizado $ generados por vistas y guardado el historial.`);
-        } catch (e) {
-            console.error("[Cron] Error sincronizando vistas masivas:", e);
-        }
+        } catch (e) {}
     }
 });
 
