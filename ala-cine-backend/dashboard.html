@@ -3,340 +3,246 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Trechos Visionarios | CEO Workspace</title>
-    
-    <!-- CSS y Librerías Corporativas -->
-    <link rel="stylesheet" href="ceo_panel.css">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <title>Trechos Visionarios | Sala Cine Creators</title>
+    <link rel="stylesheet" href="estilos.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700;900&display=swap" rel="stylesheet">
 </head>
 <body>
 
-    <!-- PANTALLA DE SEGURIDAD ENCRIPTADA -->
-    <div id="login-screen" class="active">
-        <div class="login-box">
-            <div class="login-logo">
-                <i class="fas fa-fingerprint text-yellow"></i>
+    <!-- MODAL LEGAL INICIAL -->
+    <div id="legalModal" class="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header">
+                <i class="fa-solid fa-building-shield"></i>
+                <h2>Acuerdo Trechos Visionarios</h2>
             </div>
-            <h2>Acceso Restringido</h2>
-            <p>Trechos Visionarios Corp.</p>
-            <input type="email" id="ceo-email" placeholder="Credencial de Fundador (Correo)">
-            <button id="btn-login" class="btn-primary">Verificar Identidad</button>
-            <p id="login-error" class="error-msg"></p>
+            <div class="modal-body">
+                <p>Estás ingresando al panel oficial de <strong>Trech Visionarios</strong>.</p>
+                <p>Somos una empresa legal de Ecuador respaldada internacionalmente por <strong>Westchester (Estados Unidos)</strong>.</p>
+                <p>Garantizamos que tu trabajo es monitoreado en tiempo real. Los retiros se habilitan automáticamente el <strong>21 de cada mes</strong>.</p>
+            </div>
+            <button id="acceptBtn" class="btn-primary">Aceptar y Entrar</button>
         </div>
     </div>
 
-    <!-- DASHBOARD CORPORATIVO -->
-    <div id="ceo-dashboard" class="hidden">
-        
-        <!-- BARRA LATERAL (Sidebar Colapsable en Móvil) -->
-        <nav class="sidebar">
-            <div class="brand">
-                <h2>Trechos <span>Visionarios</span></h2>
-                <small>Operaciones Centrales</small>
+    <!-- MODAL PELÍCULAS MÁS PEDIDAS -->
+    <div id="pedidasModal" class="modal-overlay" style="display: none; opacity: 0;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <i class="fa-solid fa-fire text-yellow"></i>
+                <h2>Películas Más Pedidas</h2>
             </div>
-            <ul class="nav-links">
-                <li class="active" data-tab="tab-general"><i class="fas fa-th-large"></i> Panel General</li>
-                <li data-tab="tab-finanzas"><i class="fas fa-file-invoice-dollar"></i> Finanzas y PDF</li>
-                <li data-tab="tab-catalogo"><i class="fas fa-film"></i> Trabajar Catálogo</li>
-                <li data-tab="tab-equipo"><i class="fas fa-users-cog"></i> Nómina y Equipo</li>
-                <li data-tab="tab-apps"><i class="fas fa-mobile-alt"></i> Red de Aplicaciones</li>
-                <li data-tab="tab-empresa"><i class="fas fa-building"></i> Info Corporativa</li>
-            </ul>
-            <div class="legal-footer">
-                <p>Sede: Zaruma, El Oro, EC.</p>
-                <p>Infraestructura Regularizada</p>
-                <button class="logout" id="btn-logout"><i class="fas fa-sign-out-alt"></i> Cerrar Sesión</button>
+            <div class="modal-body">
+                <p>Sube estas películas para generar visualizaciones masivas rápidamente:</p>
+                <ul class="pedidas-list" id="topPedidasList">
+                    <li>Cargando solicitudes...</li>
+                </ul>
             </div>
-        </nav>
-
-        <!-- ÁREA CENTRAL DE TRABAJO -->
-        <main class="content-area" id="export-pdf-area">
-            
-            <!-- HEADER GLOBAL (Optimizado para Celular) -->
-            <header class="global-header">
-                <div class="header-left">
-                    <button id="mobile-menu-btn" class="mobile-only-btn"><i class="fas fa-bars"></i></button>
-                    <div>
-                        <h1 id="current-tab-title">Panel General</h1>
-                        <p class="date-subtitle">Ciclo Fiscal Activo | Zaruma, EC</p>
-                    </div>
-                </div>
-                <div class="ceo-profile">
-                    <div class="notifications">
-                        <i class="fas fa-bell"></i>
-                        <span class="badge">3</span>
-                    </div>
-                    <div class="user-info hide-on-mobile">
-                        <strong>Levin Dylan Narváez</strong>
-                        <span>Fundador & CEO</span>
-                    </div>
-                    <div class="avatar">D</div>
-                </div>
-            </header>
-
-            <!-- ==========================================
-                 TAB 1: PANEL GENERAL
-                 ========================================== -->
-            <section id="tab-general" class="tab-content active">
-                <div class="kpi-grid">
-                    <div class="kpi-card">
-                        <span>Ingresos del Día</span>
-                        <h3 class="text-yellow" id="kpi-ingresos-dia">$0.00</h3>
-                        <small class="trend-up"><i class="fas fa-arrow-up"></i> Flujo activo</small>
-                    </div>
-                    <div class="kpi-card">
-                        <span>Tráfico Global (Hoy)</span>
-                        <h3 id="kpi-vistas-dia">0</h3>
-                        <small>Vistas en la red</small>
-                    </div>
-                    <div class="kpi-card">
-                        <span>Estado de Caja (Mes)</span>
-                        <h3 class="text-green" id="kpi-caja-mes">$0.00</h3>
-                        <small>Bruto acumulado</small>
-                    </div>
-                    <div class="kpi-card">
-                        <span>Apps Activas</span>
-                        <h3>10/10</h3>
-                        <small class="trend-up">100% Operativas</small>
-                    </div>
-                </div>
-
-                <div class="dashboard-middle">
-                    <div class="chart-box">
-                        <div class="box-header">
-                            <h4>Rendimiento Financiero (7 Días)</h4>
-                        </div>
-                        <div class="canvas-container">
-                            <canvas id="mainRevenueChart"></canvas>
-                        </div>
-                    </div>
-                    
-                    <div class="activity-feed">
-                        <div class="box-header">
-                            <h4>Monitor en Vivo</h4>
-                        </div>
-                        <ul class="feed-list" id="live-activity-list">
-                            <!-- Los items se inyectan con JS -->
-                        </ul>
-                    </div>
-                </div>
-            </section>
-
-            <!-- ==========================================
-                 TAB 2: FINANZAS, SERVIDORES Y REPORTES
-                 ========================================== -->
-            <section id="tab-finanzas" class="tab-content hidden">
-                <div class="action-bar">
-                    <h3>Reporte Financiero Mensual</h3>
-                    <button class="btn-primary" id="btn-export-pdf"><i class="fas fa-download"></i> Descargar Facturación (PDF)</button>
-                </div>
-
-                <div class="finance-grid">
-                    <div class="finance-card">
-                        <h4>Ingresos Brutos Estimados</h4>
-                        <h2 class="text-yellow" id="fin-bruto">$0.00</h2>
-                        <p>Total general de la red.</p>
-                    </div>
-                    <div class="finance-card">
-                        <h4>Nómina de Trabajadores</h4>
-                        <h2 class="text-danger" id="fin-nomina">-$0.00</h2>
-                        <p>Total a dispersar al equipo.</p>
-                    </div>
-                    <div class="finance-card">
-                        <h4>Margen Neto (Empresa)</h4>
-                        <h2 class="text-green" id="fin-neto">$0.00</h2>
-                        <p>Utilidad libre de operaciones.</p>
-                    </div>
-                </div>
-
-                <div class="server-costs-box">
-                    <h4>Desglose de Infraestructura (Egresos Fijos)</h4>
-                    <table class="corporate-table">
-                        <thead>
-                            <tr>
-                                <th>Nodo / Región</th>
-                                <th>Tipo de Servidor</th>
-                                <th>Estado</th>
-                                <th>Costo Mensual</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td><i class="flag">🇺🇸</i> Estados Unidos</td>
-                                <td>Almacenamiento Principal (Bóveda)</td>
-                                <td><span class="badge-success">Activo</span></td>
-                                <td>$3,000.00</td>
-                            </tr>
-                            <tr>
-                                <td><i class="flag">🇲🇽</i> México</td>
-                                <td>CDN Norte y Enrutamiento</td>
-                                <td><span class="badge-success">Activo</span></td>
-                                <td>$800.00</td>
-                            </tr>
-                            <tr>
-                                <td><i class="flag">🇪🇸</i> España</td>
-                                <td>Proxy Tier 1 (Latencia Europa)</td>
-                                <td><span class="badge-success">Activo</span></td>
-                                <td>$500.00</td>
-                            </tr>
-                            <tr>
-                                <td><i class="flag">🇪🇨</i> Ecuador</td>
-                                <td>Servidor Central & DB (Zaruma)</td>
-                                <td><span class="badge-success">Activo</span></td>
-                                <td>$200.00</td>
-                            </tr>
-                            <tr class="total-row">
-                                <td colspan="3" style="text-align: right;"><strong>Total Infraestructura:</strong></td>
-                                <td class="text-danger"><strong>-$4,500.00</strong></td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </section>
-
-            <!-- ==========================================
-                 TAB 3: TRABAJAR CATÁLOGO
-                 ========================================== -->
-            <section id="tab-catalogo" class="tab-content hidden">
-                <div class="work-station">
-                    <h3>Inyección Directa de Contenido</h3>
-                    <p>Busca la película o serie por su nombre para extraer datos automáticos.</p>
-                    
-                    <div class="search-bar-visual">
-                        <i class="fas fa-search"></i>
-                        <input type="text" id="visual-search-input" placeholder="Ej: Deadpool, Batman, Shrek...">
-                        <button class="btn-primary" id="btn-visual-search">Buscar</button>
-                    </div>
-
-                    <div class="posters-grid" id="search-results-grid"></div>
-
-                    <div class="injection-form hidden" id="injection-panel">
-                        <div class="selected-media">
-                            <img id="inject-poster" src="" alt="">
-                            <div class="media-details">
-                                <h4 id="inject-title" class="text-yellow">Título</h4>
-                                <p id="inject-overview">Sinopsis...</p>
-                            </div>
-                        </div>
-                        <div class="input-group">
-                            <label>Enlace del Servidor (m3u8, mp4):</label>
-                            <input type="text" id="inject-url" placeholder="https://...">
-                        </div>
-                        <div class="form-actions">
-                            <button class="btn-secondary" id="btn-cancel-inject">Cancelar</button>
-                            <button class="btn-success" id="btn-confirm-inject"><i class="fas fa-cloud-upload-alt"></i> Subir a Bóveda</button>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-            <!-- ==========================================
-                 TAB 4: NÓMINA Y EQUIPO
-                 ========================================== -->
-            <section id="tab-equipo" class="tab-content hidden">
-                <div class="team-management">
-                    <div class="add-worker-box">
-                        <h4>Integrar Nuevo Trabajador</h4>
-                        <div class="input-group-row">
-                            <input type="text" id="new-worker-id" placeholder="Correo electrónico o ID de Telegram">
-                            <button class="btn-primary" id="btn-add-worker"><i class="fas fa-user-plus"></i> Dar de Alta</button>
-                        </div>
-                    </div>
-
-                    <div class="workers-payroll" id="workers-list">
-                        <!-- El JS inyectará las tarjetas de nómina aquí -->
-                    </div>
-                </div>
-            </section>
-
-            <!-- ==========================================
-                 TAB 5: RED DE APLICACIONES
-                 ========================================== -->
-            <section id="tab-apps" class="tab-content hidden">
-                <h3>Monitoreo de Ecosistema Android</h3>
-                <div class="apps-grid">
-                    <div class="app-card">
-                        <div class="app-header">
-                            <i class="fab fa-android text-green"></i>
-                            <h4>Sala Cine (Principal)</h4>
-                        </div>
-                        <div class="app-stats">
-                            <p>Estado: <span class="badge-success">En Línea</span></p>
-                            <p>Tráfico: <span>Alto</span></p>
-                        </div>
-                    </div>
-                    <div class="app-card">
-                        <div class="app-header">
-                            <i class="fab fa-android text-green"></i>
-                            <h4>App Secundaria 1</h4>
-                        </div>
-                        <div class="app-stats">
-                            <p>Estado: <span class="badge-success">En Línea</span></p>
-                            <p>Tráfico: <span>Estable</span></p>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-            <!-- ==========================================
-                 TAB 6: INFO CORPORATIVA (Nueva)
-                 ========================================== -->
-            <section id="tab-empresa" class="tab-content hidden">
-                <div class="corporate-info-box">
-                    <div class="corp-header-image">
-                        <!-- Imagen placeholder de servidores profesionales -->
-                        <img src="https://images.unsplash.com/photo-1550751827-4bd374c3f58b?auto=format&fit=crop&w=1200&q=80" alt="Servidores Trechos Visionarios" style="width: 100%; height: 250px; object-fit: cover; border-radius: 12px; margin-bottom: 25px;">
-                    </div>
-                    
-                    <h2 class="text-yellow" style="font-size: 28px; margin-bottom: 10px;">Trechos Visionarios</h2>
-                    <p class="text-muted" style="margin-bottom: 30px; font-size: 16px;">Operaciones Centrales de Distribución Digital y Desarrollo Android.</p>
-
-                    <div class="corp-details-grid">
-                        <div class="corp-text-card">
-                            <h3><i class="fas fa-bullseye text-yellow"></i> Nuestra Misión</h3>
-                            <p>Gestionar y escalar aplicaciones móviles de alto rendimiento, proporcionando infraestructura robusta y contenido de calidad. Operamos con tecnología de punta desde nuestra sede en <strong>Zaruma, El Oro, Ecuador</strong>.</p>
-                        </div>
-                        <div class="corp-text-card">
-                            <h3><i class="fas fa-sitemap text-yellow"></i> Estructura Legal</h3>
-                            <p>Empresa legalmente constituida en Ecuador, con respaldo operativo y enrutamiento internacional. Mantenemos servidores dedicados en Estados Unidos, Europa y nodos locales en América Latina.</p>
-                        </div>
-                    </div>
-
-                    <h3 style="margin: 35px 0 20px 0; border-bottom: 1px solid var(--border-light); padding-bottom: 10px;">Directorio Ejecutivo</h3>
-                    
-                    <div class="founders-grid">
-                        <div class="founder-card">
-                            <div class="founder-avatar">
-                                <!-- Imagen placeholder de código -->
-                                <img src="https://images.unsplash.com/photo-1525547719571-a2d4ac8945e2?auto=format&fit=crop&w=200&q=80" alt="CEO">
-                            </div>
-                            <div class="founder-info">
-                                <h4>Levin Dylan Narváez Ordóñez</h4>
-                                <p class="text-yellow">Fundador & CEO</p>
-                                <small>Arquitectura de Servidores y Desarrollo Android</small>
-                            </div>
-                        </div>
-                        
-                        <div class="founder-card">
-                            <div class="founder-avatar">
-                                <!-- Imagen placeholder de análisis de datos -->
-                                <img src="https://images.unsplash.com/photo-1573164713988-8665fc963095?auto=format&fit=crop&w=200&q=80" alt="Co-Fundadora">
-                            </div>
-                            <div class="founder-info">
-                                <h4>Nadia Trinidad Ordóñez Guamán</h4>
-                                <p class="text-yellow">Segunda Fundadora</p>
-                                <small>Operaciones Estratégicas y Logística</small>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-        </main>
+            <button class="btn-outline close-modal" data-target="pedidasModal">Cerrar</button>
+        </div>
     </div>
 
-    <script src="ceo_panel.js"></script>
+    <!-- MODAL ADELANTOS -->
+    <div id="adelantoModal" class="modal-overlay" style="display: none; opacity: 0;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <i class="fa-solid fa-hand-holding-dollar text-cyan"></i>
+                <h2>Pedir Adelanto</h2>
+            </div>
+            <div class="modal-body">
+                <p>Puedes solicitar un adelanto de hasta el <strong>50%</strong> de tus ganancias "Sin Retirar".</p>
+                <h3 class="text-cyan" style="font-size: 24px; margin: 15px 0;" id="montoMaxAdelanto">$0.00</h3>
+            </div>
+            <button class="btn-primary" id="btnConfirmarAdelanto">Solicitar Ahora</button>
+            <button class="btn-outline close-modal" data-target="adelantoModal">Cancelar</button>
+        </div>
+    </div>
+
+    <div class="app-container" id="mainApp">
+        
+        <!-- PESTAÑA 1: INICIO -->
+        <section id="tab-inicio" class="tab-section active">
+            <div class="header-app">
+                <i class="fa-solid fa-cloud"></i> INICIO
+            </div>
+            
+            <div class="card dark-card">
+                <div class="badge-date"><i class="fa-regular fa-calendar"></i> <span id="fechaActual">Cargando...</span></div>
+                
+                <div class="ganancia-principal">
+                    <p>ÚLTIMA GANANCIA (HOY)</p>
+                    <h1 class="text-green flash-text" id="valHoy">$0.00</h1>
+                </div>
+
+                <div class="ganancia-grid">
+                    <div>
+                        <h3 id="valTotal">$0.00</h3>
+                        <p>TOTAL</p>
+                    </div>
+                    <div>
+                        <h3 class="text-yellow" id="valSinRetirar">$0.00</h3>
+                        <p>SIN RETIRAR</p>
+                    </div>
+                    <div>
+                        <h3 class="text-cyan" id="valRetirable">$0.00</h3>
+                        <p>RETIRABLE</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Botón Ganar Más -->
+            <button class="btn-primary animated-pulse" id="btnGanarMas" style="margin-bottom: 20px;">
+                <i class="fa-solid fa-rocket"></i> ¿Quieres ganar más dinero? Mira qué subir
+            </button>
+
+            <!-- NUEVO: TARJETA DE RENDIMIENTO (Flecha sube/baja) -->
+            <div class="card dark-card" id="rendimientoCard">
+                <div class="section-title space-between">
+                    <h3>RENDIMIENTO DIARIO</h3>
+                    <span id="trendIcon" class="text-green"><i class="fa-solid fa-arrow-trend-up"></i></span>
+                </div>
+                <p style="font-size: 13px; color: var(--text-muted);">Comparado con las ganancias de ayer:</p>
+                <h2 id="trendText" class="text-green" style="margin-top: 10px;">Calculando...</h2>
+            </div>
+
+            <div class="card dark-card">
+                <div class="section-title">
+                    <h3>GANANCIAS RECIENTES</h3>
+                    <p class="subtitle"><i class="fa-solid fa-circle-info"></i> Actualizado en tiempo real.</p>
+                </div>
+                <ul class="lista-recientes" id="listaGananciasRecientes">
+                    <!-- Se llena con JS -->
+                </ul>
+            </div>
+        </section>
+
+        <!-- PESTAÑA 2: RECOMPENSAS -->
+        <section id="tab-recompensas" class="tab-section">
+            <div class="header-app">
+                <i class="fa-solid fa-cloud"></i> RECOMPENSAS
+            </div>
+
+            <div class="card dark-card text-center">
+                <div class="flex-badges">
+                    <div class="badge-date"><i class="fa-regular fa-calendar"></i> Mes Actual</div>
+                    <div class="badge-date text-yellow" style="background: rgba(255, 215, 0, 0.1);"><i class="fa-regular fa-clock"></i> En Progreso</div>
+                </div>
+                <p style="margin-top: 20px; color: #9e9e9e; font-size: 12px; letter-spacing: 2px;">MONTO DE BONOS</p>
+                <h1 class="text-green" id="valBonos">$0.00</h1>
+            </div>
+
+            <div class="card dark-card">
+                <div class="section-title space-between">
+                    <h3><i class="fa-solid fa-users text-yellow"></i> Referidos</h3>
+                    <button class="icon-btn"><i class="fa-solid fa-plus"></i></button>
+                </div>
+                <div class="referral-box">
+                    <i class="fa-solid fa-bed text-muted" style="font-size: 30px; margin-bottom: 10px;"></i>
+                    <h4>¡Genera ganancias mientras duermes!</h4>
+                    <p>Invita a otros uploaders y gana el <strong>25%</strong> de todo lo que ellos generen de por vida, sin afectar sus ganancias.</p>
+                    <button class="btn-outline text-yellow" style="margin-top: 15px;"><i class="fa-solid fa-link"></i> Copiar mi enlace de invitación</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- PESTAÑA 3: RETIROS -->
+        <section id="tab-retiros" class="tab-section">
+            <div class="header-app">
+                <i class="fa-solid fa-cloud"></i> RETIROS
+            </div>
+
+            <div class="card dark-card text-center">
+                <div class="badge-date"><i class="fa-regular fa-calendar"></i> Corte: 21 de cada mes</div>
+                <p style="margin-top: 20px; color: #9e9e9e; font-size: 12px; letter-spacing: 2px;">RETIRABLE ACTUAL</p>
+                <h1 class="text-cyan" id="valRetirableGrande" style="font-size: 45px; margin: 10px 0;">$0.00</h1>
+                
+                <div class="flex-stats" style="margin: 20px 0;">
+                    <div><h3 id="valPelisSubidas">0</h3><p>PELÍCULAS</p></div>
+                    <div><h3 id="valSeriesSubidas">0</h3><p>EPISODIOS</p></div>
+                </div>
+
+                <button class="btn-primary" id="btnSolicitarRetiro" style="margin-bottom: 10px;"><i class="fa-solid fa-money-bill-transfer"></i> SOLICITAR RETIRO</button>
+                <button class="btn-outline" id="btnAbrirAdelanto"><i class="fa-solid fa-hand-holding-dollar"></i> PEDIR ADELANTO (50%)</button>
+            </div>
+
+            <div class="card dark-card">
+                <div class="section-title">
+                    <h3>TÉRMINOS Y CONDICIONES</h3>
+                </div>
+                <!-- CUADRO PARA VIDEO DE TÉRMINOS -->
+                <div class="video-placeholder">
+                    <iframe src="https://www.youtube.com/embed/dQw4w9WgXcQ" frameborder="0" allowfullscreen></iframe>
+                </div>
+                <p class="text-muted" style="font-size: 12px; text-align: center; margin-top: 10px;">Asegúrate de ver este video para entender cómo operan los pagos y las reglas de Trech Visionarios.</p>
+            </div>
+        </section>
+
+        <!-- PESTAÑA 4: PERFIL -->
+        <section id="tab-perfil" class="tab-section">
+            <div class="header-app">
+                <i class="fa-solid fa-cloud"></i> PERFIL
+            </div>
+
+            <div class="profile-header">
+                <!-- NUEVO: Estructura de la foto de perfil -->
+                <div class="avatar">
+                    <span id="userInitial">U</span>
+                    <img id="userAvatarImg" src="" alt="Perfil" style="display: none; width: 100%; height: 100%; border-radius: 50%; object-fit: cover;">
+                </div>
+                <h2 id="userNameDisplay">Cargando...</h2>
+                <p class="text-muted" id="userIdDisplay">ID: -----</p>
+            </div>
+
+            <div class="menu-list">
+                <div class="menu-item">
+                    <div class="menu-icon"><i class="fa-solid fa-language text-yellow"></i></div>
+                    <div class="menu-text">
+                        <h4>Idioma</h4><p>Español</p>
+                    </div>
+                    <i class="fa-solid fa-chevron-right text-muted"></i>
+                </div>
+                <div class="menu-item">
+                    <div class="menu-icon"><i class="fa-solid fa-wallet text-yellow"></i></div>
+                    <div class="menu-text">
+                        <h4>Método de Pago</h4><p>USDT / Transferencia</p>
+                    </div>
+                    <i class="fa-solid fa-chevron-right text-muted"></i>
+                </div>
+            </div>
+
+            <div class="card dark-card" style="margin-top: 20px; text-align: center;">
+                <h3 class="text-yellow" style="letter-spacing: 2px;">TRECH VISIONARIOS</h3>
+                <p class="text-muted" style="font-size: 13px; margin: 10px 0;">Empresa legalmente constituida en Ecuador, respaldada internacionalmente por Westchester (Estados Unidos).</p>
+                <div class="founders-box">
+                    <p><strong>Fundador y CEO:</strong><br>Levin Dylan Narváez Ordóñez</p>
+                    <p style="margin-top: 10px;"><strong>Segunda Fundadora:</strong><br>Nadia Trinidad Ordóñez Guamán</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- NAVEGACIÓN INFERIOR -->
+        <nav class="bottom-nav">
+            <a href="#" class="nav-item active" data-target="tab-inicio">
+                <i class="fa-solid fa-house"></i>
+                <span>INICIO</span>
+            </a>
+            <a href="#" class="nav-item" data-target="tab-recompensas">
+                <i class="fa-solid fa-gift"></i>
+                <span>RECOMPENSAS</span>
+            </a>
+            <a href="#" class="nav-item" data-target="tab-retiros">
+                <i class="fa-solid fa-money-bill"></i>
+                <span>RETIROS</span>
+            </a>
+            <a href="#" class="nav-item" data-target="tab-perfil">
+                <i class="fa-solid fa-user"></i>
+                <span>PERFIL</span>
+            </a>
+        </nav>
+
+    </div>
+
+    <script src="dashboard.js"></script>
 </body>
 </html>
