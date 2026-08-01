@@ -75,17 +75,22 @@
                     <h1 class="text-green flash-text" id="valHoy">$0.00</h1>
                 </div>
 
-                <div class="ganancia-grid">
-                    <div>
+                <!-- AQUÍ ES DONDE SE AGREGÓ EL BLOQUE "MES PASADO" -->
+                <div class="ganancia-grid" style="display: flex; flex-wrap: wrap; justify-content: space-around; gap: 10px;">
+                    <div style="flex: 1 1 45%;">
                         <h3 id="valTotal">$0.00</h3>
-                        <p>TOTAL</p>
+                        <p>TOTAL NETO</p>
                     </div>
-                    <div>
+                    <div style="flex: 1 1 45%;">
                         <h3 class="text-yellow" id="valSinRetirar">$0.00</h3>
                         <p>SIN RETIRAR</p>
                     </div>
-                    <div>
-                        <h3 class="text-cyan" id="valRetirable">$0.00</h3>
+                    <div style="flex: 1 1 45%;">
+                        <h3 class="text-cyan" id="valMesPasado">$0.00</h3>
+                        <p>MES PASADO</p>
+                    </div>
+                    <div style="flex: 1 1 45%;">
+                        <h3 class="text-green" id="valRetirable">$0.00</h3>
                         <p>RETIRABLE</p>
                     </div>
                 </div>
@@ -185,7 +190,6 @@
             </div>
 
             <div class="profile-header">
-                <!-- NUEVO: Estructura de la foto de perfil -->
                 <div class="avatar">
                     <span id="userInitial">U</span>
                     <img id="userAvatarImg" src="" alt="Perfil" style="display: none; width: 100%; height: 100%; border-radius: 50%; object-fit: cover;">
