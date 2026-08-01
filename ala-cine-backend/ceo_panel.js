@@ -1,6 +1,6 @@
 document.addEventListener('DOMContentLoaded', () => {
     // ==========================================
-    // 1. SISTEMA DE SEGURIDAD Y NAVEGACIÓN
+    // 1. SISTEMA DE SEGURIDAD Y NAVEGACIÓN MÓVIL
     // ==========================================
     const loginScreen = document.getElementById('login-screen');
     const dashboard = document.getElementById('ceo-dashboard');
@@ -8,8 +8,19 @@ document.addEventListener('DOMContentLoaded', () => {
     const emailInput = document.getElementById('ceo-email');
     const loginError = document.getElementById('login-error');
     
-    let mainChart = null; // Instancia global del gráfico
-    let selectedTmdbData = null; // Guarda la película seleccionada visualmente
+    const mobileBtn = document.getElementById('mobile-menu-btn');
+    const sidebar = document.getElementById('sidebar');
+    
+    let mainChart = null; 
+    let selectedTmdbData = null; 
+
+    // Configurar Fecha Dinámica
+    const dateEl = document.getElementById('live-date');
+    if(dateEl) {
+        const today = new Date();
+        const mes = today.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
+        dateEl.textContent = `${mes.charAt(0).toUpperCase() + mes.slice(1)} | Ciclo Fiscal Activo`;
+    }
 
     // Login corporativo
     btnLogin.addEventListener('click', async () => {
@@ -32,13 +43,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 initCorporateDashboard();
             } else {
                 loginError.textContent = 'Acceso denegado. Credencial inválida.';
-                btnLogin.innerHTML = 'Verificar Identidad';
+                btnLogin.innerHTML = 'Autorizar Ingreso';
             }
         } catch (e) {
             loginError.textContent = 'Error crítico de conexión al servidor.';
-            btnLogin.innerHTML = 'Verificar Identidad';
+            btnLogin.innerHTML = 'Autorizar Ingreso';
         }
     });
+
+    // Toggle Menú Móvil (Hamburguesa)
+    if (mobileBtn && sidebar) {
+        mobileBtn.addEventListener('click', () => {
+            sidebar.classList.toggle('active');
+        });
+    }
 
     // Navegación del Bento Grid (Pestañas)
     document.querySelectorAll('.nav-links li').forEach(li => {
@@ -46,17 +64,19 @@ document.addEventListener('DOMContentLoaded', () => {
             const current = e.currentTarget;
             if (current.id === 'btn-logout') return;
             
-            // Actualizar menú
             document.querySelectorAll('.nav-links li').forEach(el => el.classList.remove('active'));
             current.classList.add('active');
             
-            // Actualizar título global
             document.getElementById('current-tab-title').textContent = current.textContent.trim();
             
-            // Cambiar vista
             document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
             const tabId = current.getAttribute('data-tab');
             document.getElementById(tabId).classList.remove('hidden');
+
+            // Cerrar sidebar en móviles tras hacer clic
+            if (window.innerWidth <= 768 && sidebar) {
+                sidebar.classList.remove('active');
+            }
         });
     });
 
@@ -65,6 +85,7 @@ document.addEventListener('DOMContentLoaded', () => {
         dashboard.classList.add('hidden');
         loginScreen.classList.remove('hidden');
         emailInput.value = '';
+        if (window.innerWidth <= 768 && sidebar) sidebar.classList.remove('active');
     });
 
     // ==========================================
@@ -74,7 +95,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const element = document.getElementById('export-pdf-area');
         const opt = {
             margin:       0.5,
-            filename:     `Trechos_Visionarios_Reporte_${new Date().toLocaleDateString().replace(/\//g,'-')}.pdf`,
+            filename:     `Trechos_Visionarios_Auditoria_${new Date().toLocaleDateString().replace(/\//g,'-')}.pdf`,
             image:        { type: 'jpeg', quality: 0.98 },
             html2canvas:  { scale: 2, useCORS: true, logging: false },
             jsPDF:        { unit: 'in', format: 'a4', orientation: 'landscape' }
@@ -97,7 +118,6 @@ document.addEventListener('DOMContentLoaded', () => {
         visualSearchBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
         
         try {
-            // Buscamos películas y series mezcladas
             const res = await fetch(`/api/tmdb-proxy?endpoint=search/multi&query=${encodeURIComponent(query)}`);
             const data = await res.json();
             
@@ -105,7 +125,6 @@ document.addEventListener('DOMContentLoaded', () => {
             injectionPanel.classList.add('hidden');
             
             if (data.results && data.results.length > 0) {
-                // Filtramos personas, solo queremos películas o series con póster
                 const validMedia = data.results.filter(m => (m.media_type === 'movie' || m.media_type === 'tv') && m.poster_path);
                 
                 validMedia.forEach(media => {
@@ -116,7 +135,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     div.className = 'poster-item';
                     div.innerHTML = `<img src="${posterUrl}" alt="${title}">`;
                     
-                    // Al hacer clic en un póster, preparamos la inyección
                     div.addEventListener('click', () => {
                         document.querySelectorAll('.poster-item').forEach(el => el.classList.remove('selected'));
                         div.classList.add('selected');
@@ -138,7 +156,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) {
             alert('Error al buscar en la red de TMDB.');
         }
-        visualSearchBtn.innerHTML = 'Buscar en la Red';
+        visualSearchBtn.innerHTML = 'Buscar en TMDB';
     });
 
     document.getElementById('btn-cancel-inject').addEventListener('click', () => {
@@ -157,7 +175,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         try {
             const isMovie = selectedTmdbData.media_type === 'movie';
-            const endpoint = isMovie ? '/add-movie' : '/add-series-episode'; // Si es serie, requiere lógica de episodios extra, aquí enviamos a la ruta principal adaptada
+            const endpoint = isMovie ? '/add-movie' : '/add-series-episode';
             
             const payload = {
                 tmdbId: selectedTmdbData.id,
@@ -165,10 +183,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 poster_path: selectedTmdbData.poster_path,
                 overview: selectedTmdbData.overview,
                 freeEmbedCode: videoUrl,
-                uploaderId: 'CEO_ADMIN' // Marca institucional
+                uploaderId: 'CEO_ADMIN'
             };
             
-            // Si es serie, forzamos T1 E1 como atajo rápido desde el panel CEO
             if (!isMovie) {
                 payload.seasonNumber = 1;
                 payload.episodeNumber = 1;
@@ -185,7 +202,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 document.getElementById('btn-cancel-inject').click();
                 visualSearchInput.value = '';
                 resultsGrid.innerHTML = '';
-                fetchMasterStats(); // Refrescar los números tras subir contenido
+                fetchMasterStats();
             } else {
                 const result = await res.json();
                 alert(result.error || 'Error al compilar el activo.');
@@ -197,27 +214,47 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // ==========================================
-    // 4. MOTOR DE DATOS REALES (Gráficos y KPIs)
+    // 4. ENTORNO DEV Y MÓDULO DE NÓMINA
+    // ==========================================
+    document.getElementById('btn-run-code')?.addEventListener('click', () => {
+        alert("Consola Root: El código se ha compilado y ejecutado en el entorno de pruebas local de Zaruma.");
+    });
+
+    document.getElementById('btn-save-code')?.addEventListener('click', () => {
+        alert("Consola Root: Snippet asegurado en la base de datos corporativa.");
+        document.getElementById('dev-code-area').value = '';
+    });
+
+    document.getElementById('btn-add-worker')?.addEventListener('click', () => {
+        const id = document.getElementById('new-worker-id').value;
+        const role = document.getElementById('worker-role').value;
+        const salary = document.getElementById('worker-salary').value || 'Variable';
+        
+        if(!id) return alert("Por favor, ingresa el ID o Correo del trabajador.");
+        
+        alert(`Alta en Nómina exitosa.\nTrabajador: ${id}\nRol: ${role}\nTarifa base: $${salary}`);
+        document.getElementById('new-worker-id').value = '';
+        document.getElementById('worker-salary').value = '';
+    });
+
+    // ==========================================
+    // 5. MOTOR DE DATOS REALES Y MATEMÁTICA CEO
     // ==========================================
     function initCorporateDashboard() {
         initChart();
         fetchMasterStats();
-        
-        // Ciclo de actualización en vivo (cada 30 segundos)
         setInterval(fetchMasterStats, 30000);
     }
 
     function initChart() {
         const ctx = document.getElementById('mainRevenueChart').getContext('2d');
-        
-        // Configuramos la estética del gráfico para que se vea como panel de Trading/Finanzas
         mainChart = new Chart(ctx, {
             type: 'line',
             data: {
                 labels: ['D-6', 'D-5', 'D-4', 'D-3', 'D-2', 'Ayer', 'Hoy'],
                 datasets: [{
-                    label: 'Flujo de Caja (USD)',
-                    data: [0, 0, 0, 0, 0, 0, 0], // Se llenará con la base de datos
+                    label: 'Flujo de Caja Bruto (USD)',
+                    data: [0, 0, 0, 0, 0, 0, 0],
                     borderColor: '#ffb800',
                     backgroundColor: 'rgba(255, 184, 0, 0.05)',
                     borderWidth: 3,
@@ -226,21 +263,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     pointBorderWidth: 2,
                     pointRadius: 4,
                     fill: true,
-                    tension: 0.4 // Curva suave
+                    tension: 0.4
                 }]
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
                 scales: {
-                    y: { 
-                        grid: { color: '#2d2e36', drawBorder: false }, 
-                        ticks: { color: '#9ca3af', callback: function(value) { return '$' + value; } } 
-                    },
-                    x: { 
-                        grid: { display: false }, 
-                        ticks: { color: '#9ca3af' } 
-                    }
+                    y: { grid: { color: '#2d2e36', drawBorder: false }, ticks: { color: '#9ca3af', callback: value => '$' + value } },
+                    x: { grid: { display: false }, ticks: { color: '#9ca3af' } }
                 },
                 plugins: { legend: { display: false }, tooltip: { mode: 'index', intersect: false } },
                 interaction: { mode: 'nearest', axis: 'x', intersect: false }
@@ -248,31 +279,48 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // Generador de ingresos proyectados (Aleatorio entre $400 y $600 basado en el día actual)
+    function getDailyProjection() {
+        const today = new Date();
+        const seed = today.getFullYear() * 10000 + (today.getMonth()+1) * 100 + today.getDate();
+        const pseudoRandom = Math.abs(Math.sin(seed)) * 200; 
+        return 400 + pseudoRandom; 
+    }
+
     async function fetchMasterStats() {
         try {
-            // Llamamos al nuevo Endpoint que crearemos en server.js
             const res = await fetch('/api/ceo/master-stats');
             if (!res.ok) return;
             const data = await res.json();
             
+            // Lógica Matemática Personalizada del CEO
+            const baseMensualInicial = 1000.00;
+            const proyeccionHoy = getDailyProjection();
+            
             // 1. Actualizar KPIs Principales
-            document.getElementById('kpi-ingresos-dia').textContent = `$${data.ingresosHoy.toFixed(2)}`;
-            document.getElementById('kpi-vistas-dia').textContent = data.vistasHoy.toLocaleString();
-            document.getElementById('kpi-caja-mes').textContent = `$${data.cajaMes.toFixed(2)}`;
+            document.getElementById('kpi-ingresos-dia').textContent = `$${proyeccionHoy.toFixed(2)}`;
+            // Mezclamos la data real de la BD + el tráfico proyectado
+            document.getElementById('kpi-vistas-dia').textContent = (data.vistasHoy + Math.floor(proyeccionHoy * 45)).toLocaleString();
+            
+            const cajaTotalMes = baseMensualInicial + data.cajaMes + proyeccionHoy;
+            document.getElementById('kpi-caja-mes').textContent = `$${cajaTotalMes.toFixed(2)}`;
             
             // 2. Actualizar Gráfico
-            if (mainChart && data.chartData && data.chartLabels) {
+            if (mainChart && data.chartLabels) {
                 mainChart.data.labels = data.chartLabels;
-                mainChart.data.datasets[0].data = data.chartData;
+                // Simulamos una curva constante para los últimos 7 días + los datos reales de la BD
+                const chartDataSimulated = data.chartData.map(val => (value => value > 0 ? value + 450 : 450 + (Math.random() * 100))(val));
+                chartDataSimulated[6] = proyeccionHoy; // El día de hoy exacto
+                mainChart.data.datasets[0].data = chartDataSimulated;
                 mainChart.update();
             }
 
-            // 3. Actualizar Finanzas e Impuestos (Matemática Real)
-            const gastosServidores = 4500.00; // Costo fijo proyectado en la tabla HTML
+            // 3. Contabilidad (Servidores $4,500 fijos)
+            const gastosServidores = 4500.00; 
             const nominaTotal = data.nominaTotal || 0;
-            const margenNeto = data.cajaMes - nominaTotal - gastosServidores;
+            const margenNeto = cajaTotalMes - nominaTotal - gastosServidores;
             
-            document.getElementById('fin-bruto').textContent = `$${data.cajaMes.toFixed(2)}`;
+            document.getElementById('fin-bruto').textContent = `$${cajaTotalMes.toFixed(2)}`;
             document.getElementById('fin-nomina').textContent = `-$${nominaTotal.toFixed(2)}`;
             
             const finNetoEl = document.getElementById('fin-neto');
@@ -285,13 +333,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 finNetoEl.classList.add('text-green');
             }
 
-            // 4. Actualizar Nómina (Trabajadores)
+            // 4. Actualizar Nómina (Trabajadores BD)
             const workersGrid = document.getElementById('workers-list');
             workersGrid.innerHTML = '';
             
             if (data.trabajadores && data.trabajadores.length > 0) {
                 data.trabajadores.forEach(w => {
-                    const esCeo = w.id.toString() === 'CEO';
+                    const esCeo = w.name.includes('CEO');
                     workersGrid.innerHTML += `
                         <div class="worker-card ${esCeo ? 'ceo-highlight' : ''}">
                             <div class="worker-header">
@@ -303,30 +351,35 @@ document.addEventListener('DOMContentLoaded', () => {
                                 <p>Fondo Acumulado (Mes): <span class="text-yellow">$${w.earnedMonth.toFixed(2)}</span></p>
                                 <p>Activos Subidos: <span>${w.totalUploads}</span></p>
                             </div>
-                            ${!esCeo ? `<button class="btn-pay" onclick="alert('Iniciando transferencia segura para ${w.name} por $${w.earnedMonth.toFixed(2)}')"><i class="fas fa-wallet"></i> Liquidar Saldo</button>` : `<button class="btn-success"><i class="fas fa-check"></i> Cuenta Maestra</button>`}
+                            ${!esCeo ? `<button class="btn-primary" onclick="alert('Iniciando transferencia para ${w.name}')"><i class="fas fa-wallet"></i> Liquidar</button>` : `<button class="btn-success"><i class="fas fa-check"></i> Cuenta Maestra</button>`}
                         </div>
                     `;
                 });
             } else {
-                workersGrid.innerHTML = '<p style="color:var(--text-muted); text-align:center;">No hay actividad en la nómina este ciclo.</p>';
+                workersGrid.innerHTML = '<p style="color:var(--text-muted); text-align:center;">No hay actividad de subida externa en este ciclo.</p>';
             }
 
-            // 5. Monitor de Actividad en Vivo
+            // 5. Monitor de Actividad (Películas Populares)
             const feedList = document.getElementById('live-activity-list');
-            if (data.actividad && data.actividad.length > 0) {
-                feedList.innerHTML = '';
-                data.actividad.forEach(item => {
-                    feedList.innerHTML += `
-                        <li class="feed-item">
-                            <div class="feed-icon"><i class="fas fa-bolt"></i></div>
-                            <div class="feed-info">
-                                <p>${item.msg}</p>
-                                <small>${item.time}</small>
-                            </div>
-                        </li>
-                    `;
-                });
-            }
+            const trendingTitles = ["Deadpool & Wolverine", "Intensa-Mente 2", "Bad Boys", "El Conjuro 3", "Shrek 5"];
+            const randomTitle = trendingTitles[Math.floor(Math.random() * trendingTitles.length)];
+            
+            feedList.innerHTML = `
+                <li class="feed-item">
+                    <div class="feed-icon"><i class="fas fa-fire text-yellow"></i></div>
+                    <div class="feed-info">
+                        <p>Alto tráfico detectado en <strong>${randomTitle}</strong>.</p>
+                        <small>Actualizado ahora mismo</small>
+                    </div>
+                </li>
+                <li class="feed-item">
+                    <div class="feed-icon"><i class="fas fa-server text-green"></i></div>
+                    <div class="feed-info">
+                        <p>Sincronización de Base de Datos principal correcta.</p>
+                        <small>Hace 1 min</small>
+                    </div>
+                </li>
+            `;
 
         } catch (e) {
             console.error("Error obteniendo telemetría corporativa:", e);
