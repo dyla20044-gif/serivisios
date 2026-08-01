@@ -148,7 +148,6 @@
                             </div>
                         </div>
                         <ul class="feed-list" id="live-movies-list">
-                            <!-- JS inyectará las películas más vistas desde MongoDB aquí -->
                             <li class="feed-item placeholder-item">Cargando métricas de clics reales...</li>
                         </ul>
                     </div>
@@ -347,16 +346,9 @@
                             </tr>
                         </thead>
                         <tbody id="inactive-workers-list">
-                            <!-- Ejemplo de renderizado. JS lo sobreescribirá con datos reales de la DB -->
                             <tr>
                                 <td>Amanda</td>
                                 <td>Asistente de Proyecto</td>
-                                <td>Ciclo Anterior</td>
-                                <td><span class="text-danger">Inactivo</span></td>
-                            </tr>
-                            <tr>
-                                <td>William</td>
-                                <td>Moderador</td>
                                 <td>Ciclo Anterior</td>
                                 <td><span class="text-danger">Inactivo</span></td>
                             </tr>
@@ -387,58 +379,73 @@
             </section>
 
             <!-- ==========================================
-                 8. VISIÓN CORP (Periódico Institucional)
+                 8. VISIÓN CORP (Módulo con Videos MP4 Dinámicos)
                  ========================================== -->
+            <style>
+                /* Estilos integrados para fondos de video MP4 */
+                .video-container { position: relative; overflow: hidden; border: 1px solid var(--border-light); }
+                .corp-bg-video { position: absolute; top: 50%; left: 50%; min-width: 100%; min-height: 100%; width: auto; height: auto; transform: translateX(-50%) translateY(-50%); z-index: 0; opacity: 0.35; object-fit: cover; }
+                .corp-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: linear-gradient(to bottom, rgba(10, 10, 15, 0.4), rgba(10, 10, 15, 0.95)); z-index: 1; }
+                .relative-z { position: relative; z-index: 2; }
+                
+                /* Realces corporativos */
+                .magazine-hero.video-container { border: 1px solid var(--yellow-main); box-shadow: 0 10px 40px rgba(255,184,0,0.15); padding: 60px 30px; }
+                .corp-article.video-container { padding: 40px 30px; border-radius: 12px; transition: all 0.3s ease; }
+                .corp-article.video-container:hover .corp-bg-video { opacity: 0.5; }
+                .corp-article.video-container:hover { border-color: var(--yellow-main); transform: translateY(-5px); }
+            </style>
+
             <section id="tab-prensa" class="tab-content hidden">
                 <div class="magazine-layout">
                     
-                    <div class="magazine-hero">
-                        <div class="hero-image-placeholder">
-                            <!-- Etiqueta <img> lista para la foto oficial del Fundador -->
-                            <img src="" id="corp-founder-photo" alt="Levin Dylan Narváez" style="width: 120px; height: 120px; border-radius: 50%; object-fit: cover; border: 3px solid var(--yellow-main); margin-bottom: 15px; display: none;">
-                            <i class="fas fa-building text-yellow" id="corp-building-icon" style="font-size: 60px; margin-bottom: 15px;"></i>
-                            <h2>Trechos Visionarios Corp.</h2>
+                    <!-- HERO PRINCIPAL CON VIDEO -->
+                    <div class="magazine-hero video-container">
+                        <!-- INSERTA TU ENLACE MP4 AQUÍ PARA EL FONDO PRINCIPAL -->
+                        <video autoplay loop muted playsinline class="corp-bg-video">
+                            <source src="https://cdn.pixabay.com/video/2020/05/24/40093-424785501_tiny.mp4" type="video/mp4">
+                        </video>
+                        <div class="corp-overlay"></div>
+                        
+                        <div class="hero-image-placeholder relative-z">
+                            <i class="fas fa-building text-yellow" id="corp-building-icon" style="font-size: 60px; margin-bottom: 15px; filter: drop-shadow(0 0 10px rgba(255,184,0,0.5));"></i>
+                            <h2 style="color: white; font-weight: 800; letter-spacing: 1px;">Trechos Visionarios Corp.</h2>
                         </div>
-                        <div class="hero-content">
-                            <h1>De Zaruma para el Mundo.</h1>
+                        <div class="hero-content relative-z" style="margin-top: 20px;">
+                            <h1 style="color: white; text-shadow: 0 2px 10px rgba(0,0,0,0.8);">De Zaruma para el Mundo.</h1>
                             <p class="author">Levin Dylan Narváez - Director Ejecutivo (CEO)</p>
                         </div>
                     </div>
 
                     <div class="magazine-articles">
-                        <article class="corp-article">
-                            <h3>Expansión Global y Legalidad</h3>
-                            <p>Nuestra visión trasciende el desarrollo de software; estamos consolidando una infraestructura tecnológica masiva, estructurada y 100% legal. Desde nuestras bases operativas en El Oro, hemos diseñado un ecosistema capaz de soportar millones de peticiones diarias, atrayendo talento y capital a nuestra región.</p>
+                        <!-- ARTÍCULO 1 CON VIDEO -->
+                        <article class="corp-article video-container">
+                            <!-- INSERTA TU ENLACE MP4 AQUÍ PARA EL ARTÍCULO 1 -->
+                            <video autoplay loop muted playsinline class="corp-bg-video">
+                                <source src="https://cdn.pixabay.com/video/2021/08/04/83864-584742616_tiny.mp4" type="video/mp4">
+                            </video>
+                            <div class="corp-overlay" style="background: rgba(10, 10, 15, 0.8);"></div>
+                            
+                            <div class="relative-z">
+                                <h3>Expansión Global y Legalidad</h3>
+                                <p>Nuestra visión trasciende el desarrollo de software; estamos consolidando una infraestructura tecnológica masiva, estructurada y 100% legal. Desde nuestras bases operativas en El Oro, hemos diseñado un ecosistema capaz de soportar millones de peticiones diarias, atrayendo talento y capital a nuestra región.</p>
+                            </div>
                         </article>
 
-                        <article class="corp-article">
-                            <h3>Ecosistema de Inversión y Retail</h3>
-                            <p>Más allá de nuestras aplicaciones insignia, Trechos Corp avanza hacia el comercio electrónico y el arbitraje de retail, conectando mercados internacionales (Asia/Norteamérica) directamente con el consumidor ecuatoriano mediante plataformas logísticas de vanguardia desarrolladas in-house.</p>
-                        </article>
-                        
-                        <article class="corp-article team-photos">
-                            <h3>Nuestra Infraestructura</h3>
-                            <div class="photo-grid">
-                                <!-- Etiquetas <img> listas para insertar fotos reales de la empresa -->
-                                <div class="photo-slot">
-                                    <img src="" alt="Servidores" class="corp-img-placeholder hidden">
-                                    <i class="fas fa-server"></i><p>Nodos Data</p>
-                                </div>
-                                <div class="photo-slot">
-                                    <img src="" alt="Estación de Trabajo" class="corp-img-placeholder hidden">
-                                    <i class="fas fa-laptop-code"></i><p>Hardware</p>
-                                </div>
-                                <div class="photo-slot">
-                                    <img src="" alt="Equipo Trechos" class="corp-img-placeholder hidden">
-                                    <i class="fas fa-users"></i><p>Directiva</p>
-                                </div>
+                        <!-- ARTÍCULO 2 CON VIDEO -->
+                        <article class="corp-article video-container">
+                            <!-- INSERTA TU ENLACE MP4 AQUÍ PARA EL ARTÍCULO 2 -->
+                            <video autoplay loop muted playsinline class="corp-bg-video">
+                                <source src="https://cdn.pixabay.com/video/2023/10/22/186009-876939985_tiny.mp4" type="video/mp4">
+                            </video>
+                            <div class="corp-overlay" style="background: rgba(10, 10, 15, 0.8);"></div>
+                            
+                            <div class="relative-z">
+                                <h3>Ecosistema de Inversión y Retail</h3>
+                                <p>Más allá de nuestras aplicaciones insignia, Trechos Corp avanza hacia el comercio electrónico y el arbitraje de retail, conectando mercados internacionales (Asia/Norteamérica) directamente con el consumidor ecuatoriano mediante plataformas logísticas de vanguardia desarrolladas in-house.</p>
                             </div>
                         </article>
                     </div>
 
-                    <div class="magazine-footer">
-                        <button class="btn-primary" onclick="alert('Módulo de inserción de imágenes corporativas abriendo...')"><i class="fas fa-camera"></i> Subir Fotografías Oficiales</button>
-                    </div>
                 </div>
             </section>
 
