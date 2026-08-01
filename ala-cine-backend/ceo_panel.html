@@ -13,7 +13,9 @@
 </head>
 <body>
 
-    <!-- PANTALLA DE SEGURIDAD ENCRIPTADA -->
+    <!-- ==========================================
+         PANTALLA DE SEGURIDAD ENCRIPTADA (DB REAL)
+         ========================================== -->
     <div id="login-screen" class="active">
         <div class="login-box">
             <div class="login-logo">
@@ -27,16 +29,36 @@
         </div>
     </div>
 
-    <!-- DASHBOARD CORPORATIVO -->
+    <!-- ==========================================
+         DASHBOARD CORPORATIVO
+         ========================================== -->
     <div id="ceo-dashboard" class="hidden">
         
-        <!-- HEADER MÓVIL (Menú Hamburguesa) -->
+        <!-- HEADER MÓVIL FIJO (UI/UX Superior) -->
         <div class="mobile-header">
-            <button id="mobile-menu-btn"><i class="fas fa-bars"></i></button>
-            <h2 class="mobile-brand">Trechos <span>Corp.</span></h2>
+            <div class="mobile-brand-area">
+                <button id="mobile-menu-btn"><i class="fas fa-bars"></i></button>
+                <h2 class="mobile-brand" id="mobile-brand-text">Trechos <span>Corp.</span></h2>
+                
+                <!-- Título y fecha dinámicos (Se inyectan vía JS al cambiar de pestaña) -->
+                <div class="mobile-dynamic-info hidden" id="mobile-dynamic-info">
+                    <h3 id="mobile-tab-title">Panel General</h3>
+                    <span id="mobile-live-date">Cargando ciclo...</span>
+                </div>
+            </div>
+
+            <div class="mobile-ceo-profile">
+                <div class="notifications">
+                    <i class="fas fa-bell"></i>
+                    <span class="badge" id="mobile-notif-badge">0</span>
+                </div>
+                <div class="avatar" title="Levin Dylan Narváez - CEO">
+                    <img src="https://ui-avatars.com/api/?name=Levin+Dylan+Narvaez&background=ffb800&color=000&bold=true" alt="Levin Dylan Narváez - CEO">
+                </div>
+            </div>
         </div>
 
-        <!-- BARRA LATERAL (Sidebar) -->
+        <!-- BARRA LATERAL (Sidebar PC/Móvil) -->
         <nav class="sidebar" id="sidebar">
             <div class="brand">
                 <h2>Trechos <span>Visionarios</span></h2>
@@ -45,10 +67,10 @@
             <ul class="nav-links">
                 <li class="active" data-tab="tab-general"><i class="fas fa-th-large"></i> Panel General</li>
                 <li data-tab="tab-infra"><i class="fas fa-server"></i> Infraestructura</li>
-                <li data-tab="tab-finanzas"><i class="fas fa-file-invoice-dollar"></i> Contabilidad</li>
-                <li data-tab="tab-catalogo"><i class="fas fa-film"></i> Trabajar Catálogo</li>
+                <li data-tab="tab-finanzas"><i class="fas fa-file-invoice-dollar"></i> Finanzas Vivas</li>
+                <li data-tab="tab-catalogo"><i class="fas fa-film"></i> Bóveda de Contenido</li>
                 <li data-tab="tab-dev"><i class="fas fa-code"></i> Entorno Dev</li>
-                <li data-tab="tab-equipo"><i class="fas fa-users-cog"></i> Nómina y Roles</li>
+                <li data-tab="tab-equipo"><i class="fas fa-users-cog"></i> RR.HH. y Nómina</li>
                 <li data-tab="tab-apps"><i class="fas fa-mobile-alt"></i> Red de Apps</li>
                 <li data-tab="tab-prensa"><i class="fas fa-newspaper"></i> Visión Corp.</li>
             </ul>
@@ -62,8 +84,8 @@
         <!-- ÁREA CENTRAL DE TRABAJO -->
         <main class="content-area" id="export-pdf-area">
             
-            <!-- HEADER GLOBAL FIJO -->
-            <header class="global-header">
+            <!-- HEADER GLOBAL PC -->
+            <header class="global-header desktop-only">
                 <div class="header-title-area">
                     <h1 id="current-tab-title">Panel General</h1>
                     <p class="date-subtitle" id="live-date">Cargando ciclo fiscal...</p>
@@ -71,313 +93,351 @@
                 <div class="ceo-profile">
                     <div class="notifications">
                         <i class="fas fa-bell"></i>
-                        <span class="badge">Sist</span>
+                        <span class="badge" id="pc-notif-badge">0</span>
                     </div>
                     <div class="user-info">
                         <strong>Levin Dylan Narváez</strong>
                         <span>Fundador & CEO</span>
                     </div>
-                    <div class="avatar"><img src="https://ui-avatars.com/api/?name=Dylan+Narvaez&background=ffb800&color=000&bold=true" alt="CEO"></div>
+                    <div class="avatar">
+                        <img src="https://ui-avatars.com/api/?name=Levin+Dylan+Narvaez&background=ffb800&color=000&bold=true" alt="CEO">
+                    </div>
                 </div>
             </header>
 
             <!-- ==========================================
-                 A. PANEL GENERAL (Bento Grid)
+                 1. PANEL GENERAL (Monitor de Tráfico y Métricas)
                  ========================================== -->
             <section id="tab-general" class="tab-content active">
                 <div class="kpi-grid">
                     <div class="kpi-card">
-                        <span>Proyección del Día</span>
-                        <h3 class="text-yellow" id="kpi-ingresos-dia">$520.00</h3>
-                        <small class="trend-up"><i class="fas fa-arrow-up"></i> Variable aleatoria activa</small>
+                        <span>Ingresos del Día (En Vivo)</span>
+                        <h3 class="text-yellow" id="kpi-ingresos-dia">$0.00</h3>
+                        <small class="trend-up"><i class="fas fa-sync fa-spin"></i> Algoritmo incremental activo</small>
                     </div>
                     <div class="kpi-card">
-                        <span>Tráfico Global (Hoy)</span>
+                        <span>Tráfico App (Real-time)</span>
                         <h3 id="kpi-vistas-dia">0</h3>
-                        <small>Usuarios concurrentes</small>
+                        <small>Usuarios concurrentes en DB</small>
                     </div>
                     <div class="kpi-card">
-                        <span>Caja Base Mensual</span>
-                        <h3 class="text-green" id="kpi-caja-mes">$1,000.00</h3>
-                        <small>Fondo inicial establecido</small>
+                        <span>Ganancia Mensual Estimada (IA)</span>
+                        <h3 class="text-green" id="kpi-caja-estimada">$0.00</h3>
+                        <small>Cálculo predictivo basado en promedios</small>
                     </div>
                 </div>
 
                 <div class="dashboard-middle">
                     <div class="chart-box">
                         <div class="box-header">
-                            <h4>Flujo Bruto Consolidado</h4>
+                            <h4>Flujo Bruto Consolidado (Lectura DB)</h4>
                         </div>
                         <div class="canvas-container">
                             <canvas id="mainRevenueChart"></canvas>
                         </div>
                     </div>
                     
+                    <!-- Monitor de Tráfico en Vivo -->
                     <div class="activity-feed">
-                        <div class="box-header">
-                            <h4>Monitor en Vivo (Más Vistos)</h4>
+                        <div class="box-header activity-header">
+                            <h4>Monitor de Vistas (App Sala Cine)</h4>
+                            <div class="traffic-filters">
+                                <button class="btn-micro active" data-filter="hoy">Hoy</button>
+                                <button class="btn-micro" data-filter="semana">Semana</button>
+                                <button class="btn-micro" data-filter="mes">Mes</button>
+                            </div>
                         </div>
-                        <ul class="feed-list" id="live-activity-list">
-                            <!-- JS inyectará qué están viendo los usuarios -->
-                            <li class="feed-item">
-                                <div class="feed-icon"><i class="fas fa-eye text-yellow"></i></div>
-                                <div class="feed-info">
-                                    <p>Película <strong>Deadpool & Wolverine</strong> en alta demanda.</p>
-                                    <small>Hace unos segundos</small>
-                                </div>
-                            </li>
+                        <ul class="feed-list" id="live-movies-list">
+                            <!-- JS inyectará las películas más vistas desde MongoDB aquí -->
+                            <li class="feed-item placeholder-item">Cargando métricas de clics reales...</li>
                         </ul>
                     </div>
                 </div>
             </section>
 
             <!-- ==========================================
-                 B. SERVIDORES E INFRAESTRUCTURA
+                 2. MÓDULO DE INFRAESTRUCTURA (Estricto Hardware)
                  ========================================== -->
             <section id="tab-infra" class="tab-content hidden">
                 <div class="action-bar">
-                    <h3>Centro de Datos Global</h3>
+                    <h3>Centro de Datos y Nodos Globales</h3>
                 </div>
 
                 <div class="server-status-grid">
                     <div class="server-node">
-                        <div class="node-header"><i class="flag">🇪🇨</i> <h4>Core Ecuador</h4></div>
-                        <span class="status-blink working">Trabajando...</span>
-                        <p>Base de Datos Principal</p>
+                        <div class="node-header"><i class="flag">🇪🇨</i> <h4>Core Ecuador (Zaruma)</h4></div>
+                        <span class="status-blink working" id="status-ec">En Línea</span>
+                        <p>Cluster MongoDB Principal</p>
                     </div>
                     <div class="server-node">
                         <div class="node-header"><i class="flag">🇺🇸</i> <h4>Bóveda EE.UU.</h4></div>
-                        <span class="status-blink working">Trabajando...</span>
-                        <p>Almacenamiento de Medios</p>
+                        <span class="status-blink working" id="status-us">En Línea</span>
+                        <p>Almacenamiento de Medios Brutos</p>
                     </div>
                     <div class="server-node">
                         <div class="node-header"><i class="flag">🇲🇽</i> <h4>CDN México</h4></div>
-                        <span class="status-blink working">Trabajando...</span>
+                        <span class="status-blink working" id="status-mx">En Línea</span>
                         <p>Enrutamiento Latam Norte</p>
                     </div>
                     <div class="server-node">
                         <div class="node-header"><i class="flag">🇪🇸</i> <h4>Proxy España</h4></div>
-                        <span class="status-blink standby">Standby...</span>
+                        <span class="status-blink standby" id="status-es">Standby</span>
                         <p>Balanceo de Carga Europa</p>
                     </div>
                 </div>
 
                 <div class="infrastructure-details">
-                    <div class="server-costs-box">
-                        <h4>Costos Fijos Mensuales</h4>
-                        <table class="corporate-table">
+                    <div class="server-costs-box w-100">
+                        <h4>Auditoría de Costos de Hardware e IPs</h4>
+                        <table class="corporate-table" id="hardware-costs-table">
+                            <thead>
+                                <tr>
+                                    <th>Instancia / Servicio</th>
+                                    <th>Proveedor</th>
+                                    <th>Estado DB</th>
+                                    <th>Costo Mensual</th>
+                                </tr>
+                            </thead>
                             <tbody>
-                                <tr><td>Almacenamiento Principal</td><td>$3,000.00</td></tr>
-                                <tr><td>CDN y Enrutamiento</td><td>$800.00</td></tr>
-                                <tr><td>Proxy Tier 1</td><td>$500.00</td></tr>
-                                <tr><td>Servidor Central Zaruma</td><td>$200.00</td></tr>
-                                <tr class="total-row"><td><strong>Total Infraestructura:</strong></td><td class="text-danger"><strong>-$4,500.00</strong></td></tr>
+                                <tr><td>Cluster DB Primario</td><td>MongoDB Atlas</td><td class="text-green">Activo</td><td>$3,000.00</td></tr>
+                                <tr><td>Almacenamiento de Video</td><td>AWS S3</td><td class="text-green">Activo</td><td>$800.00</td></tr>
+                                <tr><td>Red de Distribución (CDN)</td><td>Cloudflare</td><td class="text-green">Activo</td><td>$500.00</td></tr>
+                                <tr><td>Servidor Local Zaruma</td><td>On-Premise</td><td class="text-yellow">Mantenimiento</td><td>$200.00</td></tr>
+                                <tr class="total-row">
+                                    <td colspan="3"><strong>Total Inversión Infraestructura:</strong></td>
+                                    <td class="text-danger"><strong>-$4,500.00</strong></td>
+                                </tr>
                             </tbody>
                         </table>
                     </div>
-
-                    <div class="engineers-box">
-                        <h4>Ingenieros de Mantenimiento</h4>
-                        <ul class="engineers-list">
-                            <li><i class="fas fa-user-shield"></i> <strong>L. Dylan</strong> - DevOps & SysAdmin Master</li>
-                            <li><i class="fas fa-user-hard-hat"></i> <strong>Admin 2</strong> - Soporte Nodos Secundarios</li>
-                        </ul>
-                    </div>
                 </div>
             </section>
 
             <!-- ==========================================
-                 C. CONTABILIDAD Y FINANZAS
+                 3. FINANZAS VIVAS (Caja DB Real)
                  ========================================== -->
             <section id="tab-finanzas" class="tab-content hidden">
                 <div class="action-bar">
-                    <h3>Auditoría Financiera</h3>
+                    <h3>Caja Corporativa y Proyecciones</h3>
                     <button class="btn-primary" id="btn-export-pdf"><i class="fas fa-download"></i> Exportar Balance PDF</button>
                 </div>
+                
                 <div class="finance-grid">
                     <div class="finance-card">
-                        <h4>Total Bruto Acumulado</h4>
-                        <h2 class="text-yellow" id="fin-bruto">$0.00</h2>
-                        <p>Facturación total del mes en curso.</p>
+                        <h4>Flujo de Caja Real (Mes actual)</h4>
+                        <h2 class="text-yellow" id="fin-caja-real">$0.00</h2>
+                        <p>Total ingresado a la BD este mes.</p>
                     </div>
                     <div class="finance-card">
-                        <h4>Descuento de Nómina</h4>
-                        <h2 class="text-danger" id="fin-nomina">-$0.00</h2>
-                        <p>Pagos y liquidaciones a trabajadores.</p>
+                        <h4>Egresos Operativos (Hardware + Nómina)</h4>
+                        <h2 class="text-danger" id="fin-egresos">-$0.00</h2>
+                        <p>Descuentos automáticos registrados.</p>
                     </div>
                     <div class="finance-card">
-                        <h4>Utilidad Neta (Caja Libre)</h4>
+                        <h4>Utilidad Neta</h4>
                         <h2 class="text-green" id="fin-neto">$0.00</h2>
-                        <p>Ganancia real tras servidores y nómina.</p>
+                        <p>Capital libre de la empresa.</p>
                     </div>
                 </div>
             </section>
 
             <!-- ==========================================
-                 D. TRABAJAR CATÁLOGO
+                 4. BÓVEDA DE CONTENIDO (Buscador TMDB)
                  ========================================== -->
             <section id="tab-catalogo" class="tab-content hidden">
                 <div class="work-station">
-                    <h3>Inyección a la Bóveda</h3>
+                    <h3>Inyección a la Bóveda Principal</h3>
                     
                     <div class="corporate-note">
                         <i class="fas fa-info-circle text-yellow"></i>
-                        <strong>Reglas de Ganancia:</strong> El sistema asigna un pago inicial fijo por subida + ingresos pasivos variables por cada reproducción (CPM) generada por el contenido.
+                        <strong>Sincronización Directa:</strong> Todo activo inyectado aquí impactará inmediatamente los servidores de la app Sala Cine y bases de datos conectadas.
                     </div>
 
                     <div class="search-bar-visual">
                         <i class="fas fa-search"></i>
-                        <input type="text" id="visual-search-input" placeholder="Ej: Spider-Man, The Boys...">
-                        <button class="btn-primary" id="btn-visual-search">Buscar en TMDB</button>
+                        <input type="text" id="visual-search-input" placeholder="Ej: Búsqueda global en TMDB API...">
+                        <button class="btn-primary" id="btn-visual-search">Buscar Activo</button>
                     </div>
 
                     <div class="posters-grid" id="search-results-grid"></div>
 
                     <div class="injection-form hidden" id="injection-panel">
                         <div class="selected-media">
-                            <img id="inject-poster" src="" alt="">
+                            <img id="inject-poster" src="" alt="Poster">
                             <div class="media-details">
-                                <h4 id="inject-title" class="text-yellow">Título</h4>
+                                <h4 id="inject-title" class="text-yellow">Título del Activo</h4>
                                 <p id="inject-overview">Sinopsis...</p>
                             </div>
                         </div>
                         <div class="input-group">
-                            <label>Source URL (m3u8, mp4):</label>
-                            <input type="text" id="inject-url" placeholder="https://servidor.com/video.mp4">
+                            <label>Source URL (m3u8, mp4) encriptado:</label>
+                            <input type="text" id="inject-url" placeholder="https://cdn.trechoscorp.com/v/...">
                         </div>
                         <div class="form-actions">
-                            <button class="btn-secondary" id="btn-cancel-inject">Cancelar</button>
-                            <button class="btn-success" id="btn-confirm-inject"><i class="fas fa-cloud-upload-alt"></i> Subir a Bóveda</button>
+                            <button class="btn-secondary" id="btn-cancel-inject">Abortar</button>
+                            <button class="btn-success" id="btn-confirm-inject"><i class="fas fa-cloud-upload-alt"></i> Escribir en MongoDB</button>
                         </div>
                     </div>
                 </div>
             </section>
 
             <!-- ==========================================
-                 E. ENTORNO DE DESARROLLO (DEV)
+                 5. ENTORNO DEV (Terminal CEO)
                  ========================================== -->
             <section id="tab-dev" class="tab-content hidden">
                 <div class="dev-environment">
-                    <h3>Terminal de Programación</h3>
-                    <p>Espacio seguro para redactar, probar y guardar Snippets de código.</p>
+                    <h3>Terminal de Despliegue</h3>
+                    <p>Acceso directo al core del servidor Node.js/MongoDB.</p>
                     
                     <div class="console-box">
                         <div class="console-header">
-                            <span><i class="fas fa-terminal"></i> root@trechos-visionarios:~</span>
+                            <span><i class="fas fa-terminal"></i> root@ceo-zaruma-core:~</span>
                             <div class="console-actions">
-                                <button class="btn-micro" id="btn-run-code"><i class="fas fa-play"></i> Run</button>
-                                <button class="btn-micro btn-save" id="btn-save-code"><i class="fas fa-save"></i> Save</button>
+                                <button class="btn-micro" id="btn-run-code"><i class="fas fa-play"></i> Ejecutar</button>
+                                <button class="btn-micro btn-save" id="btn-save-code"><i class="fas fa-save"></i> Guardar Snippet</button>
                             </div>
                         </div>
-                        <textarea class="code-editor" id="dev-code-area" placeholder="// Escribe tu código Node.js, JS o JSON aquí..." spellcheck="false"></textarea>
+                        <textarea class="code-editor" id="dev-code-area" placeholder="// Interfaz de inyección directa DB..." spellcheck="false"></textarea>
                     </div>
 
-                    <h4>Snippets Guardados</h4>
+                    <h4>Scripts Almacenados en DB</h4>
                     <div class="snippets-grid" id="saved-snippets">
-                        <!-- Las tarjetas de código se guardarán aquí -->
-                        <div class="snippet-card">
-                            <h5>Script: Auto-Restart Servidor</h5>
-                            <small>JS - Modificado hoy</small>
-                        </div>
+                        <!-- JS inyectará los snippets de la BD -->
                     </div>
                 </div>
             </section>
 
             <!-- ==========================================
-                 F. NÓMINA, EQUIPO Y ROLES
+                 6. RECURSOS HUMANOS Y NÓMINA (CRUD MongoDB)
                  ========================================== -->
             <section id="tab-equipo" class="tab-content hidden">
                 <div class="team-management">
+                    
+                    <!-- Formulario de Alta -->
                     <div class="add-worker-box">
-                        <h4>Integrar Nuevo Trabajador</h4>
-                        <div class="form-grid">
-                            <input type="text" id="new-worker-id" placeholder="Correo o ID de Telegram">
-                            <select id="worker-role" class="custom-select">
-                                <option value="uploader">Subida de Contenido (Pago por comisión + vistas)</option>
-                                <option value="server_admin">Gestión de Servidores (Sueldo fijo diario)</option>
-                                <option value="marketing">Marketing TikTok (Tarifa por volumen de vistas)</option>
-                                <option value="backend">Programador Backend (Sueldo mensual)</option>
+                        <h4>Contratación y Mapeo de Identidades</h4>
+                        <form id="hr-add-form" class="form-grid">
+                            <input type="text" id="hr-real-name" placeholder="Nombre Real (Ej: Carlos Pérez)" required>
+                            <input type="text" id="hr-telegram-id" placeholder="ID Entorno/Telegram (Ej: WORKER_884)" required>
+                            <select id="hr-role" class="custom-select">
+                                <option value="uploader">Uploader de Contenido</option>
+                                <option value="marketing">Especialista Marketing (TikTok/Ads)</option>
+                                <option value="backend">Ingeniero Backend</option>
                             </select>
-                            <input type="number" id="worker-salary" placeholder="Tarifa base ($)">
-                            <button class="btn-primary" id="btn-add-worker"><i class="fas fa-user-plus"></i> Dar de Alta</button>
-                        </div>
+                            <input type="number" id="hr-salary" placeholder="Tarifa/Sueldo ($)" required>
+                            <button type="submit" class="btn-primary" id="btn-add-worker"><i class="fas fa-user-plus"></i> Registrar en DB</button>
+                        </form>
                     </div>
 
-                    <div class="workers-payroll" id="workers-list">
-                        <!-- Tarjetas de trabajadores generadas dinámicamente -->
+                    <!-- Personal Activo -->
+                    <h4 class="section-subtitle mt-4">Personal Activo (Mapeado)</h4>
+                    <div class="workers-payroll" id="active-workers-list">
+                        <!-- Tarjetas de trabajadores activas generadas desde MongoDB -->
                     </div>
+
+                    <!-- Historial de Bajas -->
+                    <h4 class="section-subtitle mt-4 text-muted">Historial de Empleados (Inactivos)</h4>
+                    <table class="corporate-table" id="inactive-workers-table">
+                        <thead>
+                            <tr>
+                                <th>Nombre</th>
+                                <th>Último Rol</th>
+                                <th>Fecha de Baja</th>
+                                <th>Estado DB</th>
+                            </tr>
+                        </thead>
+                        <tbody id="inactive-workers-list">
+                            <!-- Ejemplo de renderizado. JS lo sobreescribirá con datos reales de la DB -->
+                            <tr>
+                                <td>Amanda</td>
+                                <td>Asistente de Proyecto</td>
+                                <td>Ciclo Anterior</td>
+                                <td><span class="text-danger">Inactivo</span></td>
+                            </tr>
+                            <tr>
+                                <td>William</td>
+                                <td>Moderador</td>
+                                <td>Ciclo Anterior</td>
+                                <td><span class="text-danger">Inactivo</span></td>
+                            </tr>
+                        </tbody>
+                    </table>
+
                 </div>
             </section>
 
             <!-- ==========================================
-                 G. RED DE APLICACIONES
+                 7. RED DE APLICACIONES
                  ========================================== -->
             <section id="tab-apps" class="tab-content hidden">
-                <h3>Monitoreo de Ecosistema Android</h3>
-                <div class="apps-grid">
+                <h3>Monitoreo de Ecosistema AdMob & Play Console</h3>
+                <div class="apps-grid" id="apps-live-grid">
                     <div class="app-card highlight-app">
                         <div class="app-header">
                             <i class="fab fa-android text-green"></i>
-                            <h4>Sala Cine (Principal)</h4>
+                            <h4>Sala Cine (App Insignia)</h4>
                         </div>
                         <div class="app-stats">
-                            <p>Estado: <span class="badge-success">En Línea</span></p>
-                            <p>Tráfico: <span>Masivo</span></p>
-                            <p>Versión: <span>v22.0</span></p>
+                            <p>Estado Server: <span class="badge-success">Conectado a DB</span></p>
+                            <p>Anuncios (AdMob): <span class="text-green">Monetizando</span></p>
+                            <p>Track Google Play: <span>Producción</span></p>
                         </div>
-                    </div>
-                    <!-- Mock de apps secundarias -->
-                    <div class="app-card">
-                        <div class="app-header"><i class="fab fa-android text-yellow"></i><h4>App Secundaria 1</h4></div>
-                        <div class="app-stats"><p>Estado: <span class="badge-success">En Línea</span></p><p>Tráfico: <span>Estable</span></p></div>
-                    </div>
-                    <div class="app-card">
-                        <div class="app-header"><i class="fab fa-android text-yellow"></i><h4>App Secundaria 2</h4></div>
-                        <div class="app-stats"><p>Estado: <span class="badge-success">En Línea</span></p><p>Tráfico: <span>Estable</span></p></div>
                     </div>
                 </div>
             </section>
 
             <!-- ==========================================
-                 H. PERIÓDICO CORPORATIVO (VISIÓN)
+                 8. VISIÓN CORP (Periódico Institucional)
                  ========================================== -->
             <section id="tab-prensa" class="tab-content hidden">
                 <div class="magazine-layout">
+                    
                     <div class="magazine-hero">
-                        <!-- Espacio para foto del CEO -->
                         <div class="hero-image-placeholder">
-                            <i class="fas fa-building text-yellow"></i>
-                            <h2>Trechos Visionarios</h2>
+                            <!-- Etiqueta <img> lista para la foto oficial del Fundador -->
+                            <img src="" id="corp-founder-photo" alt="Levin Dylan Narváez" style="width: 120px; height: 120px; border-radius: 50%; object-fit: cover; border: 3px solid var(--yellow-main); margin-bottom: 15px; display: none;">
+                            <i class="fas fa-building text-yellow" id="corp-building-icon" style="font-size: 60px; margin-bottom: 15px;"></i>
+                            <h2>Trechos Visionarios Corp.</h2>
                         </div>
                         <div class="hero-content">
                             <h1>De Zaruma para el Mundo.</h1>
-                            <p class="author">Por Levin Dylan Narváez - Fundador</p>
+                            <p class="author">Levin Dylan Narváez - Director Ejecutivo (CEO)</p>
                         </div>
                     </div>
 
                     <div class="magazine-articles">
                         <article class="corp-article">
-                            <h3>Nuestras Raíces: El Oro, Ecuador</h3>
-                            <p>Trechos Visionarios no nació en Silicon Valley, nació con la fuerza y la historia de Zaruma. Nuestra filosofía de trabajo está basada en la resiliencia y la capacidad de construir ecosistemas tecnológicos masivos desde cualquier rincón del mundo, rompiendo fronteras mediante el código y la innovación.</p>
+                            <h3>Expansión Global y Legalidad</h3>
+                            <p>Nuestra visión trasciende el desarrollo de software; estamos consolidando una infraestructura tecnológica masiva, estructurada y 100% legal. Desde nuestras bases operativas en El Oro, hemos diseñado un ecosistema capaz de soportar millones de peticiones diarias, atrayendo talento y capital a nuestra región.</p>
                         </article>
 
                         <article class="corp-article">
-                            <h3>Nuestra Filosofía de Trabajo</h3>
-                            <p>Creemos en la justa distribución de la riqueza digital. Nuestros colaboradores y uploaders son socios estratégicos. Por eso desarrollamos un sistema propio donde el esfuerzo en curación de contenido y administración de servidores se traduce en un flujo de caja real, constante y escalable.</p>
+                            <h3>Ecosistema de Inversión y Retail</h3>
+                            <p>Más allá de nuestras aplicaciones insignia, Trechos Corp avanza hacia el comercio electrónico y el arbitraje de retail, conectando mercados internacionales (Asia/Norteamérica) directamente con el consumidor ecuatoriano mediante plataformas logísticas de vanguardia desarrolladas in-house.</p>
                         </article>
                         
                         <article class="corp-article team-photos">
-                            <h3>El Equipo de Desarrollo</h3>
+                            <h3>Nuestra Infraestructura</h3>
                             <div class="photo-grid">
-                                <div class="photo-slot"><i class="fas fa-user-astronaut"></i><p>CEO</p></div>
-                                <div class="photo-slot"><i class="fas fa-users"></i><p>Infraestructura</p></div>
-                                <div class="photo-slot"><i class="fas fa-code"></i><p>Devs</p></div>
+                                <!-- Etiquetas <img> listas para insertar fotos reales de la empresa -->
+                                <div class="photo-slot">
+                                    <img src="" alt="Servidores" class="corp-img-placeholder hidden">
+                                    <i class="fas fa-server"></i><p>Nodos Data</p>
+                                </div>
+                                <div class="photo-slot">
+                                    <img src="" alt="Estación de Trabajo" class="corp-img-placeholder hidden">
+                                    <i class="fas fa-laptop-code"></i><p>Hardware</p>
+                                </div>
+                                <div class="photo-slot">
+                                    <img src="" alt="Equipo Trechos" class="corp-img-placeholder hidden">
+                                    <i class="fas fa-users"></i><p>Directiva</p>
+                                </div>
                             </div>
                         </article>
                     </div>
 
                     <div class="magazine-footer">
-                        <a href="#" class="btn-primary" target="_blank"><i class="fas fa-globe"></i> Visitar Web Corporativa</a>
+                        <button class="btn-primary" onclick="alert('Módulo de inserción de imágenes corporativas abriendo...')"><i class="fas fa-camera"></i> Subir Fotografías Oficiales</button>
                     </div>
                 </div>
             </section>
@@ -385,7 +445,7 @@
         </main>
     </div>
 
-    <!-- Scripts -->
+    <!-- Scripts de Conexión Backend -->
     <script src="ceo_panel.js"></script>
 </body>
 </html>
