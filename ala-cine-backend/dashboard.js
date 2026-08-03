@@ -188,7 +188,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         listaRecientes.innerHTML = `<li><span><i class="fa-solid fa-clock text-muted"></i> Esperando actividad...</span></li>`;
                     }
 
-                    // 2. NUEVO: Dibujar el Historial de Pagos (Liquidaciones CEO)
+                    // 2. Dibujar el Historial de Pagos
                     const listaPagos = document.getElementById('listaHistorialPagos');
                     if (listaPagos) {
                         listaPagos.innerHTML = '';
@@ -198,7 +198,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                 const fechaStr = timeObj.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' });
                                 
                                 const li = document.createElement('li');
-                                li.innerHTML = `<span><i class="fa-solid fa-check-double text-green"></i> Ciclo cerrado <span style="font-size:10px; color:var(--text-muted);">(${fechaStr} - ${pago.method})</span></span> <strong class="text-green">$${pago.amount.toFixed(2)}</strong>`;
+                                li.innerHTML = `<span><i class="fa-solid fa-check-double text-green"></i> Ciclo cerrado <span style="font-size:10px; color:var(--text-muted);">(${fechaStr})</span></span> <strong class="text-green">$${(pago.amount || pago.amountPaid || 0).toFixed(2)}</strong>`;
                                 listaPagos.appendChild(li);
                             });
                         } else {
