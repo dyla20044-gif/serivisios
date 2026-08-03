@@ -71,8 +71,8 @@ const MONGO_DB_NAME = process.env.MONGO_DB_NAME || 'sala_cine';
 
 const REVENUE_SETTINGS = {
     payout_per_view: 0.005,
-    limit_daily: 40.00,
-    limit_monthly: 145.00, // ACTUALIZADO: Tope máximo rígido de 145 mensuales
+    limit_daily: 26.00,
+    limit_monthly: 54.30, // ACTUALIZADO: Tope máximo rígido de 61 mensuales a petición del CEO
     months_to_be_estreno: 6
 };
 
@@ -118,6 +118,7 @@ app.use(bodyParser.urlencoded({ extended: true }));
 let trafficCount = 0;
 let lastTrafficAlert = 0;
 let currentCpmMultiplier = 1.0; 
+let globalTrafficBonusActive = false; // Bono de +0.05
 const TRAFFIC_THRESHOLD = 300; 
 
 setInterval(() => { trafficCount = 0; }, 60000);
@@ -127,10 +128,15 @@ app.use((req, res, next) => {
     if (trafficCount > TRAFFIC_THRESHOLD && (Date.now() - lastTrafficAlert > 3600000)) {
         lastTrafficAlert = Date.now();
         currentCpmMultiplier = 1.5; 
-        setTimeout(() => { currentCpmMultiplier = 1.0; }, 3600000); 
+        globalTrafficBonusActive = true; 
+        
+        setTimeout(() => { 
+            currentCpmMultiplier = 1.0; 
+            globalTrafficBonusActive = false; 
+        }, 3600000); 
 
         if (ADMIN_CHAT_ID_2) {
-            bot.sendMessage(ADMIN_CHAT_ID_2, '🔥 *Tráfico pico detectado*. El CPM está subiendo y el multiplicador x1.5 se ha activado para incentivar subidas.', { parse_mode: 'Markdown' });
+            bot.sendMessage(ADMIN_CHAT_ID_2, '🔥 *Tráfico pico detectado*. El CPM está subiendo y el bono de +$0.05 se ha activado para incentivar subidas.', { parse_mode: 'Markdown' });
         }
     }
 
@@ -170,17 +176,13 @@ function verifyInternalAdmin(req, res, next) {
     return res.status(403).json({ error: "Acceso denegado." });
 }
 
-function getRandomPayout(min, max) {
-    return parseFloat((Math.random() * (max - min) + min).toFixed(2));
-}
-
 let isHappyHour = false;
 
 cron.schedule('0 10 * * *', async () => {
     isHappyHour = true;
     await sendNotificationToTopic(
         "🔥 ¡Hora Ideal para Subir!", 
-        "De 10:00 a 11:00 AM pagamos $0.50 por cada estreno en familia que subas.", 
+        "De 10:00 a 11:00 AM pagamos extra por cada estreno.", 
         null, null, null, 'new_content'
     );
 }, { scheduled: true, timezone: "America/Guayaquil" });
@@ -215,53 +217,32 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
         return { appliedRevenue: 0, status: 'skipped_duplicate' };
     }
 
-    let contentType = 'catalogo';
-    let basePrice = 0;
     const now = new Date();
     const dayId = now.toISOString().split('T')[0];
     const monthId = dayId.substring(0, 7);
 
     try {
-        if (mediaType === 'movie') {
-            const tmdbUrl = `https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${TMDB_API_KEY}&language=es-MX`;
-            try {
-                const resp = await axios.get(tmdbUrl);
-                const releaseDateStr = resp.data.release_date;
-                if (releaseDateStr) {
-                    const releaseDate = new Date(releaseDateStr);
-                    const releaseYear = releaseDate.getFullYear();
-
-                    if (releaseYear < 2021) {
-                        return { appliedRevenue: 0, status: 'rechazado_pelicula_antigua' };
-                    }
-
-                    const diffMonths = (now.getFullYear() - releaseYear) * 12 + (now.getMonth() - releaseDate.getMonth());
-                    
-                    if (isHappyHour) {
-                        contentType = 'estreno_especial';
-                        basePrice = 0.50; 
-                    } else if (diffMonths < REVENUE_SETTINGS.months_to_be_estreno) {
-                        contentType = 'estreno';
-                        basePrice = getRandomPayout(0.30, 0.50); 
-                    } else {
-                        contentType = 'catalogo';
-                        basePrice = getRandomPayout(0.10, 0.25); 
-                    }
-                } else {
-                    basePrice = getRandomPayout(0.10, 0.25);
-                }
-            } catch (tmdbErr) {
-                basePrice = getRandomPayout(0.10, 0.25); 
-            }
-        } else {
-            contentType = 'episodio';
-            basePrice = getRandomPayout(0.05, 0.35); 
-        }
-
-        basePrice = parseFloat((basePrice * currentCpmMultiplier).toFixed(2));
-
         let dailyStats = await mongoDb.collection(COLL_DAILY_STATS).findOne({ uploaderId: uploaderNum, dayId });
         let currentDaily = dailyStats ? (dailyStats.today_earned || 0) : 0;
+        let totalSubidasHoy = dailyStats ? (dailyStats.today_content_count || 0) : 0;
+        
+        let esSubidaPar = (totalSubidasHoy % 2 === 0);
+        let contentType = 'catalogo';
+        let basePrice = 0;
+
+        // PAGOS ALTERNADOS (50/30 centavos para pelis, 25/15 centavos para series)
+        if (mediaType === 'movie') {
+            contentType = 'estreno';
+            basePrice = esSubidaPar ? 0.50 : 0.30;
+        } else {
+            contentType = 'episodio';
+            basePrice = esSubidaPar ? 0.25 : 0.15;
+        }
+
+        // APLICAR BONO DE 5 CENTAVOS SI HAY ALTO TRÁFICO
+        if (globalTrafficBonusActive) {
+            basePrice += 0.05;
+        }
 
         const monthlyDocs = await mongoDb.collection(COLL_DAILY_STATS)
             .find({ uploaderId: uploaderNum, monthId })
@@ -274,41 +255,27 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
         let limitReached = false;
         let status = '';
 
+        // BLOQUEO ESTRÍCTO A LOS $61
         if (currentMonthEarned >= REVENUE_SETTINGS.limit_monthly) {
             finalEarned = 0;
             limitReached = true;
             status = 'limit_monthly_reached';
         } else {
-            let currentBase = basePrice;
+            let potentialEarned = basePrice;
             
-            // ACTUALIZADO: Escalera de reducciones coordinada a $80 y $115
-            if (currentMonthEarned >= 115.00) { 
-                currentBase = basePrice * 0.20; 
-            } else if (currentMonthEarned >= 80.00) { 
-                currentBase = basePrice * 0.50; 
-            }
-
-            let bonoPorVolumen = 0;
-            const totalSubidasHoy = (dailyStats ? (dailyStats.today_content_count || 0) : 0) + 1;
-            
-            if (totalSubidasHoy === 4) {
-                bonoPorVolumen = 5.00;
-            }
-
-            // Validar que el pago del día no exceda el límite diario
-            let potentialEarned = currentBase + bonoPorVolumen;
+            // Validar límite diario
             if (currentDaily + potentialEarned > REVENUE_SETTINGS.limit_daily) {
                 potentialEarned = REVENUE_SETTINGS.limit_daily - currentDaily;
             }
 
-            // Validar que el pago final NO exceda el límite MENSUAL absoluto
+            // Validar que no pase de $61 mensuales con esta última subida
             if (currentMonthEarned + potentialEarned > REVENUE_SETTINGS.limit_monthly) {
                 finalEarned = REVENUE_SETTINGS.limit_monthly - currentMonthEarned;
             } else {
                 finalEarned = parseFloat(potentialEarned.toFixed(3));
             }
             
-            status = bonoPorVolumen > 0 ? 'bono_aplicado' : 'applied';
+            status = 'applied';
         }
 
         if (!dailyStats) {
@@ -351,9 +318,8 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
             monthId
         };
 
-        if (finalEarned > 0) {
-            await mongoDb.collection(COLL_REVENUE).insertOne(revenueRecord);
-        }
+        // Si su ganancia ya es 0 por llegar al límite, igual registramos la subida con $0
+        await mongoDb.collection(COLL_REVENUE).insertOne(revenueRecord);
         
         return { appliedRevenue: finalEarned, status };
     } catch (error) {
@@ -492,18 +458,12 @@ app.delete('/api/admin/pedidos/:id', async (req, res) => {
     } catch (error) { res.status(500).json({ error: "Error eliminando" }); }
 });
 
-// ==========================================================
-// NUEVAS RUTAS: PANEL CEO / SEO
-// ==========================================================
-
-// Ruta exclusiva para el Panel CEO / SEO sin tocar el dashboard de usuarios
 app.get('/panel', (req, res) => {
     res.sendFile(path.join(__dirname, 'ceo_panel.html'));
 });
 
 app.get('/ceo_panel.css', (req, res) => res.sendFile(path.join(__dirname, 'ceo_panel.css')));
 app.get('/ceo_panel.js', (req, res) => res.sendFile(path.join(__dirname, 'ceo_panel.js')));
-
 
 app.post('/api/ceo/login', (req, res) => {
     const { email } = req.body;
@@ -516,26 +476,19 @@ app.post('/api/ceo/login', (req, res) => {
     }
 });
 
-// NUEVO MAPEO DINÁMICO DE TRABAJADORES DESDE MONGODB
 app.get('/api/ceo/workers', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "DB no conectada" });
     try {
         const now = new Date();
         const dayId = now.toISOString().split('T')[0];
-
-        // Buscamos las estadísticas de hoy
         const stats = await mongoDb.collection(COLL_DAILY_STATS).find({ dayId }).toArray();
-
-        // Obtenemos los nombres reales de la colección de Recursos Humanos
         const hrWorkers = await mongoDb.collection('hr_workers').find({}).toArray();
         const workerDict = {};
         hrWorkers.forEach(w => workerDict[w.telegramId] = w);
 
         const workers = stats.map(s => {
             const uid = s.uploaderId.toString();
-            // Si existe en HR, usa su nombre real y rol, si no, usa el ID
             const hrData = workerDict[uid] || { name: "Nuevo Trabajador (" + uid + ")", role: "Uploader" };
-
             return {
                 id: uid,
                 name: hrData.name,
@@ -544,40 +497,29 @@ app.get('/api/ceo/workers', async (req, res) => {
                 totalUploads: s.today_content_count || 0
             };
         });
-
         res.json(workers);
     } catch (error) {
         res.status(500).json({ error: "Error al obtener estadísticas del equipo" });
     }
 });
 
-// RUTA PARA AÑADIR TRABAJADORES (HR) DESDE EL PANEL CEO
 app.post('/api/ceo/workers/add', async (req, res) => {
     const { name, telegramId, role, salary } = req.body;
     if (!mongoDb) return res.status(503).json({ error: "DB no conectada" });
 
     try {
-        const workerData = {
-            name,
-            telegramId,
-            role,
-            salary,
-            addedAt: new Date()
-        };
-
+        const workerData = { name, telegramId, role, salary, addedAt: new Date() };
         await mongoDb.collection('hr_workers').updateOne(
             { telegramId: telegramId },
             { $set: workerData },
             { upsert: true }
         );
-
         res.json({ success: true, message: "Trabajador registrado/actualizado en RRHH." });
     } catch (error) {
         res.status(500).json({ error: "Error al registrar trabajador en RRHH." });
     }
 });
 
-// RUTA PARA EL BOTÓN "PAGAR" DEL PANEL CEO
 app.post('/api/ceo/pay-worker', async (req, res) => {
     const { uploaderId, amount, paymentMethod } = req.body;
     if (!mongoDb) return res.status(503).json({ error: "DB no conectada" });
@@ -590,8 +532,6 @@ app.post('/api/ceo/pay-worker', async (req, res) => {
             status: "Pagado",
             date: new Date()
         };
-
-        // Guardamos el recibo en el historial
         await mongoDb.collection('payout_history').insertOne(payoutRecord);
         res.json({ success: true, message: "Liquidación registrada exitosamente." });
     } catch (error) {
@@ -599,7 +539,6 @@ app.post('/api/ceo/pay-worker', async (req, res) => {
     }
 });
 
-// --> API AÑADIDA PARA QUE FUNCIONEN TUS ESTADÍSTICAS DEL PANEL CEO
 app.get('/api/ceo/master-stats', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "DB no conectada" });
     try {
@@ -645,23 +584,17 @@ app.get('/api/ceo/master-stats', async (req, res) => {
         });
 
         res.json({
-            ingresosHoy,
-            vistasHoy,
-            cajaMes,
-            nominaTotal,
+            ingresosHoy, vistasHoy, cajaMes, nominaTotal,
             trabajadores: Object.values(workerMap),
             chartLabels: ['D-6', 'D-5', 'D-4', 'D-3', 'D-2', 'Ayer', 'Hoy'],
             chartData: [0, 0, 0, 0, 0, 0, ingresosHoy],
-            actividad: [
-                { msg: "Sincronización con base de datos exitosa", time: new Date().toLocaleTimeString() }
-            ]
+            actividad: [{ msg: "Sincronización con base de datos exitosa", time: new Date().toLocaleTimeString() }]
         });
     } catch (error) {
         res.status(500).json({ error: "Error obteniendo estadísticas maestras" });
     }
 });
 
-// --> API AÑADIDA PARA QUE FUNCIONE TU BUSCADOR VISUAL TMDB EN EL PANEL CEO
 app.get('/api/tmdb-proxy', async (req, res) => {
     const { endpoint, query } = req.query;
     if (!endpoint) return res.status(400).json({ error: "Endpoint requerido" });
@@ -675,9 +608,6 @@ app.get('/api/tmdb-proxy', async (req, res) => {
     }
 });
 
-// ==========================================================
-// CRON JOB: Sincronizar vistas a MongoDB cada 5 minutos
-// ==========================================================
 cron.schedule('*/5 * * * *', async () => {
     const keys = pendingViewsCache.keys();
     if (keys.length === 0 || !mongoDb) return;
@@ -710,7 +640,6 @@ cron.schedule('*/5 * * * *', async () => {
             if (uploaderId) {
                 const uploaderIdInt = parseInt(uploaderId);
 
-                // ACTUALIZADO: Consultar cuánto ha ganado en el mes antes de pagar vistas
                 const monthlyDocs = await mongoDb.collection(COLL_DAILY_STATS)
                     .find({ uploaderId: uploaderIdInt, monthId: monthId })
                     .project({ today_earned: 1 })
@@ -719,16 +648,11 @@ cron.schedule('*/5 * * * *', async () => {
 
                 let finalEarned = 0;
 
-                // Solo calculamos ganancias si no ha superado el tope mensual
+                // BLOQUEO ESTRÍCTO: Solo suma vistas si no ha llegado a los $61
                 if (currentMonthEarned < REVENUE_SETTINGS.limit_monthly) {
-                    
                     let dynamicRate = REVENUE_SETTINGS.payout_per_view;
-                    if (currentMonthEarned >= 80) dynamicRate = dynamicRate * 0.5;
-                    if (currentMonthEarned >= 115) dynamicRate = dynamicRate * 0.2;
-
                     const earned = parseFloat((viewsCount * dynamicRate * currentCpmMultiplier).toFixed(3));
                     
-                    // Si este pago lo hace superar el límite, solo se le paga lo restante para llegar al tope
                     if (currentMonthEarned + earned > REVENUE_SETTINGS.limit_monthly) {
                         finalEarned = parseFloat((REVENUE_SETTINGS.limit_monthly - currentMonthEarned).toFixed(3));
                     } else {
@@ -773,7 +697,7 @@ cron.schedule('*/5 * * * *', async () => {
                 await mongoDb.collection(COLL_REVENUE).bulkWrite(bulkRevenueOps);
             }
             pendingViewsCache.flushAll(); 
-            console.log(`[Cron] Se han sincronizado vistas y guardado el historial respetando el límite mensual.`);
+            console.log(`[Cron] Se han sincronizado vistas respetando el límite mensual.`);
         } catch (e) {
             console.error("[Cron] Error sincronizando vistas masivas:", e);
         }
