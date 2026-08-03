@@ -72,7 +72,7 @@ const MONGO_DB_NAME = process.env.MONGO_DB_NAME || 'sala_cine';
 const REVENUE_SETTINGS = {
     payout_per_view: 0.005,
     limit_daily: 40.00,
-    limit_monthly: 200.00,
+    limit_monthly: 145.00, // ACTUALIZADO: Tope máximo rígido de 145 mensuales
     months_to_be_estreno: 6
 };
 
@@ -281,10 +281,11 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
         } else {
             let currentBase = basePrice;
             
-            if (currentMonthEarned >= 100.00) { 
-                currentBase = basePrice * 0.10; 
+            // ACTUALIZADO: Escalera de reducciones coordinada a $80 y $115
+            if (currentMonthEarned >= 115.00) { 
+                currentBase = basePrice * 0.20; 
             } else if (currentMonthEarned >= 80.00) { 
-                currentBase = basePrice * 0.40; 
+                currentBase = basePrice * 0.50; 
             }
 
             let bonoPorVolumen = 0;
@@ -294,11 +295,19 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
                 bonoPorVolumen = 5.00;
             }
 
-            if (currentDaily + currentBase + bonoPorVolumen > REVENUE_SETTINGS.limit_daily) {
-                finalEarned = REVENUE_SETTINGS.limit_daily - currentDaily;
-            } else {
-                finalEarned = parseFloat(currentBase.toFixed(3)) + bonoPorVolumen;
+            // Validar que el pago del día no exceda el límite diario
+            let potentialEarned = currentBase + bonoPorVolumen;
+            if (currentDaily + potentialEarned > REVENUE_SETTINGS.limit_daily) {
+                potentialEarned = REVENUE_SETTINGS.limit_daily - currentDaily;
             }
+
+            // Validar que el pago final NO exceda el límite MENSUAL absoluto
+            if (currentMonthEarned + potentialEarned > REVENUE_SETTINGS.limit_monthly) {
+                finalEarned = REVENUE_SETTINGS.limit_monthly - currentMonthEarned;
+            } else {
+                finalEarned = parseFloat(potentialEarned.toFixed(3));
+            }
+            
             status = bonoPorVolumen > 0 ? 'bono_aplicado' : 'applied';
         }
 
@@ -699,27 +708,53 @@ cron.schedule('*/5 * * * *', async () => {
             }
 
             if (uploaderId) {
-                const earned = parseFloat((viewsCount * REVENUE_SETTINGS.payout_per_view * currentCpmMultiplier).toFixed(3));
-                
+                const uploaderIdInt = parseInt(uploaderId);
+
+                // ACTUALIZADO: Consultar cuánto ha ganado en el mes antes de pagar vistas
+                const monthlyDocs = await mongoDb.collection(COLL_DAILY_STATS)
+                    .find({ uploaderId: uploaderIdInt, monthId: monthId })
+                    .project({ today_earned: 1 })
+                    .toArray();
+                const currentMonthEarned = monthlyDocs.reduce((sum, doc) => sum + (doc.today_earned || 0), 0);
+
+                let finalEarned = 0;
+
+                // Solo calculamos ganancias si no ha superado el tope mensual
+                if (currentMonthEarned < REVENUE_SETTINGS.limit_monthly) {
+                    
+                    let dynamicRate = REVENUE_SETTINGS.payout_per_view;
+                    if (currentMonthEarned >= 80) dynamicRate = dynamicRate * 0.5;
+                    if (currentMonthEarned >= 115) dynamicRate = dynamicRate * 0.2;
+
+                    const earned = parseFloat((viewsCount * dynamicRate * currentCpmMultiplier).toFixed(3));
+                    
+                    // Si este pago lo hace superar el límite, solo se le paga lo restante para llegar al tope
+                    if (currentMonthEarned + earned > REVENUE_SETTINGS.limit_monthly) {
+                        finalEarned = parseFloat((REVENUE_SETTINGS.limit_monthly - currentMonthEarned).toFixed(3));
+                    } else {
+                        finalEarned = earned;
+                    }
+                }
+
                 bulkOps.push({
                     updateOne: {
-                        filter: { uploaderId: parseInt(uploaderId), dayId: dayId },
+                        filter: { uploaderId: uploaderIdInt, dayId: dayId },
                         update: { 
-                            $inc: { today_earned: earned, total_views: viewsCount },
+                            $inc: { today_earned: finalEarned, total_views: viewsCount },
                             $setOnInsert: { monthId: monthId, today_content_count: 0 }
                         },
                         upsert: true
                     }
                 });
 
-                if (earned > 0) {
+                if (finalEarned > 0) {
                     bulkRevenueOps.push({
                         insertOne: {
                             document: {
-                                uploaderId: parseInt(uploaderId),
+                                uploaderId: uploaderIdInt,
                                 mediaType: 'views',
                                 title: `Vistas: ${titleMedia}`,
-                                earned: earned,
+                                earned: finalEarned,
                                 timestamp: now,
                                 dayId: dayId,
                                 monthId: monthId
@@ -738,7 +773,7 @@ cron.schedule('*/5 * * * *', async () => {
                 await mongoDb.collection(COLL_REVENUE).bulkWrite(bulkRevenueOps);
             }
             pendingViewsCache.flushAll(); 
-            console.log(`[Cron] Se han sincronizado $ generados por vistas y guardado el historial.`);
+            console.log(`[Cron] Se han sincronizado vistas y guardado el historial respetando el límite mensual.`);
         } catch (e) {
             console.error("[Cron] Error sincronizando vistas masivas:", e);
         }
