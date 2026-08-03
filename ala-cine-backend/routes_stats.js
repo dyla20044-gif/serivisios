@@ -119,11 +119,18 @@ module.exports = function(app, ctx) {
                 .limit(5)
                 .toArray();
 
-            // Lógica ajustada para proteger el presupuesto (Tope máximo de $145)
+            // Lógica ajustada para proteger el presupuesto y notificar al panel frontal
             let dynamicRate = REVENUE_SETTINGS.payout_per_view || 0.005; 
-            if (monthEarned >= 80) dynamicRate = dynamicRate * 0.5;   // Inicia reducción al llegar a $80
-            if (monthEarned >= 115) dynamicRate = dynamicRate * 0.2;  // Reducción drástica al llegar a $115
-            if (monthEarned >= 145) dynamicRate = 0;                  // Corte total a los $145
+            let limitStatus = 'normal';
+
+            if (monthEarned >= 50) {
+                dynamicRate = dynamicRate * 0.5;   // Advertencia y baja de ganancias al llegar a $50
+                limitStatus = 'warning';
+            }
+            if (monthEarned >= 62) {
+                dynamicRate = 0;                   // Corte total exacto a los $62
+                limitStatus = 'stopped';
+            }
 
             res.json({
                 success: true,
@@ -131,12 +138,13 @@ module.exports = function(app, ctx) {
                     todayEarned: todayEarned,
                     yesterdayEarned: yesterdayEarned,
                     monthEarned: monthEarned,
-                    lastMonthEarned: lastMonthEarned, // <--- AQUÍ SE ENVÍA EL MES PASADO AL DASHBOARD
+                    lastMonthEarned: lastMonthEarned,
                     totalGeneradoGlobal: hist.totalEarned,
                     bonos: hist.bonusTotal, 
                     moviesSubidas: hist.totalMovies,
                     episodiosSubidos: hist.totalEpisodes,
-                    currentPayoutRate: dynamicRate
+                    currentPayoutRate: dynamicRate,
+                    limitStatus: limitStatus // Enviamos la bandera para mostrar la alerta en el frontend
                 },
                 recentActivity: recentActivity.map(act => ({
                     type: act.mediaType || act.contentType,
