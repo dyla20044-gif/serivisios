@@ -119,11 +119,11 @@ module.exports = function(app, ctx) {
                 .limit(5)
                 .toArray();
 
-            // Ajustado al nuevo límite de 200
+            // Lógica ajustada para proteger el presupuesto (Tope máximo de $145)
             let dynamicRate = REVENUE_SETTINGS.payout_per_view || 0.005; 
-            if (monthEarned > 100) dynamicRate = dynamicRate * 0.5;  
-            if (monthEarned > 180) dynamicRate = dynamicRate * 0.2;   
-            if (monthEarned >= 200) dynamicRate = 0;                  
+            if (monthEarned >= 80) dynamicRate = dynamicRate * 0.5;   // Inicia reducción al llegar a $80
+            if (monthEarned >= 115) dynamicRate = dynamicRate * 0.2;  // Reducción drástica al llegar a $115
+            if (monthEarned >= 145) dynamicRate = 0;                  // Corte total a los $145
 
             res.json({
                 success: true,
