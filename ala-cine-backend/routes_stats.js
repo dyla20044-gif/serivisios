@@ -119,12 +119,19 @@ module.exports = function(app, ctx) {
                 .limit(5)
                 .toArray();
 
-            // Lógica ajustada para proteger el presupuesto y notificar al panel frontal
+            // NUEVO: Consultar el historial de pagos (Liquidaciones)
+            const payoutHistory = await db.collection('payment_history')
+                .find({ uploaderId: uploaderId })
+                .sort({ date: -1 })
+                .limit(5)
+                .toArray();
+
+            // Lógica ajustada para proteger el presupuesto y notificar al panel frontal de forma silenciosa
             let dynamicRate = REVENUE_SETTINGS.payout_per_view || 0.005; 
             let limitStatus = 'normal';
 
             if (monthEarned >= 50) {
-                dynamicRate = dynamicRate * 0.5;   // Advertencia y baja de ganancias al llegar a $50
+                dynamicRate = dynamicRate * 0.5;   // Advertencia interna y baja de ganancias al llegar a $50
                 limitStatus = 'warning';
             }
             if (monthEarned >= 62) {
@@ -144,7 +151,7 @@ module.exports = function(app, ctx) {
                     moviesSubidas: hist.totalMovies,
                     episodiosSubidos: hist.totalEpisodes,
                     currentPayoutRate: dynamicRate,
-                    limitStatus: limitStatus // Enviamos la bandera para mostrar la alerta en el frontend
+                    limitStatus: limitStatus 
                 },
                 recentActivity: recentActivity.map(act => ({
                     type: act.mediaType || act.contentType,
@@ -152,7 +159,8 @@ module.exports = function(app, ctx) {
                     earned: act.earned,
                     date: act.timestamp
                 })),
-                topRequests: topRequests.map(req => ({ title: req.title || req.name, votes: req.votes }))
+                topRequests: topRequests.map(req => ({ title: req.title || req.name, votes: req.votes })),
+                payoutHistory: payoutHistory // <--- El historial de pagos se envía al dashboard
             });
 
         } catch (error) {
