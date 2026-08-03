@@ -72,7 +72,7 @@ const MONGO_DB_NAME = process.env.MONGO_DB_NAME || 'sala_cine';
 const REVENUE_SETTINGS = {
     payout_per_view: 0.005,
     limit_daily: 26.00,
-    limit_monthly: 54.30, // ACTUALIZADO: Tope máximo rígido de 61 mensuales a petición del CEO
+    limit_monthly: 62.30, 
     months_to_be_estreno: 6
 };
 
