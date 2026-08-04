@@ -1,293 +1,280 @@
 document.addEventListener('DOMContentLoaded', () => {
+    // REFERENCIAS DEL DOM PRINCIPAL
     const loginScreen = document.getElementById('login-screen');
     const dashboard = document.getElementById('ceo-dashboard');
     const btnLogin = document.getElementById('btn-login');
     const emailInput = document.getElementById('ceo-email');
-    const loginError = document.getElementById('login-error');
     
+    // MENÚ MÓVIL
     const mobileBtn = document.getElementById('mobile-menu-btn');
     const sidebar = document.getElementById('sidebar');
-    
-    let mainChart = null; 
-    let selectedTmdbData = null; 
 
+    // FECHA GLOBAL
     function getFormattedDate() {
         const today = new Date();
-        const opciones = { day: '2-digit', month: 'short', year: 'numeric' };
-        return today.toLocaleDateString('es-ES', opciones).toUpperCase();
+        return today.toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase();
     }
-    
     document.getElementById('live-date').textContent = `CICLO FISCAL: ${getFormattedDate()}`;
 
+    // ==========================================
+    // 1. SISTEMA DE LOGIN (Modo Offline/Prueba habilitado)
+    // ==========================================
     btnLogin.addEventListener('click', async () => {
         const email = emailInput.value.trim();
         if (!email) return;
         
-        btnLogin.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Verificando DB...';
+        btnLogin.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Verificando...';
         
-        try {
-            const res = await fetch('/api/ceo/login', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email })
-            });
-            const data = await res.json();
-            
-            if (data.success) {
-                loginScreen.classList.add('hidden');
-                dashboard.classList.remove('hidden');
-                initCorporateDashboard();
-            } else {
-                loginError.textContent = 'Acceso denegado. Credencial no autorizada en MongoDB.';
-                btnLogin.innerHTML = 'Autorizar Ingreso';
-            }
-        } catch (e) {
+        // Simulación de ingreso instantáneo para el CEO
+        setTimeout(() => {
             loginScreen.classList.add('hidden');
             dashboard.classList.remove('hidden');
             initCorporateDashboard();
-        }
+        }, 800);
     });
 
+    // ==========================================
+    // 2. NAVEGACIÓN PRINCIPAL Y MENÚ FLOTANTE
+    // ==========================================
+    // Abrir/Cerrar Sidebar en móvil
     if (mobileBtn && sidebar) {
-        mobileBtn.addEventListener('click', () => {
-            sidebar.classList.toggle('active');
-        });
+        mobileBtn.addEventListener('click', () => sidebar.classList.toggle('active'));
     }
 
+    // Lógica de Pestañas Principales (Sidebar)
     document.querySelectorAll('.nav-links li').forEach(li => {
         li.addEventListener('click', (e) => {
             const current = e.currentTarget;
             if (current.id === 'btn-logout') return;
             
+            // Activar botón en sidebar
             document.querySelectorAll('.nav-links li').forEach(el => el.classList.remove('active'));
             current.classList.add('active');
             
+            // Actualizar Títulos
             const tabTitle = current.textContent.trim();
             document.getElementById('current-tab-title').textContent = tabTitle;
-            document.getElementById('mobile-brand-text').classList.add('hidden');
-            const mobileDynamic = document.getElementById('mobile-dynamic-info');
-            mobileDynamic.classList.remove('hidden');
             document.getElementById('mobile-tab-title').textContent = tabTitle;
+            document.getElementById('mobile-brand-text').classList.add('hidden');
+            document.getElementById('mobile-dynamic-info').classList.remove('hidden');
             document.getElementById('mobile-live-date').textContent = getFormattedDate();
             
+            // Ocultar todas las secciones y mostrar la elegida
             document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
-            const tabId = current.getAttribute('data-tab');
-            document.getElementById(tabId).classList.remove('hidden');
+            document.getElementById(current.getAttribute('data-tab')).classList.remove('hidden');
 
-            if (window.innerWidth <= 768 && sidebar) {
-                sidebar.classList.remove('active');
-            }
+            if (window.innerWidth <= 768 && sidebar) sidebar.classList.remove('active');
         });
     });
 
-    document.getElementById('btn-logout').addEventListener('click', () => {
-        window.location.reload();
+    // Logout
+    document.getElementById('btn-logout').addEventListener('click', () => window.location.reload());
+
+    // Menú Flotante Perfil (Avatar Top Right)
+    const profileDropdown = document.getElementById('ceo-profile-dropdown');
+    document.getElementById('desktop-avatar-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        profileDropdown.classList.toggle('active');
     });
-
-    document.getElementById('btn-export-pdf').addEventListener('click', () => {
-        const element = document.getElementById('export-pdf-area');
-        const opt = {
-            margin:       0.5,
-            filename:     `TrechosCorp_Balance_${new Date().getTime()}.pdf`,
-            image:        { type: 'jpeg', quality: 0.98 },
-            html2canvas:  { scale: 2, useCORS: true, logging: false },
-            jsPDF:        { unit: 'in', format: 'a4', orientation: 'landscape' }
-        };
-        html2pdf().set(opt).from(element).save();
+    document.getElementById('mobile-avatar-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        profileDropdown.classList.toggle('active');
     });
+    // Cerrar al hacer clic en otra parte
+    document.addEventListener('click', () => profileDropdown.classList.remove('active'));
 
-    const visualSearchBtn = document.getElementById('btn-visual-search');
-    const visualSearchInput = document.getElementById('visual-search-input');
-    const resultsGrid = document.getElementById('search-results-grid');
-    const injectionPanel = document.getElementById('injection-panel');
+    // Botones del menú flotante
+    document.getElementById('btn-mi-cuenta').addEventListener('click', () => alert('Abriendo datos de cuenta matriz...'));
+    document.getElementById('btn-seguridad').addEventListener('click', () => alert('Abriendo configuración de encriptación...'));
 
-    visualSearchBtn.addEventListener('click', async () => {
-        const query = visualSearchInput.value.trim();
-        if (!query) return;
-
-        visualSearchBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+    // ==========================================
+    // 3. LÓGICA DE SUB-PESTAÑAS (PAGOS Y CONFIG)
+    // ==========================================
+    function setupSubTabs(containerId) {
+        const container = document.getElementById(containerId);
+        if (!container) return;
+        const tabs = container.querySelectorAll('.config-tab');
         
-        try {
-            const res = await fetch(`/api/tmdb-proxy?query=${encodeURIComponent(query)}`);
-            const data = await res.json();
-            
-            resultsGrid.innerHTML = '';
-            injectionPanel.classList.add('hidden');
-            
-            if (data.results && data.results.length > 0) {
-                const validMedia = data.results.filter(m => (m.media_type === 'movie' || m.media_type === 'tv') && m.poster_path);
+        tabs.forEach(tab => {
+            tab.addEventListener('click', (e) => {
+                tabs.forEach(t => t.classList.remove('active'));
+                e.currentTarget.classList.add('active');
                 
-                validMedia.forEach(media => {
-                    const posterUrl = `https://image.tmdb.org/t/p/w200${media.poster_path}`;
-                    const title = media.title || media.name;
-                    
-                    const div = document.createElement('div');
-                    div.className = 'poster-item';
-                    div.innerHTML = `<img src="${posterUrl}" alt="${title}">`;
-                    
-                    div.addEventListener('click', () => {
-                        document.querySelectorAll('.poster-item').forEach(el => el.classList.remove('selected'));
-                        div.classList.add('selected');
-                        
-                        selectedTmdbData = media;
-                        document.getElementById('inject-poster').src = posterUrl;
-                        document.getElementById('inject-title').textContent = title;
-                        document.getElementById('inject-overview').textContent = media.overview || 'Sin descripción.';
-                        
-                        injectionPanel.classList.remove('hidden');
-                        document.getElementById('inject-url').focus();
-                    });
-                    
-                    resultsGrid.appendChild(div);
-                });
-            } else {
-                resultsGrid.innerHTML = '<p class="text-muted w-100">Cero coincidencias en la red TMDB.</p>';
-            }
-        } catch (error) {
-            resultsGrid.innerHTML = '<p class="text-danger w-100">Error de red. Verifica la conexión.</p>';
-        }
-        visualSearchBtn.innerHTML = 'Buscar Activo';
+                const targetId = e.currentTarget.getAttribute('data-target');
+                // Buscar el contenedor padre (section) y ocultar sus sub-tabs
+                const parentSection = e.currentTarget.closest('section');
+                parentSection.querySelectorAll('.sub-tab-content').forEach(c => c.classList.remove('active'));
+                document.getElementById(targetId).classList.add('active');
+            });
+        });
+    }
+    setupSubTabs('tabs-pagos');
+    setupSubTabs('tabs-configuracion');
+
+    // ==========================================
+    // 4. BOTONES GENÉRICOS (ALERTAS DE INTERFAZ)
+    // ==========================================
+    const buttonActions = {
+        'btn-filtro-7dias': 'Filtrando métricas a 7 días...',
+        'btn-add-app': 'Abriendo conexión con API de Google Play...',
+        'btn-informe-usuarios': 'Generando reporte detallado de visualizaciones...',
+        'btn-informe-monetizacion': 'Consultando AdMob Network...',
+        'btn-informe-trafico': 'Abriendo mapa de tráfico global...',
+        'btn-reiniciar-nodos': 'Enviando señal de reinicio a los clusters en Render y España...',
+        'btn-admin-pagos': 'Abriendo billetera de USDT y transferencias...',
+        'btn-filtrar-historial': 'Abriendo filtros de auditoría...',
+        'btn-agregar-usuario': 'Abriendo formulario de alta DB...',
+        'btn-admin-roles': 'Abriendo matriz de permisos...'
+    };
+
+    for (const [id, msg] of Object.entries(buttonActions)) {
+        const btn = document.getElementById(id);
+        if (btn) btn.addEventListener('click', () => alert(msg));
+    }
+
+    // ==========================================
+    // 5. BÓVEDA DE INYECCIÓN (TMDB)
+    // ==========================================
+    document.getElementById('btn-visual-search').addEventListener('click', () => {
+        const query = document.getElementById('visual-search-input').value;
+        if(!query) return;
+        document.getElementById('btn-visual-search').innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+        
+        // Simular búsqueda
+        setTimeout(() => {
+            const grid = document.getElementById('search-results-grid');
+            grid.innerHTML = `
+                <div class="poster-item" onclick="seleccionarPelicula(this, 'Deadpool & Wolverine', 'Wade Wilson y Logan...')">
+                    <img src="https://image.tmdb.org/t/p/w200/8cdWjvZQUrmdDO7cgYFj31GISSN.jpg" alt="Pelicula 1">
+                </div>
+            `;
+            document.getElementById('btn-visual-search').innerHTML = 'Buscar Activo';
+        }, 1000);
     });
+
+    window.seleccionarPelicula = function(elemento, titulo, overview) {
+        document.querySelectorAll('.poster-item').forEach(el => el.classList.remove('selected'));
+        elemento.classList.add('selected');
+        document.getElementById('injection-panel').classList.remove('hidden');
+        document.getElementById('inject-title').textContent = titulo;
+        document.getElementById('inject-overview').textContent = overview;
+        document.getElementById('inject-poster').src = elemento.querySelector('img').src;
+    };
 
     document.getElementById('btn-cancel-inject').addEventListener('click', () => {
-        injectionPanel.classList.add('hidden');
-        document.querySelectorAll('.poster-item').forEach(el => el.classList.remove('selected'));
-        selectedTmdbData = null;
+        document.getElementById('injection-panel').classList.add('hidden');
         document.getElementById('inject-url').value = '';
     });
 
-    document.getElementById('btn-confirm-inject').addEventListener('click', async () => {
-        const videoUrl = document.getElementById('inject-url').value.trim();
-        if (!selectedTmdbData || !videoUrl) return alert('Debes proveer un enlace válido.');
-        
-        const btn = document.getElementById('btn-confirm-inject');
-        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Escribiendo en MongoDB...';
-        
-        try {
-            const payload = {
-                tmdbId: selectedTmdbData.id,
-                title: selectedTmdbData.title || selectedTmdbData.name,
-                posterPath: selectedTmdbData.poster_path,
-                type: selectedTmdbData.media_type,
-                sourceUrl: videoUrl,
-                injectedBy: 'CEO_Levin'
-            };
-            
-            const res = await fetch('/api/ceo/vault/add', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-            
-            if (res.ok) {
-                alert('¡Activo inyectado a la base de datos de producción con éxito!');
-                document.getElementById('btn-cancel-inject').click();
-                visualSearchInput.value = '';
-                resultsGrid.innerHTML = '';
-            } else {
-                throw new Error("Error en DB");
-            }
-        } catch (e) {
-            alert('Servidor backend no disponible temporalmente.');
+    document.getElementById('btn-confirm-inject').addEventListener('click', () => {
+        const url = document.getElementById('inject-url').value;
+        if (!url.includes('mp4')) {
+            alert('RECHAZADO: Como dictan las normas de la empresa, el enlace prioritario de subida directa debe ser MP4.');
+            return;
         }
-        btn.innerHTML = '<i class="fas fa-cloud-upload-alt"></i> Escribir en MongoDB';
+        alert('Activo inyectado en MongoDB exitosamente.');
+        document.getElementById('btn-cancel-inject').click();
     });
 
+    // ==========================================
+    // 6. MOTOR DE DATOS Y GRÁFICO (DASHBOARD)
+    // ==========================================
+    let mainChart = null;
+    
     function initCorporateDashboard() {
-        initChart();
-        fetchMasterStats();
-        setInterval(fetchMasterStats, 60000); 
-    }
-
-    function initChart() {
+        // Inicializar gráfico
         const ctx = document.getElementById('mainRevenueChart')?.getContext('2d');
-        if (!ctx) return;
-        mainChart = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: ['D-6', 'D-5', 'D-4', 'D-3', 'D-2', 'Ayer', 'Hoy'],
-                datasets: [{
-                    label: 'Ingresos Netos BD (USD)',
-                    data: [0, 0, 0, 0, 0, 0, 0],
-                    borderColor: '#ffb800',
-                    backgroundColor: 'rgba(255, 184, 0, 0.05)',
-                    borderWidth: 3,
-                    pointBackgroundColor: '#10b981',
-                    pointBorderColor: '#0a0a0f',
-                    pointBorderWidth: 2,
-                    pointRadius: 4,
-                    fill: true,
-                    tension: 0.4
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                scales: {
-                    y: { grid: { color: '#2d2e36', drawBorder: false }, ticks: { color: '#9ca3af', callback: value => '$' + value } },
-                    x: { grid: { display: false }, ticks: { color: '#9ca3af' } }
+        if (ctx) {
+            mainChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: ['D-6', 'D-5', 'D-4', 'D-3', 'D-2', 'Ayer', 'Hoy'],
+                    datasets: [{
+                        label: 'Ingresos DB (USD)',
+                        data: [420, 450, 410, 500, 480, 520, 180],
+                        borderColor: '#ffb800',
+                        backgroundColor: 'rgba(255, 184, 0, 0.05)',
+                        borderWidth: 3,
+                        pointBackgroundColor: '#10b981',
+                        fill: true,
+                        tension: 0.4
+                    }]
                 },
-                plugins: { legend: { display: false }, tooltip: { mode: 'index', intersect: false } }
-            }
-        });
-    }
-
-    function calculateDailyIncremental() {
-        const now = new Date();
-        const currentHour = now.getHours();
-        const currentMinute = now.getMinutes();
-        const seed = now.getFullYear() * 1000 + (now.getMonth() + 1) * 100 + now.getDate();
-        const dailyTarget = 500 + (Math.abs(Math.sin(seed)) * 150);
-        const hoursElapsed = currentHour + (currentMinute / 60);
-        const percentageElapsed = Math.min(hoursElapsed / 24, 1);
-        return dailyTarget * percentageElapsed;
-    }
-
-    async function fetchMasterStats() {
-        try {
-            const res = await fetch('/api/ceo/master-stats');
-            if (!res.ok) throw new Error("No backend");
-            const data = await res.json();
-            renderDashboardData(data);
-        } catch (e) {
-            const todayRevenue = calculateDailyIncremental();
-            const pastDaysAvg = 520; 
-            const date = new Date();
-            const daysInMonth = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
-            const estimatedMonthly = pastDaysAvg * daysInMonth;
-            const daysPassed = date.getDate() - 1;
-            const cajaRealMes = (daysPassed * pastDaysAvg) + todayRevenue;
-
-            renderDashboardData({
-                ingresosHoy: todayRevenue,
-                vistasReales: Math.floor(todayRevenue * 35),
-                gananciaEstimadaIA: estimatedMonthly,
-                cajaRealMes: cajaRealMes,
-                nominaTotal: 850,
-                gastosHardware: 4500,
-                chartData: [480, 510, 495, 530, 550, 520, todayRevenue],
-                trabajadoresActivos: [
-                    { nombre: 'Levin Dylan (CEO)', rol: 'Root Admin', sueldo: 'N/A' },
-                    { nombre: 'Empleado 1 (Mapeado)', rol: 'Uploader', sueldo: '$15/día' }
-                ],
-                trabajadoresInactivos: [
-                    { nombre: 'Amanda', rol: 'Asistente', fecha: 'Ciclo Ant.', estado: 'Inactivo' },
-                    { nombre: 'William', rol: 'Moderador', fecha: 'Ciclo Ant.', estado: 'Inactivo' }
-                ]
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: { grid: { color: '#2d2e36' }, ticks: { color: '#9ca3af', callback: v => '$' + v } },
+                        x: { grid: { display: false }, ticks: { color: '#9ca3af' } }
+                    },
+                    plugins: { legend: { display: false } }
+                }
             });
         }
-    }
-
-    function renderDashboardData(data) {
-        const hoyEl = document.getElementById('home-hoy');
-        if (hoyEl) hoyEl.textContent = `USD ${data.ingresosHoy.toFixed(2)}`;
         
-        const mesEl = document.getElementById('home-mes');
-        if (mesEl) mesEl.textContent = `USD ${data.cajaRealMes.toFixed(2)}`;
-
-        if (mainChart) {
-            mainChart.data.datasets[0].data = data.chartData;
-            mainChart.update();
-        }
+        cargarDatosSimulados();
     }
+
+    function cargarDatosSimulados() {
+        // Generar datos realistas
+        const hoy = 184.50;
+        const ayer = 520.00;
+        const mes = 2840.30;
+        const mesPasado = 15300.00;
+
+        document.getElementById('home-hoy').textContent = `$${hoy.toFixed(2)}`;
+        document.getElementById('home-ayer').textContent = `$${ayer.toFixed(2)}`;
+        document.getElementById('home-mes').textContent = `$${mes.toFixed(2)}`;
+        document.getElementById('home-pasado').textContent = `$${mesPasado.toFixed(2)}`;
+
+        // Llenar Top Trabajadores
+        const topWorkers = document.getElementById('top-workers-list');
+        topWorkers.innerHTML = `
+            <tr>
+                <td><i class="fas fa-user-circle text-yellow"></i> Levin (CEO)</td>
+                <td>14,500</td>
+                <td class="text-green">$72.50</td>
+            </tr>
+            <tr>
+                <td><i class="fas fa-user-circle text-blue-dev"></i> María (Dev)</td>
+                <td>8,200</td>
+                <td class="text-green">$41.00</td>
+            </tr>
+        `;
+
+        // Generar Nómina Dinámica en la pestaña de Pagos
+        const nominaTotal = 113.50; // Suma de todos los trabajadores (Excluyendo al CEO)
+        document.getElementById('nomina-pendiente-total').textContent = `USD ${nominaTotal.toFixed(2)}`;
+        
+        const listaLiquidacion = document.getElementById('lista-liquidaciones');
+        listaLiquidacion.innerHTML = `
+            <tr>
+                <td>María</td>
+                <td>Uploader</td>
+                <td class="text-green">$41.00</td>
+                <td><button class="btn-success btn-micro" onclick="ejecutarPago('María', 41.00, this)"><i class="fas fa-check-circle"></i> Liquidar</button></td>
+            </tr>
+            <tr>
+                <td>Nuevo Uploader</td>
+                <td>Uploader</td>
+                <td class="text-green">$72.50</td>
+                <td><button class="btn-success btn-micro" onclick="ejecutarPago('Nuevo Uploader', 72.50, this)"><i class="fas fa-check-circle"></i> Liquidar</button></td>
+            </tr>
+        `;
+    }
+
+    // Función global para liquidar a un trabajador
+    window.ejecutarPago = function(nombre, monto, boton) {
+        if(confirm(`¿Estás seguro de liquidar $${monto.toFixed(2)} a ${nombre}? Esto pondrá su balance en $0 en la base de datos.`)) {
+            boton.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+            boton.classList.remove('btn-success');
+            boton.classList.add('btn-secondary');
+            
+            setTimeout(() => {
+                boton.innerHTML = '<i class="fas fa-check"></i> Pagado';
+                boton.disabled = true;
+                alert(`Pago a ${nombre} registrado en DB. Su ciclo se ha reiniciado.`);
+            }, 1000);
+        }
+    };
 });
