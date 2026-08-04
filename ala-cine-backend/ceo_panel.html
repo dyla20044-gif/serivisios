@@ -9,52 +9,74 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    
     <style>
         /* =========================================
-           ESTILOS COMPLEMENTARIOS (MODALES Y DROPDOWNS)
+           ESTILOS COMPLEMENTARIOS Y ESTRUCTURAS ROBUSTAS
            ========================================= */
         .admob-card-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-light); padding-bottom: 15px; margin-bottom: 15px; }
         .config-tabs { display: flex; gap: 20px; border-bottom: 1px solid var(--border-light); margin-bottom: 20px; overflow-x: auto; white-space: nowrap; }
-        .config-tab { padding: 10px 0; color: var(--text-muted); cursor: pointer; border-bottom: 2px solid transparent; font-weight: 500; }
+        .config-tab { padding: 10px 0; color: var(--text-muted); cursor: pointer; border-bottom: 2px solid transparent; font-weight: 500; transition: all 0.2s; }
+        .config-tab:hover { color: var(--text-main); }
         .config-tab.active { color: var(--blue-dev); border-color: var(--blue-dev); }
-        .search-filter { display: flex; align-items: center; background: var(--bg-base); border: 1px solid var(--border-light); padding: 10px 15px; border-radius: 4px; margin-bottom: 20px; }
-        .search-filter input { background: transparent; border: none; color: white; margin-left: 10px; width: 100%; outline: none; }
+        .search-filter { display: flex; align-items: center; background: var(--bg-base); border: 1px solid var(--border-light); padding: 10px 15px; border-radius: 8px; margin-bottom: 20px; }
+        .search-filter input { background: transparent; border: none; color: white; margin-left: 10px; width: 100%; outline: none; font-size: 14px; }
         .sub-tab-content { display: none; }
         .sub-tab-content.active { display: block; animation: fadeIn 0.3s ease; }
         
         /* Modales Reales Corporativos */
-        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); backdrop-filter: blur(5px); z-index: 9000; display: none; justify-content: center; align-items: center; }
+        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); backdrop-filter: blur(8px); z-index: 9000; display: none; justify-content: center; align-items: center; }
         .modal-overlay.active { display: flex; animation: fadeIn 0.2s ease; }
-        .modal-content { background: var(--bg-panel); border: 1px solid var(--border-light); border-radius: 12px; width: 90%; max-width: 500px; box-shadow: 0 15px 50px rgba(0,0,0,0.9); overflow: hidden; }
-        .modal-header { padding: 20px 25px; border-bottom: 1px solid var(--border-light); display: flex; justify-content: space-between; align-items: center; }
-        .modal-header h3 { margin: 0; font-size: 18px; color: var(--text-main); }
-        .modal-close { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 20px; }
+        .modal-content { background: var(--bg-panel); border: 1px solid var(--border-light); border-radius: 12px; width: 90%; max-width: 550px; box-shadow: 0 15px 50px rgba(0,0,0,0.9); overflow: hidden; position: relative; }
+        .modal-header { padding: 20px 25px; border-bottom: 1px solid var(--border-light); display: flex; justify-content: space-between; align-items: center; background: var(--bg-card); }
+        .modal-header h3 { margin: 0; font-size: 18px; color: var(--text-main); display: flex; align-items: center; gap: 10px; }
+        .modal-close { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 20px; transition: color 0.2s; }
         .modal-close:hover { color: var(--red-expense); }
-        .modal-body { padding: 25px; max-height: 70vh; overflow-y: auto; }
-        .modal-footer { padding: 20px 25px; border-top: 1px solid var(--border-light); display: flex; justify-content: flex-end; gap: 15px; background: var(--bg-base); }
+        .modal-body { padding: 25px; max-height: 70vh; overflow-y: auto; background: var(--bg-panel); }
+        .modal-footer { padding: 20px 25px; border-top: 1px solid var(--border-light); display: flex; justify-content: flex-end; gap: 15px; background: var(--bg-card); }
         
-        /* Dropdowns (Filtros de Fecha) */
+        /* Dropdowns */
         .dropdown-container { position: relative; display: inline-block; }
-        .dropdown-menu { position: absolute; top: 110%; left: 0; background: var(--bg-panel); border: 1px solid var(--border-light); border-radius: 8px; width: 220px; z-index: 100; display: none; box-shadow: 0 5px 15px rgba(0,0,0,0.5); }
-        .dropdown-menu.active { display: block; }
-        .dropdown-menu ul { list-style: none; margin: 0; padding: 10px 0; }
-        .dropdown-menu li { padding: 10px 20px; cursor: pointer; color: var(--text-muted); font-size: 13px; }
-        .dropdown-menu li:hover { background: var(--bg-base); color: var(--yellow-main); }
-        
-        /* Contenedores de Tablas Responsivos */
-        .table-responsive { width: 100%; overflow-x: auto; }
+        .dropdown-menu { position: absolute; top: 110%; left: 0; background: var(--bg-card); border: 1px solid var(--border-light); border-radius: 8px; width: 220px; z-index: 100; display: none; box-shadow: 0 10px 25px rgba(0,0,0,0.8); overflow: hidden; }
+        .dropdown-menu.active { display: block; animation: fadeIn 0.2s ease; }
+        .dropdown-menu ul { list-style: none; margin: 0; padding: 5px 0; }
+        .dropdown-menu li { padding: 12px 20px; cursor: pointer; color: var(--text-muted); font-size: 13px; border-left: 3px solid transparent; transition: all 0.2s; }
+        .dropdown-menu li:hover { background: var(--bg-base); color: var(--yellow-main); border-left-color: var(--yellow-main); }
         
         /* Etiquetas de Origen (ENV vs DB) */
-        .tag-env { background: rgba(59, 130, 246, 0.2); color: var(--blue-dev); padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; border: 1px solid rgba(59, 130, 246, 0.5); }
-        .tag-db { background: rgba(16, 185, 129, 0.2); color: var(--green-profit); padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; border: 1px solid rgba(16, 185, 129, 0.5); }
+        .tag-env { background: rgba(59, 130, 246, 0.15); color: var(--blue-dev); padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; border: 1px solid rgba(59, 130, 246, 0.4); letter-spacing: 0.5px; }
+        .tag-db { background: rgba(16, 185, 129, 0.15); color: var(--green-profit); padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; border: 1px solid rgba(16, 185, 129, 0.4); letter-spacing: 0.5px; }
+        
+        /* Menú Flotante Perfil */
+        .profile-dropdown-menu { position: absolute; top: 60px; right: 20px; background: var(--bg-card); border: 1px solid var(--border-light); border-radius: 12px; width: 280px; padding: 25px; box-shadow: 0 15px 40px rgba(0,0,0,0.9); z-index: 2000; display: none; }
+        .profile-dropdown-menu.active { display: block; animation: fadeIn 0.2s ease; }
+        .profile-dropdown-menu h4 { color: var(--yellow-main); margin-bottom: 5px; font-size: 18px; }
+        .profile-dropdown-menu p { color: var(--text-muted); font-size: 13px; margin-bottom: 20px; }
+        .profile-dropdown-menu hr { border: none; border-top: 1px solid var(--border-light); margin: 15px 0; }
+        .profile-dropdown-menu a { display: flex; align-items: center; gap: 12px; color: var(--text-main); text-decoration: none; padding: 12px 10px; font-size: 14px; transition: all 0.2s; border-radius: 6px; }
+        .profile-dropdown-menu a:hover { background: var(--bg-base); color: var(--yellow-main); }
+        .profile-dropdown-menu i { font-size: 16px; color: var(--text-muted); width: 20px; text-align: center; }
 
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+        /* Contenedores Responsivos */
+        .table-responsive { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+        /* Video Backgrounds Corporativos */
+        .video-container { position: relative; overflow: hidden; border: 1px solid var(--border-light); border-radius: 16px; }
+        .corp-bg-video { position: absolute; top: 50%; left: 50%; min-width: 100%; min-height: 100%; width: auto; height: auto; transform: translateX(-50%) translateY(-50%); z-index: 0; opacity: 0.25; object-fit: cover; }
+        .corp-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: linear-gradient(to bottom, rgba(10, 10, 15, 0.6), rgba(10, 10, 15, 0.95)); z-index: 1; }
+        .relative-z { position: relative; z-index: 2; }
+        .magazine-hero.video-container { border: 1px solid var(--yellow-main); box-shadow: 0 10px 50px rgba(255,184,0,0.1); padding: 80px 40px; }
+        .corp-article.video-container { padding: 40px 30px; transition: all 0.3s ease; }
+        .corp-article.video-container:hover .corp-bg-video { opacity: 0.45; }
+        .corp-article.video-container:hover { border-color: var(--yellow-main); transform: translateY(-5px); box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-15px); } to { opacity: 1; transform: translateY(0); } }
     </style>
 </head>
 <body>
 
     <!-- ==========================================
-         PANTALLA DE LOGIN
+         PANTALLA DE LOGIN ENCRIPTADA
          ========================================== -->
     <div id="login-screen" class="active">
         <div class="login-box">
@@ -68,21 +90,23 @@
     </div>
 
     <!-- ==========================================
-         DASHBOARD PRINCIPAL
+         DASHBOARD PRINCIPAL (UI CORE)
          ========================================== -->
     <div id="ceo-dashboard" class="hidden">
         
+        <!-- HEADER MÓVIL FIJO -->
         <div class="mobile-header">
             <div class="mobile-brand-area">
                 <button id="mobile-menu-btn"><i class="fas fa-bars"></i></button>
                 <h2 class="mobile-brand" id="mobile-brand-text">Trechos <span>Corp.</span></h2>
                 <div class="mobile-dynamic-info hidden" id="mobile-dynamic-info">
-                    <h3 id="mobile-tab-title">Inicio</h3>
+                    <h3 id="mobile-tab-title">Centro de Comando</h3>
                     <span id="mobile-live-date">Cargando ciclo...</span>
                 </div>
             </div>
         </div>
 
+        <!-- BARRA LATERAL (SIDEBAR) -->
         <nav class="sidebar" id="sidebar">
             <div class="brand">
                 <h2>Trechos <span>Visionarios</span></h2>
@@ -91,10 +115,11 @@
             <ul class="nav-links">
                 <li class="active" data-tab="tab-inicio"><i class="fas fa-chart-line"></i> Centro de Comando</li>
                 <li data-tab="tab-aplicaciones"><i class="fas fa-cubes"></i> Ecosistema de Apps</li>
-                <li data-tab="tab-informes"><i class="fas fa-file-invoice"></i> Reportes Detallados</li>
-                <li data-tab="tab-infraestructura"><i class="fas fa-network-wired"></i> Infraestructura Red</li>
+                <li data-tab="tab-informes"><i class="fas fa-chart-pie"></i> Reportes Analíticos</li>
+                <li data-tab="tab-infraestructura"><i class="fas fa-server"></i> Infraestructura Red</li>
                 <li data-tab="tab-bloqueo"><i class="fas fa-database"></i> Bóveda & Inyección</li>
                 <li data-tab="tab-pagos"><i class="fas fa-wallet"></i> Contabilidad & Nómina</li>
+                <li data-tab="tab-dev"><i class="fas fa-terminal"></i> Entorno DEV</li>
                 <li data-tab="tab-historial"><i class="fas fa-history"></i> Auditoría (Logs)</li>
                 <li data-tab="tab-configuracion"><i class="fas fa-users-cog"></i> Gestión Personal (RRHH)</li>
                 <li data-tab="tab-empresa"><i class="fas fa-building"></i> Trechos Corp.</li>
@@ -106,9 +131,10 @@
             </div>
         </nav>
 
+        <!-- ÁREA CENTRAL DE TRABAJO -->
         <main class="content-area" id="export-pdf-area">
             
-            <header class="global-header desktop-only">
+            <header class="global-header desktop-only" style="position: relative;">
                 <div class="header-title-area">
                     <h1 id="current-tab-title">Centro de Comando</h1>
                     <p class="date-subtitle" id="live-date">Ciclo Fiscal Activo</p>
@@ -116,99 +142,115 @@
                 <div class="ceo-profile">
                     <div class="notifications">
                         <i class="fas fa-server text-green"></i>
-                        <span style="font-size: 12px; margin-left: 5px;" class="text-muted">Conectado a MongoDB</span>
+                        <span style="font-size: 12px; margin-left: 5px;" class="text-muted">MongoDB: Conectado</span>
                     </div>
                     <div class="user-info">
                         <strong>Levin Dylan Narváez</strong>
                         <span>Director Ejecutivo</span>
                     </div>
-                    <div class="avatar">
+                    <div class="avatar" id="desktop-avatar-btn" style="cursor: pointer; position: relative;">
                         <img src="https://ui-avatars.com/api/?name=Levin+Dylan+Narvaez&background=ffb800&color=000&bold=true" alt="CEO">
+                        <div style="position: absolute; bottom: -2px; right: -2px; width: 12px; height: 12px; background: var(--green-profit); border-radius: 50%; border: 2px solid var(--bg-base);"></div>
                     </div>
+                </div>
+                
+                <!-- Menú Flotante del CEO -->
+                <div class="profile-dropdown-menu" id="ceo-profile-dropdown">
+                    <h4>Levin Dylan Narváez</h4>
+                    <p>Director Ejecutivo (CEO)</p>
+                    <hr>
+                    <a href="#" id="btn-mi-cuenta"><i class="fas fa-user-circle"></i> Información de Matriz</a>
+                    <a href="#" id="btn-seguridad"><i class="fas fa-lock"></i> Seguridad y Accesos Root</a>
+                    <a href="#" id="btn-actividad"><i class="fas fa-list-ul"></i> Registro de Actividad DB</a>
                 </div>
             </header>
 
             <!-- ==========================================
-                 1. INICIO / CENTRO DE COMANDO (Altamente Detallado)
+                 1. CENTRO DE COMANDO (Inicio)
                  ========================================== -->
             <section id="tab-inicio" class="tab-content active">
                 <div class="action-bar">
                     <div style="display: flex; gap: 15px; align-items: center;">
-                        <i class="fas fa-broadcast-tower text-blue-dev" style="font-size: 24px; animation: blinkYellow 2s infinite;"></i>
+                        <i class="fas fa-broadcast-tower text-blue-dev" style="font-size: 28px; animation: blinkYellow 2s infinite;"></i>
                         <div>
-                            <h3 style="margin: 0;">Tráfico en Tiempo Real</h3>
-                            <small class="text-muted">Monitoreo directo de peticiones a la API y base de datos</small>
+                            <h3 style="margin: 0; font-size: 22px;">Tráfico en Tiempo Real</h3>
+                            <small class="text-muted">Lectura directa de colecciones: uploader_daily_stats y media_catalog</small>
                         </div>
                     </div>
                     
                     <div class="dropdown-container">
                         <button class="btn-secondary" id="btn-filtro-fechas">
-                            <i class="fas fa-calendar-alt"></i> <span id="label-fecha-filtro">Hoy (En Vivo)</span> <i class="fas fa-caret-down"></i>
+                            <i class="fas fa-calendar-alt"></i> <span id="label-fecha-filtro">Hoy (En Vivo)</span> <i class="fas fa-caret-down" style="margin-left: 10px;"></i>
                         </button>
-                        <div class="dropdown-menu" id="menu-filtro-fechas">
-                            <ul>
-                                <li data-rango="hoy">Hoy (En Vivo)</li>
-                                <li data-rango="ayer">Ayer</li>
-                                <li data-rango="7dias">Últimos 7 días</li>
-                                <li data-rango="30dias">Últimos 30 días</li>
-                                <li data-rango="mes_actual">Mes Actual</li>
-                            </ul>
-                        </div>
                     </div>
                 </div>
 
-                <!-- KPIs Primarios (Flujo de usuarios y dinero) -->
-                <div class="kpi-grid">
-                    <div class="kpi-card" style="border-top: 3px solid var(--green-profit);">
+                <!-- KPIs Primarios -->
+                <div class="kpi-grid" style="margin-top: 15px;">
+                    <div class="kpi-card" style="border-top: 4px solid var(--green-profit); background: linear-gradient(180deg, rgba(16,185,129,0.05) 0%, var(--bg-panel) 100%);">
                         <span>Usuarios Únicos (App)</span>
-                        <h3 id="dash-users-live">0</h3>
-                        <small class="trend-up"><i class="fas fa-eye"></i> Conectados ahora</small>
+                        <h3 id="dash-users-live" style="font-size: 40px; margin-top: 10px;">0</h3>
+                        <small class="trend-up"><i class="fas fa-plug"></i> Conexiones concurrentes detectadas</small>
                     </div>
-                    <div class="kpi-card" style="border-top: 3px solid var(--blue-dev);">
-                        <span>Peticiones al Servidor</span>
-                        <h3 id="dash-requests">0</h3>
-                        <small class="text-muted">Consultas procesadas hoy</small>
+                    <div class="kpi-card" style="border-top: 4px solid var(--blue-dev); background: linear-gradient(180deg, rgba(59,130,246,0.05) 0%, var(--bg-panel) 100%);">
+                        <span>Peticiones / Consultas DB</span>
+                        <h3 id="dash-requests" style="font-size: 40px; margin-top: 10px;">0</h3>
+                        <small class="text-muted">Total de endpoints procesados hoy</small>
                     </div>
-                    <div class="kpi-card" style="border-top: 3px solid var(--yellow-main);">
+                    <div class="kpi-card" style="border-top: 4px solid var(--yellow-main); background: linear-gradient(180deg, rgba(255,184,0,0.05) 0%, var(--bg-panel) 100%);">
                         <span>Ingresos Consolidados</span>
-                        <h3 class="text-yellow" id="dash-revenue-hoy">$0.00</h3>
-                        <small class="text-muted" id="dash-revenue-calc">Basado en volumen de peticiones</small>
+                        <h3 class="text-yellow" id="dash-revenue-hoy" style="font-size: 40px; margin-top: 10px;">$0.00</h3>
+                        <small class="text-muted"><i class="fas fa-chart-line"></i> Flujo bruto calculado por volumen</small>
                     </div>
-                    <div class="kpi-card" style="border-top: 3px solid var(--red-expense);">
-                        <span>eCPM Promedio Global</span>
-                        <h3 id="dash-ecpm">$0.00</h3>
-                        <small class="text-muted">Costo por mil impresiones</small>
+                    <div class="kpi-card" style="border-top: 4px solid var(--red-expense); background: linear-gradient(180deg, rgba(239,68,68,0.05) 0%, var(--bg-panel) 100%);">
+                        <span>Costo por Vista (eCPM)</span>
+                        <h3 id="dash-ecpm" style="font-size: 40px; margin-top: 10px;">$0.00</h3>
+                        <small class="text-muted">Promedio global de monetización</small>
                     </div>
                 </div>
 
-                <div class="dashboard-middle" style="grid-template-columns: 3fr 2fr;">
+                <div class="dashboard-middle" style="grid-template-columns: 2fr 1fr; gap: 30px;">
                     <!-- Gráfico Principal -->
                     <div class="chart-box">
                         <div class="admob-card-header">
-                            <h4>Proyección de Ingresos Netos (MongoDB)</h4>
-                            <button class="btn-micro" id="btn-refresh-chart"><i class="fas fa-sync-alt"></i> Refrescar</button>
+                            <div>
+                                <h4 style="font-size: 18px; margin-bottom: 5px;">Proyección de Ingresos Netos</h4>
+                                <span style="font-size: 12px; color: var(--text-muted);">Histórico de 7 días basado en uploader_revenue</span>
+                            </div>
+                            <button class="btn-micro" id="btn-refresh-chart"><i class="fas fa-sync-alt"></i> Actualizar Gráfico</button>
                         </div>
-                        <div class="canvas-container" style="height: 280px;">
+                        <div class="canvas-container" style="height: 320px;">
                             <canvas id="mainRevenueChart"></canvas>
                         </div>
                     </div>
                     
-                    <!-- Top Películas Más Vistas (Lectura DB) -->
+                    <!-- Top Películas Más Vistas -->
                     <div class="activity-feed">
                         <div class="admob-card-header">
-                            <h4><i class="fas fa-fire text-red-expense"></i> Contenido Más Visto</h4>
+                            <h4 style="font-size: 16px;"><i class="fas fa-fire text-red-expense"></i> Títulos de Mayor Tráfico</h4>
                         </div>
-                        <div class="table-responsive" style="max-height: 280px; overflow-y: auto;">
-                            <table class="corporate-table" style="margin: 0;">
+                        <div class="table-responsive" style="max-height: 320px; overflow-y: auto;">
+                            <table class="corporate-table" style="margin: 0; width: 100%;">
                                 <thead>
                                     <tr>
-                                        <th style="padding: 10px;">Título</th>
-                                        <th style="padding: 10px;">Vistas</th>
-                                        <th style="padding: 10px;">Generado</th>
+                                        <th style="padding: 12px; font-size: 11px;">Película / Serie</th>
+                                        <th style="padding: 12px; font-size: 11px; text-align: right;">Peticiones</th>
                                     </tr>
                                 </thead>
                                 <tbody id="top-movies-list">
-                                    <tr><td colspan="3" class="text-center text-muted">Sincronizando con base de datos...</td></tr>
+                                    <!-- Datos de Prueba. Se llenará con JS -->
+                                    <tr>
+                                        <td style="padding: 12px;"><strong>Deadpool & Wolverine</strong><br><small class="text-muted">Inyectado por: Nadia</small></td>
+                                        <td style="padding: 12px; text-align: right; color: var(--green-profit); font-weight: bold;">4,532 <i class="fas fa-caret-up"></i></td>
+                                    </tr>
+                                    <tr>
+                                        <td style="padding: 12px;"><strong>Intensa-Mente 2</strong><br><small class="text-muted">Inyectado por: María</small></td>
+                                        <td style="padding: 12px; text-align: right; color: var(--green-profit); font-weight: bold;">3,120 <i class="fas fa-caret-up"></i></td>
+                                    </tr>
+                                    <tr>
+                                        <td style="padding: 12px;"><strong>Gladiador</strong><br><small class="text-muted">Inyectado por: Levin Dylan</small></td>
+                                        <td style="padding: 12px; text-align: right; color: var(--text-muted); font-weight: bold;">1,845</td>
+                                    </tr>
                                 </tbody>
                             </table>
                         </div>
@@ -218,22 +260,74 @@
                 <!-- Actividad de Empleados en Vivo -->
                 <div class="chart-box mt-4">
                     <div class="admob-card-header">
-                        <h4><i class="fas fa-users-cog text-blue-dev"></i> Rendimiento de la Planilla (Uploaders & Admins)</h4>
-                        <span class="badge-beta">Actualizado en tiempo real</span>
+                        <div>
+                            <h4 style="font-size: 18px; margin-bottom: 5px;"><i class="fas fa-users-cog text-blue-dev"></i> Rendimiento Corporativo (Planilla Activa)</h4>
+                            <p style="font-size: 13px; color: var(--text-muted);">Tabla de líderes basada en el volumen de inyección y tráfico generado a la base de datos principal.</p>
+                        </div>
+                        <span class="badge-beta">LIVE DB</span>
                     </div>
                     <div class="table-responsive">
                         <table class="corporate-table">
-                            <thead>
+                            <thead style="background: rgba(0,0,0,0.2);">
                                 <tr>
-                                    <th>Identidad / Origen</th>
-                                    <th>Contenido Subido</th>
+                                    <th style="padding-left: 20px;">Identidad Trabajador</th>
+                                    <th>Carga (Películas/Series)</th>
                                     <th>Vistas Aportadas</th>
-                                    <th>Ingresos Generados</th>
-                                    <th>Estado Límite ($62)</th>
+                                    <th>Ingreso Generado</th>
+                                    <th>Estado de Seguridad ($62)</th>
                                 </tr>
                             </thead>
                             <tbody id="dash-workers-list">
-                                <tr><td colspan="5" class="text-center text-muted">Extrayendo datos de .env y MongoDB...</td></tr>
+                                <tr>
+                                    <td style="padding-left: 20px;">
+                                        <div style="display: flex; align-items: center; gap: 12px;">
+                                            <div class="feed-icon" style="background: rgba(255,184,0,0.2); color: var(--yellow-main); font-weight: bold;">L</div>
+                                            <div>
+                                                <strong style="font-size: 15px; color: var(--yellow-main);">Levin Dylan (CEO)</strong><br>
+                                                <span class="tag-env" style="display: inline-block; margin-top: 4px;">.env (Root)</span>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td style="font-size: 16px;">1,245</td>
+                                    <td style="font-size: 16px;">84,300</td>
+                                    <td class="text-green" style="font-size: 16px; font-weight: bold;">$421.50</td>
+                                    <td><span style="color: var(--text-muted); font-size: 12px;"><i class="fas fa-infinity"></i> Sin Límite (Root)</span></td>
+                                </tr>
+                                <tr>
+                                    <td style="padding-left: 20px;">
+                                        <div style="display: flex; align-items: center; gap: 12px;">
+                                            <div class="feed-icon" style="font-weight: bold;">N</div>
+                                            <div>
+                                                <strong style="font-size: 15px;">Nadia</strong><br>
+                                                <span class="tag-env" style="display: inline-block; margin-top: 4px;">.env (Admin 2)</span>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td style="font-size: 16px;">850</td>
+                                    <td style="font-size: 16px;">42,100</td>
+                                    <td class="text-green" style="font-size: 16px; font-weight: bold;">$210.50</td>
+                                    <td><span style="color: var(--text-muted); font-size: 12px;"><i class="fas fa-infinity"></i> Sin Límite (Admin)</span></td>
+                                </tr>
+                                <tr>
+                                    <td style="padding-left: 20px;">
+                                        <div style="display: flex; align-items: center; gap: 12px;">
+                                            <div class="feed-icon" style="background: rgba(59,130,246,0.2); color: var(--blue-dev); font-weight: bold;">M</div>
+                                            <div>
+                                                <strong style="font-size: 15px;">María</strong><br>
+                                                <span class="tag-db" style="display: inline-block; margin-top: 4px;">MongoDB</span>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td style="font-size: 16px;">142</td>
+                                    <td style="font-size: 16px;">9,520</td>
+                                    <td class="text-yellow" style="font-size: 16px; font-weight: bold;">$47.60</td>
+                                    <td>
+                                        <div style="width: 100%; background: var(--bg-base); border-radius: 4px; height: 6px; overflow: hidden; margin-bottom: 5px;">
+                                            <div style="width: 76%; height: 100%; background: var(--yellow-main);"></div>
+                                        </div>
+                                        <span style="font-size: 11px; color: var(--text-muted);">Al 76% del límite de corte</span>
+                                    </td>
+                                </tr>
                             </tbody>
                         </table>
                     </div>
@@ -241,107 +335,108 @@
             </section>
 
             <!-- ==========================================
-                 2. APLICACIONES Y ECOSISTEMA
+                 2. ECOSISTEMA DE APLICACIONES
                  ========================================== -->
             <section id="tab-aplicaciones" class="tab-content hidden">
                 <div class="action-bar">
                     <div>
                         <h3 style="margin-bottom: 5px;">Ecosistema de Software Trechos</h3>
-                        <p class="text-muted" style="font-size: 13px;">Gestione las aplicaciones conectadas a la base de datos principal.</p>
+                        <p class="text-muted" style="font-size: 13px;">Supervise las plataformas cliente que consumen la API central.</p>
                     </div>
-                    <button class="btn-primary" id="btn-open-add-app"><i class="fas fa-plus"></i> Nueva Plataforma</button>
+                    <button class="btn-primary" id="btn-open-add-app"><i class="fas fa-plus"></i> Registrar Plataforma</button>
                 </div>
                 
                 <div class="apps-grid">
-                    <!-- App 1: Sala Cine -->
                     <div class="app-card highlight-app">
                         <div class="app-header">
-                            <i class="fab fa-android text-green" style="font-size: 35px;"></i>
+                            <i class="fab fa-android text-green" style="font-size: 40px;"></i>
                             <div>
-                                <h4 style="margin-bottom: 2px;">Sala Cine (Oficial)</h4>
-                                <span style="font-size: 11px; color: var(--text-muted);">com.salacine.app</span>
+                                <h4 style="font-size: 18px; margin-bottom: 3px;">Sala Cine (App Oficial)</h4>
+                                <span style="font-size: 12px; color: var(--text-muted);">Paquete: com.salacine.app</span>
                             </div>
                         </div>
-                        <div class="app-stats">
-                            <p>API Endpoint: <span class="text-blue-dev">/api/track-view</span></p>
-                            <p>Anuncios (AdMob): <span class="text-green">Inyectando</span></p>
-                            <p>Usuarios Registrados: <span class="text-yellow">24,530</span></p>
+                        <div class="app-stats" style="margin-top: 20px;">
+                            <p>API Endpoint: <span class="text-blue-dev" style="font-family: monospace;">/api/track-view</span></p>
+                            <p>Monetización AdMob: <span class="text-green" style="font-weight: bold;">Activa (Inyectando)</span></p>
+                            <p>Versión en Producción: <span class="text-yellow">v2.4.0 (Build 24)</span></p>
                         </div>
-                        <button class="btn-secondary w-100 mt-4"><i class="fas fa-cog"></i> Gestionar App</button>
+                        <button class="btn-secondary w-100 mt-4"><i class="fas fa-cogs"></i> Panel Google Play Console</button>
                     </div>
 
-                    <!-- App 2: Telegram Bot -->
                     <div class="app-card">
                         <div class="app-header">
-                            <i class="fab fa-telegram text-blue-dev" style="font-size: 35px;"></i>
+                            <i class="fab fa-telegram text-blue-dev" style="font-size: 40px;"></i>
                             <div>
-                                <h4 style="margin-bottom: 2px;">Trechos Admin Bot</h4>
-                                <span style="font-size: 11px; color: var(--text-muted);">@TrechosAdmin_Bot</span>
+                                <h4 style="font-size: 18px; margin-bottom: 3px;">Trechos Admin Bot</h4>
+                                <span style="font-size: 12px; color: var(--text-muted);">Bot de Gestión y Extracción</span>
                             </div>
                         </div>
-                        <div class="app-stats">
-                            <p>Motor de Inyección: <span class="text-green">Operativo</span></p>
-                            <p>Webhooks: <span class="text-yellow">Render Sincronizado</span></p>
-                            <p>Peticiones Diarias: <span class="text-white">1,200+</span></p>
+                        <div class="app-stats" style="margin-top: 20px;">
+                            <p>Motor de Inyección: <span class="text-green" style="font-weight: bold;">En Línea</span></p>
+                            <p>Webhooks Render: <span class="text-yellow">Sincronizado</span></p>
+                            <p>Latencia Respuesta: <span class="text-white">120ms</span></p>
                         </div>
-                        <button class="btn-secondary w-100 mt-4"><i class="fas fa-terminal"></i> Ver Consola Bot</button>
+                        <button class="btn-secondary w-100 mt-4"><i class="fas fa-robot"></i> Forzar Reinicio de Bot</button>
                     </div>
 
-                    <!-- App 3: Dashboard Web -->
                     <div class="app-card">
                         <div class="app-header">
-                            <i class="fas fa-globe text-yellow" style="font-size: 35px;"></i>
+                            <i class="fas fa-globe text-yellow" style="font-size: 40px;"></i>
                             <div>
-                                <h4 style="margin-bottom: 2px;">Dashboard Uploaders</h4>
-                                <span style="font-size: 11px; color: var(--text-muted);">dashboard.html (Web)</span>
+                                <h4 style="font-size: 18px; margin-bottom: 3px;">Dashboard Uploaders</h4>
+                                <span style="font-size: 12px; color: var(--text-muted);">Frontend de Trabajadores</span>
                             </div>
                         </div>
-                        <div class="app-stats">
-                            <p>Conexión DB: <span class="text-green">Lectura Activa</span></p>
-                            <p>Ruta: <span class="text-muted">/api/uploader-stats</span></p>
-                            <p>Accesos Hoy: <span class="text-white">85</span></p>
+                        <div class="app-stats" style="margin-top: 20px;">
+                            <p>Ruta API: <span class="text-muted" style="font-family: monospace;">/api/uploader-stats</span></p>
+                            <p>Conexión a MongoDB: <span class="text-green">Lectura Estable</span></p>
+                            <p>Sesiones Activas: <span class="text-white">5 Usuarios</span></p>
                         </div>
-                        <button class="btn-secondary w-100 mt-4"><i class="fas fa-code"></i> Editar Interfaz</button>
+                        <button class="btn-secondary w-100 mt-4"><i class="fas fa-code"></i> Editar Código Fuente</button>
                     </div>
                 </div>
             </section>
 
             <!-- ==========================================
-                 3. REPORTES DETALLADOS (Vistas Reales)
+                 3. REPORTES DETALLADOS
                  ========================================== -->
             <section id="tab-informes" class="tab-content hidden">
                 <div class="action-bar">
-                    <h3>Centro de Análisis de Datos</h3>
-                    <button class="btn-secondary" id="btn-export-csv"><i class="fas fa-file-csv"></i> Exportar Data (CSV)</button>
+                    <div>
+                        <h3 style="margin-bottom: 5px;">Análisis Profundo de Datos</h3>
+                        <p class="text-muted" style="font-size: 13px;">Extracción directa de estadísticas financieras y de comportamiento.</p>
+                    </div>
+                    <button class="btn-secondary"><i class="fas fa-download"></i> Exportar Data a CSV</button>
                 </div>
                 
                 <div class="config-tabs" id="tabs-reportes">
-                    <div class="config-tab active" data-target="rep-usuarios">Reporte de Usuarios</div>
-                    <div class="config-tab" data-target="rep-monetizacion">Monetización y Anuncios</div>
+                    <div class="config-tab active" data-target="rep-usuarios">Métricas de Usuarios</div>
+                    <div class="config-tab" data-target="rep-monetizacion">Monetización Global</div>
                     <div class="config-tab" data-target="rep-geografia">Tráfico Geográfico</div>
                 </div>
 
                 <div id="rep-usuarios" class="sub-tab-content active">
                     <div class="chart-box">
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 20px;">
-                            <h4>Retención y Generación por Uploader</h4>
-                            <div class="search-filter" style="margin: 0;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px;">
+                            <h4 style="font-size: 18px;">Retención y Generación por Uploader</h4>
+                            <div class="search-filter" style="margin: 0; min-width: 300px;">
                                 <i class="fas fa-search text-muted"></i>
-                                <input type="text" placeholder="Buscar empleado...">
+                                <input type="text" placeholder="Buscar trabajador específico...">
                             </div>
                         </div>
                         <div class="table-responsive">
-                            <table class="corporate-table">
-                                <thead>
+                            <table class="corporate-table" style="margin: 0;">
+                                <thead style="background: rgba(0,0,0,0.2);">
                                     <tr>
-                                        <th>ID / Nombre</th>
+                                        <th style="padding-left: 20px;">Identidad</th>
                                         <th>Total Películas Subidas</th>
-                                        <th>Total Series/Episodios</th>
-                                        <th>Impacto en Tráfico (%)</th>
+                                        <th>Total Series Subidas</th>
+                                        <th>Eficacia (Vistas/Subida)</th>
+                                        <th>Porcentaje de Impacto</th>
                                     </tr>
                                 </thead>
-                                <tbody id="report-users-table">
-                                    <tr><td colspan="4" class="text-center text-muted">Generando reporte analítico...</td></tr>
+                                <tbody>
+                                    <tr><td colspan="5" class="text-center text-muted" style="padding: 40px;"><i class="fas fa-spinner fa-spin" style="font-size: 30px; margin-bottom: 15px;"></i><br>Consultando a la base de datos...</td></tr>
                                 </tbody>
                             </table>
                         </div>
@@ -349,19 +444,19 @@
                 </div>
                 
                 <div id="rep-monetizacion" class="sub-tab-content">
-                    <div class="chart-box text-center" style="padding: 50px;">
-                        <i class="fas fa-chart-bar text-muted" style="font-size: 50px; margin-bottom: 20px; opacity: 0.5;"></i>
-                        <h4>Módulo de Sincronización AdMob API requerido</h4>
-                        <p class="text-muted mt-4">Para ver los reportes exactos de eCPM de Google, se debe autorizar el OAuth en el backend.</p>
-                        <button class="btn-secondary mt-4">Conectar API de Google Ads</button>
+                    <div class="chart-box text-center" style="padding: 80px 20px;">
+                        <i class="fas fa-dollar-sign text-green" style="font-size: 60px; margin-bottom: 25px; opacity: 0.5;"></i>
+                        <h2 style="font-size: 24px; margin-bottom: 10px;">Conexión AdMob Requerida</h2>
+                        <p class="text-muted" style="max-width: 600px; margin: 0 auto; line-height: 1.6;">Para visualizar reportes avanzados de eCPM, impresiones y clics reales de la red de Google, es necesario vincular la cuenta mediante OAuth en la configuración del backend.</p>
+                        <button class="btn-primary" style="margin-top: 30px;"><i class="fab fa-google"></i> Conectar API de Google Ads</button>
                     </div>
                 </div>
                 
                 <div id="rep-geografia" class="sub-tab-content">
-                    <div class="chart-box text-center" style="padding: 50px;">
-                        <i class="fas fa-map-marked-alt text-muted" style="font-size: 50px; margin-bottom: 20px; opacity: 0.5;"></i>
-                        <h4>Mapa de Calor de Usuarios</h4>
-                        <p class="text-muted mt-4">Las peticiones provienen mayormente de México, Ecuador, Colombia y España.</p>
+                    <div class="chart-box text-center" style="padding: 80px 20px;">
+                        <i class="fas fa-globe-americas text-blue-dev" style="font-size: 60px; margin-bottom: 25px; opacity: 0.5;"></i>
+                        <h2 style="font-size: 24px; margin-bottom: 10px;">Mapa de Calor de Servidores</h2>
+                        <p class="text-muted" style="max-width: 600px; margin: 0 auto; line-height: 1.6;">Las peticiones a la API están siendo procesadas mayormente desde: <strong>México, Ecuador, Colombia y España</strong>. Esta vista se activará al habilitar el módulo analítico avanzado en Render.</p>
                     </div>
                 </div>
             </section>
@@ -373,204 +468,299 @@
                 <div class="action-bar">
                     <div>
                         <h3 style="margin-bottom: 5px;">Mapeo de Red y Costos Operativos</h3>
-                        <p class="text-muted" style="font-size: 13px;">Auditoría financiera de la infraestructura que sostiene Trechos Corp.</p>
+                        <p class="text-muted" style="font-size: 13px;">Auditoría técnica y financiera de la infraestructura que sostiene a Trechos Corp.</p>
                     </div>
-                    <button class="btn-success" id="btn-optimizar-red"><i class="fas fa-bolt"></i> Optimizar Caché (Redis)</button>
+                    <button class="btn-secondary"><i class="fas fa-sync-alt"></i> Sincronizar Carga de Nodos</button>
                 </div>
 
-                <div class="server-status-grid">
+                <div class="server-status-grid" style="grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));">
                     <!-- Servidor EEUU -->
-                    <div class="server-node" style="border-color: var(--blue-dev); position: relative; overflow: hidden;">
-                        <div style="position: absolute; top: 0; left: 0; width: 100%; height: 4px; background: var(--blue-dev);"></div>
-                        <div class="node-header"><i class="flag">🇺🇸</i> <h4>Main Core (EE.UU)</h4></div>
-                        <span class="status-blink working">Procesando (AWS/Render)</span>
-                        <p style="font-size: 12px; margin-top: 10px; color: var(--text-muted);">Almacenamiento y Web Services Base</p>
-                        <h2 style="margin-top: 15px; font-weight: 500;">$3,000.00 <span style="font-size: 12px; color: var(--text-muted);">/mes</span></h2>
-                        <div style="margin-top: 15px; background: var(--bg-base); border-radius: 4px; height: 6px; width: 100%; overflow: hidden;">
+                    <div class="server-node" style="border-color: var(--blue-dev); position: relative; overflow: hidden; padding: 30px;">
+                        <div style="position: absolute; top: 0; left: 0; width: 100%; height: 5px; background: var(--blue-dev);"></div>
+                        <div class="node-header"><i class="flag">🇺🇸</i> <h4 style="font-size: 18px;">Main Core (EE.UU)</h4></div>
+                        <span class="status-blink working" style="margin-top: 10px;">Procesando Tráfico</span>
+                        <p style="font-size: 13px; margin-top: 15px; color: var(--text-muted); line-height: 1.5;">Clúster principal de Node.js en Render. Gestión de API REST y procesamiento masivo.</p>
+                        <h2 style="margin-top: 25px; font-weight: 600; font-size: 32px; color: var(--text-main);">$3,000.00 <span style="font-size: 14px; color: var(--text-muted);">/ mes fijo</span></h2>
+                        <div style="margin-top: 20px; background: var(--bg-base); border-radius: 6px; height: 8px; width: 100%; overflow: hidden;">
                             <div style="width: 75%; height: 100%; background: var(--blue-dev);"></div>
                         </div>
-                        <small style="font-size: 10px; color: var(--text-muted); display: block; margin-top: 5px;">Carga de CPU: 75%</small>
+                        <div style="display: flex; justify-content: space-between; margin-top: 8px;">
+                            <small style="color: var(--text-muted);">Consumo CPU</small>
+                            <small class="text-yellow" style="font-weight: bold;">75%</small>
+                        </div>
                     </div>
 
                     <!-- Servidor España -->
-                    <div class="server-node" style="position: relative; overflow: hidden;">
-                        <div style="position: absolute; top: 0; left: 0; width: 100%; height: 4px; background: var(--yellow-main);"></div>
-                        <div class="node-header"><i class="flag">🇪🇸</i> <h4>Proxy Europa (España)</h4></div>
-                        <span class="status-blink working">Enrutando</span>
-                        <p style="font-size: 12px; margin-top: 10px; color: var(--text-muted);">Balanceador de Carga para Tráfico EU</p>
-                        <h2 style="margin-top: 15px; font-weight: 500;">$800.00 <span style="font-size: 12px; color: var(--text-muted);">/mes</span></h2>
-                        <div style="margin-top: 15px; background: var(--bg-base); border-radius: 4px; height: 6px; width: 100%; overflow: hidden;">
+                    <div class="server-node" style="position: relative; overflow: hidden; padding: 30px;">
+                        <div style="position: absolute; top: 0; left: 0; width: 100%; height: 5px; background: var(--yellow-main);"></div>
+                        <div class="node-header"><i class="flag">🇪🇸</i> <h4 style="font-size: 18px;">Proxy Europa</h4></div>
+                        <span class="status-blink working" style="margin-top: 10px;">Enrutando API</span>
+                        <p style="font-size: 13px; margin-top: 15px; color: var(--text-muted); line-height: 1.5;">Balanceador de carga para asegurar la conectividad y baja latencia en el mercado europeo.</p>
+                        <h2 style="margin-top: 25px; font-weight: 600; font-size: 32px; color: var(--text-main);">$800.00 <span style="font-size: 14px; color: var(--text-muted);">/ mes fijo</span></h2>
+                        <div style="margin-top: 20px; background: var(--bg-base); border-radius: 6px; height: 8px; width: 100%; overflow: hidden;">
                             <div style="width: 40%; height: 100%; background: var(--yellow-main);"></div>
                         </div>
-                        <small style="font-size: 10px; color: var(--text-muted); display: block; margin-top: 5px;">Carga de CPU: 40%</small>
+                        <div style="display: flex; justify-content: space-between; margin-top: 8px;">
+                            <small style="color: var(--text-muted);">Consumo RAM</small>
+                            <small class="text-green" style="font-weight: bold;">40%</small>
+                        </div>
                     </div>
 
                     <!-- CDN México -->
-                    <div class="server-node" style="position: relative; overflow: hidden;">
-                        <div style="position: absolute; top: 0; left: 0; width: 100%; height: 4px; background: var(--yellow-main);"></div>
-                        <div class="node-header"><i class="flag">🇲🇽</i> <h4>CDN Latam (México)</h4></div>
-                        <span class="status-blink working">Distribuyendo</span>
-                        <p style="font-size: 12px; margin-top: 10px; color: var(--text-muted);">Cloudflare Edge Network Norteamérica</p>
-                        <h2 style="margin-top: 15px; font-weight: 500;">$400.00 <span style="font-size: 12px; color: var(--text-muted);">/mes</span></h2>
-                        <div style="margin-top: 15px; background: var(--bg-base); border-radius: 4px; height: 6px; width: 100%; overflow: hidden;">
+                    <div class="server-node" style="position: relative; overflow: hidden; padding: 30px;">
+                        <div style="position: absolute; top: 0; left: 0; width: 100%; height: 5px; background: var(--yellow-main);"></div>
+                        <div class="node-header"><i class="flag">🇲🇽</i> <h4 style="font-size: 18px;">CDN Latam</h4></div>
+                        <span class="status-blink working" style="margin-top: 10px;">Cloudflare Edge</span>
+                        <p style="font-size: 13px; margin-top: 15px; color: var(--text-muted); line-height: 1.5;">Red de distribución de contenidos de alta velocidad y Firewall (WAF) para Norteamérica.</p>
+                        <h2 style="margin-top: 25px; font-weight: 600; font-size: 32px; color: var(--text-main);">$400.00 <span style="font-size: 14px; color: var(--text-muted);">/ mes fijo</span></h2>
+                        <div style="margin-top: 20px; background: var(--bg-base); border-radius: 6px; height: 8px; width: 100%; overflow: hidden;">
                             <div style="width: 65%; height: 100%; background: var(--yellow-main);"></div>
                         </div>
-                        <small style="font-size: 10px; color: var(--text-muted); display: block; margin-top: 5px;">Carga de Red: 65%</small>
+                        <div style="display: flex; justify-content: space-between; margin-top: 8px;">
+                            <small style="color: var(--text-muted);">Ancho de Banda</small>
+                            <small class="text-yellow" style="font-weight: bold;">65%</small>
+                        </div>
                     </div>
 
                     <!-- Local Ecuador -->
-                    <div class="server-node" style="position: relative; overflow: hidden;">
-                        <div style="position: absolute; top: 0; left: 0; width: 100%; height: 4px; background: var(--green-profit);"></div>
-                        <div class="node-header"><i class="flag">🇪🇨</i> <h4>Respaldo DB (Ecuador)</h4></div>
-                        <span class="status-blink working">Sincronizado</span>
-                        <p style="font-size: 12px; margin-top: 10px; color: var(--text-muted);">Matriz Zaruma / Backups Locales</p>
-                        <h2 style="margin-top: 15px; font-weight: 500;">$200.00 <span style="font-size: 12px; color: var(--text-muted);">/mes</span></h2>
-                        <div style="margin-top: 15px; background: var(--bg-base); border-radius: 4px; height: 6px; width: 100%; overflow: hidden;">
+                    <div class="server-node" style="position: relative; overflow: hidden; padding: 30px;">
+                        <div style="position: absolute; top: 0; left: 0; width: 100%; height: 5px; background: var(--green-profit);"></div>
+                        <div class="node-header"><i class="flag">🇪🇨</i> <h4 style="font-size: 18px;">Matriz DB</h4></div>
+                        <span class="status-blink standby" style="margin-top: 10px;">MongoDB Atlas</span>
+                        <p style="font-size: 13px; margin-top: 15px; color: var(--text-muted); line-height: 1.5;">Base de datos principal (Zaruma, Ecuador) y respaldos físicos de colecciones JSON.</p>
+                        <h2 style="margin-top: 25px; font-weight: 600; font-size: 32px; color: var(--text-main);">$200.00 <span style="font-size: 14px; color: var(--text-muted);">/ mes fijo</span></h2>
+                        <div style="margin-top: 20px; background: var(--bg-base); border-radius: 6px; height: 8px; width: 100%; overflow: hidden;">
                             <div style="width: 15%; height: 100%; background: var(--green-profit);"></div>
                         </div>
-                        <small style="font-size: 10px; color: var(--text-muted); display: block; margin-top: 5px;">Carga Disco: 15%</small>
+                        <div style="display: flex; justify-content: space-between; margin-top: 8px;">
+                            <small style="color: var(--text-muted);">Almacenamiento SSD</small>
+                            <small class="text-green" style="font-weight: bold;">15%</small>
+                        </div>
                     </div>
                 </div>
-                
-                <div class="chart-box text-right" style="margin-top: 20px; background: rgba(239, 68, 68, 0.05); border-color: rgba(239, 68, 68, 0.2);">
-                    <h3 style="color: var(--text-main);">Costo Total Mensual Fijo: <span class="text-danger" style="font-size: 32px; margin-left: 15px;">-$4,400.00</span></h3>
+
+                <!-- Tabla de Contabilidad de Hardware -->
+                <div class="chart-box mt-4">
+                    <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-light); padding-bottom: 15px; margin-bottom: 15px;">
+                        <h4 style="font-size: 18px;">Consolidado de Hardware e IPs</h4>
+                        <h3 style="color: var(--text-main);">Gasto Fijo Total: <span class="text-danger" style="margin-left: 10px;">-$4,400.00</span></h3>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="corporate-table" style="margin: 0;">
+                            <thead>
+                                <tr><th>Instancia o Servicio</th><th>Proveedor / Ubicación</th><th>Estado Actual</th><th>Costo Descontado</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>Clúster Backend (Web Service)</td><td>Render / AWS (EE.UU)</td>
+                                    <td><span class="text-green">Operativo 24/7</span></td><td>$3,000.00</td>
+                                </tr>
+                                <tr>
+                                    <td>Load Balancer</td><td>OVH / DigitalOcean (España)</td>
+                                    <td><span class="text-green">Operativo 24/7</span></td><td>$800.00</td>
+                                </tr>
+                                <tr>
+                                    <td>CDN y WAF (Protección)</td><td>Cloudflare Enterprise (México)</td>
+                                    <td><span class="text-green">Operativo 24/7</span></td><td>$400.00</td>
+                                </tr>
+                                <tr>
+                                    <td>Almacenamiento MongoDB Atlas</td><td>Local On-Premise (Ecuador)</td>
+                                    <td><span class="text-green">Operativo 24/7</span></td><td>$200.00</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </section>
 
             <!-- ==========================================
-                 5. CONTROL DE BLOQUEO / BÓVEDA TMDB
+                 5. BÓVEDA E INYECCIÓN TMDB
                  ========================================== -->
             <section id="tab-bloqueo" class="tab-content hidden">
                 <div class="work-station">
                     <div class="action-bar">
                         <div>
-                            <h3 style="margin-bottom: 5px;">Bóveda de Inyección Manual</h3>
-                            <p class="text-muted" style="font-size: 13px;">Buscador directo a la API de TheMovieDB para ingesta de datos a MongoDB.</p>
+                            <h3 style="margin-bottom: 5px;">Módulo de Inyección de Contenido</h3>
+                            <p class="text-muted" style="font-size: 13px;">Motor de búsqueda conectado a TheMovieDB. Todo activo inyectado aquí impactará inmediatamente en la App Sala Cine.</p>
                         </div>
                     </div>
                     
-                    <div class="corporate-note" style="border-left-color: var(--red-expense); background: rgba(239, 68, 68, 0.1);">
-                        <i class="fas fa-exclamation-triangle text-danger"></i>
-                        <strong class="text-danger">REGLA ESTRICTA DE EXTRACCIÓN:</strong> El motor de la app exige que el contenido principal sea subido en formato <strong>.MP4</strong>. Los enlaces .M3U8 quedan estrictamente reservados para las funciones de "Descarga" o espejos secundarios.
+                    <div class="corporate-note" style="border-left-color: var(--red-expense); background: rgba(239, 68, 68, 0.1); padding: 20px; border-radius: 8px;">
+                        <div style="display: flex; gap: 15px; align-items: flex-start;">
+                            <i class="fas fa-exclamation-triangle text-danger" style="font-size: 24px;"></i>
+                            <div>
+                                <h4 class="text-danger" style="margin-bottom: 5px; font-size: 16px;">DIRECTIVA ESTRICTA DE EXTRACCIÓN Y FORMATOS</h4>
+                                <p style="color: var(--text-main); font-size: 14px; line-height: 1.5;">Debido a la corrección de extracción impuesta por la gerencia, <strong>los enlaces directos deben priorizar el formato MP4</strong> para el streaming fluido. Las extensiones de tipo M3U8 o alternativas quedan estrictamente reservadas para descarga o espejos secundarios, dependiendo del sitio fuente.</p>
+                            </div>
+                        </div>
                     </div>
 
-                    <div class="search-bar-visual">
+                    <div class="search-bar-visual" style="margin-top: 25px;">
                         <i class="fas fa-search"></i>
-                        <input type="text" id="visual-search-input" placeholder="Ej: Ingrese título de película o serie a buscar en TMDB...">
-                        <button class="btn-primary" id="btn-realizar-busqueda">Buscar en API</button>
+                        <input type="text" id="visual-search-input" placeholder="Ej: Ingrese título exacto de película o serie a buscar en TMDB...">
+                        <button class="btn-primary" style="width: auto; padding: 12px 30px;" id="btn-realizar-busqueda">Ejecutar Búsqueda</button>
                     </div>
 
                     <div class="posters-grid" id="search-results-grid">
-                        <!-- JS inyectará los pósters aquí -->
+                        <!-- JS inyectará resultados aquí -->
                     </div>
 
                     <div class="injection-form hidden" id="injection-panel">
                         <div class="selected-media">
                             <img id="inject-poster" src="" alt="Poster">
                             <div class="media-details">
-                                <h4 id="inject-title" class="text-yellow">Título Seleccionado</h4>
-                                <p id="inject-overview" style="font-size: 13px; line-height: 1.5; color: var(--text-muted); margin-top: 10px;">Sinopsis...</p>
+                                <h4 id="inject-title" class="text-yellow" style="font-size: 22px;">Título Seleccionado</h4>
+                                <p id="inject-overview" style="font-size: 14px; line-height: 1.6; color: var(--text-muted); margin-top: 10px;">Sinopsis de la película o serie.</p>
                                 <div style="margin-top: 15px; display: flex; gap: 10px;">
-                                    <span class="tag-db" id="inject-type">TIPO</span>
-                                    <span class="tag-env" id="inject-id">ID: 0</span>
+                                    <span class="tag-db" id="inject-type">TIPO MEDIA</span>
+                                    <span class="tag-env" id="inject-id">TMDB ID: 0000</span>
                                 </div>
                             </div>
                         </div>
                         
-                        <div class="form-grid" style="grid-template-columns: 2fr 1fr; margin-top: 20px;">
+                        <div class="form-grid" style="grid-template-columns: 2fr 1fr; margin-top: 25px;">
                             <div class="input-group">
-                                <label>Enlace Directo del Video (.mp4 recomendado):</label>
-                                <input type="url" id="inject-url" placeholder="https://cdn.tuservidor.com/pelicula.mp4">
+                                <label style="display: block; margin-bottom: 8px; color: var(--text-muted); font-weight: bold;">Enlace Directo del Video <span class="text-danger">(Requisito: .mp4)</span></label>
+                                <input type="url" id="inject-url" style="width: 100%; padding: 15px; background: var(--bg-base); border: 1px solid var(--border-light); color: white; border-radius: 8px; font-family: monospace;" placeholder="https://dominio.com/video.mp4">
                             </div>
                             <div class="input-group">
-                                <label>Prioridad de Servidor:</label>
-                                <select style="width: 100%; padding: 14px; background: var(--bg-base); border: 1px solid var(--border-light); color: white; border-radius: 8px; outline: none;">
-                                    <option value="usa">Main Core (EE.UU) - Rápido</option>
-                                    <option value="mx">CDN México (Latam)</option>
+                                <label style="display: block; margin-bottom: 8px; color: var(--text-muted); font-weight: bold;">Balanceador de Carga (Destino)</label>
+                                <select style="width: 100%; padding: 15px; background: var(--bg-base); border: 1px solid var(--border-light); color: white; border-radius: 8px; outline: none; cursor: pointer;">
+                                    <option value="usa">Automático (Main Core EE.UU)</option>
+                                    <option value="mx">Forzar a CDN Latam (México)</option>
                                 </select>
                             </div>
                         </div>
                         
                         <div class="form-actions mt-4">
-                            <button class="btn-secondary" id="btn-cancel-inject">Cancelar Operación</button>
-                            <button class="btn-success" id="btn-confirm-inject"><i class="fas fa-database"></i> Insertar Documento en MongoDB</button>
+                            <button class="btn-secondary" id="btn-cancel-inject" style="padding: 12px 25px;">Abortar Operación</button>
+                            <button class="btn-success" id="btn-confirm-inject" style="padding: 12px 25px;"><i class="fas fa-database"></i> Insertar Documento en Colección</button>
                         </div>
                     </div>
                 </div>
             </section>
 
             <!-- ==========================================
-                 6. PAGOS, NÓMINA Y CONTABILIDAD
+                 6. PAGOS, FINANZAS Y CONTABILIDAD (Fusionado)
                  ========================================== -->
             <section id="tab-pagos" class="tab-content hidden">
                 <div class="config-tabs" id="tabs-pagos">
-                    <div class="config-tab active" data-target="pago-nomina">Liquidación de Nómina</div>
-                    <div class="config-tab" data-target="pago-historial">Transacciones Pagadas</div>
+                    <div class="config-tab active" data-target="pago-flujo">Flujo de Caja (Empresa)</div>
+                    <div class="config-tab" data-target="pago-nomina">Nómina y Liquidación</div>
+                    <div class="config-tab" data-target="pago-historial">Transacciones</div>
                 </div>
 
-                <div id="pago-nomina" class="sub-tab-content active">
+                <!-- Sub-pestaña: Flujo de Caja -->
+                <div id="pago-flujo" class="sub-tab-content active">
+                    <div class="action-bar">
+                        <div>
+                            <h3 style="margin-bottom: 5px;">Contabilidad General Corporativa</h3>
+                            <p class="text-muted" style="font-size: 13px;">Resumen del capital ingresado y los descuentos operativos automatizados.</p>
+                        </div>
+                        <button class="btn-secondary"><i class="fas fa-file-pdf"></i> Exportar Balance PDF</button>
+                    </div>
+                    
+                    <div class="finance-grid" style="margin-top: 20px;">
+                        <div class="finance-card">
+                            <h4>Flujo Bruto DB (Mes)</h4>
+                            <h2 class="text-yellow" style="font-size: 42px;">$0.00</h2>
+                            <p>Capital total facturado por volumen de visitas.</p>
+                        </div>
+                        <div class="finance-card">
+                            <h4>Gastos Operativos</h4>
+                            <h2 class="text-danger" style="font-size: 42px;">-$0.00</h2>
+                            <p>Servidores (-$4,400) + Nómina de Trabajadores.</p>
+                        </div>
+                        <div class="finance-card">
+                            <h4>Utilidad Neta</h4>
+                            <h2 class="text-green" style="font-size: 42px;">$0.00</h2>
+                            <p>Ganancia limpia final para Trechos Corp.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sub-pestaña: Nómina de Uploaders -->
+                <div id="pago-nomina" class="sub-tab-content">
                     <div class="chart-box">
                         <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 25px;">
                             <div>
-                                <h4 style="font-size: 20px;">Balance Pendiente por Pagar</h4>
-                                <p style="font-size: 13px; color: var(--text-muted); margin-top: 5px;">El límite de seguridad mensual por trabajador es de <strong>$62.00</strong>. Una vez alcanzado, el backend corta las ganancias de ese ID hasta que usted ejecute la liquidación.</p>
+                                <h4 style="font-size: 20px; margin-bottom: 5px;">Obligaciones de Pago (Planilla Activa)</h4>
+                                <p style="font-size: 13px; color: var(--text-muted); max-width: 600px; line-height: 1.5;">El algoritmo de límite mensual frenará las ganancias de cualquier trabajador cuando alcancen la cuota de seguridad de <strong>$62.00</strong> en este mes fiscal. Los pagos ejecutados aquí pondrán a 0 su contador en la base de datos.</p>
                             </div>
                             <div style="text-align: right;">
-                                <span style="font-size: 12px; color: var(--text-muted); text-transform: uppercase;">Total Deuda Actual</span>
-                                <h2 style="font-size: 36px; color: var(--red-expense);" id="total-deuda-empresa">$0.00</h2>
+                                <span style="font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px;">Deuda Global</span>
+                                <h2 style="font-size: 42px; color: var(--red-expense); margin-top: 5px;" id="total-deuda-empresa">$0.00</h2>
                             </div>
                         </div>
                         
                         <div class="table-responsive">
-                            <table class="corporate-table">
-                                <thead>
+                            <table class="corporate-table" style="margin: 0;">
+                                <thead style="background: rgba(0,0,0,0.2);">
                                     <tr>
-                                        <th>Identidad Trabajador</th>
-                                        <th>Rol / Origen</th>
-                                        <th>Generado (Ciclo)</th>
+                                        <th style="padding-left: 20px;">Identidad Trabajador</th>
+                                        <th>Rol en Empresa</th>
+                                        <th>Capital Generado</th>
                                         <th>Estado Umbral</th>
-                                        <th>Acción de Contabilidad</th>
+                                        <th style="text-align: right; padding-right: 20px;">Acción Financiera</th>
                                     </tr>
                                 </thead>
                                 <tbody id="lista-nomina-pagos">
-                                    <tr><td colspan="5" class="text-center text-muted">Calculando bases de datos...</td></tr>
+                                    <!-- Ejemplos inyectables por JS -->
+                                    <tr>
+                                        <td style="padding-left: 20px; font-weight: bold; font-size: 15px;">María</td>
+                                        <td>Desarrollador / Uploader</td>
+                                        <td class="text-yellow" style="font-weight: bold; font-size: 16px;">$47.60</td>
+                                        <td><span style="font-size: 12px; color: var(--text-muted);">En progreso (No alcanza $62)</span></td>
+                                        <td style="text-align: right; padding-right: 20px;">
+                                            <button class="btn-success" onclick="abrirModalLiquidar('María', 47.60, 'MongoDB')"><i class="fas fa-money-check-alt"></i> Liquidar Trabajador</button>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td style="padding-left: 20px; font-weight: bold; font-size: 15px;">Uploader Nuevo</td>
+                                        <td>Uploader de Contenido</td>
+                                        <td class="text-red-expense" style="font-weight: bold; font-size: 16px;">$62.00</td>
+                                        <td><span class="tag-env" style="color: var(--red-expense); border-color: var(--red-expense); background: rgba(239, 68, 68, 0.1);">Corte Activo (Límite)</span></td>
+                                        <td style="text-align: right; padding-right: 20px;">
+                                            <button class="btn-success" onclick="abrirModalLiquidar('Uploader Nuevo', 62.00, 'MongoDB')"><i class="fas fa-money-check-alt"></i> Liquidar Trabajador</button>
+                                        </td>
+                                    </tr>
                                 </tbody>
                             </table>
                         </div>
                     </div>
                 </div>
 
+                <!-- Sub-pestaña: Transacciones Históricas -->
                 <div id="pago-historial" class="sub-tab-content">
                     <div class="chart-box">
-                        <div class="action-bar">
-                            <h4 style="font-size: 20px;">Historial de Liquidaciones Registradas</h4>
-                            <button class="btn-secondary"><i class="fas fa-file-pdf"></i> Exportar Recibos</button>
+                        <div class="action-bar" style="margin-bottom: 20px;">
+                            <h4 style="font-size: 20px;">Historial de Liquidaciones Registradas en DB</h4>
                         </div>
                         <div class="table-responsive">
-                            <table class="corporate-table">
-                                <thead>
+                            <table class="corporate-table" style="margin: 0;">
+                                <thead style="background: rgba(0,0,0,0.2);">
                                     <tr>
-                                        <th>Fecha / Hora</th>
+                                        <th style="padding-left: 20px;">Fecha / Hora Exacta</th>
                                         <th>Beneficiario</th>
-                                        <th>Monto Liquidado</th>
-                                        <th>Responsable (CEO)</th>
-                                        <th>Estado DB</th>
+                                        <th>Monto Transferido</th>
+                                        <th>Responsable CEO</th>
+                                        <th>Confirmación</th>
                                     </tr>
                                 </thead>
-                                <tbody id="lista-historial-pagos-tabla">
+                                <tbody>
                                     <tr>
-                                        <td>21 Jul 2026, 08:30 AM</td>
+                                        <td style="padding-left: 20px; color: var(--text-muted);">21 Jul 2026, 08:30 AM</td>
                                         <td><strong>Nadia</strong> (00000000)</td>
-                                        <td class="text-green">$62.00</td>
+                                        <td class="text-danger" style="font-weight: bold;">-$62.00</td>
                                         <td>Levin Dylan Narváez</td>
-                                        <td><span class="tag-db"><i class="fas fa-check"></i> Ciclo Reiniciado</span></td>
+                                        <td><span class="tag-db"><i class="fas fa-check"></i> Ciclo DB Reiniciado</span></td>
                                     </tr>
                                     <tr>
-                                        <td>21 Jul 2026, 08:35 AM</td>
+                                        <td style="padding-left: 20px; color: var(--text-muted);">21 Jul 2026, 08:45 AM</td>
                                         <td><strong>María</strong> (Admin_Dev)</td>
-                                        <td class="text-green">$45.30</td>
+                                        <td class="text-danger" style="font-weight: bold;">-$45.30</td>
                                         <td>Levin Dylan Narváez</td>
-                                        <td><span class="tag-db"><i class="fas fa-check"></i> Ciclo Reiniciado</span></td>
+                                        <td><span class="tag-db"><i class="fas fa-check"></i> Ciclo DB Reiniciado</span></td>
                                     </tr>
                                 </tbody>
                             </table>
@@ -580,20 +770,41 @@
             </section>
 
             <!-- ==========================================
-                 7. HISTORIAL DE CAMBIOS (AUDITORÍA MONGODB)
+                 7. ENTORNO DEV / CONSOLA (Restaurado)
+                 ========================================== -->
+            <section id="tab-dev" class="tab-content hidden">
+                <div class="action-bar">
+                    <div>
+                        <h3 style="margin-bottom: 5px;">Consola y Entorno de Desarrollo</h3>
+                        <p class="text-muted" style="font-size: 13px;">Acceso a nivel código para enviar peticiones directas a MongoDB o reiniciar servicios.</p>
+                    </div>
+                </div>
+                <div class="console-box" style="margin-top: 20px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
+                    <div class="console-header" style="background: #111; padding: 15px 20px; border-bottom: 1px solid #333;">
+                        <span style="font-size: 14px;"><i class="fas fa-terminal text-green"></i> root@ceo-zaruma-core:~#</span>
+                        <div class="console-actions">
+                            <button class="btn-micro text-white" style="background: rgba(16, 185, 129, 0.2); border: 1px solid var(--green-profit);"><i class="fas fa-play"></i> Ejecutar Script</button>
+                        </div>
+                    </div>
+                    <textarea class="code-editor" id="dev-code-area" placeholder="// Escriba su consulta o script administrativo aquí...&#10;db.uploader_daily_stats.find({})" spellcheck="false" style="height: 350px; background: #050505; color: #10b981; padding: 20px; font-size: 15px; border: none;"></textarea>
+                </div>
+            </section>
+
+            <!-- ==========================================
+                 8. AUDITORÍA Y LOGS
                  ========================================== -->
             <section id="tab-historial" class="tab-content hidden">
                 <div class="action-bar">
                     <div>
-                        <h3 style="margin-bottom: 5px;">Registros de Auditoría del Sistema</h3>
-                        <p class="text-muted" style="font-size: 13px;">Todo movimiento de usuarios, cambios de roles, o ingresos a la plataforma queda registrado en esta bitácora.</p>
+                        <h3 style="margin-bottom: 5px;">Bitácora de Eventos del Sistema</h3>
+                        <p class="text-muted" style="font-size: 13px;">Todo movimiento en el panel de configuración, pagos o base de datos queda registrado.</p>
                     </div>
-                    <button class="btn-secondary" id="btn-limpiar-logs"><i class="fas fa-trash"></i> Purgar Logs Antiguos</button>
+                    <button class="btn-secondary" id="btn-limpiar-logs"><i class="fas fa-trash"></i> Purgar Logs</button>
                 </div>
                 
                 <div class="search-filter">
                     <i class="fas fa-search text-muted"></i>
-                    <input type="text" id="buscador-logs" placeholder="Buscar por acción, fecha, o nombre de trabajador...">
+                    <input type="text" id="buscador-logs" placeholder="Filtrar por acción, nombre o fecha...">
                 </div>
                 
                 <div class="chart-box" style="padding: 0; overflow: hidden;">
@@ -601,13 +812,13 @@
                         <table class="corporate-table" style="margin: 0;">
                             <thead style="background: rgba(0,0,0,0.2);">
                                 <tr>
-                                    <th style="padding-left: 25px;">Fecha y Hora</th>
+                                    <th style="padding-left: 25px;">Marca de Tiempo</th>
                                     <th>Actor / Responsable</th>
-                                    <th>Acción Ejecutada</th>
-                                    <th>Módulo / Colección</th>
+                                    <th>Acción Realizada</th>
+                                    <th>Módulo Implicado</th>
                                 </tr>
                             </thead>
-                            <tbody id="tabla-logs-auditoria">
+                            <tbody>
                                 <tr>
                                     <td style="padding-left: 25px; color: var(--text-muted);">Hace 5 minutos</td>
                                     <td><strong class="text-yellow">Levin Dylan (CEO)</strong></td>
@@ -615,15 +826,9 @@
                                     <td><span class="tag-db">Auth_Service</span></td>
                                 </tr>
                                 <tr>
-                                    <td style="padding-left: 25px; color: var(--text-muted);">Hace 1 hora</td>
-                                    <td><strong>Sistema (CRON)</strong></td>
-                                    <td>Sincronización masiva de 1,200 peticiones de vistas.</td>
-                                    <td><span class="tag-env">server.js</span></td>
-                                </tr>
-                                <tr>
                                     <td style="padding-left: 25px; color: var(--text-muted);">Ayer, 22:15 PM</td>
                                     <td><strong>Nadia</strong> (Admin 2)</td>
-                                    <td>Inyección de película: "Deadpool & Wolverine".</td>
+                                    <td>Inyección de película completada.</td>
                                     <td><span class="tag-db">media_catalog</span></td>
                                 </tr>
                             </tbody>
@@ -633,90 +838,89 @@
             </section>
 
             <!-- ==========================================
-                 8. CONFIGURACIÓN (USUARIOS Y RRHH)
+                 9. CONFIGURACIÓN Y RRHH
                  ========================================== -->
             <section id="tab-configuracion" class="tab-content hidden">
                 <div class="config-tabs" id="tabs-configuracion">
-                    <div class="config-tab active" data-target="config-usuarios">Gestión de Accesos y Usuarios</div>
-                    <div class="config-tab" data-target="config-seguridad">Variables de Entorno y Seguridad</div>
+                    <div class="config-tab active" data-target="config-usuarios">Gestión de RRHH y Trabajadores</div>
+                    <div class="config-tab" data-target="config-seguridad">Variables de Entorno (Core)</div>
                 </div>
                 
-                <!-- Sub-pestaña: Usuarios (Mezcla de ENV y DB) -->
                 <div id="config-usuarios" class="sub-tab-content active">
                     <div class="admob-banner" style="display: flex; gap: 20px; align-items: center;">
                         <i class="fas fa-users-cog text-blue-dev" style="font-size: 40px;"></i>
                         <div>
-                            <h4 style="font-size: 18px; margin-bottom: 5px; font-weight: 500;">Administración Híbrida de Empleados</h4>
-                            <p style="font-size: 13px; color: var(--text-muted); max-width: 800px; line-height: 1.5;">El sistema actual reconoce dos tipos de administradores: <strong>[ENV]</strong> (Cargados desde render por seguridad, como usted y Nadia) y <strong>[DB]</strong> (Creados dinámicamente desde este panel en MongoDB). Ambos pueden interactuar con el Bot y usar el Dashboard.</p>
+                            <h4 style="font-size: 18px; margin-bottom: 5px; font-weight: 500;">Administración Híbrida de Planilla</h4>
+                            <p style="font-size: 13px; color: var(--text-muted); max-width: 800px; line-height: 1.5;">El sistema reconoce a la gerencia desde las variables estáticas <strong>[ENV]</strong> por seguridad. Al agregar nuevos trabajadores desde este panel, sus IDs de Telegram se guardarán en MongoDB <strong>[DB]</strong>, dándoles acceso inmediato al Bot y al Dashboard para generar ingresos sin reiniciar servidores.</p>
                         </div>
                     </div>
                     
                     <div class="chart-box">
                         <div class="action-bar" style="margin-bottom: 20px;">
-                            <button class="btn-primary" id="btn-abrir-modal-usuario"><i class="fas fa-user-plus"></i> Añadir Trabajador (DB)</button>
+                            <button class="btn-primary" id="btn-abrir-modal-usuario" style="padding: 14px 25px;"><i class="fas fa-user-plus"></i> Dar de Alta a Nuevo Trabajador (DB)</button>
                             <div class="search-filter" style="margin: 0; min-width: 300px;">
                                 <i class="fas fa-search text-muted"></i>
-                                <input type="text" placeholder="Buscar por ID de Telegram o Nombre...">
+                                <input type="text" placeholder="Buscar trabajador por ID o Nombre...">
                             </div>
                         </div>
                         
                         <div class="table-responsive">
                             <table class="corporate-table" style="margin: 0;">
-                                <thead>
+                                <thead style="background: rgba(0,0,0,0.2);">
                                     <tr>
-                                        <th>Identidad (Nombre / ID Telegram)</th>
-                                        <th>Rol en la Empresa</th>
-                                        <th>Origen de Acceso</th>
-                                        <th>Acciones de Control</th>
+                                        <th style="padding-left: 20px;">Identidad (Nombre / ID)</th>
+                                        <th>Rol Operativo</th>
+                                        <th>Origen del Acceso</th>
+                                        <th style="text-align: right; padding-right: 20px;">Gestión</th>
                                     </tr>
                                 </thead>
-                                <tbody id="tabla-gestion-usuarios">
+                                <tbody>
                                     <!-- CEO -->
                                     <tr>
-                                        <td>
-                                            <div style="display: flex; align-items: center; gap: 10px;">
-                                                <div class="feed-icon" style="background: rgba(255,184,0,0.2); color: var(--yellow-main);">L</div>
+                                        <td style="padding-left: 20px;">
+                                            <div style="display: flex; align-items: center; gap: 15px;">
+                                                <div class="feed-icon" style="background: rgba(255,184,0,0.2); color: var(--yellow-main); font-size: 18px; width: 45px; height: 45px;">L</div>
                                                 <div>
-                                                    <strong class="text-yellow">Levin Dylan Narváez (Tú)</strong><br>
-                                                    <small class="text-muted">ID: ADMIN_CHAT_ID (Principal)</small>
+                                                    <strong class="text-yellow" style="font-size: 16px;">Levin Dylan Narváez (Tú)</strong><br>
+                                                    <small class="text-muted">ID Telegram: ADMIN_CHAT_ID</small>
                                                 </div>
                                             </div>
                                         </td>
-                                        <td>Fundador / CEO</td>
-                                        <td><span class="tag-env">.env (Render)</span></td>
-                                        <td><span class="text-muted" style="font-size: 12px;">Cuenta Root Intocable</span></td>
+                                        <td style="font-size: 15px;">Fundador / CEO</td>
+                                        <td><span class="tag-env">Variable .env (Render)</span></td>
+                                        <td style="text-align: right; padding-right: 20px;"><span class="text-muted" style="font-size: 12px;"><i class="fas fa-lock text-yellow"></i> Root Intocable</span></td>
                                     </tr>
-                                    <!-- Co-Fundadora (Nadia) -->
+                                    <!-- Admin 2 -->
                                     <tr>
-                                        <td>
-                                            <div style="display: flex; align-items: center; gap: 10px;">
-                                                <div class="feed-icon">N</div>
+                                        <td style="padding-left: 20px;">
+                                            <div style="display: flex; align-items: center; gap: 15px;">
+                                                <div class="feed-icon" style="font-size: 18px; width: 45px; height: 45px;">N</div>
                                                 <div>
-                                                    <strong>Nadia</strong><br>
-                                                    <small class="text-muted">ID: 00000000 (ADMIN_CHAT_ID_2)</small>
+                                                    <strong style="font-size: 16px;">Nadia</strong><br>
+                                                    <small class="text-muted">ID Telegram: 00000000</small>
                                                 </div>
                                             </div>
                                         </td>
-                                        <td>Co-Fundadora / Admin 2</td>
-                                        <td><span class="tag-env">.env (Render)</span></td>
-                                        <td><span class="text-muted" style="font-size: 12px;">Modificable solo en Render</span></td>
+                                        <td style="font-size: 15px;">Co-Fundadora / Admin 2</td>
+                                        <td><span class="tag-env">Variable .env (Render)</span></td>
+                                        <td style="text-align: right; padding-right: 20px;"><span class="text-muted" style="font-size: 12px;"><i class="fas fa-lock text-yellow"></i> Root Intocable</span></td>
                                     </tr>
-                                    <!-- Trabajador DB -->
+                                    <!-- Uploader BD -->
                                     <tr>
-                                        <td>
-                                            <div style="display: flex; align-items: center; gap: 10px;">
-                                                <div class="feed-icon" style="background: rgba(59,130,246,0.2); color: var(--blue-dev);">M</div>
+                                        <td style="padding-left: 20px;">
+                                            <div style="display: flex; align-items: center; gap: 15px;">
+                                                <div class="feed-icon" style="background: rgba(59,130,246,0.2); color: var(--blue-dev); font-size: 18px; width: 45px; height: 45px;">M</div>
                                                 <div>
-                                                    <strong>María</strong><br>
-                                                    <small class="text-muted">ID: 554321987</small>
+                                                    <strong style="font-size: 16px;">María</strong><br>
+                                                    <small class="text-muted">ID Telegram: 554321987</small>
                                                 </div>
                                             </div>
                                         </td>
-                                        <td>Desarrollo / Uploader</td>
-                                        <td><span class="tag-db">MongoDB (hr_workers)</span></td>
-                                        <td>
+                                        <td style="font-size: 15px;">Desarrollo / Uploader</td>
+                                        <td><span class="tag-db">Colección hr_workers (DB)</span></td>
+                                        <td style="text-align: right; padding-right: 20px;">
                                             <button class="btn-secondary btn-micro mr-2"><i class="fas fa-edit"></i></button>
-                                            <button class="btn-secondary btn-micro text-danger" onclick="abrirModalEliminar('María', '554321987')"><i class="fas fa-trash"></i></button>
+                                            <button class="btn-secondary btn-micro text-danger" onclick="abrirModalEliminar('María', '554321987')"><i class="fas fa-user-times"></i> Desvincular</button>
                                         </td>
                                     </tr>
                                 </tbody>
@@ -725,28 +929,27 @@
                     </div>
                 </div>
 
-                <!-- Sub-pestaña: Seguridad -->
                 <div id="config-seguridad" class="sub-tab-content">
                     <div class="chart-box">
-                        <h4 style="margin-bottom: 20px;"><i class="fas fa-lock text-yellow"></i> Variables de Entorno Detectadas</h4>
-                        <p class="text-muted" style="font-size: 13px; margin-bottom: 25px;">El sistema ha leído las siguientes variables de seguridad desde su servidor. Por motivos de protección, estas solo pueden cambiarse reiniciando el servicio en Render.</p>
+                        <h4 style="margin-bottom: 20px; font-size: 18px;"><i class="fas fa-shield-alt text-yellow"></i> Variables de Entorno Detectadas en Render</h4>
+                        <p class="text-muted" style="font-size: 13px; margin-bottom: 30px;">El sistema ha extraído estas credenciales del backend. Su edición está bloqueada en esta interfaz y solo pueden ser modificadas directamente en el panel de configuración de su servidor web (Render o AWS) para evitar caídas fatales de la aplicación.</p>
                         
-                        <div class="form-grid" style="grid-template-columns: 1fr 1fr; gap: 20px;">
+                        <div class="form-grid" style="grid-template-columns: 1fr 1fr; gap: 25px;">
                             <div>
-                                <label class="text-muted" style="font-size: 12px; display: block; margin-bottom: 5px;">MONGO_URI</label>
-                                <input type="password" value="mongodb+srv://******" class="w-100" style="padding: 12px; background: var(--bg-base); border: 1px solid var(--border-light); color: white; border-radius: 6px;" readonly>
+                                <label class="text-muted" style="font-size: 12px; display: block; margin-bottom: 8px;">MONGO_URI (Conexión Base de Datos)</label>
+                                <input type="password" value="mongodb+srv://user:pass@cluster..." class="w-100" style="padding: 15px; background: var(--bg-base); border: 1px solid var(--border-light); color: white; border-radius: 8px; font-family: monospace;" readonly>
                             </div>
                             <div>
-                                <label class="text-muted" style="font-size: 12px; display: block; margin-bottom: 5px;">TELEGRAM_BOT_TOKEN</label>
-                                <input type="password" value="7238491:AAH*****" class="w-100" style="padding: 12px; background: var(--bg-base); border: 1px solid var(--border-light); color: white; border-radius: 6px;" readonly>
+                                <label class="text-muted" style="font-size: 12px; display: block; margin-bottom: 8px;">TELEGRAM_BOT_TOKEN (API Bot)</label>
+                                <input type="password" value="7238491:AAH_super_secret_token_******" class="w-100" style="padding: 15px; background: var(--bg-base); border: 1px solid var(--border-light); color: white; border-radius: 8px; font-family: monospace;" readonly>
                             </div>
                             <div>
-                                <label class="text-muted" style="font-size: 12px; display: block; margin-bottom: 5px;">ADMIN_CHAT_ID (CEO)</label>
-                                <input type="text" value="Detectado y Validado" class="w-100 text-green" style="padding: 12px; background: rgba(16, 185, 129, 0.1); border: 1px solid var(--green-profit); color: var(--green-profit); border-radius: 6px;" readonly>
+                                <label class="text-muted" style="font-size: 12px; display: block; margin-bottom: 8px;">ADMIN_CHAT_ID (Llave Maestra CEO)</label>
+                                <input type="text" value="Detectado y Validado" class="w-100 text-green" style="padding: 15px; background: rgba(16, 185, 129, 0.05); border: 1px solid var(--green-profit); color: var(--green-profit); border-radius: 8px; font-weight: bold;" readonly>
                             </div>
                             <div>
-                                <label class="text-muted" style="font-size: 12px; display: block; margin-bottom: 5px;">ADMIN_CHAT_ID_2 (Nadia)</label>
-                                <input type="text" value="00000000" class="w-100" style="padding: 12px; background: var(--bg-base); border: 1px solid var(--border-light); color: white; border-radius: 6px;" readonly>
+                                <label class="text-muted" style="font-size: 12px; display: block; margin-bottom: 8px;">ADMIN_CHAT_ID_2 (Co-Fundadora)</label>
+                                <input type="text" value="00000000" class="w-100" style="padding: 15px; background: var(--bg-base); border: 1px solid var(--border-light); color: white; border-radius: 8px; font-weight: bold;" readonly>
                             </div>
                         </div>
                     </div>
@@ -754,68 +957,105 @@
             </section>
 
             <!-- ==========================================
-                 9. SOBRE LA EMPRESA (TRECHOS CORP)
+                 10. VISIÓN CORPORATIVA (TRECHOS CORP)
                  ========================================== -->
             <section id="tab-empresa" class="tab-content hidden">
-                <!-- Portada Empresarial -->
-                <div class="chart-box" style="padding: 0; overflow: hidden; border: none; position: relative;">
-                    <div style="height: 250px; background: linear-gradient(135deg, #111, var(--bg-panel)); display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; border-bottom: 3px solid var(--yellow-main);">
-                        <i class="fas fa-building text-yellow" style="font-size: 60px; margin-bottom: 15px; filter: drop-shadow(0 0 15px rgba(255,184,0,0.3));"></i>
-                        <h1 style="font-size: 42px; font-weight: 800; letter-spacing: -1px; margin-bottom: 5px;">Trechos Visionarios Corp.</h1>
-                        <p style="color: var(--text-muted); font-size: 16px; letter-spacing: 2px; text-transform: uppercase;">Software • Infraestructura • Comercio</p>
+                
+                <!-- Hero Principal con Video -->
+                <div class="magazine-hero video-container" style="margin-bottom: 40px;">
+                    <video autoplay loop muted playsinline class="corp-bg-video">
+                        <!-- URL Pública Libre para mantener la estructura funcionando -->
+                        <source src="https://cdn.pixabay.com/video/2020/05/24/40093-424785501_tiny.mp4" type="video/mp4">
+                    </video>
+                    <div class="corp-overlay"></div>
+                    
+                    <div class="hero-image-placeholder relative-z">
+                        <i class="fas fa-building text-yellow" style="font-size: 70px; margin-bottom: 20px; filter: drop-shadow(0 0 20px rgba(255,184,0,0.6));"></i>
+                    </div>
+                    <div class="hero-content relative-z text-center">
+                        <h1 style="color: white; font-size: 52px; font-weight: 900; letter-spacing: -2px; margin-bottom: 10px; text-shadow: 0 5px 15px rgba(0,0,0,0.9);">Trechos Visionarios Corp.</h1>
+                        <p style="color: var(--yellow-main); font-size: 18px; font-weight: 600; letter-spacing: 3px; text-transform: uppercase;">Software • Infraestructura • Comercio</p>
                     </div>
                 </div>
 
-                <!-- Pilares e Información -->
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 25px; margin-top: 25px;">
-                    <div class="chart-box">
-                        <h3 style="color: var(--blue-dev); margin-bottom: 15px; border-bottom: 1px solid var(--border-light); padding-bottom: 10px;"><i class="fas fa-map-marker-alt"></i> Sede Operativa</h3>
-                        <p style="font-size: 14px; line-height: 1.8; color: var(--text-muted);">Nuestras operaciones centrales y la toma de decisiones estratégicas se ejecutan desde <strong>Zaruma, El Oro (Ecuador)</strong>. Desde aquí, diseñamos y desplegamos soluciones tecnológicas que impactan a miles de usuarios a nivel internacional.</p>
+                <div class="magazine-articles">
+                    <!-- Sede Operativa -->
+                    <article class="corp-article video-container" style="background: transparent;">
+                        <video autoplay loop muted playsinline class="corp-bg-video">
+                            <source src="https://cdn.pixabay.com/video/2021/08/04/83864-584742616_tiny.mp4" type="video/mp4">
+                        </video>
+                        <div class="corp-overlay" style="background: rgba(15, 15, 20, 0.85);"></div>
+                        <div class="relative-z">
+                            <h3 style="color: white; border-color: rgba(255,255,255,0.1);"><i class="fas fa-map-marker-alt text-blue-dev" style="margin-right: 10px;"></i> Matriz y Operaciones</h3>
+                            <p style="color: #d1d5db; font-size: 15px;">Nuestra toma de decisiones estratégicas, codificación central y administración financiera se ejecutan desde nuestra base en <strong>Zaruma, provincia de El Oro, Ecuador</strong>. Desde aquí proyectamos soluciones para todo el mundo hispanohablante y más allá.</p>
+                        </div>
+                    </article>
+
+                    <!-- Directiva -->
+                    <article class="corp-article video-container" style="background: transparent;">
+                        <video autoplay loop muted playsinline class="corp-bg-video">
+                            <source src="https://cdn.pixabay.com/video/2023/10/22/186009-876939985_tiny.mp4" type="video/mp4">
+                        </video>
+                        <div class="corp-overlay" style="background: rgba(15, 15, 20, 0.85);"></div>
+                        <div class="relative-z">
+                            <h3 style="color: white; border-color: rgba(255,255,255,0.1);"><i class="fas fa-sitemap text-yellow" style="margin-right: 10px;"></i> Estructura Directiva</h3>
+                            <div style="margin-top: 20px;">
+                                <div style="display: flex; gap: 15px; align-items: center; margin-bottom: 20px;">
+                                    <div class="feed-icon" style="width: 50px; height: 50px; font-size: 20px; color: var(--bg-base); background: var(--yellow-main); font-weight: bold;">L</div>
+                                    <div>
+                                        <strong style="color: white; font-size: 16px;">Levin Dylan Narváez Ordóñez</strong>
+                                        <span style="display: block; color: var(--yellow-main); font-size: 13px;">Fundador y Director Ejecutivo (CEO)</span>
+                                    </div>
+                                </div>
+                                <div style="display: flex; gap: 15px; align-items: center;">
+                                    <div class="feed-icon" style="width: 50px; height: 50px; font-size: 20px; background: rgba(255,255,255,0.1); color: white; font-weight: bold;">N</div>
+                                    <div>
+                                        <strong style="color: white; font-size: 16px;">Nadia Trinidad Ordóñez Guamán</strong>
+                                        <span style="display: block; color: var(--text-muted); font-size: 13px;">Co-Fundadora y Administración</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </article>
+                </div>
+
+                <!-- Divisiones y Respaldo Legal -->
+                <div class="chart-box mt-4" style="border: 1px solid var(--border-light);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px;">
+                        <h3 style="margin: 0; font-size: 22px;">Divisiones Estratégicas y Respaldo Legal</h3>
+                        <span class="tag-db" style="font-size: 14px; padding: 8px 15px;"><i class="fas fa-shield-alt"></i> Entidad Respaldada Internacionalmente</span>
                     </div>
                     
-                    <div class="chart-box">
-                        <h3 style="color: var(--yellow-main); margin-bottom: 15px; border-bottom: 1px solid var(--border-light); padding-bottom: 10px;"><i class="fas fa-sitemap"></i> Directiva Corporativa</h3>
-                        <ul style="list-style: none; padding: 0;">
-                            <li style="margin-bottom: 15px;">
-                                <strong style="display: block; font-size: 16px; color: var(--text-main);">Levin Dylan Narváez Ordóñez</strong>
-                                <span style="font-size: 13px; color: var(--text-muted);">Fundador, Arquitecto de Software y CEO.</span>
-                            </li>
-                            <li>
-                                <strong style="display: block; font-size: 16px; color: var(--text-main);">Nadia Trinidad Ordóñez Guamán</strong>
-                                <span style="font-size: 13px; color: var(--text-muted);">Segunda Fundadora y Administradora Operativa.</span>
-                            </li>
-                        </ul>
-                    </div>
-
-                    <div class="chart-box">
-                        <h3 style="color: var(--green-profit); margin-bottom: 15px; border-bottom: 1px solid var(--border-light); padding-bottom: 10px;"><i class="fas fa-shield-alt"></i> Respaldo Institucional</h3>
-                        <p style="font-size: 14px; line-height: 1.8; color: var(--text-muted);">Trechos Visionarios es una entidad legalmente estructurada, que cuenta con el respaldo internacional de infraestructuras basadas en <strong>Westchester (Estados Unidos)</strong> para garantizar la seguridad de pagos y operaciones de alto nivel.</p>
-                    </div>
-                </div>
-
-                <div class="chart-box mt-4">
-                    <h3 style="margin-bottom: 20px;">Divisiones Estratégicas de la Empresa</h3>
+                    <p style="font-size: 15px; color: var(--text-muted); line-height: 1.6; margin-bottom: 30px;">Trechos Visionarios opera bajo un marco legal estructurado con garantía de flujos bancarios internacionales provista por nuestros socios de infraestructura en <strong>Westchester, Estados Unidos</strong>.</p>
+                    
                     <div class="table-responsive">
-                        <table class="corporate-table">
-                            <thead><tr><th>División</th><th>Proyecto Activo</th><th>Tecnologías Empleadas</th><th>Estado</th></tr></thead>
+                        <table class="corporate-table" style="margin: 0;">
+                            <thead style="background: rgba(0,0,0,0.2);">
+                                <tr>
+                                    <th style="padding-left: 20px;">Sector / División de la Empresa</th>
+                                    <th>Aplicación o Proyecto Activo</th>
+                                    <th>Stack Tecnológico</th>
+                                    <th>Estatus Actual</th>
+                                </tr>
+                            </thead>
                             <tbody>
                                 <tr>
-                                    <td><strong>Streaming & Entretenimiento</strong></td>
-                                    <td>App Sala Cine (Android)</td>
-                                    <td>Kotlin, Node.js, TMDB API, M3U8/MP4</td>
-                                    <td><span class="tag-db">En Producción</span></td>
+                                    <td style="padding-left: 20px; font-size: 15px;"><strong class="text-blue-dev">1. Streaming y Entretenimiento Masivo</strong></td>
+                                    <td>Plataforma "Sala Cine" (Móvil)</td>
+                                    <td>Kotlin, Node.js, TMDB API, AWS</td>
+                                    <td><span class="tag-db" style="border-color: var(--green-profit);">En Producción Comercial</span></td>
                                 </tr>
                                 <tr>
-                                    <td><strong>Gestión y Automatización</strong></td>
-                                    <td>Trechos Admin Bot</td>
-                                    <td>Telegram API, MongoDB Atlas, Render</td>
-                                    <td><span class="tag-db">En Producción</span></td>
+                                    <td style="padding-left: 20px; font-size: 15px;"><strong class="text-yellow">2. Automatización Empresarial y Bot</strong></td>
+                                    <td>Trechos Admin Bot / Dashboards</td>
+                                    <td>Telegram API, MongoDB Atlas, HTML/JS</td>
+                                    <td><span class="tag-db" style="border-color: var(--green-profit);">En Producción Operativa</span></td>
                                 </tr>
                                 <tr>
-                                    <td><strong>E-commerce y Retail (Proyección)</strong></td>
-                                    <td>Arbitraje de Importaciones</td>
-                                    <td>Logística Temu/1688, Integración Local</td>
-                                    <td><span class="tag-env">Fase de Planificación</span></td>
+                                    <td style="padding-left: 20px; font-size: 15px;"><strong class="text-muted">3. Comercio Electrónico (E-commerce)</strong></td>
+                                    <td>Arbitraje Retail y Plataforma de Ventas</td>
+                                    <td>Integración Temu / 1688 / Logística Zaruma</td>
+                                    <td><span class="tag-env" style="border-color: var(--text-muted); color: var(--text-muted);">En Fase de Planificación (2026)</span></td>
                                 </tr>
                             </tbody>
                         </table>
@@ -827,65 +1067,117 @@
     </div>
 
     <!-- ==========================================
-         ZONA DE MODALES (OCULTOS HASTA QUE SE ACTIVAN)
+         ZONA DE MODALES (FLOTANTES OCULTOS)
          ========================================== -->
          
-    <!-- Modal: Agregar Usuario -->
+    <!-- Modal: Agregar Usuario a MongoDB -->
     <div id="modal-agregar-usuario" class="modal-overlay">
         <div class="modal-content">
             <div class="modal-header">
-                <h3><i class="fas fa-user-plus text-blue-dev"></i> Registrar Nuevo Trabajador</h3>
-                <button class="modal-close" data-dismiss="modal-agregar-usuario"><i class="fas fa-times"></i></button>
+                <h3><i class="fas fa-user-plus text-blue-dev"></i> Registrar Planilla en MongoDB</h3>
+                <button class="modal-close" onclick="cerrarModal('modal-agregar-usuario')"><i class="fas fa-times"></i></button>
             </div>
             <div class="modal-body">
-                <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 20px;">Este usuario será guardado en MongoDB y podrá interactuar con el bot y acceder a su panel de ganancias instantáneamente.</p>
-                <div class="form-grid" style="grid-template-columns: 1fr; gap: 15px;">
+                <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 25px; line-height: 1.5;">El empleado registrado aquí obtendrá acceso instantáneo al Bot y a su Dashboard personal para comenzar a inyectar contenido sin necesidad de alterar su archivo de configuración <code>.env</code>.</p>
+                <div class="form-grid" style="grid-template-columns: 1fr; gap: 20px;">
                     <div>
-                        <label style="font-size: 12px; color: var(--text-muted); display: block; margin-bottom: 5px;">Nombre del Trabajador:</label>
-                        <input type="text" id="add-nombre" class="w-100" style="padding: 12px; background: var(--bg-base); border: 1px solid var(--border-light); color: white; border-radius: 6px;" placeholder="Ej: Carlos Pérez">
+                        <label style="font-size: 13px; color: var(--text-muted); font-weight: bold; display: block; margin-bottom: 8px;">Nombre Identificativo:</label>
+                        <input type="text" id="add-nombre" class="w-100" style="padding: 15px; background: var(--bg-base); border: 1px solid var(--border-light); color: white; border-radius: 8px; font-size: 15px;" placeholder="Ej: Carlos Uploader">
                     </div>
                     <div>
-                        <label style="font-size: 12px; color: var(--text-muted); display: block; margin-bottom: 5px;">ID de Telegram (Crucial para el Bot):</label>
-                        <input type="number" id="add-telegram" class="w-100" style="padding: 12px; background: var(--bg-base); border: 1px solid var(--border-light); color: white; border-radius: 6px;" placeholder="Ej: 123456789">
+                        <label style="font-size: 13px; color: var(--text-muted); font-weight: bold; display: block; margin-bottom: 8px;">ID de Telegram (Obligatorio para la API):</label>
+                        <input type="number" id="add-telegram" class="w-100" style="padding: 15px; background: var(--bg-base); border: 1px solid var(--border-light); color: white; border-radius: 8px; font-size: 15px;" placeholder="Ej: 123456789">
                     </div>
                     <div>
-                        <label style="font-size: 12px; color: var(--text-muted); display: block; margin-bottom: 5px;">Rol Asignado:</label>
-                        <select id="add-rol" class="w-100" style="padding: 12px; background: var(--bg-base); border: 1px solid var(--border-light); color: white; border-radius: 6px; outline: none;">
-                            <option value="uploader">Uploader de Contenido</option>
-                            <option value="marketing">Especialista Marketing</option>
-                            <option value="developer">Desarrollador / Dev</option>
+                        <label style="font-size: 13px; color: var(--text-muted); font-weight: bold; display: block; margin-bottom: 8px;">Asignación de Rol:</label>
+                        <select id="add-rol" class="w-100" style="padding: 15px; background: var(--bg-base); border: 1px solid var(--border-light); color: white; border-radius: 8px; font-size: 15px; outline: none; cursor: pointer;">
+                            <option value="uploader">Uploader de Contenido (Mínimos privilegios)</option>
+                            <option value="marketing">Especialista Marketing y Redes</option>
+                            <option value="developer">Desarrollador de Apoyo (Medios privilegios)</option>
                         </select>
                     </div>
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn-secondary" data-dismiss="modal-agregar-usuario">Cancelar</button>
-                <button class="btn-primary" id="btn-submit-new-user">Guardar en Base de Datos</button>
+                <button class="btn-secondary" style="padding: 12px 25px;" onclick="cerrarModal('modal-agregar-usuario')">Cancelar</button>
+                <button class="btn-primary" style="padding: 12px 25px;" id="btn-submit-new-user"><i class="fas fa-save"></i> Guardar en BD</button>
             </div>
         </div>
     </div>
 
     <!-- Modal: Eliminar Usuario -->
     <div id="modal-eliminar-usuario" class="modal-overlay">
-        <div class="modal-content" style="border-color: var(--red-expense); max-width: 400px;">
+        <div class="modal-content" style="border-color: var(--red-expense); max-width: 450px;">
             <div class="modal-header" style="background: rgba(239, 68, 68, 0.1);">
-                <h3 class="text-danger"><i class="fas fa-exclamation-triangle"></i> Eliminar Trabajador</h3>
-                <button class="modal-close" data-dismiss="modal-eliminar-usuario"><i class="fas fa-times"></i></button>
+                <h3 class="text-danger"><i class="fas fa-exclamation-triangle"></i> Desvincular Trabajador</h3>
+                <button class="modal-close" onclick="cerrarModal('modal-eliminar-usuario')"><i class="fas fa-times"></i></button>
             </div>
-            <div class="modal-body text-center">
-                <i class="fas fa-trash-alt text-danger" style="font-size: 50px; margin-bottom: 20px;"></i>
-                <p style="font-size: 16px; margin-bottom: 10px;">¿Está seguro de eliminar a <strong id="delete-user-name" class="text-yellow">Usuario</strong>?</p>
-                <p style="font-size: 13px; color: var(--text-muted);">ID Telegram: <span id="delete-user-id"></span></p>
-                <p style="font-size: 13px; color: var(--red-expense); margin-top: 15px; padding: 10px; background: rgba(239, 68, 68, 0.1); border-radius: 8px;">Esta acción borrará su acceso de la base de datos inmediatamente. Sus ganancias históricas se mantendrán en los registros financieros.</p>
+            <div class="modal-body text-center" style="padding: 40px 25px;">
+                <i class="fas fa-user-times text-danger" style="font-size: 60px; margin-bottom: 25px;"></i>
+                <p style="font-size: 18px; margin-bottom: 10px;">¿Revocar acceso absoluto a <strong id="delete-user-name" class="text-yellow">Usuario</strong>?</p>
+                <p style="font-size: 14px; color: var(--text-muted);">ID Telegram vinculado: <strong id="delete-user-id" class="text-white"></strong></p>
+                <p style="font-size: 13px; color: var(--red-expense); margin-top: 25px; padding: 15px; background: rgba(239, 68, 68, 0.1); border-radius: 8px; line-height: 1.5; text-align: left;"><i class="fas fa-info-circle"></i> <strong>Aviso de Sistema:</strong> Esta acción borrará su acceso de la base de datos inmediatamente impidiéndole usar el bot. Sus ganancias y aportes históricos no se borrarán de la contabilidad de la empresa.</p>
             </div>
-            <div class="modal-footer" style="justify-content: center;">
-                <button class="btn-secondary" data-dismiss="modal-eliminar-usuario">Cancelar</button>
-                <button class="btn-primary" style="background: var(--red-expense); color: white;" id="btn-confirm-delete">Sí, Eliminar Acceso</button>
+            <div class="modal-footer" style="justify-content: center; gap: 20px;">
+                <button class="btn-secondary" style="padding: 12px 30px;" onclick="cerrarModal('modal-eliminar-usuario')">Cancelar</button>
+                <button class="btn-primary" style="background: var(--red-expense); color: white; padding: 12px 30px;" id="btn-confirm-delete">Sí, Revocar Acceso</button>
             </div>
         </div>
     </div>
 
-    <!-- SCRIPTS NO INCLUIDOS AÚN -->
-    <!-- <script src="ceo_panel.js"></script> -->
+    <!-- Modal: Liquidar Trabajador -->
+    <div id="modal-liquidar-trabajador" class="modal-overlay">
+        <div class="modal-content" style="border-color: var(--green-profit); max-width: 450px;">
+            <div class="modal-header" style="background: rgba(16, 185, 129, 0.1);">
+                <h3 class="text-green"><i class="fas fa-money-check-alt"></i> Ejecutar Liquidación a Base de Datos</h3>
+                <button class="modal-close" onclick="cerrarModal('modal-liquidar-trabajador')"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body text-center" style="padding: 30px 25px;">
+                <i class="fas fa-wallet text-green" style="font-size: 60px; margin-bottom: 20px;"></i>
+                <p style="font-size: 16px; color: var(--text-muted); margin-bottom: 10px;">Liquidando ciclo para el trabajador:</p>
+                <h2 style="font-size: 28px; margin-bottom: 20px;" id="liquidar-user-name">Nombre</h2>
+                <div style="background: var(--bg-base); border: 1px solid var(--border-light); padding: 20px; border-radius: 12px; margin-bottom: 20px;">
+                    <span style="font-size: 13px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px;">Monto a transferir</span>
+                    <h1 class="text-yellow" style="font-size: 45px; margin-top: 5px;" id="liquidar-user-monto">$0.00</h1>
+                </div>
+                <p style="font-size: 13px; color: var(--text-muted); line-height: 1.5; text-align: left;"><i class="fas fa-info-circle text-blue-dev"></i> Al confirmar, el sistema de Trechos Corp insertará un registro de pago en el historial de la base de datos y la ganancia actual de este empleado pasará a $0. Asegúrese de haber hecho la transferencia bancaria o en USDT correspondiente antes de continuar.</p>
+            </div>
+            <div class="modal-footer" style="justify-content: center; gap: 20px;">
+                <button class="btn-secondary" style="padding: 12px 30px;" onclick="cerrarModal('modal-liquidar-trabajador')">Cancelar Operación</button>
+                <button class="btn-success" style="padding: 12px 30px;" id="btn-confirm-liquidar"><i class="fas fa-check-double"></i> Confirmar y Reiniciar Ciclo DB</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Utilidades Globales para Modales (Temporal visual) -->
+    <script>
+        // Funciones básicas para abrir modales y pestañas desde el HTML puro sin tocar el JS grande todavía
+        document.getElementById('btn-abrir-modal-usuario').addEventListener('click', () => {
+            document.getElementById('modal-agregar-usuario').classList.add('active');
+        });
+        function cerrarModal(id) { document.getElementById(id).classList.remove('active'); }
+        function abrirModalEliminar(nombre, idStr) {
+            document.getElementById('delete-user-name').textContent = nombre;
+            document.getElementById('delete-user-id').textContent = idStr;
+            document.getElementById('modal-eliminar-usuario').classList.add('active');
+        }
+        function abrirModalLiquidar(nombre, montoNum, origen) {
+            document.getElementById('liquidar-user-name').innerHTML = nombre + ' <br><span class="tag-' + (origen==='MongoDB'?'db':'env') + '" style="font-size:10px; margin-top:5px; display:inline-block;">'+origen+'</span>';
+            document.getElementById('liquidar-user-monto').textContent = '$' + parseFloat(montoNum).toFixed(2);
+            document.getElementById('modal-liquidar-trabajador').classList.add('active');
+        }
+        // Menú Filtro Fechas
+        document.getElementById('btn-filtro-fechas').addEventListener('click', (e) => {
+            e.stopPropagation();
+            document.getElementById('menu-filtro-fechas').classList.toggle('active');
+        });
+        document.querySelectorAll('#menu-filtro-fechas li').forEach(li => {
+            li.addEventListener('click', (e) => {
+                document.getElementById('label-fecha-filtro').textContent = e.currentTarget.textContent;
+                document.getElementById('menu-filtro-fechas').classList.remove('active');
+            });
+        });
+        document.addEventListener('click', () => { document.getElementById('menu-filtro-fechas').classList.remove('active'); });
+    </script>
 </body>
 </html>
