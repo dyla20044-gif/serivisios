@@ -5,17 +5,39 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Trechos Visionarios | CEO Workspace</title>
     
-    <!-- CSS y Librerías Corporativas -->
     <link rel="stylesheet" href="ceo_panel.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        /* Adaptaciones estilo AdMob manteniendo colores corporativos */
+        .admob-banner { background-color: var(--bg-card); border-radius: 8px; border: 1px solid var(--border-light); padding: 25px; margin-bottom: 20px; }
+        .admob-banner h3 { font-size: 16px; color: var(--text-main); margin-bottom: 20px; font-weight: 500; }
+        .admob-grid { display: flex; justify-content: space-between; gap: 15px; }
+        .admob-stat { flex: 1; }
+        .admob-stat span { display: block; font-size: 13px; color: var(--text-muted); margin-bottom: 8px; }
+        .admob-stat h2 { font-size: 28px; color: var(--text-main); font-weight: 400; margin-bottom: 5px; }
+        .admob-stat .trend { font-size: 12px; color: var(--green-profit); }
+        .admob-stat .trend.negative { color: var(--red-expense); }
+        
+        .admob-split { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+        .admob-card { background-color: var(--bg-card); border-radius: 8px; border: 1px solid var(--border-light); padding: 20px; }
+        .admob-card-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-light); padding-bottom: 15px; margin-bottom: 15px; }
+        
+        .progress-container { width: 100%; background-color: var(--bg-base); border-radius: 4px; height: 8px; margin: 15px 0; overflow: hidden; }
+        .progress-bar { height: 100%; background-color: var(--blue-dev); width: 0%; }
+        
+        .config-tabs { display: flex; gap: 20px; border-bottom: 1px solid var(--border-light); margin-bottom: 20px; }
+        .config-tab { padding: 10px 0; color: var(--text-muted); cursor: pointer; border-bottom: 2px solid transparent; }
+        .config-tab.active { color: var(--blue-dev); border-color: var(--blue-dev); }
+        
+        .badge-beta { font-size: 9px; background-color: rgba(255, 255, 255, 0.1); padding: 2px 5px; border-radius: 4px; margin-left: 5px; }
+        .search-filter { display: flex; align-items: center; background: var(--bg-base); border: 1px solid var(--border-light); padding: 10px 15px; border-radius: 4px; margin-bottom: 20px; }
+        .search-filter input { background: transparent; border: none; color: white; margin-left: 10px; width: 100%; outline: none; }
+    </style>
 </head>
 <body>
 
-    <!-- ==========================================
-         PANTALLA DE SEGURIDAD ENCRIPTADA (DB REAL)
-         ========================================== -->
     <div id="login-screen" class="active">
         <div class="login-box">
             <div class="login-logo">
@@ -29,65 +51,55 @@
         </div>
     </div>
 
-    <!-- ==========================================
-         DASHBOARD CORPORATIVO
-         ========================================== -->
     <div id="ceo-dashboard" class="hidden">
         
-        <!-- HEADER MÓVIL FIJO (UI/UX Superior) -->
         <div class="mobile-header">
             <div class="mobile-brand-area">
                 <button id="mobile-menu-btn"><i class="fas fa-bars"></i></button>
                 <h2 class="mobile-brand" id="mobile-brand-text">Trechos <span>Corp.</span></h2>
-                
-                <!-- Título y fecha dinámicos (Se inyectan vía JS al cambiar de pestaña) -->
                 <div class="mobile-dynamic-info hidden" id="mobile-dynamic-info">
-                    <h3 id="mobile-tab-title">Panel General</h3>
+                    <h3 id="mobile-tab-title">Página principal</h3>
                     <span id="mobile-live-date">Cargando ciclo...</span>
                 </div>
             </div>
-
             <div class="mobile-ceo-profile">
                 <div class="notifications">
                     <i class="fas fa-bell"></i>
                     <span class="badge" id="mobile-notif-badge">0</span>
                 </div>
-                <div class="avatar" title="Levin Dylan Narváez - CEO">
-                    <img src="https://ui-avatars.com/api/?name=Levin+Dylan+Narvaez&background=ffb800&color=000&bold=true" alt="Levin Dylan Narváez - CEO">
+                <div class="avatar">
+                    <img src="https://ui-avatars.com/api/?name=Levin+Dylan+Narvaez&background=ffb800&color=000&bold=true" alt="CEO">
                 </div>
             </div>
         </div>
 
-        <!-- BARRA LATERAL (Sidebar PC/Móvil) -->
         <nav class="sidebar" id="sidebar">
             <div class="brand">
                 <h2>Trechos <span>Visionarios</span></h2>
                 <small>Operaciones Centrales</small>
             </div>
             <ul class="nav-links">
-                <li class="active" data-tab="tab-general"><i class="fas fa-th-large"></i> Panel General</li>
-                <li data-tab="tab-infra"><i class="fas fa-server"></i> Infraestructura</li>
-                <li data-tab="tab-finanzas"><i class="fas fa-file-invoice-dollar"></i> Finanzas Vivas</li>
-                <li data-tab="tab-catalogo"><i class="fas fa-film"></i> Bóveda de Contenido</li>
-                <li data-tab="tab-dev"><i class="fas fa-code"></i> Entorno Dev</li>
-                <li data-tab="tab-equipo"><i class="fas fa-users-cog"></i> RR.HH. y Nómina</li>
-                <li data-tab="tab-apps"><i class="fas fa-mobile-alt"></i> Red de Apps</li>
-                <li data-tab="tab-prensa"><i class="fas fa-newspaper"></i> Visión Corp.</li>
+                <li class="active" data-tab="tab-inicio"><i class="fas fa-home"></i> Página principal</li>
+                <li data-tab="tab-aplicaciones"><i class="fas fa-th-large"></i> Aplicaciones</li>
+                <li data-tab="tab-informes"><i class="fas fa-chart-bar"></i> Informes</li>
+                <li data-tab="tab-bloqueo"><i class="fas fa-shield-alt"></i> Control de bloqueo</li>
+                <li data-tab="tab-pagos"><i class="fas fa-money-bill-wave"></i> Pagos</li>
+                <li data-tab="tab-historial"><i class="fas fa-history"></i> Historial de cambios <span class="badge-beta">BETA</span></li>
+                <li data-tab="tab-configuracion"><i class="fas fa-cog"></i> Configuración</li>
+                <li data-tab="tab-ayuda"><i class="fas fa-question-circle"></i> Ayuda</li>
             </ul>
             <div class="legal-footer">
                 <p>Matriz: Zaruma, El Oro, EC.</p>
-                <p>Infraestructura Global</p>
+                <p>CEO: Levin Dylan Narváez</p>
                 <button class="logout" id="btn-logout"><i class="fas fa-sign-out-alt"></i> Cerrar Sesión</button>
             </div>
         </nav>
 
-        <!-- ÁREA CENTRAL DE TRABAJO -->
         <main class="content-area" id="export-pdf-area">
             
-            <!-- HEADER GLOBAL PC -->
             <header class="global-header desktop-only">
                 <div class="header-title-area">
-                    <h1 id="current-tab-title">Panel General</h1>
+                    <h1 id="current-tab-title">Página principal</h1>
                     <p class="date-subtitle" id="live-date">Cargando ciclo fiscal...</p>
                 </div>
                 <div class="ceo-profile">
@@ -106,155 +118,175 @@
             </header>
 
             <!-- ==========================================
-                 1. PANEL GENERAL (Monitor de Tráfico y Métricas)
+                 1. PÁGINA PRINCIPAL
                  ========================================== -->
-            <section id="tab-general" class="tab-content active">
-                <div class="kpi-grid">
-                    <div class="kpi-card">
-                        <span>Ingresos del Día (En Vivo)</span>
-                        <h3 class="text-yellow" id="kpi-ingresos-dia">$0.00</h3>
-                        <small class="trend-up"><i class="fas fa-sync fa-spin"></i> Algoritmo incremental activo</small>
-                    </div>
-                    <div class="kpi-card">
-                        <span>Tráfico App (Real-time)</span>
-                        <h3 id="kpi-vistas-dia">0</h3>
-                        <small>Usuarios concurrentes en DB</small>
-                    </div>
-                    <div class="kpi-card">
-                        <span>Ganancia Mensual Estimada (IA)</span>
-                        <h3 class="text-green" id="kpi-caja-estimada">$0.00</h3>
-                        <small>Cálculo predictivo basado en promedios</small>
+            <section id="tab-inicio" class="tab-content active">
+                <div class="admob-banner">
+                    <h3>Total de ingresos consolidados DB <i class="fas fa-question-circle text-muted"></i></h3>
+                    <div class="admob-grid">
+                        <div class="admob-stat">
+                            <span>Hoy hasta este momento</span>
+                            <h2 id="home-hoy">USD 0.00</h2>
+                        </div>
+                        <div class="admob-stat">
+                            <span>Ayer</span>
+                            <h2 id="home-ayer">USD 0.00</h2>
+                        </div>
+                        <div class="admob-stat">
+                            <span>Hasta ahora este mes</span>
+                            <h2 id="home-mes">USD 0.00</h2>
+                        </div>
+                        <div class="admob-stat">
+                            <span>El mes pasado</span>
+                            <h2 id="home-pasado">USD 0.00</h2>
+                        </div>
                     </div>
                 </div>
 
-                <div class="dashboard-middle">
-                    <div class="chart-box">
-                        <div class="box-header">
-                            <h4>Flujo Bruto Consolidado (Lectura DB)</h4>
+                <div class="action-bar" style="margin-bottom: 20px;">
+                    <button class="btn-secondary"><i class="fas fa-calendar-alt"></i> Últimos 7 días en comparación con los 7 días anteriores <i class="fas fa-caret-down"></i></button>
+                </div>
+
+                <div class="admob-split">
+                    <div class="admob-card">
+                        <div class="admob-card-header">
+                            <h4 style="font-weight: 500;">Rendimiento de la actividad de los usuarios</h4>
                         </div>
-                        <div class="canvas-container">
-                            <canvas id="mainRevenueChart"></canvas>
-                        </div>
-                    </div>
-                    
-                    <!-- Monitor de Tráfico en Vivo -->
-                    <div class="activity-feed">
-                        <div class="box-header activity-header">
-                            <h4>Monitor de Vistas (App Sala Cine)</h4>
-                            <div class="traffic-filters">
-                                <button class="btn-micro active" data-filter="hoy">Hoy</button>
-                                <button class="btn-micro" data-filter="semana">Semana</button>
-                                <button class="btn-micro" data-filter="mes">Mes</button>
+                        <div class="admob-grid" style="flex-wrap: wrap;">
+                            <div class="admob-stat" style="min-width: 45%; margin-bottom: 20px;">
+                                <span>Ingresos estimados <i class="fas fa-question-circle"></i></span>
+                                <h2>USD 0.00</h2>
+                                <span class="trend">+USD 0.00 (+0.00%)</span>
+                                <div style="height: 40px; border-bottom: 1px solid var(--border-light); margin-top: 10px;"></div>
+                            </div>
+                            <div class="admob-stat" style="min-width: 45%; margin-bottom: 20px;">
+                                <span>Vistas totales <i class="fas fa-question-circle"></i></span>
+                                <h2>0</h2>
+                                <span class="trend">+0 (+0.00%)</span>
+                                <div style="height: 40px; border-bottom: 1px solid var(--border-light); margin-top: 10px;"></div>
+                            </div>
+                            <div class="admob-stat" style="min-width: 45%;">
+                                <span>Contenido subido <i class="fas fa-question-circle"></i></span>
+                                <h2>0</h2>
+                                <span class="trend negative">-0 (-0.00%)</span>
+                                <div style="height: 40px; border-bottom: 1px solid var(--border-light); margin-top: 10px;"></div>
+                            </div>
+                            <div class="admob-stat" style="min-width: 45%;">
+                                <span>Costo por vista (eCPM) <i class="fas fa-question-circle"></i></span>
+                                <h2>USD 0.005</h2>
+                                <span class="trend">+USD 0.00 (+0.00%)</span>
+                                <div style="height: 40px; border-bottom: 1px solid var(--border-light); margin-top: 10px;"></div>
                             </div>
                         </div>
-                        <ul class="feed-list" id="live-movies-list">
-                            <li class="feed-item placeholder-item">Cargando métricas de clics reales...</li>
-                        </ul>
+                        <div style="margin-top: 20px;">
+                            <a href="#" class="text-blue-dev" style="color: var(--blue-dev); text-decoration: none; font-size: 14px;">Ver informe</a>
+                        </div>
                     </div>
-                </div>
-            </section>
 
-            <!-- ==========================================
-                 2. MÓDULO DE INFRAESTRUCTURA (Estricto Hardware)
-                 ========================================== -->
-            <section id="tab-infra" class="tab-content hidden">
-                <div class="action-bar">
-                    <h3>Centro de Datos y Nodos Globales</h3>
-                </div>
-
-                <div class="server-status-grid">
-                    <div class="server-node">
-                        <div class="node-header"><i class="flag">🇪🇨</i> <h4>Core Ecuador (Zaruma)</h4></div>
-                        <span class="status-blink working" id="status-ec">En Línea</span>
-                        <p>Cluster MongoDB Principal</p>
-                    </div>
-                    <div class="server-node">
-                        <div class="node-header"><i class="flag">🇺🇸</i> <h4>Bóveda EE.UU.</h4></div>
-                        <span class="status-blink working" id="status-us">En Línea</span>
-                        <p>Almacenamiento de Medios Brutos</p>
-                    </div>
-                    <div class="server-node">
-                        <div class="node-header"><i class="flag">🇲🇽</i> <h4>CDN México</h4></div>
-                        <span class="status-blink working" id="status-mx">En Línea</span>
-                        <p>Enrutamiento Latam Norte</p>
-                    </div>
-                    <div class="server-node">
-                        <div class="node-header"><i class="flag">🇪🇸</i> <h4>Proxy España</h4></div>
-                        <span class="status-blink standby" id="status-es">Standby</span>
-                        <p>Balanceo de Carga Europa</p>
-                    </div>
-                </div>
-
-                <div class="infrastructure-details">
-                    <div class="server-costs-box w-100">
-                        <h4>Auditoría de Costos de Hardware e IPs</h4>
-                        <table class="corporate-table" id="hardware-costs-table">
+                    <div class="admob-card">
+                        <div class="admob-card-header">
+                            <h4 style="font-weight: 500;">Trabajadores con mejor rendimiento</h4>
+                        </div>
+                        <div class="admob-grid" style="margin-bottom: 20px;">
+                            <div class="admob-stat">
+                                <span>Ingresos generados</span>
+                                <h2>USD 0.00</h2>
+                                <span class="trend">+0.00%</span>
+                            </div>
+                            <div class="admob-stat">
+                                <span>Vistas aportadas</span>
+                                <h2>0</h2>
+                                <span class="trend">+0.00%</span>
+                            </div>
+                        </div>
+                        <table class="corporate-table" style="margin-top: 0;">
                             <thead>
                                 <tr>
-                                    <th>Instancia / Servicio</th>
-                                    <th>Proveedor</th>
-                                    <th>Estado DB</th>
-                                    <th>Costo Mensual</th>
+                                    <th style="padding: 10px 0;">Trabajador</th>
+                                    <th style="padding: 10px 0;">Vistas</th>
+                                    <th style="padding: 10px 0;">Ingresos</th>
                                 </tr>
                             </thead>
-                            <tbody>
-                                <tr><td>Cluster DB Primario</td><td>MongoDB Atlas</td><td class="text-green">Activo</td><td>$3,000.00</td></tr>
-                                <tr><td>Almacenamiento de Video</td><td>AWS S3</td><td class="text-green">Activo</td><td>$800.00</td></tr>
-                                <tr><td>Red de Distribución (CDN)</td><td>Cloudflare</td><td class="text-green">Activo</td><td>$500.00</td></tr>
-                                <tr><td>Servidor Local Zaruma</td><td>On-Premise</td><td class="text-yellow">Mantenimiento</td><td>$200.00</td></tr>
-                                <tr class="total-row">
-                                    <td colspan="3"><strong>Total Inversión Infraestructura:</strong></td>
-                                    <td class="text-danger"><strong>-$4,500.00</strong></td>
-                                </tr>
+                            <tbody id="top-workers-list">
+                                <tr><td colspan="3" class="text-center text-muted" style="padding: 20px;">Cargando métricas de DB...</td></tr>
                             </tbody>
                         </table>
+                        <div style="margin-top: 20px; display: flex; gap: 20px;">
+                            <a href="#" style="color: var(--blue-dev); text-decoration: none; font-size: 14px;">Ver informe</a>
+                            <a href="#" style="color: var(--blue-dev); text-decoration: none; font-size: 14px;">Administrar equipo</a>
+                        </div>
                     </div>
                 </div>
             </section>
 
             <!-- ==========================================
-                 3. FINANZAS VIVAS (Caja DB Real)
+                 2. APLICACIONES
                  ========================================== -->
-            <section id="tab-finanzas" class="tab-content hidden">
+            <section id="tab-aplicaciones" class="tab-content hidden">
                 <div class="action-bar">
-                    <h3>Caja Corporativa y Proyecciones</h3>
-                    <button class="btn-primary" id="btn-export-pdf"><i class="fas fa-download"></i> Exportar Balance PDF</button>
+                    <h3>Aplicaciones conectadas</h3>
+                    <button class="btn-primary"><i class="fas fa-plus"></i> Agregar aplicación</button>
                 </div>
-                
-                <div class="finance-grid">
-                    <div class="finance-card">
-                        <h4>Flujo de Caja Real (Mes actual)</h4>
-                        <h2 class="text-yellow" id="fin-caja-real">$0.00</h2>
-                        <p>Total ingresado a la BD este mes.</p>
-                    </div>
-                    <div class="finance-card">
-                        <h4>Egresos Operativos (Hardware + Nómina)</h4>
-                        <h2 class="text-danger" id="fin-egresos">-$0.00</h2>
-                        <p>Descuentos automáticos registrados.</p>
-                    </div>
-                    <div class="finance-card">
-                        <h4>Utilidad Neta</h4>
-                        <h2 class="text-green" id="fin-neto">$0.00</h2>
-                        <p>Capital libre de la empresa.</p>
+                <div class="apps-grid" id="apps-live-grid">
+                    <div class="app-card highlight-app" style="cursor: pointer;">
+                        <div class="app-header">
+                            <i class="fab fa-android text-green"></i>
+                            <div>
+                                <h4 style="margin-bottom: 5px;">Sala Cine</h4>
+                                <span style="font-size: 12px; color: var(--text-muted);">com.salacine.app • Android</span>
+                            </div>
+                        </div>
+                        <div class="app-stats">
+                            <p>Estado Server: <span class="badge-success">Conectado a DB</span></p>
+                            <p>Ingresos AdMob (Est.): <span class="text-green">Monetizando</span></p>
+                            <p>Track Google Play: <span>Producción</span></p>
+                        </div>
                     </div>
                 </div>
             </section>
 
             <!-- ==========================================
-                 4. BÓVEDA DE CONTENIDO (Buscador TMDB)
+                 3. INFORMES
                  ========================================== -->
-            <section id="tab-catalogo" class="tab-content hidden">
+            <section id="tab-informes" class="tab-content hidden">
+                <h3 style="margin-bottom: 20px;">Inicie un informe nuevo</h3>
+                <div class="admob-split">
+                    <div class="admob-card" style="cursor: pointer; transition: background 0.2s;">
+                        <div style="display: flex; gap: 15px; align-items: flex-start;">
+                            <i class="fas fa-chart-line text-blue-dev" style="font-size: 24px; color: var(--blue-dev);"></i>
+                            <div>
+                                <h4 style="margin-bottom: 8px;">Informe de actividad de usuarios</h4>
+                                <p style="font-size: 13px; color: var(--text-muted); line-height: 1.5;">Consulte el rendimiento de visualizaciones y ganancias generadas por cada trabajador en la base de datos.</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="admob-card" style="cursor: pointer; transition: background 0.2s;">
+                        <div style="display: flex; gap: 15px; align-items: flex-start;">
+                            <i class="fas fa-server text-yellow" style="font-size: 24px;"></i>
+                            <div>
+                                <h4 style="margin-bottom: 8px;">Informe de Infraestructura</h4>
+                                <p style="font-size: 13px; color: var(--text-muted); line-height: 1.5;">Descubra cómo interactúan los nodos de Render y los costos asociados al clúster de MongoDB Atlas.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ==========================================
+                 4. CONTROL DE BLOQUEO / MEDIACIÓN
+                 ========================================== -->
+            <section id="tab-bloqueo" class="tab-content hidden">
                 <div class="work-station">
-                    <h3>Inyección a la Bóveda Principal</h3>
+                    <h3>Inyección a la Bóveda Principal y Control de Servidores</h3>
                     
-                    <div class="corporate-note">
-                        <i class="fas fa-info-circle text-yellow"></i>
-                        <strong>Sincronización Directa:</strong> Todo activo inyectado aquí impactará inmediatamente los servidores de la app Sala Cine y bases de datos conectadas.
+                    <div class="corporate-note" style="border-left-color: var(--blue-dev); background: rgba(59, 130, 246, 0.1);">
+                        <i class="fas fa-exclamation-triangle text-blue-dev"></i>
+                        <strong class="text-blue-dev">DIRECTIVA ESTRICTA DE FORMATOS:</strong> Recuerde la corrección de extracción. Para streaming directo, el sistema <strong>debe priorizar obligatoriamente enlaces MP4</strong>. Los enlaces M3U8 deben reservarse exclusivamente para funciones de descarga.
                     </div>
 
                     <div class="search-bar-visual">
                         <i class="fas fa-search"></i>
-                        <input type="text" id="visual-search-input" placeholder="Ej: Búsqueda global en TMDB API...">
+                        <input type="text" id="visual-search-input" placeholder="Ej: Búsqueda global en TMDB API para inyección manual...">
                         <button class="btn-primary" id="btn-visual-search">Buscar Activo</button>
                     </div>
 
@@ -269,190 +301,270 @@
                             </div>
                         </div>
                         <div class="input-group">
-                            <label>Source URL (m3u8, mp4) encriptado:</label>
-                            <input type="text" id="inject-url" placeholder="https://cdn.trechoscorp.com/v/...">
+                            <label>Source URL (Prioridad MP4) encriptado:</label>
+                            <input type="text" id="inject-url" placeholder="https://cdn.trechoscorp.com/v/...mp4">
                         </div>
                         <div class="form-actions">
                             <button class="btn-secondary" id="btn-cancel-inject">Abortar</button>
                             <button class="btn-success" id="btn-confirm-inject"><i class="fas fa-cloud-upload-alt"></i> Escribir en MongoDB</button>
                         </div>
                     </div>
+                    
+                    <h4 style="margin-top: 30px; margin-bottom: 15px; border-bottom: 1px solid var(--border-light); padding-bottom: 10px;">Estado de Nodos Render</h4>
+                    <div class="server-status-grid">
+                        <div class="server-node">
+                            <div class="node-header"><i class="fas fa-robot text-muted"></i> <h4>Bot Telegram (API)</h4></div>
+                            <span class="status-blink working">Operativo</span>
+                            <p style="font-size: 12px; margin-top: 10px;">Render Web Service</p>
+                        </div>
+                        <div class="server-node">
+                            <div class="node-header"><i class="fas fa-database text-muted"></i> <h4>MongoDB Atlas</h4></div>
+                            <span class="status-blink working">Conectado</span>
+                            <p style="font-size: 12px; margin-top: 10px;">Cluster Zaruma/US</p>
+                        </div>
+                    </div>
                 </div>
             </section>
 
             <!-- ==========================================
-                 5. ENTORNO DEV (Terminal CEO)
+                 5. PAGOS
                  ========================================== -->
-            <section id="tab-dev" class="tab-content hidden">
-                <div class="dev-environment">
-                    <h3>Terminal de Despliegue</h3>
-                    <p>Acceso directo al core del servidor Node.js/MongoDB.</p>
+            <section id="tab-pagos" class="tab-content hidden">
+                <div class="config-tabs">
+                    <div class="config-tab active">Información de pagos</div>
+                    <div class="config-tab">Verificación</div>
+                </div>
+                
+                <p style="font-size: 12px; color: var(--text-muted); text-transform: uppercase; margin-bottom: 15px;">Cuenta de pagos<br><span style="color: var(--text-main); font-size: 14px; text-transform: none;">Trechos Visionarios (Ecuador)</span></p>
+                <h3 style="margin-bottom: 20px;">Pagos</h3>
+                
+                <div class="admob-card" style="margin-bottom: 20px;">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-end;">
+                        <div>
+                            <h4 style="font-weight: 500; font-size: 18px;">Ingresos Pendientes (Nómina Global)</h4>
+                            <p style="font-size: 13px; color: var(--text-muted); margin-top: 5px;">Se paga de forma mensual si el total es de al menos USD 62.00 (su umbral de seguridad configurado).</p>
+                        </div>
+                        <h2 style="font-size: 32px; font-weight: 400;" id="nomina-pendiente-total">USD 0.00</h2>
+                    </div>
                     
-                    <div class="console-box">
-                        <div class="console-header">
-                            <span><i class="fas fa-terminal"></i> root@ceo-zaruma-core:~</span>
-                            <div class="console-actions">
-                                <button class="btn-micro" id="btn-run-code"><i class="fas fa-play"></i> Ejecutar</button>
-                                <button class="btn-micro btn-save" id="btn-save-code"><i class="fas fa-save"></i> Guardar Snippet</button>
+                    <div class="progress-container">
+                        <div class="progress-bar" id="nomina-progress" style="width: 45%;"></div>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; font-size: 12px; color: var(--text-muted);">
+                        <span>Alcanzó un {45%} de su umbral de seguridad global</span>
+                        <span>Umbral de seguridad: {USD 62.00 / trabajador}</span>
+                    </div>
+                    <div style="margin-top: 20px; font-size: 13px; color: var(--text-main);">
+                        <i class="fas fa-calendar-alt text-muted"></i> Su último ciclo de pago se emitió el 21 del mes pasado.
+                    </div>
+                </div>
+                
+                <div class="admob-split">
+                    <div class="admob-card">
+                        <h4 style="font-weight: 500; margin-bottom: 20px; font-size: 18px;">Transacciones (Liquidaciones)</h4>
+                        <table class="corporate-table" style="margin-top: 0;">
+                            <tbody id="transactions-list">
+                                <tr>
+                                    <td style="padding: 10px 0; color: var(--blue-dev);">1 - 31 del mes anterior</td>
+                                    <td style="padding: 10px 0; text-align: right;">USD 0.00</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <div style="margin-top: 20px; text-align: center;">
+                            <a href="#" style="color: var(--blue-dev); text-decoration: none; font-size: 14px; font-weight: 500;">Ver transacciones detalladas</a>
+                        </div>
+                    </div>
+                    
+                    <div class="admob-card">
+                        <h4 style="font-weight: 500; margin-bottom: 20px; font-size: 18px;">Formas de pago</h4>
+                        <div style="display: flex; gap: 15px; align-items: center;">
+                            <div style="background-color: var(--border-light); padding: 20px; border-radius: 4px;">
+                                <i class="fas fa-university" style="font-size: 24px; color: white;"></i>
+                            </div>
+                            <div>
+                                <p style="font-size: 14px; color: var(--text-main); margin-bottom: 5px;">Transferencia bancaria / USDT</p>
+                                <p style="font-size: 12px; color: var(--text-muted);">Gestionado por CEO: Levin Dylan Narváez</p>
                             </div>
                         </div>
-                        <textarea class="code-editor" id="dev-code-area" placeholder="// Interfaz de inyección directa DB..." spellcheck="false"></textarea>
-                    </div>
-
-                    <h4>Scripts Almacenados en DB</h4>
-                    <div class="snippets-grid" id="saved-snippets">
-                        <!-- JS inyectará los snippets de la BD -->
+                        <div style="margin-top: 30px; text-align: center;">
+                            <a href="#" style="color: var(--blue-dev); text-decoration: none; font-size: 14px; font-weight: 500;">Administrar formas de pago</a>
+                        </div>
                     </div>
                 </div>
             </section>
 
             <!-- ==========================================
-                 6. RECURSOS HUMANOS Y NÓMINA (CRUD MongoDB)
+                 6. HISTORIAL DE CAMBIOS
                  ========================================== -->
-            <section id="tab-equipo" class="tab-content hidden">
-                <div class="team-management">
+            <section id="tab-historial" class="tab-content hidden">
+                <div class="config-tabs">
+                    <div class="config-tab">Filtrar</div>
+                    <div class="config-tab active">Período: Últimos 7 días</div>
+                    <div class="config-tab">Agregar filtro</div>
+                </div>
+                
+                <div class="search-filter">
+                    <i class="fas fa-search text-muted"></i>
+                    <input type="text" placeholder="Busque por artículo, fecha, cambio, o bien otros detalles de los cambios">
+                </div>
+                
+                <table class="corporate-table">
+                    <thead>
+                        <tr>
+                            <th>Fecha <i class="fas fa-arrow-down" style="font-size: 10px;"></i></th>
+                            <th>Elemento <i class="fas fa-question-circle text-muted"></i></th>
+                            <th>Cambiar <i class="fas fa-question-circle text-muted"></i></th>
+                            <th>Usuario <i class="fas fa-question-circle text-muted"></i></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td colspan="4" class="text-center text-muted" style="padding: 60px 20px;">
+                                <i class="fas fa-rocket" style="font-size: 40px; margin-bottom: 15px; opacity: 0.2;"></i><br>
+                                No se encontraron cambios recientes en la base de datos.
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <!-- ==========================================
+                 7. CONFIGURACIÓN (USUARIOS Y RRHH)
+                 ========================================== -->
+            <section id="tab-configuracion" class="tab-content hidden">
+                <div class="config-tabs">
+                    <div class="config-tab">Personal</div>
+                    <div class="config-tab">Cuenta</div>
+                    <div class="config-tab active">Usuarios (Trabajadores)</div>
+                    <div class="config-tab">Servicios vinculados</div>
+                </div>
+                
+                <div class="admob-banner" style="display: flex; gap: 20px; align-items: center;">
+                    <i class="fas fa-users-cog text-blue-dev" style="font-size: 40px; color: var(--blue-dev);"></i>
+                    <div>
+                        <h4 style="font-size: 18px; margin-bottom: 5px; font-weight: 500;">Administre el acceso de los usuarios a la plataforma</h4>
+                        <p style="font-size: 13px; color: var(--text-muted);">Puede asignar funciones, registrar IDs de Telegram y controlar quién interactúa con el Bot y el Dashboard.</p>
+                        <a href="#" style="color: var(--blue-dev); text-decoration: none; font-size: 13px; display: inline-block; margin-top: 5px;">Más información</a>
+                    </div>
+                </div>
+                
+                <div class="admob-card">
+                    <div style="display: flex; gap: 15px; margin-bottom: 20px; align-items: center;">
+                        <button class="btn-primary" style="background-color: var(--blue-dev); color: white;" id="btn-new-user-modal"><i class="fas fa-plus"></i> Agregar usuario</button>
+                        <button class="btn-secondary" disabled style="opacity: 0.5;">Eliminar</button>
+                        <a href="#" style="color: var(--blue-dev); text-decoration: none; font-size: 14px;">Administrar roles</a>
+                    </div>
                     
-                    <!-- Formulario de Alta -->
-                    <div class="add-worker-box">
-                        <h4>Contratación y Mapeo de Identidades</h4>
-                        <form id="hr-add-form" class="form-grid">
-                            <input type="text" id="hr-real-name" placeholder="Nombre Real (Ej: Carlos Pérez)" required>
-                            <input type="text" id="hr-telegram-id" placeholder="ID Entorno/Telegram (Ej: WORKER_884)" required>
-                            <select id="hr-role" class="custom-select">
-                                <option value="uploader">Uploader de Contenido</option>
-                                <option value="marketing">Especialista Marketing (TikTok/Ads)</option>
-                                <option value="backend">Ingeniero Backend</option>
-                            </select>
-                            <input type="number" id="hr-salary" placeholder="Tarifa/Sueldo ($)" required>
-                            <button type="submit" class="btn-primary" id="btn-add-worker"><i class="fas fa-user-plus"></i> Registrar en DB</button>
-                        </form>
+                    <div class="search-filter">
+                        <i class="fas fa-search text-muted"></i>
+                        <input type="text" placeholder="Buscar por función o ID de Telegram">
                     </div>
-
-                    <!-- Personal Activo -->
-                    <h4 class="section-subtitle mt-4">Personal Activo (Mapeado)</h4>
-                    <div class="workers-payroll" id="active-workers-list">
-                        <!-- Tarjetas de trabajadores activas generadas desde MongoDB -->
-                    </div>
-
-                    <!-- Historial de Bajas -->
-                    <h4 class="section-subtitle mt-4 text-muted">Historial de Empleados (Inactivos)</h4>
-                    <table class="corporate-table" id="inactive-workers-table">
+                    
+                    <table class="corporate-table">
                         <thead>
                             <tr>
-                                <th>Nombre</th>
-                                <th>Último Rol</th>
-                                <th>Fecha de Baja</th>
-                                <th>Estado DB</th>
+                                <th style="width: 40px;"><input type="checkbox"></th>
+                                <th>Nombre / ID Telegram <i class="fas fa-question-circle text-muted"></i> <i class="fas fa-arrow-up" style="font-size: 10px;"></i></th>
+                                <th>Función del usuario <i class="fas fa-question-circle text-muted"></i></th>
+                                <th>Acceso a aplicaciones <i class="fas fa-question-circle text-muted"></i></th>
+                                <th>Estado <i class="fas fa-question-circle text-muted"></i></th>
                             </tr>
                         </thead>
-                        <tbody id="inactive-workers-list">
+                        <tbody id="db-users-list">
                             <tr>
-                                <td>Amanda</td>
+                                <td><input type="checkbox"></td>
+                                <td>
+                                    <div style="display: flex; flex-direction: column;">
+                                        <span>Levin Dylan Narváez (Usted)</span>
+                                        <span style="font-size: 11px; color: var(--text-muted);">ID: ADMIN_PRIMARY</span>
+                                    </div>
+                                </td>
+                                <td>CEO / Administrator</td>
+                                <td>Todas las aplicaciones</td>
+                                <td><span style="background: rgba(16, 185, 129, 0.1); color: var(--green-profit); padding: 4px 8px; border-radius: 4px; font-size: 11px;"><i class="fas fa-check"></i> Activa</span></td>
+                            </tr>
+                            <tr>
+                                <td><input type="checkbox"></td>
+                                <td>
+                                    <div style="display: flex; flex-direction: column;">
+                                        <span>Nadia</span>
+                                        <span style="font-size: 11px; color: var(--text-muted);">ID: 00000000</span>
+                                    </div>
+                                </td>
+                                <td>Co-Fundadora / Administrator</td>
+                                <td>Todas las aplicaciones</td>
+                                <td><span style="background: rgba(16, 185, 129, 0.1); color: var(--green-profit); padding: 4px 8px; border-radius: 4px; font-size: 11px;"><i class="fas fa-check"></i> Activa</span></td>
+                            </tr>
+                            <tr>
+                                <td><input type="checkbox"></td>
+                                <td>
+                                    <div style="display: flex; flex-direction: column;">
+                                        <span>María</span>
+                                        <span style="font-size: 11px; color: var(--text-muted);">ID: (Pendiente de mapeo DB)</span>
+                                    </div>
+                                </td>
+                                <td>Desarrollo</td>
+                                <td>Entorno Dev</td>
+                                <td><span style="background: rgba(16, 185, 129, 0.1); color: var(--green-profit); padding: 4px 8px; border-radius: 4px; font-size: 11px;"><i class="fas fa-check"></i> Activa</span></td>
+                            </tr>
+                            <tr>
+                                <td><input type="checkbox"></td>
+                                <td>
+                                    <div style="display: flex; flex-direction: column;">
+                                        <span>Amanda</span>
+                                        <span style="font-size: 11px; color: var(--text-muted);">ID: (Histórico)</span>
+                                    </div>
+                                </td>
                                 <td>Asistente de Proyecto</td>
-                                <td>Ciclo Anterior</td>
-                                <td><span class="text-danger">Inactivo</span></td>
+                                <td>Ninguna</td>
+                                <td><span style="background: rgba(239, 68, 68, 0.1); color: var(--red-expense); padding: 4px 8px; border-radius: 4px; font-size: 11px;"><i class="fas fa-times"></i> Inactiva</span></td>
+                            </tr>
+                            <tr>
+                                <td><input type="checkbox"></td>
+                                <td>
+                                    <div style="display: flex; flex-direction: column;">
+                                        <span>William</span>
+                                        <span style="font-size: 11px; color: var(--text-muted);">ID: (Histórico)</span>
+                                    </div>
+                                </td>
+                                <td>Gestión</td>
+                                <td>Ninguna</td>
+                                <td><span style="background: rgba(239, 68, 68, 0.1); color: var(--red-expense); padding: 4px 8px; border-radius: 4px; font-size: 11px;"><i class="fas fa-times"></i> Inactiva</span></td>
                             </tr>
                         </tbody>
                     </table>
-
-                </div>
-            </section>
-
-            <!-- ==========================================
-                 7. RED DE APLICACIONES
-                 ========================================== -->
-            <section id="tab-apps" class="tab-content hidden">
-                <h3>Monitoreo de Ecosistema AdMob & Play Console</h3>
-                <div class="apps-grid" id="apps-live-grid">
-                    <div class="app-card highlight-app">
-                        <div class="app-header">
-                            <i class="fab fa-android text-green"></i>
-                            <h4>Sala Cine (App Insignia)</h4>
-                        </div>
-                        <div class="app-stats">
-                            <p>Estado Server: <span class="badge-success">Conectado a DB</span></p>
-                            <p>Anuncios (AdMob): <span class="text-green">Monetizando</span></p>
-                            <p>Track Google Play: <span>Producción</span></p>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-            <!-- ==========================================
-                 8. VISIÓN CORP (Módulo con Videos MP4 Dinámicos)
-                 ========================================== -->
-            <style>
-                /* Estilos integrados para fondos de video MP4 */
-                .video-container { position: relative; overflow: hidden; border: 1px solid var(--border-light); }
-                .corp-bg-video { position: absolute; top: 50%; left: 50%; min-width: 100%; min-height: 100%; width: auto; height: auto; transform: translateX(-50%) translateY(-50%); z-index: 0; opacity: 0.35; object-fit: cover; }
-                .corp-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: linear-gradient(to bottom, rgba(10, 10, 15, 0.4), rgba(10, 10, 15, 0.95)); z-index: 1; }
-                .relative-z { position: relative; z-index: 2; }
-                
-                /* Realces corporativos */
-                .magazine-hero.video-container { border: 1px solid var(--yellow-main); box-shadow: 0 10px 40px rgba(255,184,0,0.15); padding: 60px 30px; }
-                .corp-article.video-container { padding: 40px 30px; border-radius: 12px; transition: all 0.3s ease; }
-                .corp-article.video-container:hover .corp-bg-video { opacity: 0.5; }
-                .corp-article.video-container:hover { border-color: var(--yellow-main); transform: translateY(-5px); }
-            </style>
-
-            <section id="tab-prensa" class="tab-content hidden">
-                <div class="magazine-layout">
                     
-                    <!-- HERO PRINCIPAL CON VIDEO -->
-                    <div class="magazine-hero video-container">
-                        <!-- INSERTA TU ENLACE MP4 AQUÍ PARA EL FONDO PRINCIPAL -->
-                        <video autoplay loop muted playsinline class="corp-bg-video">
-                            <source src="https://cdn.pixabay.com/video/2020/05/24/40093-424785501_tiny.mp4" type="video/mp4">
-                        </video>
-                        <div class="corp-overlay"></div>
-                        
-                        <div class="hero-image-placeholder relative-z">
-                            <i class="fas fa-building text-yellow" id="corp-building-icon" style="font-size: 60px; margin-bottom: 15px; filter: drop-shadow(0 0 10px rgba(255,184,0,0.5));"></i>
-                            <h2 style="color: white; font-weight: 800; letter-spacing: 1px;">Trechos Visionarios Corp.</h2>
-                        </div>
-                        <div class="hero-content relative-z" style="margin-top: 20px;">
-                            <h1 style="color: white; text-shadow: 0 2px 10px rgba(0,0,0,0.8);">De Zaruma para el Mundo.</h1>
-                            <p class="author">Levin Dylan Narváez - Director Ejecutivo (CEO)</p>
+                    <div style="display: flex; justify-content: flex-end; align-items: center; margin-top: 15px; font-size: 13px; color: var(--text-muted); gap: 20px;">
+                        <span>Mostrar filas: <select style="background: transparent; border: 1px solid var(--border-light); color: white; padding: 2px 5px; outline: none;"><option>15</option></select></span>
+                        <span>1 - 5 de 5</span>
+                        <div style="display: flex; gap: 10px;">
+                            <i class="fas fa-step-backward" style="opacity: 0.5;"></i>
+                            <i class="fas fa-chevron-left" style="opacity: 0.5;"></i>
+                            <i class="fas fa-chevron-right" style="opacity: 0.5;"></i>
+                            <i class="fas fa-step-forward" style="opacity: 0.5;"></i>
                         </div>
                     </div>
+                </div>
+            </section>
 
-                    <div class="magazine-articles">
-                        <!-- ARTÍCULO 1 CON VIDEO -->
-                        <article class="corp-article video-container">
-                            <!-- INSERTA TU ENLACE MP4 AQUÍ PARA EL ARTÍCULO 1 -->
-                            <video autoplay loop muted playsinline class="corp-bg-video">
-                                <source src="https://cdn.pixabay.com/video/2021/08/04/83864-584742616_tiny.mp4" type="video/mp4">
-                            </video>
-                            <div class="corp-overlay" style="background: rgba(10, 10, 15, 0.8);"></div>
-                            
-                            <div class="relative-z">
-                                <h3>Expansión Global y Legalidad</h3>
-                                <p>Nuestra visión trasciende el desarrollo de software; estamos consolidando una infraestructura tecnológica masiva, estructurada y 100% legal. Desde nuestras bases operativas en El Oro, hemos diseñado un ecosistema capaz de soportar millones de peticiones diarias, atrayendo talento y capital a nuestra región.</p>
-                            </div>
-                        </article>
-
-                        <!-- ARTÍCULO 2 CON VIDEO -->
-                        <article class="corp-article video-container">
-                            <!-- INSERTA TU ENLACE MP4 AQUÍ PARA EL ARTÍCULO 2 -->
-                            <video autoplay loop muted playsinline class="corp-bg-video">
-                                <source src="https://cdn.pixabay.com/video/2023/10/22/186009-876939985_tiny.mp4" type="video/mp4">
-                            </video>
-                            <div class="corp-overlay" style="background: rgba(10, 10, 15, 0.8);"></div>
-                            
-                            <div class="relative-z">
-                                <h3>Ecosistema de Inversión y Retail</h3>
-                                <p>Más allá de nuestras aplicaciones insignia, Trechos Corp avanza hacia el comercio electrónico y el arbitraje de retail, conectando mercados internacionales (Asia/Norteamérica) directamente con el consumidor ecuatoriano mediante plataformas logísticas de vanguardia desarrolladas in-house.</p>
-                            </div>
-                        </article>
+            <!-- ==========================================
+                 8. AYUDA / LABS
+                 ========================================== -->
+            <section id="tab-ayuda" class="tab-content hidden">
+                <div class="admob-banner">
+                    <h3>Centro de Asistencia Interno - Trechos Visionarios Corp.</h3>
+                    <p style="font-size: 14px; color: var(--text-muted); line-height: 1.6; margin-bottom: 20px;">Este espacio está reservado para la documentación corporativa, notas de despliegue en Render y configuraciones del bot de Telegram. Mantenga esta información confidencial.</p>
+                    
+                    <div class="admob-card">
+                        <h4 style="margin-bottom: 10px; color: var(--yellow-main);">Próxima migración: Bot a MongoDB</h4>
+                        <p style="font-size: 13px; color: var(--text-muted); line-height: 1.6;">El sistema está siendo preparado para abandonar la dependencia del archivo <code>.env</code> en Render para la lectura de IDs de trabajadores. Una vez activo, utilice la pestaña "Configuración > Usuarios" para dar de alta a nuevos uploaders. El ID de Telegram ingresado allí será la llave de acceso universal al bot y al Dashboard móvil.</p>
                     </div>
-
                 </div>
             </section>
 
         </main>
     </div>
 
-    <!-- Scripts de Conexión Backend -->
     <script src="ceo_panel.js"></script>
 </body>
 </html>
