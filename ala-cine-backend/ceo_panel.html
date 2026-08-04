@@ -10,30 +10,27 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
-        /* Adaptaciones estilo AdMob manteniendo colores corporativos */
-        .admob-banner { background-color: var(--bg-card); border-radius: 8px; border: 1px solid var(--border-light); padding: 25px; margin-bottom: 20px; }
-        .admob-banner h3 { font-size: 16px; color: var(--text-main); margin-bottom: 20px; font-weight: 500; }
-        .admob-grid { display: flex; justify-content: space-between; gap: 15px; }
-        .admob-stat { flex: 1; }
-        .admob-stat span { display: block; font-size: 13px; color: var(--text-muted); margin-bottom: 8px; }
-        .admob-stat h2 { font-size: 28px; color: var(--text-main); font-weight: 400; margin-bottom: 5px; }
-        .admob-stat .trend { font-size: 12px; color: var(--green-profit); }
-        .admob-stat .trend.negative { color: var(--red-expense); }
-        
-        .admob-split { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
-        .admob-card { background-color: var(--bg-card); border-radius: 8px; border: 1px solid var(--border-light); padding: 20px; }
+        /* Ajustes AdMob adaptados a tu grilla nativa para evitar distorsión en móvil */
         .admob-card-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-light); padding-bottom: 15px; margin-bottom: 15px; }
-        
-        .progress-container { width: 100%; background-color: var(--bg-base); border-radius: 4px; height: 8px; margin: 15px 0; overflow: hidden; }
-        .progress-bar { height: 100%; background-color: var(--blue-dev); width: 0%; }
-        
-        .config-tabs { display: flex; gap: 20px; border-bottom: 1px solid var(--border-light); margin-bottom: 20px; }
-        .config-tab { padding: 10px 0; color: var(--text-muted); cursor: pointer; border-bottom: 2px solid transparent; }
+        .config-tabs { display: flex; gap: 20px; border-bottom: 1px solid var(--border-light); margin-bottom: 20px; overflow-x: auto; white-space: nowrap; }
+        .config-tab { padding: 10px 0; color: var(--text-muted); cursor: pointer; border-bottom: 2px solid transparent; font-weight: 500; }
         .config-tab.active { color: var(--blue-dev); border-color: var(--blue-dev); }
-        
-        .badge-beta { font-size: 9px; background-color: rgba(255, 255, 255, 0.1); padding: 2px 5px; border-radius: 4px; margin-left: 5px; }
         .search-filter { display: flex; align-items: center; background: var(--bg-base); border: 1px solid var(--border-light); padding: 10px 15px; border-radius: 4px; margin-bottom: 20px; }
         .search-filter input { background: transparent; border: none; color: white; margin-left: 10px; width: 100%; outline: none; }
+        .sub-tab-content { display: none; }
+        .sub-tab-content.active { display: block; animation: fadeIn 0.3s ease; }
+        
+        /* Menú Flotante Perfil */
+        .profile-dropdown-menu { position: absolute; top: 60px; right: 20px; background: var(--bg-panel); border: 1px solid var(--border-light); border-radius: 8px; width: 250px; padding: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.8); z-index: 2000; display: none; }
+        .profile-dropdown-menu.active { display: block; animation: fadeIn 0.2s ease; }
+        .profile-dropdown-menu h4 { color: var(--yellow-main); margin-bottom: 5px; font-size: 16px; }
+        .profile-dropdown-menu p { color: var(--text-muted); font-size: 12px; margin-bottom: 15px; }
+        .profile-dropdown-menu hr { border: none; border-top: 1px solid var(--border-light); margin: 10px 0; }
+        .profile-dropdown-menu a { display: block; color: var(--text-main); text-decoration: none; padding: 10px 0; font-size: 14px; transition: color 0.2s; }
+        .profile-dropdown-menu a:hover { color: var(--yellow-main); }
+        .profile-dropdown-menu i { width: 20px; color: var(--text-muted); }
+        
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
     </style>
 </head>
 <body>
@@ -58,16 +55,16 @@
                 <button id="mobile-menu-btn"><i class="fas fa-bars"></i></button>
                 <h2 class="mobile-brand" id="mobile-brand-text">Trechos <span>Corp.</span></h2>
                 <div class="mobile-dynamic-info hidden" id="mobile-dynamic-info">
-                    <h3 id="mobile-tab-title">Página principal</h3>
+                    <h3 id="mobile-tab-title">Inicio</h3>
                     <span id="mobile-live-date">Cargando ciclo...</span>
                 </div>
             </div>
             <div class="mobile-ceo-profile">
                 <div class="notifications">
                     <i class="fas fa-bell"></i>
-                    <span class="badge" id="mobile-notif-badge">0</span>
+                    <span class="badge">3</span>
                 </div>
-                <div class="avatar">
+                <div class="avatar" id="mobile-avatar-btn">
                     <img src="https://ui-avatars.com/api/?name=Levin+Dylan+Narvaez&background=ffb800&color=000&bold=true" alt="CEO">
                 </div>
             </div>
@@ -79,14 +76,15 @@
                 <small>Operaciones Centrales</small>
             </div>
             <ul class="nav-links">
-                <li class="active" data-tab="tab-inicio"><i class="fas fa-home"></i> Página principal</li>
+                <li class="active" data-tab="tab-inicio"><i class="fas fa-home"></i> Inicio / Principal</li>
                 <li data-tab="tab-aplicaciones"><i class="fas fa-th-large"></i> Aplicaciones</li>
-                <li data-tab="tab-informes"><i class="fas fa-chart-bar"></i> Informes</li>
-                <li data-tab="tab-bloqueo"><i class="fas fa-shield-alt"></i> Control de bloqueo</li>
-                <li data-tab="tab-pagos"><i class="fas fa-money-bill-wave"></i> Pagos</li>
-                <li data-tab="tab-historial"><i class="fas fa-history"></i> Historial de cambios <span class="badge-beta">BETA</span></li>
+                <li data-tab="tab-informes"><i class="fas fa-chart-pie"></i> Informes Generales</li>
+                <li data-tab="tab-infraestructura"><i class="fas fa-server"></i> Servidores / Infra</li>
+                <li data-tab="tab-bloqueo"><i class="fas fa-shield-alt"></i> Control / Inyección</li>
+                <li data-tab="tab-pagos"><i class="fas fa-money-bill-wave"></i> Pagos y Liquidación</li>
+                <li data-tab="tab-historial"><i class="fas fa-history"></i> Historial de Cambios</li>
                 <li data-tab="tab-configuracion"><i class="fas fa-cog"></i> Configuración</li>
-                <li data-tab="tab-ayuda"><i class="fas fa-question-circle"></i> Ayuda</li>
+                <li data-tab="tab-empresa"><i class="fas fa-building"></i> Sobre la Empresa</li>
             </ul>
             <div class="legal-footer">
                 <p>Matriz: Zaruma, El Oro, EC.</p>
@@ -97,124 +95,85 @@
 
         <main class="content-area" id="export-pdf-area">
             
-            <header class="global-header desktop-only">
+            <header class="global-header desktop-only" style="position: relative;">
                 <div class="header-title-area">
-                    <h1 id="current-tab-title">Página principal</h1>
+                    <h1 id="current-tab-title">Inicio / Principal</h1>
                     <p class="date-subtitle" id="live-date">Cargando ciclo fiscal...</p>
                 </div>
                 <div class="ceo-profile">
                     <div class="notifications">
                         <i class="fas fa-bell"></i>
-                        <span class="badge" id="pc-notif-badge">0</span>
+                        <span class="badge">3</span>
                     </div>
                     <div class="user-info">
                         <strong>Levin Dylan Narváez</strong>
                         <span>Fundador & CEO</span>
                     </div>
-                    <div class="avatar">
+                    <div class="avatar" id="desktop-avatar-btn" style="cursor: pointer;">
                         <img src="https://ui-avatars.com/api/?name=Levin+Dylan+Narvaez&background=ffb800&color=000&bold=true" alt="CEO">
                     </div>
+                </div>
+                
+                <!-- Menú Flotante del CEO -->
+                <div class="profile-dropdown-menu" id="ceo-profile-dropdown">
+                    <h4>Levin Dylan Narváez</h4>
+                    <p>Director Ejecutivo (CEO)</p>
+                    <hr>
+                    <a href="#" id="btn-mi-cuenta"><i class="fas fa-user-circle"></i> Mi Información</a>
+                    <a href="#" id="btn-seguridad"><i class="fas fa-lock"></i> Seguridad y Accesos</a>
+                    <a href="#" id="btn-actividad"><i class="fas fa-list-ul"></i> Registro de Actividad</a>
                 </div>
             </header>
 
             <!-- ==========================================
-                 1. PÁGINA PRINCIPAL
+                 1. INICIO PRINCIPAL (Grilla Ordenada)
                  ========================================== -->
             <section id="tab-inicio" class="tab-content active">
-                <div class="admob-banner">
-                    <h3>Total de ingresos consolidados DB <i class="fas fa-question-circle text-muted"></i></h3>
-                    <div class="admob-grid">
-                        <div class="admob-stat">
-                            <span>Hoy hasta este momento</span>
-                            <h2 id="home-hoy">USD 0.00</h2>
-                        </div>
-                        <div class="admob-stat">
-                            <span>Ayer</span>
-                            <h2 id="home-ayer">USD 0.00</h2>
-                        </div>
-                        <div class="admob-stat">
-                            <span>Hasta ahora este mes</span>
-                            <h2 id="home-mes">USD 0.00</h2>
-                        </div>
-                        <div class="admob-stat">
-                            <span>El mes pasado</span>
-                            <h2 id="home-pasado">USD 0.00</h2>
-                        </div>
+                <div class="action-bar">
+                    <h3>Panel Consolidado</h3>
+                    <button class="btn-secondary" id="btn-filtro-7dias"><i class="fas fa-calendar-alt"></i> Últimos 7 días <i class="fas fa-caret-down"></i></button>
+                </div>
+
+                <div class="kpi-grid">
+                    <div class="kpi-card">
+                        <span>Ingresos Hoy (En vivo)</span>
+                        <h3 class="text-yellow" id="home-hoy">$0.00</h3>
+                        <small class="trend-up" id="trend-hoy"><i class="fas fa-arrow-up"></i> +0.00% vs ayer</small>
+                    </div>
+                    <div class="kpi-card">
+                        <span>Ingresos Ayer</span>
+                        <h3 id="home-ayer">$0.00</h3>
+                        <small class="text-muted">Cierre consolidado</small>
+                    </div>
+                    <div class="kpi-card">
+                        <span>Generado este Mes</span>
+                        <h3 class="text-green" id="home-mes">$0.00</h3>
+                        <small class="text-muted">Acumulado BD</small>
+                    </div>
+                    <div class="kpi-card">
+                        <span>Mes Pasado</span>
+                        <h3 id="home-pasado">$0.00</h3>
+                        <small class="text-muted">Liquidado</small>
                     </div>
                 </div>
 
-                <div class="action-bar" style="margin-bottom: 20px;">
-                    <button class="btn-secondary"><i class="fas fa-calendar-alt"></i> Últimos 7 días en comparación con los 7 días anteriores <i class="fas fa-caret-down"></i></button>
-                </div>
-
-                <div class="admob-split">
-                    <div class="admob-card">
+                <div class="dashboard-middle">
+                    <div class="chart-box">
                         <div class="admob-card-header">
-                            <h4 style="font-weight: 500;">Rendimiento de la actividad de los usuarios</h4>
+                            <h4>Rendimiento y Tráfico (Flujo DB)</h4>
                         </div>
-                        <div class="admob-grid" style="flex-wrap: wrap;">
-                            <div class="admob-stat" style="min-width: 45%; margin-bottom: 20px;">
-                                <span>Ingresos estimados <i class="fas fa-question-circle"></i></span>
-                                <h2>USD 0.00</h2>
-                                <span class="trend">+USD 0.00 (+0.00%)</span>
-                                <div style="height: 40px; border-bottom: 1px solid var(--border-light); margin-top: 10px;"></div>
-                            </div>
-                            <div class="admob-stat" style="min-width: 45%; margin-bottom: 20px;">
-                                <span>Vistas totales <i class="fas fa-question-circle"></i></span>
-                                <h2>0</h2>
-                                <span class="trend">+0 (+0.00%)</span>
-                                <div style="height: 40px; border-bottom: 1px solid var(--border-light); margin-top: 10px;"></div>
-                            </div>
-                            <div class="admob-stat" style="min-width: 45%;">
-                                <span>Contenido subido <i class="fas fa-question-circle"></i></span>
-                                <h2>0</h2>
-                                <span class="trend negative">-0 (-0.00%)</span>
-                                <div style="height: 40px; border-bottom: 1px solid var(--border-light); margin-top: 10px;"></div>
-                            </div>
-                            <div class="admob-stat" style="min-width: 45%;">
-                                <span>Costo por vista (eCPM) <i class="fas fa-question-circle"></i></span>
-                                <h2>USD 0.005</h2>
-                                <span class="trend">+USD 0.00 (+0.00%)</span>
-                                <div style="height: 40px; border-bottom: 1px solid var(--border-light); margin-top: 10px;"></div>
-                            </div>
-                        </div>
-                        <div style="margin-top: 20px;">
-                            <a href="#" class="text-blue-dev" style="color: var(--blue-dev); text-decoration: none; font-size: 14px;">Ver informe</a>
+                        <div class="canvas-container">
+                            <canvas id="mainRevenueChart"></canvas>
                         </div>
                     </div>
-
-                    <div class="admob-card">
+                    
+                    <div class="activity-feed">
                         <div class="admob-card-header">
-                            <h4 style="font-weight: 500;">Trabajadores con mejor rendimiento</h4>
+                            <h4>Top Trabajadores (En vivo)</h4>
                         </div>
-                        <div class="admob-grid" style="margin-bottom: 20px;">
-                            <div class="admob-stat">
-                                <span>Ingresos generados</span>
-                                <h2>USD 0.00</h2>
-                                <span class="trend">+0.00%</span>
-                            </div>
-                            <div class="admob-stat">
-                                <span>Vistas aportadas</span>
-                                <h2>0</h2>
-                                <span class="trend">+0.00%</span>
-                            </div>
-                        </div>
-                        <table class="corporate-table" style="margin-top: 0;">
-                            <thead>
-                                <tr>
-                                    <th style="padding: 10px 0;">Trabajador</th>
-                                    <th style="padding: 10px 0;">Vistas</th>
-                                    <th style="padding: 10px 0;">Ingresos</th>
-                                </tr>
-                            </thead>
-                            <tbody id="top-workers-list">
-                                <tr><td colspan="3" class="text-center text-muted" style="padding: 20px;">Cargando métricas de DB...</td></tr>
-                            </tbody>
-                        </table>
-                        <div style="margin-top: 20px; display: flex; gap: 20px;">
-                            <a href="#" style="color: var(--blue-dev); text-decoration: none; font-size: 14px;">Ver informe</a>
-                            <a href="#" style="color: var(--blue-dev); text-decoration: none; font-size: 14px;">Administrar equipo</a>
-                        </div>
+                        <ul class="feed-list" id="top-workers-list">
+                            <li class="feed-item placeholder-item">Cargando métricas...</li>
+                        </ul>
                     </div>
                 </div>
             </section>
@@ -224,11 +183,11 @@
                  ========================================== -->
             <section id="tab-aplicaciones" class="tab-content hidden">
                 <div class="action-bar">
-                    <h3>Aplicaciones conectadas</h3>
-                    <button class="btn-primary"><i class="fas fa-plus"></i> Agregar aplicación</button>
+                    <h3>Gestor de Ecosistema</h3>
+                    <button class="btn-primary" id="btn-add-app"><i class="fas fa-plus"></i> Agregar aplicación</button>
                 </div>
                 <div class="apps-grid" id="apps-live-grid">
-                    <div class="app-card highlight-app" style="cursor: pointer;">
+                    <div class="app-card highlight-app">
                         <div class="app-header">
                             <i class="fab fa-android text-green"></i>
                             <div>
@@ -237,9 +196,9 @@
                             </div>
                         </div>
                         <div class="app-stats">
-                            <p>Estado Server: <span class="badge-success">Conectado a DB</span></p>
-                            <p>Ingresos AdMob (Est.): <span class="text-green">Monetizando</span></p>
-                            <p>Track Google Play: <span>Producción</span></p>
+                            <p>Estado DB: <span class="badge-success">Sincronizado</span></p>
+                            <p>Ingresos AdMob: <span class="text-green">Activo</span></p>
+                            <p>Usuarios: <span id="app-users-count">Cargando...</span></p>
                         </div>
                     </div>
                 </div>
@@ -249,44 +208,82 @@
                  3. INFORMES
                  ========================================== -->
             <section id="tab-informes" class="tab-content hidden">
-                <h3 style="margin-bottom: 20px;">Inicie un informe nuevo</h3>
-                <div class="admob-split">
-                    <div class="admob-card" style="cursor: pointer; transition: background 0.2s;">
-                        <div style="display: flex; gap: 15px; align-items: flex-start;">
-                            <i class="fas fa-chart-line text-blue-dev" style="font-size: 24px; color: var(--blue-dev);"></i>
-                            <div>
-                                <h4 style="margin-bottom: 8px;">Informe de actividad de usuarios</h4>
-                                <p style="font-size: 13px; color: var(--text-muted); line-height: 1.5;">Consulte el rendimiento de visualizaciones y ganancias generadas por cada trabajador en la base de datos.</p>
-                            </div>
-                        </div>
+                <div class="action-bar">
+                    <h3>Informes Generales</h3>
+                </div>
+                <div class="kpi-grid">
+                    <div class="kpi-card" style="cursor: pointer;" id="btn-informe-usuarios">
+                        <i class="fas fa-chart-line text-blue-dev" style="font-size: 28px; margin-bottom: 15px;"></i>
+                        <h4 style="margin-bottom: 8px;">Informe de Usuarios</h4>
+                        <p style="font-size: 12px; color: var(--text-muted);">Rendimiento y vistas por trabajador.</p>
                     </div>
-                    <div class="admob-card" style="cursor: pointer; transition: background 0.2s;">
-                        <div style="display: flex; gap: 15px; align-items: flex-start;">
-                            <i class="fas fa-server text-yellow" style="font-size: 24px;"></i>
-                            <div>
-                                <h4 style="margin-bottom: 8px;">Informe de Infraestructura</h4>
-                                <p style="font-size: 13px; color: var(--text-muted); line-height: 1.5;">Descubra cómo interactúan los nodos de Render y los costos asociados al clúster de MongoDB Atlas.</p>
-                            </div>
-                        </div>
+                    <div class="kpi-card" style="cursor: pointer;" id="btn-informe-monetizacion">
+                        <i class="fas fa-dollar-sign text-green" style="font-size: 28px; margin-bottom: 15px;"></i>
+                        <h4 style="margin-bottom: 8px;">Informe de Monetización</h4>
+                        <p style="font-size: 12px; color: var(--text-muted);">Métricas de AdMob y eCPM global.</p>
+                    </div>
+                    <div class="kpi-card" style="cursor: pointer;" id="btn-informe-trafico">
+                        <i class="fas fa-globe text-yellow" style="font-size: 28px; margin-bottom: 15px;"></i>
+                        <h4 style="margin-bottom: 8px;">Tráfico Global</h4>
+                        <p style="font-size: 12px; color: var(--text-muted);">Peticiones a la base de datos por región.</p>
                     </div>
                 </div>
             </section>
 
             <!-- ==========================================
-                 4. CONTROL DE BLOQUEO / MEDIACIÓN
+                 4. INFRAESTRUCTURA (SERVIDORES REALES)
+                 ========================================== -->
+            <section id="tab-infraestructura" class="tab-content hidden">
+                <div class="action-bar">
+                    <h3>Red de Servidores y Costos</h3>
+                    <button class="btn-secondary" id="btn-reiniciar-nodos"><i class="fas fa-sync"></i> Sincronizar Nodos</button>
+                </div>
+
+                <div class="server-status-grid">
+                    <div class="server-node" style="border-color: var(--blue-dev);">
+                        <div class="node-header"><i class="flag">🇺🇸</i> <h4>Main Core (EE.UU)</h4></div>
+                        <span class="status-blink working">Procesando</span>
+                        <p style="font-size: 12px; margin-top: 10px;">Nodo Principal / Almacenamiento</p>
+                        <h3 style="margin-top: 15px; color: var(--red-expense);">-$3,000.00</h3>
+                    </div>
+                    <div class="server-node">
+                        <div class="node-header"><i class="flag">🇪🇸</i> <h4>Proxy España</h4></div>
+                        <span class="status-blink working">En Línea</span>
+                        <p style="font-size: 12px; margin-top: 10px;">Balanceo de Carga Europa</p>
+                        <h3 style="margin-top: 15px; color: var(--red-expense);">-$800.00</h3>
+                    </div>
+                    <div class="server-node">
+                        <div class="node-header"><i class="flag">🇲🇽</i> <h4>CDN México</h4></div>
+                        <span class="status-blink working">En Línea</span>
+                        <p style="font-size: 12px; margin-top: 10px;">Enrutamiento Latam Norte</p>
+                        <h3 style="margin-top: 15px; color: var(--red-expense);">-$400.00</h3>
+                    </div>
+                    <div class="server-node">
+                        <div class="node-header"><i class="flag">🇪🇨</i> <h4>Local (Ecuador)</h4></div>
+                        <span class="status-blink standby">Standby DB</span>
+                        <p style="font-size: 12px; margin-top: 10px;">Respaldo MongoDB Zaruma</p>
+                        <h3 style="margin-top: 15px; color: var(--red-expense);">-$200.00</h3>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ==========================================
+                 5. CONTROL DE BLOQUEO / INYECCIÓN
                  ========================================== -->
             <section id="tab-bloqueo" class="tab-content hidden">
                 <div class="work-station">
-                    <h3>Inyección a la Bóveda Principal y Control de Servidores</h3>
+                    <div class="action-bar">
+                        <h3>Inyección Manual y Control de Extracción</h3>
+                    </div>
                     
                     <div class="corporate-note" style="border-left-color: var(--blue-dev); background: rgba(59, 130, 246, 0.1);">
                         <i class="fas fa-exclamation-triangle text-blue-dev"></i>
-                        <strong class="text-blue-dev">DIRECTIVA ESTRICTA DE FORMATOS:</strong> Recuerde la corrección de extracción. Para streaming directo, el sistema <strong>debe priorizar obligatoriamente enlaces MP4</strong>. Los enlaces M3U8 deben reservarse exclusivamente para funciones de descarga.
+                        <strong class="text-blue-dev">DIRECTIVA DE FORMATOS:</strong> Priorizar enlaces MP4 para streaming directo. Los M3U8 solo se utilizarán para funciones de descarga y servidores secundarios.
                     </div>
 
                     <div class="search-bar-visual">
                         <i class="fas fa-search"></i>
-                        <input type="text" id="visual-search-input" placeholder="Ej: Búsqueda global en TMDB API para inyección manual...">
+                        <input type="text" id="visual-search-input" placeholder="Búsqueda global en TMDB API para inyección manual...">
                         <button class="btn-primary" id="btn-visual-search">Buscar Activo</button>
                     </div>
 
@@ -296,7 +293,7 @@
                         <div class="selected-media">
                             <img id="inject-poster" src="" alt="Poster">
                             <div class="media-details">
-                                <h4 id="inject-title" class="text-yellow">Título del Activo</h4>
+                                <h4 id="inject-title" class="text-yellow">Título</h4>
                                 <p id="inject-overview">Sinopsis...</p>
                             </div>
                         </div>
@@ -306,258 +303,233 @@
                         </div>
                         <div class="form-actions">
                             <button class="btn-secondary" id="btn-cancel-inject">Abortar</button>
-                            <button class="btn-success" id="btn-confirm-inject"><i class="fas fa-cloud-upload-alt"></i> Escribir en MongoDB</button>
-                        </div>
-                    </div>
-                    
-                    <h4 style="margin-top: 30px; margin-bottom: 15px; border-bottom: 1px solid var(--border-light); padding-bottom: 10px;">Estado de Nodos Render</h4>
-                    <div class="server-status-grid">
-                        <div class="server-node">
-                            <div class="node-header"><i class="fas fa-robot text-muted"></i> <h4>Bot Telegram (API)</h4></div>
-                            <span class="status-blink working">Operativo</span>
-                            <p style="font-size: 12px; margin-top: 10px;">Render Web Service</p>
-                        </div>
-                        <div class="server-node">
-                            <div class="node-header"><i class="fas fa-database text-muted"></i> <h4>MongoDB Atlas</h4></div>
-                            <span class="status-blink working">Conectado</span>
-                            <p style="font-size: 12px; margin-top: 10px;">Cluster Zaruma/US</p>
+                            <button class="btn-success" id="btn-confirm-inject"><i class="fas fa-cloud-upload-alt"></i> Escribir en BD</button>
                         </div>
                     </div>
                 </div>
             </section>
 
             <!-- ==========================================
-                 5. PAGOS
+                 6. PAGOS Y LIQUIDACIÓN
                  ========================================== -->
             <section id="tab-pagos" class="tab-content hidden">
-                <div class="config-tabs">
-                    <div class="config-tab active">Información de pagos</div>
-                    <div class="config-tab">Verificación</div>
+                <div class="config-tabs" id="tabs-pagos">
+                    <div class="config-tab active" data-target="pago-nomina">Nómina y Liquidación</div>
+                    <div class="config-tab" data-target="pago-metodos">Formas de Pago</div>
+                    <div class="config-tab" data-target="pago-historial">Transacciones</div>
                 </div>
-                
-                <p style="font-size: 12px; color: var(--text-muted); text-transform: uppercase; margin-bottom: 15px;">Cuenta de pagos<br><span style="color: var(--text-main); font-size: 14px; text-transform: none;">Trechos Visionarios (Ecuador)</span></p>
-                <h3 style="margin-bottom: 20px;">Pagos</h3>
-                
-                <div class="admob-card" style="margin-bottom: 20px;">
-                    <div style="display: flex; justify-content: space-between; align-items: flex-end;">
-                        <div>
-                            <h4 style="font-weight: 500; font-size: 18px;">Ingresos Pendientes (Nómina Global)</h4>
-                            <p style="font-size: 13px; color: var(--text-muted); margin-top: 5px;">Se paga de forma mensual si el total es de al menos USD 62.00 (su umbral de seguridad configurado).</p>
+
+                <!-- Sub-pestaña: Nómina -->
+                <div id="pago-nomina" class="sub-tab-content active">
+                    <div class="dashboard-middle">
+                        <div class="chart-box">
+                            <h4 style="margin-bottom: 5px;">Ingresos Pendientes (Nómina Global)</h4>
+                            <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 20px;">Total generado por los trabajadores en el ciclo actual.</p>
+                            
+                            <h2 style="font-size: 38px; color: var(--yellow-main); margin-bottom: 15px;" id="nomina-pendiente-total">$0.00</h2>
+                            
+                            <table class="corporate-table">
+                                <thead>
+                                    <tr>
+                                        <th>Trabajador</th>
+                                        <th>Rol</th>
+                                        <th>Generado</th>
+                                        <th>Acción</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="lista-liquidaciones">
+                                    <tr><td colspan="4" class="text-center text-muted">Cargando trabajadores...</td></tr>
+                                </tbody>
+                            </table>
                         </div>
-                        <h2 style="font-size: 32px; font-weight: 400;" id="nomina-pendiente-total">USD 0.00</h2>
-                    </div>
-                    
-                    <div class="progress-container">
-                        <div class="progress-bar" id="nomina-progress" style="width: 45%;"></div>
-                    </div>
-                    <div style="display: flex; justify-content: space-between; font-size: 12px; color: var(--text-muted);">
-                        <span>Alcanzó un {45%} de su umbral de seguridad global</span>
-                        <span>Umbral de seguridad: {USD 62.00 / trabajador}</span>
-                    </div>
-                    <div style="margin-top: 20px; font-size: 13px; color: var(--text-main);">
-                        <i class="fas fa-calendar-alt text-muted"></i> Su último ciclo de pago se emitió el 21 del mes pasado.
                     </div>
                 </div>
-                
-                <div class="admob-split">
-                    <div class="admob-card">
-                        <h4 style="font-weight: 500; margin-bottom: 20px; font-size: 18px;">Transacciones (Liquidaciones)</h4>
-                        <table class="corporate-table" style="margin-top: 0;">
-                            <tbody id="transactions-list">
+
+                <!-- Sub-pestaña: Métodos de Pago -->
+                <div id="pago-metodos" class="sub-tab-content">
+                    <div class="chart-box">
+                        <h4 style="margin-bottom: 20px;">Cuentas Corporativas Registradas</h4>
+                        <div style="display: flex; gap: 15px; align-items: center; background: var(--bg-base); padding: 20px; border-radius: 8px; border: 1px solid var(--border-light);">
+                            <i class="fas fa-university text-muted" style="font-size: 30px;"></i>
+                            <div style="flex-grow: 1;">
+                                <h4 style="margin-bottom: 5px;">Cuenta Bancaria / USDT (Principal)</h4>
+                                <p style="font-size: 13px; color: var(--text-muted);">Titular: Levin Dylan Narváez Ordóñez</p>
+                            </div>
+                            <span class="badge-success">Activa</span>
+                        </div>
+                        <button class="btn-secondary mt-4" id="btn-admin-pagos"><i class="fas fa-edit"></i> Administrar formas de pago</button>
+                    </div>
+                </div>
+
+                <!-- Sub-pestaña: Transacciones -->
+                <div id="pago-historial" class="sub-tab-content">
+                    <div class="chart-box">
+                        <h4 style="margin-bottom: 20px;">Liquidaciones Realizadas</h4>
+                        <table class="corporate-table">
+                            <thead>
+                                <tr><th>Fecha</th><th>Concepto</th><th>Monto</th><th>Estado</th></tr>
+                            </thead>
+                            <tbody>
                                 <tr>
-                                    <td style="padding: 10px 0; color: var(--blue-dev);">1 - 31 del mes anterior</td>
-                                    <td style="padding: 10px 0; text-align: right;">USD 0.00</td>
+                                    <td>21 del mes pasado</td>
+                                    <td>Cierre de ciclo global</td>
+                                    <td class="text-danger">-$183.52</td>
+                                    <td><span class="text-green">Completado</span></td>
                                 </tr>
                             </tbody>
                         </table>
-                        <div style="margin-top: 20px; text-align: center;">
-                            <a href="#" style="color: var(--blue-dev); text-decoration: none; font-size: 14px; font-weight: 500;">Ver transacciones detalladas</a>
-                        </div>
-                    </div>
-                    
-                    <div class="admob-card">
-                        <h4 style="font-weight: 500; margin-bottom: 20px; font-size: 18px;">Formas de pago</h4>
-                        <div style="display: flex; gap: 15px; align-items: center;">
-                            <div style="background-color: var(--border-light); padding: 20px; border-radius: 4px;">
-                                <i class="fas fa-university" style="font-size: 24px; color: white;"></i>
-                            </div>
-                            <div>
-                                <p style="font-size: 14px; color: var(--text-main); margin-bottom: 5px;">Transferencia bancaria / USDT</p>
-                                <p style="font-size: 12px; color: var(--text-muted);">Gestionado por CEO: Levin Dylan Narváez</p>
-                            </div>
-                        </div>
-                        <div style="margin-top: 30px; text-align: center;">
-                            <a href="#" style="color: var(--blue-dev); text-decoration: none; font-size: 14px; font-weight: 500;">Administrar formas de pago</a>
-                        </div>
                     </div>
                 </div>
             </section>
 
             <!-- ==========================================
-                 6. HISTORIAL DE CAMBIOS
+                 7. HISTORIAL DE CAMBIOS
                  ========================================== -->
             <section id="tab-historial" class="tab-content hidden">
-                <div class="config-tabs">
-                    <div class="config-tab">Filtrar</div>
-                    <div class="config-tab active">Período: Últimos 7 días</div>
-                    <div class="config-tab">Agregar filtro</div>
+                <div class="action-bar">
+                    <h3>Registro de Auditoría (Logs)</h3>
+                    <button class="btn-secondary" id="btn-filtrar-historial"><i class="fas fa-filter"></i> Filtrar <i class="fas fa-caret-down"></i></button>
                 </div>
                 
                 <div class="search-filter">
                     <i class="fas fa-search text-muted"></i>
-                    <input type="text" placeholder="Busque por artículo, fecha, cambio, o bien otros detalles de los cambios">
+                    <input type="text" id="input-search-log" placeholder="Buscar por usuario, acción o fecha...">
                 </div>
                 
-                <table class="corporate-table">
-                    <thead>
-                        <tr>
-                            <th>Fecha <i class="fas fa-arrow-down" style="font-size: 10px;"></i></th>
-                            <th>Elemento <i class="fas fa-question-circle text-muted"></i></th>
-                            <th>Cambiar <i class="fas fa-question-circle text-muted"></i></th>
-                            <th>Usuario <i class="fas fa-question-circle text-muted"></i></th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr>
-                            <td colspan="4" class="text-center text-muted" style="padding: 60px 20px;">
-                                <i class="fas fa-rocket" style="font-size: 40px; margin-bottom: 15px; opacity: 0.2;"></i><br>
-                                No se encontraron cambios recientes en la base de datos.
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
-            </section>
-
-            <!-- ==========================================
-                 7. CONFIGURACIÓN (USUARIOS Y RRHH)
-                 ========================================== -->
-            <section id="tab-configuracion" class="tab-content hidden">
-                <div class="config-tabs">
-                    <div class="config-tab">Personal</div>
-                    <div class="config-tab">Cuenta</div>
-                    <div class="config-tab active">Usuarios (Trabajadores)</div>
-                    <div class="config-tab">Servicios vinculados</div>
-                </div>
-                
-                <div class="admob-banner" style="display: flex; gap: 20px; align-items: center;">
-                    <i class="fas fa-users-cog text-blue-dev" style="font-size: 40px; color: var(--blue-dev);"></i>
-                    <div>
-                        <h4 style="font-size: 18px; margin-bottom: 5px; font-weight: 500;">Administre el acceso de los usuarios a la plataforma</h4>
-                        <p style="font-size: 13px; color: var(--text-muted);">Puede asignar funciones, registrar IDs de Telegram y controlar quién interactúa con el Bot y el Dashboard.</p>
-                        <a href="#" style="color: var(--blue-dev); text-decoration: none; font-size: 13px; display: inline-block; margin-top: 5px;">Más información</a>
-                    </div>
-                </div>
-                
-                <div class="admob-card">
-                    <div style="display: flex; gap: 15px; margin-bottom: 20px; align-items: center;">
-                        <button class="btn-primary" style="background-color: var(--blue-dev); color: white;" id="btn-new-user-modal"><i class="fas fa-plus"></i> Agregar usuario</button>
-                        <button class="btn-secondary" disabled style="opacity: 0.5;">Eliminar</button>
-                        <a href="#" style="color: var(--blue-dev); text-decoration: none; font-size: 14px;">Administrar roles</a>
-                    </div>
-                    
-                    <div class="search-filter">
-                        <i class="fas fa-search text-muted"></i>
-                        <input type="text" placeholder="Buscar por función o ID de Telegram">
-                    </div>
-                    
+                <div class="chart-box">
                     <table class="corporate-table">
                         <thead>
                             <tr>
-                                <th style="width: 40px;"><input type="checkbox"></th>
-                                <th>Nombre / ID Telegram <i class="fas fa-question-circle text-muted"></i> <i class="fas fa-arrow-up" style="font-size: 10px;"></i></th>
-                                <th>Función del usuario <i class="fas fa-question-circle text-muted"></i></th>
-                                <th>Acceso a aplicaciones <i class="fas fa-question-circle text-muted"></i></th>
-                                <th>Estado <i class="fas fa-question-circle text-muted"></i></th>
+                                <th>Fecha <i class="fas fa-arrow-down"></i></th>
+                                <th>Usuario</th>
+                                <th>Acción Realizada</th>
+                                <th>Módulo</th>
                             </tr>
                         </thead>
-                        <tbody id="db-users-list">
+                        <tbody id="audit-logs">
                             <tr>
-                                <td><input type="checkbox"></td>
-                                <td>
-                                    <div style="display: flex; flex-direction: column;">
-                                        <span>Levin Dylan Narváez (Usted)</span>
-                                        <span style="font-size: 11px; color: var(--text-muted);">ID: ADMIN_PRIMARY</span>
-                                    </div>
-                                </td>
-                                <td>CEO / Administrator</td>
-                                <td>Todas las aplicaciones</td>
-                                <td><span style="background: rgba(16, 185, 129, 0.1); color: var(--green-profit); padding: 4px 8px; border-radius: 4px; font-size: 11px;"><i class="fas fa-check"></i> Activa</span></td>
+                                <td>Hoy, 10:30 AM</td>
+                                <td class="text-yellow">Levin Dylan (CEO)</td>
+                                <td>Inicio de sesión exitoso</td>
+                                <td>Seguridad</td>
                             </tr>
                             <tr>
-                                <td><input type="checkbox"></td>
-                                <td>
-                                    <div style="display: flex; flex-direction: column;">
-                                        <span>Nadia</span>
-                                        <span style="font-size: 11px; color: var(--text-muted);">ID: 00000000</span>
-                                    </div>
-                                </td>
-                                <td>Co-Fundadora / Administrator</td>
-                                <td>Todas las aplicaciones</td>
-                                <td><span style="background: rgba(16, 185, 129, 0.1); color: var(--green-profit); padding: 4px 8px; border-radius: 4px; font-size: 11px;"><i class="fas fa-check"></i> Activa</span></td>
-                            </tr>
-                            <tr>
-                                <td><input type="checkbox"></td>
-                                <td>
-                                    <div style="display: flex; flex-direction: column;">
-                                        <span>María</span>
-                                        <span style="font-size: 11px; color: var(--text-muted);">ID: (Pendiente de mapeo DB)</span>
-                                    </div>
-                                </td>
-                                <td>Desarrollo</td>
-                                <td>Entorno Dev</td>
-                                <td><span style="background: rgba(16, 185, 129, 0.1); color: var(--green-profit); padding: 4px 8px; border-radius: 4px; font-size: 11px;"><i class="fas fa-check"></i> Activa</span></td>
-                            </tr>
-                            <tr>
-                                <td><input type="checkbox"></td>
-                                <td>
-                                    <div style="display: flex; flex-direction: column;">
-                                        <span>Amanda</span>
-                                        <span style="font-size: 11px; color: var(--text-muted);">ID: (Histórico)</span>
-                                    </div>
-                                </td>
-                                <td>Asistente de Proyecto</td>
-                                <td>Ninguna</td>
-                                <td><span style="background: rgba(239, 68, 68, 0.1); color: var(--red-expense); padding: 4px 8px; border-radius: 4px; font-size: 11px;"><i class="fas fa-times"></i> Inactiva</span></td>
-                            </tr>
-                            <tr>
-                                <td><input type="checkbox"></td>
-                                <td>
-                                    <div style="display: flex; flex-direction: column;">
-                                        <span>William</span>
-                                        <span style="font-size: 11px; color: var(--text-muted);">ID: (Histórico)</span>
-                                    </div>
-                                </td>
-                                <td>Gestión</td>
-                                <td>Ninguna</td>
-                                <td><span style="background: rgba(239, 68, 68, 0.1); color: var(--red-expense); padding: 4px 8px; border-radius: 4px; font-size: 11px;"><i class="fas fa-times"></i> Inactiva</span></td>
+                                <td>Ayer, 18:45 PM</td>
+                                <td>Sistema Core</td>
+                                <td>Sincronización de vistas DB</td>
+                                <td>Backend</td>
                             </tr>
                         </tbody>
                     </table>
+                </div>
+            </section>
+
+            <!-- ==========================================
+                 8. CONFIGURACIÓN
+                 ========================================== -->
+            <section id="tab-configuracion" class="tab-content hidden">
+                <div class="config-tabs" id="tabs-configuracion">
+                    <div class="config-tab active" data-target="config-usuarios">Usuarios (Trabajadores)</div>
+                    <div class="config-tab" data-target="config-personal">Datos Personales</div>
+                    <div class="config-tab" data-target="config-servicios">Servicios Vinculados</div>
+                </div>
+                
+                <!-- Sub-pestaña: Usuarios -->
+                <div id="config-usuarios" class="sub-tab-content active">
+                    <div class="action-bar">
+                        <button class="btn-primary" id="btn-agregar-usuario"><i class="fas fa-user-plus"></i> Agregar Usuario</button>
+                        <button class="btn-secondary" id="btn-admin-roles"><i class="fas fa-shield-alt"></i> Administrar Roles</button>
+                    </div>
                     
-                    <div style="display: flex; justify-content: flex-end; align-items: center; margin-top: 15px; font-size: 13px; color: var(--text-muted); gap: 20px;">
-                        <span>Mostrar filas: <select style="background: transparent; border: 1px solid var(--border-light); color: white; padding: 2px 5px; outline: none;"><option>15</option></select></span>
-                        <span>1 - 5 de 5</span>
-                        <div style="display: flex; gap: 10px;">
-                            <i class="fas fa-step-backward" style="opacity: 0.5;"></i>
-                            <i class="fas fa-chevron-left" style="opacity: 0.5;"></i>
-                            <i class="fas fa-chevron-right" style="opacity: 0.5;"></i>
-                            <i class="fas fa-step-forward" style="opacity: 0.5;"></i>
+                    <div class="chart-box">
+                        <table class="corporate-table">
+                            <thead>
+                                <tr>
+                                    <th>Nombre / ID Telegram</th>
+                                    <th>Función</th>
+                                    <th>Estado DB</th>
+                                    <th>Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody id="db-users-list">
+                                <tr>
+                                    <td><strong>Levin Dylan Narváez</strong><br><small class="text-muted">ID: ADMIN_PRIMARY</small></td>
+                                    <td>CEO / Administrator</td>
+                                    <td><span class="text-green">Activa</span></td>
+                                    <td>-</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Nadia</strong><br><small class="text-muted">ID: 00000000</small></td>
+                                    <td>Co-Fundadora</td>
+                                    <td><span class="text-green">Activa</span></td>
+                                    <td><button class="btn-micro" onclick="alert('No se puede editar a la co-fundadora.')"><i class="fas fa-edit"></i></button></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Sub-pestaña: Personal -->
+                <div id="config-personal" class="sub-tab-content">
+                    <div class="chart-box">
+                        <h4 style="margin-bottom: 20px;">Información de la Cuenta Root</h4>
+                        <div class="form-grid" style="grid-template-columns: 1fr; gap: 20px;">
+                            <div>
+                                <label class="text-muted" style="font-size: 12px; display: block; margin-bottom: 5px;">Nombre Completo</label>
+                                <input type="text" value="Levin Dylan Narváez Ordóñez" class="w-100" style="padding: 12px; background: var(--bg-base); border: 1px solid var(--border-light); color: white; border-radius: 6px;" readonly>
+                            </div>
+                            <div>
+                                <label class="text-muted" style="font-size: 12px; display: block; margin-bottom: 5px;">Correo Electrónico (Login)</label>
+                                <input type="text" value="[Oculto por seguridad]" class="w-100" style="padding: 12px; background: var(--bg-base); border: 1px solid var(--border-light); color: white; border-radius: 6px;" readonly>
+                            </div>
                         </div>
+                    </div>
+                </div>
+
+                <!-- Sub-pestaña: Servicios -->
+                <div id="config-servicios" class="sub-tab-content">
+                    <div class="chart-box">
+                        <h4 style="margin-bottom: 20px;">APIs y Conexiones</h4>
+                        <ul style="list-style: none;">
+                            <li style="display: flex; justify-content: space-between; padding: 15px 0; border-bottom: 1px solid var(--border-light);">
+                                <div><i class="fab fa-telegram text-blue-dev"></i> <strong>Telegram Bot API</strong></div>
+                                <span class="text-green">Conectado</span>
+                            </li>
+                            <li style="display: flex; justify-content: space-between; padding: 15px 0; border-bottom: 1px solid var(--border-light);">
+                                <div><i class="fas fa-film text-yellow"></i> <strong>TMDB API (Películas)</strong></div>
+                                <span class="text-green">Conectado</span>
+                            </li>
+                            <li style="display: flex; justify-content: space-between; padding: 15px 0;">
+                                <div><i class="fab fa-google text-muted"></i> <strong>Google AdMob</strong></div>
+                                <span class="text-yellow">Sincronización Manual</span>
+                            </li>
+                        </ul>
                     </div>
                 </div>
             </section>
 
             <!-- ==========================================
-                 8. AYUDA / LABS
+                 9. EMPRESA E INFORMACIÓN
                  ========================================== -->
-            <section id="tab-ayuda" class="tab-content hidden">
-                <div class="admob-banner">
-                    <h3>Centro de Asistencia Interno - Trechos Visionarios Corp.</h3>
-                    <p style="font-size: 14px; color: var(--text-muted); line-height: 1.6; margin-bottom: 20px;">Este espacio está reservado para la documentación corporativa, notas de despliegue en Render y configuraciones del bot de Telegram. Mantenga esta información confidencial.</p>
+            <section id="tab-empresa" class="tab-content hidden">
+                <div class="chart-box" style="text-align: center; padding: 40px;">
+                    <i class="fas fa-building text-yellow" style="font-size: 60px; margin-bottom: 20px;"></i>
+                    <h2 style="font-size: 32px; margin-bottom: 10px;">Trechos Visionarios Corp.</h2>
+                    <p class="text-muted" style="font-size: 16px; margin-bottom: 30px;">Infraestructura de Desarrollo, Streaming y Comercio.</p>
                     
-                    <div class="admob-card">
-                        <h4 style="margin-bottom: 10px; color: var(--yellow-main);">Próxima migración: Bot a MongoDB</h4>
-                        <p style="font-size: 13px; color: var(--text-muted); line-height: 1.6;">El sistema está siendo preparado para abandonar la dependencia del archivo <code>.env</code> en Render para la lectura de IDs de trabajadores. Una vez activo, utilice la pestaña "Configuración > Usuarios" para dar de alta a nuevos uploaders. El ID de Telegram ingresado allí será la llave de acceso universal al bot y al Dashboard móvil.</p>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; text-align: left; border-top: 1px solid var(--border-light); padding-top: 30px;">
+                        <div>
+                            <strong style="color: var(--blue-dev); display: block; margin-bottom: 5px;">Sede Central</strong>
+                            <p>Zaruma, El Oro<br>Ecuador</p>
+                        </div>
+                        <div>
+                            <strong style="color: var(--blue-dev); display: block; margin-bottom: 5px;">Directiva</strong>
+                            <p>CEO: Levin Dylan Narváez<br>Co-Fundadora: Nadia</p>
+                        </div>
+                        <div>
+                            <strong style="color: var(--blue-dev); display: block; margin-bottom: 5px;">Estatus Legal</strong>
+                            <p>Empresa constituida y respaldada operativamente.</p>
+                        </div>
                     </div>
                 </div>
             </section>
