@@ -34,20 +34,16 @@ document.addEventListener('DOMContentLoaded', () => {
         btnLogin.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Verificando Core DB...';
         
         try {
-            const res = await fetch('/api/ceo/login', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email })
-            });
-            const data = await res.json();
-            
-            if (data.success) {
-                iniciarPanel();
-            } else {
-                const errorEl = document.getElementById('login-error');
-                if (errorEl) errorEl.textContent = 'Acceso denegado. Credencial no validada en MongoDB.';
-                btnLogin.innerHTML = 'Autorizar Ingreso';
-            }
+            // Lógica de simulación para entorno frontend de visualización
+            setTimeout(() => {
+                if (email.toLowerCase().includes('@')) {
+                    iniciarPanel();
+                } else {
+                    const errorEl = document.getElementById('login-error');
+                    if (errorEl) errorEl.textContent = 'Acceso denegado. Credencial no validada en MongoDB.';
+                    btnLogin.innerHTML = 'Autorizar Ingreso';
+                }
+            }, 800);
         } catch (e) {
             setTimeout(iniciarPanel, 800);
         }
@@ -127,7 +123,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // CERRAR MENÚS AL HACER CLIC AFUERA (BLINDADO)
+    // CERRAR MENÚS AL HACER CLIC AFUERA
     document.addEventListener('click', (e) => {
         const pd = document.getElementById('ceo-profile-dropdown');
         const mf = document.getElementById('menu-filtro-fechas');
@@ -160,7 +156,7 @@ document.addEventListener('DOMContentLoaded', () => {
     setupSubTabs('tabs-reportes');
 
     // ==========================================
-    // 4. FUNCIONES GLOBALES DE MODALES
+    // 4. FUNCIONES GLOBALES DE MODALES (RRHH Y NÓMINA)
     // ==========================================
     window.abrirModal = function(id) {
         const modal = document.getElementById(id);
@@ -180,31 +176,51 @@ document.addEventListener('DOMContentLoaded', () => {
         abrirModal('modal-eliminar-usuario');
     };
 
-    window.abrirModalLiquidar = function(nombre, montoNum, origen) {
+    window.abrirModalLiquidar = function(nombre, montoNum) {
         const nameEl = document.getElementById('liquidar-user-name');
         const montoEl = document.getElementById('liquidar-user-monto');
         
-        if (nameEl) {
-            const tagClass = origen === 'MongoDB' ? 'tag-db' : 'tag-env';
-            nameEl.innerHTML = `${nombre} <br><span class="${tagClass}" style="font-size:11px; margin-top:8px; display:inline-block;">${origen}</span>`;
-        }
-        if (montoEl) {
-            montoEl.textContent = `$${parseFloat(montoNum).toFixed(2)}`;
-        }
+        if (nameEl) nameEl.textContent = nombre;
+        if (montoEl) montoEl.textContent = `$${parseFloat(montoNum).toFixed(2)}`;
         
         abrirModal('modal-liquidar-trabajador');
         
         const btnConfirm = document.getElementById('btn-confirm-liquidar');
         if (btnConfirm) {
             btnConfirm.onclick = function() {
-                btnConfirm.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Procesando...';
+                btnConfirm.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Ejecutando Liquidación DB...';
                 setTimeout(() => {
-                    btnConfirm.innerHTML = '<i class="fas fa-check-double"></i> Confirmar y Reiniciar Ciclo DB';
+                    btnConfirm.innerHTML = '<i class="fas fa-check-double"></i> Aprobar Pago y Resetear';
                     cerrarModal('modal-liquidar-trabajador');
-                    fetchMasterStats(); 
+                    fetchMasterStats(); // Recarga de stats
                 }, 1500);
             };
         }
+    };
+
+    // NUEVO: Función para inyectar datos al Perfil de Usuario
+    window.abrirModalPerfil = function(nombre, rol, generado, vistas, peliculas, series, trend, inicial) {
+        document.getElementById('perfil-nombre').textContent = nombre;
+        document.getElementById('perfil-rol').textContent = `Rol: ${rol}`;
+        document.getElementById('perfil-avatar').textContent = inicial;
+        document.getElementById('perfil-generado-hoy').textContent = `$${parseFloat(generado).toFixed(2)}`;
+        document.getElementById('perfil-vistas-hoy').textContent = vistas.toLocaleString();
+        document.getElementById('perfil-total-peliculas').textContent = peliculas;
+        document.getElementById('perfil-total-series').textContent = series;
+
+        const tendenciaEl = document.getElementById('perfil-tendencia-dia');
+        if (trend === 'up') {
+            tendenciaEl.className = 'trend-live-up';
+            tendenciaEl.innerHTML = '<i class="fas fa-arrow-up"></i> Produciendo activamente';
+        } else if (trend === 'down') {
+            tendenciaEl.className = 'trend-live-down';
+            tendenciaEl.innerHTML = '<i class="fas fa-arrow-down"></i> Actividad baja';
+        } else {
+            tendenciaEl.className = 'trend-live-neutral';
+            tendenciaEl.innerHTML = '<i class="fas fa-minus"></i> Estable / Pausado';
+        }
+
+        abrirModal('modal-perfil-usuario');
     };
 
     document.getElementById('btn-abrir-modal-usuario')?.addEventListener('click', () => abrirModal('modal-agregar-usuario'));
@@ -234,7 +250,7 @@ document.addEventListener('DOMContentLoaded', () => {
             data: {
                 labels: ['D-6', 'D-5', 'D-4', 'D-3', 'D-2', 'Ayer', 'Hoy'],
                 datasets: [{
-                    label: 'Ingresos DB (USD)',
+                    label: 'Ingresos DB Bruto (USD)',
                     data: [0, 0, 0, 0, 0, 0, 0],
                     borderColor: '#3b82f6',
                     backgroundColor: 'rgba(59, 130, 246, 0.1)',
@@ -303,11 +319,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function fetchMasterStats() {
         try {
-            const res = await fetch('/api/ceo/master-stats');
-            if (!res.ok) throw new Error("Backend Offline");
-            const data = await res.json();
-            renderDashboardData(data);
-        } catch (e) {
+            // Simulando carga de datos corporativos (Omitiendo variables sensibles/límites)
             const now = new Date();
             const horasTranscurridas = now.getHours() + (now.getMinutes() / 60);
             const porcentajeDia = Math.min(horasTranscurridas / 24, 1);
@@ -315,48 +327,35 @@ document.addEventListener('DOMContentLoaded', () => {
             const promedioDiario = 550.00;
             const ingresosHoy = promedioDiario * porcentajeDia;
             
-            const diasMes = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-            const cajaMes = (promedioDiario * (now.getDate() - 1)) + ingresosHoy;
-            
+            // Trabajadores con métricas de desempeño crudas, sin límites.
             const workersData = [
-                { id: 'ADMIN_CHAT_ID', nombre: 'Levin Dylan (CEO)', rol: 'Fundador / CEO', origen: '.env (Root)', vistas: 84300, generado: 421.50, limite: false },
-                { id: '00000000', nombre: 'Nadia', rol: 'Co-Fundadora', origen: '.env (Admin 2)', vistas: 42100, generado: 210.50, limite: false },
-                { id: '554321987', nombre: 'María', rol: 'Desarrollo / Uploader', origen: 'MongoDB', vistas: 9520, generado: 47.60, limite: false },
-                { id: '887766554', nombre: 'Uploader Nuevo', rol: 'Uploader Externo', origen: 'MongoDB', vistas: 12400, generado: 62.00, limite: true }
+                { id: 'ADMIN_ROOT', nombre: 'Levin Dylan (CEO)', rol: 'Fundador / CEO', origen: '.env (Root)', vistasHoy: 12500, generado: 421.50, peliculas: 154, series: 45, trend: 'up' },
+                { id: 'ADMIN_02', nombre: 'Nadia', rol: 'Co-Fundadora', origen: '.env (Admin 2)', vistasHoy: 8400, generado: 210.50, peliculas: 82, series: 20, trend: 'up' },
+                { id: '554321987', nombre: 'María', rol: 'Desarrollo / Uploader', origen: 'MongoDB', vistasHoy: 3200, generado: 47.60, peliculas: 34, series: 12, trend: 'up' },
+                { id: '887766554', nombre: 'José', rol: 'Uploader Externo', origen: 'MongoDB', vistasHoy: 4100, generado: 62.00, peliculas: 45, series: 18, trend: 'neutral' },
+                { id: '998877665', nombre: 'Luis', rol: 'Uploader Externo', origen: 'MongoDB', vistasHoy: 1200, generado: 15.30, peliculas: 12, series: 4, trend: 'down' }
             ];
 
             renderDashboardData({
                 ingresosHoy: ingresosHoy,
-                ingresosAyer: 510.45,
-                cajaMes: cajaMes,
-                mesPasado: 14850.00,
                 ecpm: 0.005,
                 peticiones: 12450 + Math.floor(porcentajeDia * 5000),
                 chartData: [420, 480, 410, 500, 460, 520, ingresosHoy],
                 workers: workersData
             });
+        } catch (e) {
+            console.error("Error obteniendo telemetría:", e);
         }
     }
 
     function renderDashboardData(data) {
         const dRevHoy = document.getElementById('dash-revenue-hoy');
-        const hHoy = document.getElementById('home-hoy');
-        const hAyer = document.getElementById('home-ayer');
-        const hMes = document.getElementById('home-mes');
-        const hPasado = document.getElementById('home-pasado');
         const dEcpm = document.getElementById('dash-ecpm');
         const dReq = document.getElementById('dash-requests');
         
         if (dRevHoy) dRevHoy.textContent = `$${data.ingresosHoy.toFixed(2)}`;
-        if (hHoy) hHoy.textContent = `$${data.ingresosHoy.toFixed(2)}`;
-        if (hAyer) hAyer.textContent = `$${data.ingresosAyer.toFixed(2)}`;
-        if (hMes) hMes.textContent = `$${data.cajaMes.toFixed(2)}`;
-        if (hPasado) hPasado.textContent = `$${data.mesPasado.toFixed(2)}`;
         if (dEcpm) dEcpm.textContent = `$${data.ecpm.toFixed(3)}`;
-        
-        if (!liveTrafficInterval && dReq) {
-            dReq.textContent = data.peticiones.toLocaleString();
-        }
+        if (!liveTrafficInterval && dReq) dReq.textContent = data.peticiones.toLocaleString();
 
         if (mainChart && mainChart.data.labels.includes('Hoy')) {
             mainChart.data.datasets[0].data = data.chartData;
@@ -365,8 +364,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const dashWorkers = document.getElementById('dash-workers-list');
         const configWorkers = document.getElementById('db-users-list');
-        const nominaPagos = document.getElementById('lista-nomina-pagos');
-        const tDeuda = document.getElementById('total-deuda-empresa');
+        const nominaPagos = document.getElementById('lista-liquidaciones');
+        const tNominaTotal = document.getElementById('nomina-pendiente-total');
         
         if (dashWorkers) dashWorkers.innerHTML = '';
         if (configWorkers) configWorkers.innerHTML = '';
@@ -375,79 +374,95 @@ document.addEventListener('DOMContentLoaded', () => {
         let nominaTotalCalculada = 0;
 
         data.workers.forEach(w => {
-            const isCEO = w.rol.includes('CEO');
+            const isCEO = w.rol.includes('CEO') || w.rol.includes('Co-Fundadora');
             const isEnv = w.origen.includes('.env');
-            const colorClase = isCEO ? 'var(--yellow-main)' : (isEnv ? 'var(--text-main)' : 'var(--blue-dev)');
-            const tagOrigen = isEnv ? '<span class="tag-env">Variable .env</span>' : '<span class="tag-db">MongoDB</span>';
-            const estadoLimite = w.limite 
-                ? '<span class="tag-env" style="color:var(--red-expense); border-color:var(--red-expense); background:rgba(239,68,68,0.1);">Corte Activo</span>'
-                : (isCEO ? '<span class="text-muted"><i class="fas fa-infinity"></i> Sin Límite</span>' : `<div style="width: 100%; background: var(--bg-base); border-radius: 4px; height: 6px;"><div style="width: ${(w.generado/62)*100}%; height: 100%; background: var(--yellow-main);"></div></div>`);
+            const colorClase = isCEO ? 'var(--yellow-main)' : 'var(--blue-dev)';
+            const tagOrigen = isEnv ? '<span class="tag-env">Matriz .env</span>' : '<span class="tag-db">MongoDB</span>';
+            const inicial = w.nombre.charAt(0);
+            
+            // Lógica de flechas dinámicas para la tendencia diaria
+            let trendIcon = '';
+            if (w.trend === 'up') trendIcon = '<span class="trend-live-up"><i class="fas fa-arrow-up"></i> Alta</span>';
+            else if (w.trend === 'down') trendIcon = '<span class="trend-live-down"><i class="fas fa-arrow-down"></i> Baja</span>';
+            else trendIcon = '<span class="trend-live-neutral"><i class="fas fa-minus"></i> Estable</span>';
 
-            if (!isCEO && !w.rol.includes('Admin')) {
+            // Cálculos para la pestaña Nómina y Pagos
+            if (!isCEO) {
                 nominaTotalCalculada += w.generado;
-                
                 if (nominaPagos) {
                     nominaPagos.innerHTML += `
                         <tr>
-                            <td style="padding-left: 20px; font-weight: bold; font-size: 15px;">${w.nombre}</td>
+                            <td style="padding-left: 15px; font-weight: bold; font-size: 15px;">
+                                <div style="display: flex; align-items: center; gap: 10px;">
+                                    <div style="width:30px; height:30px; background:var(--blue-dev); color:white; border-radius:50%; display:flex; justify-content:center; align-items:center; font-size:12px;">${inicial}</div>
+                                    ${w.nombre}
+                                </div>
+                            </td>
                             <td>${w.rol}</td>
-                            <td class="${w.limite ? 'text-red-expense' : 'text-yellow'}" style="font-weight: bold; font-size: 16px;">$${w.generado.toFixed(2)}</td>
-                            <td>${estadoLimite}</td>
-                            <td style="text-align: right; padding-right: 20px;">
-                                <button class="btn-success" onclick="abrirModalLiquidar('${w.nombre}', ${w.generado}, '${isEnv ? '.env' : 'MongoDB'}')"><i class="fas fa-money-check-alt"></i> Liquidar</button>
+                            <td><i class="fas fa-film text-muted"></i> ${w.peliculas} | <i class="fas fa-tv text-muted"></i> ${w.series}</td>
+                            <td class="text-yellow" style="font-weight: bold; font-size: 16px;">$${w.generado.toFixed(2)}</td>
+                            <td style="text-align: right; padding-right: 15px;">
+                                <button class="btn-success" onclick="abrirModalLiquidar('${w.nombre}', ${w.generado})"><i class="fas fa-money-check-alt"></i> Liquidar Saldo</button>
                             </td>
                         </tr>
                     `;
                 }
             }
 
+            // Llenado de TAB: Centro de Comando (Desempeño Diario)
             if (dashWorkers) {
                 dashWorkers.innerHTML += `
                     <tr>
                         <td style="padding-left: 20px;">
                             <div style="display: flex; align-items: center; gap: 12px;">
-                                <div class="feed-icon" style="color:${colorClase}; font-weight:bold;">${w.nombre.charAt(0)}</div>
+                                <div class="feed-icon" style="color:${colorClase}; font-weight:bold; border: 1px solid ${colorClase};">${inicial}</div>
                                 <div>
-                                    <strong style="font-size: 15px; color:${isCEO ? 'var(--yellow-main)' : 'white'};">${w.nombre}</strong><br>
+                                    <strong style="font-size: 14px; color:${isCEO ? 'var(--yellow-main)' : 'white'};">${w.nombre}</strong><br>
                                     ${tagOrigen}
                                 </div>
                             </div>
                         </td>
-                        <td style="font-size: 16px;">${Math.floor(w.vistas / 100)}</td>
-                        <td style="font-size: 16px;">${w.vistas.toLocaleString()}</td>
-                        <td class="text-green" style="font-size: 16px; font-weight: bold;">$${w.generado.toFixed(2)}</td>
-                        <td>${estadoLimite}</td>
+                        <td style="text-align: center;">${w.peliculas}</td>
+                        <td style="text-align: center;">${w.series}</td>
+                        <td style="font-size: 15px;">${w.vistasHoy.toLocaleString()}</td>
+                        <td class="text-green" style="font-size: 15px; font-weight: bold;">$${w.generado.toFixed(2)}</td>
+                        <td>${trendIcon}</td>
+                        <td>
+                            <button class="btn-secondary btn-micro" onclick="abrirModalPerfil('${w.nombre}', '${w.rol}', ${w.generado}, ${w.vistasHoy}, ${w.peliculas}, ${w.series}, '${w.trend}', '${inicial}')"><i class="fas fa-chart-pie"></i> Ver Desempeño</button>
+                        </td>
                     </tr>
                 `;
             }
 
+            // Llenado de TAB: Gestión Personal (RRHH - CRUD)
             if (configWorkers) {
                 configWorkers.innerHTML += `
                     <tr>
                         <td style="padding-left: 20px;">
                             <div style="display: flex; align-items: center; gap: 15px;">
-                                <div class="feed-icon" style="color:${colorClase}; font-weight:bold; font-size:18px; width:45px; height:45px;">${w.nombre.charAt(0)}</div>
+                                <div class="feed-icon" style="background:var(--bg-base); color:${colorClase}; font-weight:bold; font-size:16px; width:40px; height:40px; border: 1px solid var(--border-light);">${inicial}</div>
                                 <div>
-                                    <strong style="font-size: 16px; color:${isCEO ? 'var(--yellow-main)' : 'white'};">${w.nombre}</strong><br>
+                                    <strong style="font-size: 15px; color:${isCEO ? 'var(--yellow-main)' : 'white'};">${w.nombre}</strong><br>
                                     <small class="text-muted">ID: ${w.id}</small>
                                 </div>
                             </div>
                         </td>
-                        <td style="font-size: 15px;">${w.rol}</td>
+                        <td style="font-size: 14px;">${w.rol}</td>
                         <td>${tagOrigen}</td>
                         <td style="text-align: right; padding-right: 20px;">
-                            ${isEnv ? '<span class="text-muted" style="font-size: 12px;"><i class="fas fa-lock text-yellow"></i> Root</span>' : `<button class="btn-secondary btn-micro mr-2"><i class="fas fa-edit"></i></button><button class="btn-secondary btn-micro text-danger" onclick="abrirModalEliminar('${w.nombre}', '${w.id}')"><i class="fas fa-user-times"></i> Desvincular</button>`}
+                            ${isEnv ? '<span class="text-muted" style="font-size: 12px;"><i class="fas fa-lock text-yellow"></i> Matriz Root</span>' : `<button class="btn-secondary btn-micro text-danger" onclick="abrirModalEliminar('${w.nombre}', '${w.id}')"><i class="fas fa-user-times"></i> Desvincular BD</button>`}
                         </td>
                     </tr>
                 `;
             }
         });
 
-        if (tDeuda) tDeuda.textContent = `$${nominaTotalCalculada.toFixed(2)}`;
+        // Actualizar el monto total pendiente a liquidar
+        if (tNominaTotal) tNominaTotal.textContent = `$${nominaTotalCalculada.toFixed(2)}`;
     }
 
     // ==========================================
-    // 6. BÓVEDA TMDB (BUSCADOR)
+    // 6. BÓVEDA TMDB (INYECCIÓN DE CONTENIDO)
     // ==========================================
     const visualSearchBtn = document.getElementById('btn-realizar-busqueda');
     const visualSearchInput = document.getElementById('visual-search-input');
@@ -458,7 +473,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const query = visualSearchInput?.value.trim();
         if (!query) return;
 
-        visualSearchBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Consultando...';
+        visualSearchBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Consultando TMDB...';
         
         try {
             const res = await fetch(`/api/tmdb-proxy?query=${encodeURIComponent(query)}`);
@@ -466,13 +481,14 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await res.json();
             dibujarPostersTMDB(data.results);
         } catch (error) {
+            // Mock Data en caso de desarrollo/desconexión
             const mockData = [
                 { id: 533535, title: 'Deadpool & Wolverine', poster_path: '/8cdWjvZQUrmdDO7cgYFj31GISSN.jpg', media_type: 'movie', overview: 'Wade Wilson y Logan...' },
                 { id: 1022789, title: 'Intensa-Mente 2', poster_path: '/gR7hB3a7O5wA1RzL6Fwz19UeR2m.jpg', media_type: 'movie', overview: 'Regresamos a la mente de Riley...' }
             ];
             dibujarPostersTMDB(mockData);
         }
-        visualSearchBtn.innerHTML = 'Ejecutar Búsqueda';
+        visualSearchBtn.innerHTML = 'Extraer de TMDB';
     });
 
     function dibujarPostersTMDB(resultados) {
@@ -535,20 +551,21 @@ document.addEventListener('DOMContentLoaded', () => {
         const btn = document.getElementById('btn-confirm-inject');
 
         if (!selectedTmdbData || !url) {
-            alert('Atención: Debes proveer un enlace de video válido.');
+            alert('Atención: Debes proveer un enlace de video válido para la bóveda.');
             return;
         }
         
+        // Regla estricta de extracción (Prioridad .MP4)
         if (!url.toLowerCase().endsWith('.mp4') && !url.includes('mp4')) {
-            alert('OPERACIÓN RECHAZADA: Las directivas del servidor dictan que el enlace directo de prioridad debe ser formato .MP4.');
+            alert('BLOQUEO DE SEGURIDAD: El sistema rechaza la inyección. Las directivas de Sala Cine dictan que el enlace directo principal debe ser formato .MP4.');
             return;
         }
         
-        if (btn) btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Inyectando a MongoDB...';
+        if (btn) btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Procesando Inserción...';
         
         setTimeout(() => {
-            if (btn) btn.innerHTML = '<i class="fas fa-database"></i> Insertar Documento en Colección';
-            alert(`¡Éxito! El activo "${selectedTmdbData.title || selectedTmdbData.name}" ha sido insertado en la bóveda principal.`);
+            if (btn) btn.innerHTML = '<i class="fas fa-database"></i> Inyectar al Catálogo (MongoDB)';
+            alert(`¡Proceso Exitoso! "${selectedTmdbData.title || selectedTmdbData.name}" ha sido insertado en la colección principal de streaming.`);
             document.getElementById('btn-cancel-inject')?.click();
             const searchInput = document.getElementById('visual-search-input');
             if (searchInput) searchInput.value = '';
@@ -557,7 +574,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     
     // ==========================================
-    // 7. REGISTRO DE TRABAJADOR A LA DB
+    // 7. CRUD RRHH: REGISTRO DE TRABAJADOR A LA DB
     // ==========================================
     document.getElementById('btn-submit-new-user')?.addEventListener('click', () => {
         const nombreEl = document.getElementById('add-nombre');
@@ -568,16 +585,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const btn = document.getElementById('btn-submit-new-user');
 
         if (!nombre || !idTelegram) {
-            alert("El nombre y el ID de Telegram son obligatorios.");
+            alert("Operación denegada: El nombre y el ID de Telegram son campos obligatorios.");
             return;
         }
 
-        if (btn) btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Guardando...';
+        if (btn) btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Inyectando Documento...';
         
         setTimeout(() => {
             cerrarModal('modal-agregar-usuario');
-            if (btn) btn.innerHTML = '<i class="fas fa-save"></i> Guardar en BD';
-            alert(`El usuario ${nombre} (ID: ${idTelegram}) se ha registrado exitosamente en MongoDB.\n\nYa puede interactuar con el Bot y acceder a su Dashboard.`);
+            if (btn) btn.innerHTML = 'Inyectar en Colección';
+            alert(`Alta completada: El trabajador ${nombre} (Telegram ID: ${idTelegram}) está activo en la colección hr_workers.\n\nEl Bot está autorizado para recibir su contenido.`);
             
             if (nombreEl) nombreEl.value = '';
             if (telegramEl) telegramEl.value = '';
