@@ -90,4 +90,28 @@ module.exports = function(app, ctx) {
       res.status(500).json({ success: false, error: error.message });
     }
   });
+
+  app.get('/api/tvision/feed', async (req, res) => {
+    try {
+      const db = ctx.getMongoDb();
+      if (!db) return res.status(503).json({ error: "DB no conectada" });
+
+      const posts = await db.collection('tvision_community_posts').find().sort({ createdAt: -1 }).limit(50).toArray();
+      res.status(200).json({ success: true, posts });
+    } catch (error) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  app.get('/api/tvision/popular-channels', async (req, res) => {
+    try {
+      const db = ctx.getMongoDb();
+      if (!db) return res.status(503).json({ error: "DB no conectada" });
+
+      const channels = await db.collection('tvision_community_users').find().limit(15).toArray();
+      res.status(200).json({ success: true, channels });
+    } catch (error) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
 };
