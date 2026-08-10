@@ -3,13 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Trechos Visionarios | CEO Workspace</title>
+    <title>Trechos Visionarios | Estado de Sistema (Mantenimiento)</title>
     
     <link rel="stylesheet" href="ceo_panel.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
+        /* Estilos Originales Preservados */
         .admob-card-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-light); padding-bottom: 15px; margin-bottom: 15px; }
         .config-tabs { display: flex; gap: 20px; border-bottom: 1px solid var(--border-light); margin-bottom: 20px; overflow-x: auto; white-space: nowrap; }
         .config-tab { padding: 10px 0; color: var(--text-muted); cursor: pointer; border-bottom: 2px solid transparent; font-weight: 500; transition: all 0.2s; }
@@ -70,9 +71,65 @@
         @keyframes fadeIn { from { opacity: 0; transform: translateY(-15px); } to { opacity: 1; transform: translateY(0); } }
     </style>
 </head>
-<body>
+<body style="background-color: #0a0a0f; overflow: hidden; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif;">
 
-    <!-- PANTALLA DE LOGIN -->
+    <!-- ========================================================================= -->
+    <!-- INTERFAZ DE MANTENIMIENTO GLOBAL (ÚNICA VISTA ACTIVA PARA LOS USUARIOS)   -->
+    <!-- ========================================================================= -->
+    <div style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background-color: #0a0a0f; display: flex; justify-content: center; align-items: center; z-index: 999999; padding: 20px; box-sizing: border-box; overflow-y: auto;">
+        
+        <div style="max-width: 750px; width: 100%; background: #111116; border: 1px solid #ef4444; border-radius: 12px; padding: 40px; box-shadow: 0 20px 60px rgba(0,0,0,0.8);">
+            
+            <div style="display: flex; align-items: center; gap: 20px; margin-bottom: 30px; border-bottom: 1px solid #2a2a35; padding-bottom: 20px;">
+                <i class="fas fa-exclamation-triangle" style="font-size: 45px; color: #ef4444;"></i>
+                <div>
+                    <h1 style="margin: 0; font-size: 24px; color: #ffffff; letter-spacing: 0.5px;">ALERTA DE INFRAESTRUCTURA CRÍTICA</h1>
+                    <span style="color: #ffb800; font-size: 13px; font-weight: 600; letter-spacing: 1px;">CÓDIGO DE EVENTO: GSI-001 (CAÍDA GLOBAL)</span>
+                </div>
+            </div>
+
+            <div style="color: #a1a1aa; font-size: 15px; line-height: 1.8;">
+                <p style="margin-top: 0;"><strong>A todo el personal operativo, directivo y ecosistema de desarrolladores:</strong></p>
+                
+                <p>Se notifica formalmente que nos encontramos bajo un protocolo de contención estricto debido a una interrupción masiva y simultánea en la infraestructura de red a nivel mundial. Este evento de fuerza mayor está afectando el enrutamiento de datos y los microservicios transversales de nuestra arquitectura corporativa.</p>
+                
+                <p>El incidente excede el entorno local de nuestros servidores (Main Core / Nodos CDN). Se ha confirmado que las plataformas globales de terceros de las que dependemos están experimentando caídas sistémicas. Esto se traduce en una <strong>interrupción total en los flujos de monetización y distribución</strong>, afectando directamente las APIs de AdMob, servicios de indexación de Google, así como las infraestructuras de meta-datos vinculadas a YouTube, plataformas de Meta (Facebook) y las pasarelas de conversión internacional.</p>
+
+                <div style="background: rgba(239, 68, 68, 0.05); border-left: 4px solid #ef4444; padding: 15px 20px; margin: 25px 0; border-radius: 0 8px 8px 0;">
+                    <h3 style="margin: 0 0 10px 0; color: #ef4444; font-size: 14px;">MEDIDA PREVENTIVA APLICADA:</h3>
+                    <p style="margin: 0; font-size: 14px; color: #d1d5db;">Para garantizar la integridad de las bases de datos en MongoDB, proteger los registros acumulados del personal (hr_workers) y prevenir inconsistencias en la liquidación de pagos por latencia de red, <strong>el acceso al CEO Workspace, las operaciones de inyección manual y el panel de RRHH han sido bloqueados y puestos fuera de línea temporalmente.</strong></p>
+                </div>
+
+                <p>Nuestros equipos de ingeniería están monitoreando los túneles de conexión en tiempo real. La operatividad se restablecerá de manera automática progresivamente una vez que los proveedores globales estabilicen los puertos y los endpoints de monetización vuelvan a responder de manera óptima y fluida.</p>
+                
+                <p style="margin-bottom: 0;">Agradecemos su comprensión. Los datos de la empresa, el capital flotante actual y el catálogo de activos están encriptados y asegurados.</p>
+            </div>
+
+            <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #2a2a35; display: flex; justify-content: space-between; align-items: center;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <div style="width: 10px; height: 10px; background-color: #ffb800; border-radius: 50%; box-shadow: 0 0 10px #ffb800; animation: pulse 2s infinite;"></div>
+                    <span style="color: #6b7280; font-size: 12px; font-weight: 600;">ESTADO: ESPERANDO RESOLUCIÓN UPSTREAM...</span>
+                </div>
+                <strong style="color: #4b5563; font-size: 12px; letter-spacing: 1px;">TRECHOS VISIONARIOS CORP.</strong>
+            </div>
+
+        </div>
+    </div>
+
+    <style>
+        @keyframes pulse {
+            0% { transform: scale(0.95); opacity: 0.5; }
+            50% { transform: scale(1.1); opacity: 1; }
+            100% { transform: scale(0.95); opacity: 0.5; }
+        }
+    </style>
+
+    <!-- ========================================================================= -->
+    <!-- CÓDIGO ORIGINAL BLOQUEADO TEMPORALMENTE (NO BORRAR ESTE BLOQUE)           -->
+    <!-- Para restablecer el sistema, simplemente borra las etiquetas de comentario-->
+    <!-- ========================================================================= -->
+    <!--
+    
     <div id="login-screen" class="active">
         <div class="login-box">
             <div class="login-logo"><i class="fas fa-fingerprint text-yellow"></i></div>
@@ -84,10 +141,8 @@
         </div>
     </div>
 
-    <!-- PANEL PRINCIPAL -->
     <div id="ceo-dashboard" class="hidden">
         
-        <!-- HEADER MÓVIL -->
         <div class="mobile-header">
             <div class="mobile-brand-area">
                 <button id="mobile-menu-btn"><i class="fas fa-bars"></i></button>
@@ -99,7 +154,6 @@
             </div>
         </div>
 
-        <!-- BARRA LATERAL (SIDEBAR) -->
         <nav class="sidebar" id="sidebar">
             <div class="brand">
                 <h2>Trechos <span>Visionarios</span></h2>
@@ -123,7 +177,6 @@
             </div>
         </nav>
 
-        <!-- ÁREA DE CONTENIDO -->
         <main class="content-area" id="export-pdf-area">
             
             <header class="global-header desktop-only">
@@ -156,7 +209,6 @@
                 </div>
             </header>
 
-            <!-- 1. TAB INICIO -->
             <section id="tab-inicio" class="tab-content active">
                 <div class="action-bar">
                     <div style="display: flex; gap: 15px; align-items: center;">
@@ -238,7 +290,6 @@
                     </div>
                 </div>
 
-                <!-- Modificado: Sin límites, con métricas reales de productividad -->
                 <div class="chart-box mt-4">
                     <div class="admob-card-header">
                         <h4><i class="fas fa-users-cog text-blue-dev"></i> Monitor Operativo de Planilla (Desempeño Diario)</h4>
@@ -265,7 +316,6 @@
                 </div>
             </section>
 
-            <!-- 2. TAB GESTIÓN PERSONAL (RRHH) -->
             <section id="tab-configuracion" class="tab-content hidden">
                 <div class="config-tabs" id="tabs-configuracion">
                     <div class="config-tab active" data-target="config-usuarios">Personal e Inteligencia</div>
@@ -294,13 +344,11 @@
                                 </tr>
                             </thead>
                             <tbody id="db-users-list">
-                                <!-- Se llena dinámicamente -->
                                 <tr><td colspan="4" class="text-center text-muted">Cargando nómina...</td></tr>
                             </tbody>
                         </table>
                     </div>
 
-                    <!-- Panel de Proyecciones de IA -->
                     <div class="chart-box mt-4" style="background: rgba(59, 130, 246, 0.05); border-color: rgba(59, 130, 246, 0.2);">
                         <h4 style="margin-bottom: 15px;"><i class="fas fa-brain text-blue-dev"></i> Proyecciones IA de Recursos Humanos</h4>
                         <div class="form-grid" style="grid-template-columns: 1fr 1fr; gap: 20px;">
@@ -333,7 +381,6 @@
                 </div>
             </section>
 
-            <!-- 3. TAB PAGOS Y NÓMINA -->
             <section id="tab-pagos" class="tab-content hidden">
                 <div class="config-tabs" id="tabs-pagos">
                     <div class="config-tab active" data-target="pago-nomina">Ejecución de Nómina</div>
@@ -348,7 +395,6 @@
                             
                             <h2 style="font-size: 38px; color: var(--yellow-main); margin-bottom: 15px;" id="nomina-pendiente-total">$0.00</h2>
                             
-                            <!-- Modificado: Sin rastro del límite. Foco en métricas -->
                             <table class="corporate-table">
                                 <thead>
                                     <tr>
@@ -387,7 +433,6 @@
                 </div>
             </section>
 
-            <!-- 4. TAB BÓVEDA TMDB (INYECCIÓN) -->
             <section id="tab-bloqueo" class="tab-content hidden">
                 <div class="work-station">
                     <div class="action-bar">
@@ -443,7 +488,6 @@
                         </div>
                     </div>
 
-                    <!-- Módulo IA: Auditoría de Enlaces -->
                     <div class="chart-box mt-4">
                         <h4 style="margin-bottom: 15px;"><i class="fas fa-spider text-blue-dev"></i> Auditoría de Enlaces Caídos (Bot Crawler)</h4>
                         <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 20px;">El crawler revisa pasivamente la salud de los .MP4 en la base de datos.</p>
@@ -457,7 +501,6 @@
                 </div>
             </section>
 
-            <!-- 5. ECOSISTEMA DE APPS -->
             <section id="tab-aplicaciones" class="tab-content hidden">
                 <div class="action-bar">
                     <div>
@@ -514,7 +557,6 @@
                 </div>
             </section>
 
-            <!-- 6. REPORTES -->
             <section id="tab-informes" class="tab-content hidden">
                 <div class="action-bar">
                     <h3>Centro de Reportes Directivos</h3>
@@ -528,7 +570,6 @@
                 </div>
             </section>
 
-            <!-- 7. INFRAESTRUCTURA DE RED -->
             <section id="tab-infraestructura" class="tab-content hidden">
                 <div class="action-bar">
                     <div>
@@ -592,7 +633,6 @@
                 </div>
             </section>
 
-            <!-- 8. AUDITORÍA (LOGS) -->
             <section id="tab-historial" class="tab-content hidden">
                 <div class="action-bar">
                     <h3>Registro de Eventos (Logs del Sistema)</h3>
@@ -623,7 +663,6 @@
                 </div>
             </section>
 
-            <!-- 9. VISIÓN CORPORATIVA (TRECHOS CORP) -->
             <section id="tab-empresa" class="tab-content hidden">
                 <div class="magazine-hero video-container">
                     <div class="corp-overlay"></div>
@@ -655,9 +694,6 @@
         </main>
     </div>
 
-    <!-- ================= MODALES DEL SISTEMA ================= -->
-    
-    <!-- Modal: Agregar Usuario DB -->
     <div id="modal-agregar-usuario" class="modal-overlay">
         <div class="modal-content">
             <div class="modal-header">
@@ -690,7 +726,6 @@
         </div>
     </div>
 
-    <!-- Modal: Eliminar Usuario -->
     <div id="modal-eliminar-usuario" class="modal-overlay">
         <div class="modal-content" style="border-color: var(--red-expense); max-width: 400px;">
             <div class="modal-header" style="background: rgba(239, 68, 68, 0.1);">
@@ -710,7 +745,6 @@
         </div>
     </div>
 
-    <!-- NUEVO: Modal de Perfil Individual de Trabajador (Auditoría Avanzada) -->
     <div id="modal-perfil-usuario" class="modal-overlay">
         <div class="modal-content" style="border-color: var(--blue-dev); max-width: 600px;">
             <div class="modal-header" style="background: rgba(59, 130, 246, 0.1);">
@@ -758,7 +792,6 @@
         </div>
     </div>
 
-    <!-- Modal: Liquidar / Resetear Valores -->
     <div id="modal-liquidar-trabajador" class="modal-overlay">
         <div class="modal-content" style="border-color: var(--green-profit); max-width: 450px;">
             <div class="modal-header" style="background: rgba(16, 185, 129, 0.1);">
@@ -783,5 +816,6 @@
     </div>
 
     <script src="ceo_panel.js"></script>
+    -->
 </body>
 </html>
