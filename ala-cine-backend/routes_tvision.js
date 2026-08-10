@@ -64,4 +64,30 @@ module.exports = function(app, ctx) {
       res.status(500).json({ success: false, error: error.message });
     }
   });
+
+  app.post('/api/tvision/save-profile', async (req, res) => {
+    try {
+      const db = ctx.getMongoDb();
+      if (!db) return res.status(503).json({ error: "DB no conectada" });
+
+      const { userId, name, handle } = req.body;
+      
+      const userProfile = {
+        userId,
+        name,
+        handle,
+        updatedAt: new Date()
+      };
+
+      await db.collection('tvision_community_users').updateOne(
+        { userId: userId },
+        { $set: userProfile },
+        { upsert: true }
+      );
+      
+      res.status(200).json({ success: true, profile: userProfile });
+    } catch (error) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
 };
