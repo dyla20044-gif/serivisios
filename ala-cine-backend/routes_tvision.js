@@ -114,4 +114,17 @@ module.exports = function(app, ctx) {
       res.status(500).json({ success: false, error: error.message });
     }
   });
+
+  app.get('/api/tvision/user-posts/:userId', async (req, res) => {
+    try {
+      const db = ctx.getMongoDb();
+      if (!db) return res.status(503).json({ error: "DB no conectada" });
+
+      const userId = req.params.userId;
+      const posts = await db.collection('tvision_community_posts').find({ userId: userId }).sort({ createdAt: -1 }).toArray();
+      res.status(200).json({ success: true, posts });
+    } catch (error) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
 };
