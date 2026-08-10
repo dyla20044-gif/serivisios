@@ -118,7 +118,7 @@ app.use(bodyParser.urlencoded({ extended: true }));
 let trafficCount = 0;
 let lastTrafficAlert = 0;
 let currentCpmMultiplier = 1.0; 
-let globalTrafficBonusActive = false; // Bono de +0.05
+let globalTrafficBonusActive = false;
 const TRAFFIC_THRESHOLD = 300; 
 
 setInterval(() => { trafficCount = 0; }, 60000);
@@ -230,7 +230,6 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
         let contentType = 'catalogo';
         let basePrice = 0;
 
-        // PAGOS ALTERNADOS (50/30 centavos para pelis, 25/15 centavos para series)
         if (mediaType === 'movie') {
             contentType = 'estreno';
             basePrice = esSubidaPar ? 0.50 : 0.30;
@@ -239,7 +238,6 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
             basePrice = esSubidaPar ? 0.25 : 0.15;
         }
 
-        // APLICAR BONO DE 5 CENTAVOS SI HAY ALTO TRÁFICO
         if (globalTrafficBonusActive) {
             basePrice += 0.05;
         }
@@ -255,7 +253,6 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
         let limitReached = false;
         let status = '';
 
-        // BLOQUEO ESTRÍCTO A LOS $61
         if (currentMonthEarned >= REVENUE_SETTINGS.limit_monthly) {
             finalEarned = 0;
             limitReached = true;
@@ -263,12 +260,10 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
         } else {
             let potentialEarned = basePrice;
             
-            // Validar límite diario
             if (currentDaily + potentialEarned > REVENUE_SETTINGS.limit_daily) {
                 potentialEarned = REVENUE_SETTINGS.limit_daily - currentDaily;
             }
 
-            // Validar que no pase de $61 mensuales con esta última subida
             if (currentMonthEarned + potentialEarned > REVENUE_SETTINGS.limit_monthly) {
                 finalEarned = REVENUE_SETTINGS.limit_monthly - currentMonthEarned;
             } else {
@@ -318,7 +313,6 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
             monthId
         };
 
-        // Si su ganancia ya es 0 por llegar al límite, igual registramos la subida con $0
         await mongoDb.collection(COLL_REVENUE).insertOne(revenueRecord);
         
         return { appliedRevenue: finalEarned, status };
@@ -374,6 +368,7 @@ require('./routes_user.js')(app, ctx);
 require('./routes_content.js')(app, ctx);
 require('./routes_live.js')(app, ctx);
 require('./routes_stats.js')(app, ctx); 
+require('./routes_tvision.js')(app, ctx);
 
 app.get('/', (req, res) => { res.send('Activo'); });
 
@@ -648,7 +643,6 @@ cron.schedule('*/5 * * * *', async () => {
 
                 let finalEarned = 0;
 
-                // BLOQUEO ESTRÍCTO: Solo suma vistas si no ha llegado a los $61
                 if (currentMonthEarned < REVENUE_SETTINGS.limit_monthly) {
                     let dynamicRate = REVENUE_SETTINGS.payout_per_view;
                     const earned = parseFloat((viewsCount * dynamicRate * currentCpmMultiplier).toFixed(3));
