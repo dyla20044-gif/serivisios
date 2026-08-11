@@ -80,14 +80,14 @@ module.exports = function(app, ctx) {
       const db = ctx.getMongoDb();
       if (!db) return res.status(503).json({ error: "DB no conectada" });
 
-      const { userId, name, handle } = req.body;
+      const { userId, name, handle, bio } = req.body;
       
       const userProfile = {
-        userId,
         name,
         handle,
         updatedAt: new Date()
       };
+      if (bio !== undefined) userProfile.bio = bio;
 
       await db.collection('tvision_community_users').updateOne(
         { userId: userId },
@@ -108,7 +108,7 @@ module.exports = function(app, ctx) {
       const db = ctx.getMongoDb();
       if (!db) return res.status(503).json({ error: "DB no conectada" });
 
-      const { userId, name, handle } = req.body;
+      const { userId, name, handle, bio } = req.body;
       let avatarUrl = null;
       let bannerUrl = null;
 
@@ -132,6 +132,7 @@ module.exports = function(app, ctx) {
         updatedAt: new Date()
       };
 
+      if (bio !== undefined) updateData.bio = bio;
       if (avatarUrl) updateData.avatarUrl = avatarUrl;
       if (bannerUrl) updateData.bannerUrl = bannerUrl;
 
