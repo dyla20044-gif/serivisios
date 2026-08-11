@@ -149,6 +149,18 @@ module.exports = function(app, ctx) {
     }
   });
 
+  app.get('/api/tvision/user-profile/:userId', async (req, res) => {
+    try {
+      const db = ctx.getMongoDb();
+      if (!db) return res.status(503).json({ error: "DB no conectada" });
+
+      const user = await db.collection('tvision_community_users').findOne({ userId: req.params.userId });
+      res.status(200).json({ success: true, profile: user || {} });
+    } catch (error) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
   app.get('/api/tvision/feed', async (req, res) => {
     try {
       const db = ctx.getMongoDb();
