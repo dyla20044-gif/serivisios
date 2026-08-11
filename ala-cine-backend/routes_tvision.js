@@ -156,6 +156,13 @@ module.exports = function(app, ctx) {
       if (!db) return res.status(503).json({ error: "DB no conectada" });
 
       const user = await db.collection('tvision_community_users').findOne({ userId: req.params.userId });
+      
+      // AQUÍ ESTÁ LA SOLUCIÓN: Inyectar seguidores seguros para evitar fallos de lectura.
+      if (user) {
+        user.followersCount = user.followersCount || 0;
+        user.followingCount = user.followingCount || 0;
+      }
+      
       res.status(200).json({ success: true, profile: user || {} });
     } catch (error) {
       res.status(500).json({ success: false, error: error.message });
