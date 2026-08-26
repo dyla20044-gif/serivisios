@@ -37,14 +37,26 @@ module.exports = function(app, ctx) {
             const lastPayoutDate = lastPayout.length > 0 ? lastPayout[0].date : new Date(0);
             const strLastPayoutDate = lastPayoutDate.toISOString().split('T')[0];
 
-            const docsActuales = await db.collection('uploader_daily_stats')
+            const currentMonthPrefix = dayId.substring(0, 7);
+
+            const docsPendientes = await db.collection('uploader_daily_stats')
                 .find({
                     uploaderId: uploaderId,
                     dayId: { $gte: strLastPayoutDate }
                 })
-                .project({ today_earned: 1 })
+                .project({ today_earned: 1, dayId: 1 })
                 .toArray();
-            const monthEarned = docsActuales.reduce((sum, doc) => sum + (doc.today_earned || 0), 0);
+            
+            let monthEarned = 0;
+            let deudaPendiente = 0;
+
+            docsPendientes.forEach(doc => {
+                if (doc.dayId.startsWith(currentMonthPrefix)) {
+                    monthEarned += (doc.today_earned || 0);
+                } else {
+                    deudaPendiente += (doc.today_earned || 0);
+                }
+            });
 
             const docsPasados = await db.collection('uploader_daily_stats')
                 .find({
@@ -104,6 +116,7 @@ module.exports = function(app, ctx) {
                     todayEarned: todayEarned,
                     yesterdayEarned: yesterdayEarned,
                     monthEarned: monthEarned,
+                    deudaAtrasada: deudaPendiente,
                     lastMonthEarned: lastMonthEarned,
                     totalGeneradoGlobal: hist.totalEarned,
                     bonos: hist.bonusTotal, 
