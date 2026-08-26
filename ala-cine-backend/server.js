@@ -482,8 +482,18 @@ app.get('/api/ceo/workers', async (req, res) => {
         hrWorkers.forEach(w => workerDict[w.telegramId] = w);
 
         const workers = stats.map(s => {
-            const uid = s.uploaderId.toString();
+            const uid = parseInt(s.uploaderId, 10);
             const hrData = workerDict[uid] || { name: "Nuevo Trabajador (" + uid + ")", role: "Uploader" };
+            
+            // LÓGICA PARA IDENTIFICAR AL ADMIN 2 O CUALQUIER OTRO AGREGADO Y MOSTRARLO EN EL PANEL SEO
+            if (uid === ADMIN_CHAT_ID_PRIMARY) {
+                hrData.name = "CEO (Principal)";
+                hrData.role = "Propietario";
+            } else if (uid === ADMIN_CHAT_ID_2) {
+                hrData.name = "Admin 2 (Socio)";
+                hrData.role = "Administrador";
+            }
+
             return {
                 id: uid,
                 name: hrData.name,
@@ -527,8 +537,17 @@ app.post('/api/ceo/pay-worker', async (req, res) => {
             status: "Pagado",
             date: new Date()
         };
-        await mongoDb.collection('payout_history').insertOne(payoutRecord);
-        res.json({ success: true, message: "Liquidación registrada exitosamente." });
+        await mongoDb.collection('payment_history').insertOne(payoutRecord);
+        
+        // Resetear el acumulado (ganancia generada) en el mes para ese trabajador
+        const now = new Date();
+        const monthId = now.toISOString().split('T')[0].substring(0, 7);
+        await mongoDb.collection(COLL_DAILY_STATS).updateMany(
+            { uploaderId: parseInt(uploaderId), monthId: monthId },
+            { $set: { today_earned: 0 } }
+        );
+
+        res.json({ success: true, message: "Liquidación registrada exitosamente y saldo reseteado a 0." });
     } catch (error) {
         res.status(500).json({ error: "Error al procesar el pago." });
     }
@@ -542,27 +561,48 @@ app.get('/api/ceo/master-stats', async (req, res) => {
         const monthId = dayId.substring(0, 7);
 
         const statsMes = await mongoDb.collection(COLL_DAILY_STATS).find({ monthId }).toArray();
+        
+        const hrWorkers = await mongoDb.collection('hr_workers').find({}).toArray();
+        const workerDict = {};
+        hrWorkers.forEach(w => workerDict[w.telegramId] = w);
+
         let cajaMes = 0;
         let nominaTotal = 0;
         const workerMap = {};
 
         statsMes.forEach(s => {
-            const isCEO = ADMIN_CHAT_IDS.includes(s.uploaderId);
+            const uid = parseInt(s.uploaderId, 10);
+            const isCEO = (uid === ADMIN_CHAT_ID_PRIMARY);
+            const isAdmin2 = (uid === ADMIN_CHAT_ID_2);
             const earned = s.today_earned || 0;
             
             cajaMes += earned;
+            
+            // Nomina aplica para todos excepto para el CEO principal
             if (!isCEO) nominaTotal += earned;
 
-            if (!workerMap[s.uploaderId]) {
-                workerMap[s.uploaderId] = { 
-                    id: s.uploaderId, 
-                    name: isCEO ? "CEO (Tú)" : "Trabajador ID: " + s.uploaderId, 
+            if (!workerMap[uid]) {
+                let defaultName = workerDict[uid]?.name || "Trabajador ID: " + uid;
+                let defaultRole = workerDict[uid]?.role || "Uploader";
+                
+                if (isCEO) {
+                    defaultName = "CEO (Principal)";
+                    defaultRole = "Propietario";
+                } else if (isAdmin2) {
+                    defaultName = "Admin 2 (Socio)";
+                    defaultRole = "Administrador";
+                }
+
+                workerMap[uid] = { 
+                    id: uid, 
+                    name: defaultName,
+                    role: defaultRole,
                     earnedMonth: 0, 
                     earnedToday: 0, 
                     totalUploads: 0 
                 };
             }
-            workerMap[s.uploaderId].earnedMonth += earned;
+            workerMap[uid].earnedMonth += earned;
         });
 
         const statsHoy = await mongoDb.collection(COLL_DAILY_STATS).find({ dayId }).toArray();
@@ -570,11 +610,12 @@ app.get('/api/ceo/master-stats', async (req, res) => {
         let vistasHoy = 0;
 
         statsHoy.forEach(s => {
+            const uid = parseInt(s.uploaderId, 10);
             ingresosHoy += (s.today_earned || 0);
             vistasHoy += (s.total_views || 0);
-            if (workerMap[s.uploaderId]) {
-                workerMap[s.uploaderId].earnedToday = (s.today_earned || 0);
-                workerMap[s.uploaderId].totalUploads = (s.today_content_count || 0);
+            if (workerMap[uid]) {
+                workerMap[uid].earnedToday = (s.today_earned || 0);
+                workerMap[uid].totalUploads = (s.today_content_count || 0);
             }
         });
 
