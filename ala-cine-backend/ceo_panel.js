@@ -1,7 +1,4 @@
 document.addEventListener('DOMContentLoaded', () => {
-    // ==========================================
-    // 1. SELECTORES PRINCIPALES Y SETUP
-    // ==========================================
     const loginScreen = document.getElementById('login-screen');
     const dashboard = document.getElementById('ceo-dashboard');
     const btnLogin = document.getElementById('btn-login');
@@ -12,6 +9,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let mainChart = null; 
     let selectedTmdbData = null; 
     let liveTrafficInterval = null;
+    let currentWorkerToLiquidate = null;
 
     function getFormattedDate() {
         const today = new Date();
@@ -24,29 +22,21 @@ document.addEventListener('DOMContentLoaded', () => {
     const mobileLiveDateEl = document.getElementById('mobile-live-date');
     if (mobileLiveDateEl) mobileLiveDateEl.textContent = getFormattedDate();
 
-    // ==========================================
-    // 2. SISTEMA DE AUTENTICACIÓN (LOGIN)
-    // ==========================================
     btnLogin?.addEventListener('click', async () => {
         const email = emailInput?.value.trim();
         if (!email) return;
         
         btnLogin.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Verificando Core DB...';
         
-        try {
-            // Lógica de simulación para entorno frontend de visualización
-            setTimeout(() => {
-                if (email.toLowerCase().includes('@')) {
-                    iniciarPanel();
-                } else {
-                    const errorEl = document.getElementById('login-error');
-                    if (errorEl) errorEl.textContent = 'Acceso denegado. Credencial no validada en MongoDB.';
-                    btnLogin.innerHTML = 'Autorizar Ingreso';
-                }
-            }, 800);
-        } catch (e) {
-            setTimeout(iniciarPanel, 800);
-        }
+        setTimeout(() => {
+            if (email.toLowerCase().includes('@')) {
+                iniciarPanel();
+            } else {
+                const errorEl = document.getElementById('login-error');
+                if (errorEl) errorEl.textContent = 'Acceso denegado. Credencial no validada en MongoDB.';
+                btnLogin.innerHTML = 'Autorizar Ingreso';
+            }
+        }, 800);
     });
 
     function iniciarPanel() {
@@ -55,9 +45,6 @@ document.addEventListener('DOMContentLoaded', () => {
         initCorporateDashboard();
     }
 
-    // ==========================================
-    // 3. NAVEGACIÓN Y MENÚS FLOTANTES
-    // ==========================================
     mobileBtn?.addEventListener('click', () => {
         if (sidebar) sidebar.classList.toggle('active');
     });
@@ -104,7 +91,6 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     
     document.getElementById('desktop-avatar-btn')?.addEventListener('click', toggleProfile);
-    document.getElementById('mobile-avatar-btn')?.addEventListener('click', toggleProfile);
 
     const menuFechas = document.getElementById('menu-filtro-fechas');
     document.getElementById('btn-filtro-fechas')?.addEventListener('click', (e) => {
@@ -123,8 +109,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // CERRAR MENÚS AL HACER CLIC AFUERA
-    document.addEventListener('click', (e) => {
+    document.addEventListener('click', () => {
         const pd = document.getElementById('ceo-profile-dropdown');
         const mf = document.getElementById('menu-filtro-fechas');
         if (pd) pd.classList.remove('active');
@@ -153,11 +138,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     setupSubTabs('tabs-pagos');
     setupSubTabs('tabs-configuracion');
-    setupSubTabs('tabs-reportes');
 
-    // ==========================================
-    // 4. FUNCIONES GLOBALES DE MODALES (RRHH Y NÓMINA)
-    // ==========================================
     window.abrirModal = function(id) {
         const modal = document.getElementById(id);
         if (modal) modal.classList.add('active');
@@ -168,37 +149,76 @@ document.addEventListener('DOMContentLoaded', () => {
         if (modal) modal.classList.remove('active');
     };
 
+    let targetUserToDelete = null;
+
     window.abrirModalEliminar = function(nombre, idStr) {
         const nameEl = document.getElementById('delete-user-name');
         const idEl = document.getElementById('delete-user-id');
         if (nameEl) nameEl.textContent = nombre;
         if (idEl) idEl.textContent = idStr;
+        targetUserToDelete = idStr;
         abrirModal('modal-eliminar-usuario');
     };
 
-    window.abrirModalLiquidar = function(nombre, montoNum) {
+    document.getElementById('btn-confirm-delete')?.addEventListener('click', async () => {
+        if (!targetUserToDelete) return;
+        const btn = document.getElementById('btn-confirm-delete');
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Eliminando...';
+
+        try {
+            const res = await fetch(`/api/ceo/workers/${targetUserToDelete}`, { method: 'DELETE' });
+            if (res.ok) {
+                cerrarModal('modal-eliminar-usuario');
+                fetchMasterStats();
+            }
+        } catch (e) {
+            alert('Error conectando con el servidor.');
+        } finally {
+            btn.innerHTML = 'Ejecutar Desvinculación';
+        }
+    });
+
+    window.abrirModalLiquidar = function(nombre, montoNum, idStr) {
         const nameEl = document.getElementById('liquidar-user-name');
         const montoEl = document.getElementById('liquidar-user-monto');
         
         if (nameEl) nameEl.textContent = nombre;
         if (montoEl) montoEl.textContent = `$${parseFloat(montoNum).toFixed(2)}`;
         
+        currentWorkerToLiquidate = { id: idStr, name: nombre, amount: montoNum };
         abrirModal('modal-liquidar-trabajador');
-        
-        const btnConfirm = document.getElementById('btn-confirm-liquidar');
-        if (btnConfirm) {
-            btnConfirm.onclick = function() {
-                btnConfirm.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Ejecutando Liquidación DB...';
-                setTimeout(() => {
-                    btnConfirm.innerHTML = '<i class="fas fa-check-double"></i> Aprobar Pago y Resetear';
-                    cerrarModal('modal-liquidar-trabajador');
-                    fetchMasterStats(); // Recarga de stats
-                }, 1500);
-            };
-        }
     };
 
-    // NUEVO: Función para inyectar datos al Perfil de Usuario
+    document.getElementById('btn-confirm-liquidar')?.addEventListener('click', async () => {
+        if (!currentWorkerToLiquidate) return;
+        const btnConfirm = document.getElementById('btn-confirm-liquidar');
+        btnConfirm.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Procesando Pago en Servidor...';
+
+        try {
+            const res = await fetch('/api/ceo/pay-worker', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    uploaderId: currentWorkerToLiquidate.id,
+                    workerName: currentWorkerToLiquidate.name,
+                    amount: currentWorkerToLiquidate.amount
+                })
+            });
+
+            const data = await res.json();
+            if (data.success) {
+                cerrarModal('modal-liquidar-trabajador');
+                fetchMasterStats();
+            } else {
+                alert(data.error || 'No se pudo procesar la liquidación');
+            }
+        } catch (e) {
+            alert('Error al comunicar con el servidor para la liquidación');
+        } finally {
+            btnConfirm.innerHTML = '<i class="fas fa-check-double"></i> Aprobar Pago y Resetear';
+        }
+    });
+
     window.abrirModalPerfil = function(nombre, rol, generado, vistas, peliculas, series, trend, inicial) {
         document.getElementById('perfil-nombre').textContent = nombre;
         document.getElementById('perfil-rol').textContent = `Rol: ${rol}`;
@@ -232,14 +252,11 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // ==========================================
-    // 5. MOTOR DE DATOS (DASHBOARD Y GRÁFICOS)
-    // ==========================================
     function initCorporateDashboard() {
         initChart();
         fetchMasterStats();
         iniciarSimulacionTraficoVivo();
-        setInterval(fetchMasterStats, 60000); 
+        setInterval(fetchMasterStats, 15000); 
     }
 
     function initChart() {
@@ -303,63 +320,63 @@ document.addEventListener('DOMContentLoaded', () => {
         
         if (!usersLiveEl || !requestsEl) return;
         
-        let peticionesAcumuladas = parseInt(requestsEl.textContent.replace(/,/g, '')) || 12450;
-        
         if (liveTrafficInterval) clearInterval(liveTrafficInterval);
         
         liveTrafficInterval = setInterval(() => {
-            const users = Math.floor(Math.random() * (85 - 30 + 1) + 30);
-            usersLiveEl.textContent = users;
-            
-            const reqs = Math.floor(Math.random() * 5) + 1;
-            peticionesAcumuladas += reqs;
-            requestsEl.textContent = peticionesAcumuladas.toLocaleString();
-        }, 3000);
+            const currentReqs = parseInt(requestsEl.textContent.replace(/,/g, '')) || 18420;
+            const reqs = Math.floor(Math.random() * 4) + 1;
+            requestsEl.textContent = (currentReqs + reqs).toLocaleString();
+        }, 2500);
     }
 
     async function fetchMasterStats() {
         try {
-            // Simulando carga de datos corporativos (Omitiendo variables sensibles/límites)
-            const now = new Date();
-            const horasTranscurridas = now.getHours() + (now.getMinutes() / 60);
-            const porcentajeDia = Math.min(horasTranscurridas / 24, 1);
+            const response = await fetch('/api/ceo/dashboard-stats');
+            if (!response.ok) throw new Error("Error en servidor");
+            const data = await response.json();
             
-            const promedioDiario = 550.00;
-            const ingresosHoy = promedioDiario * porcentajeDia;
-            
-            // Trabajadores con métricas de desempeño crudas, sin límites.
-            const workersData = [
-                { id: 'ADMIN_ROOT', nombre: 'Levin Dylan (CEO)', rol: 'Fundador / CEO', origen: '.env (Root)', vistasHoy: 12500, generado: 421.50, peliculas: 154, series: 45, trend: 'up' },
-                { id: 'ADMIN_02', nombre: 'Nadia', rol: 'Co-Fundadora', origen: '.env (Admin 2)', vistasHoy: 8400, generado: 210.50, peliculas: 82, series: 20, trend: 'up' },
-                { id: '554321987', nombre: 'María', rol: 'Desarrollo / Uploader', origen: 'MongoDB', vistasHoy: 3200, generado: 47.60, peliculas: 34, series: 12, trend: 'up' },
-                { id: '887766554', nombre: 'José', rol: 'Uploader Externo', origen: 'MongoDB', vistasHoy: 4100, generado: 62.00, peliculas: 45, series: 18, trend: 'neutral' },
-                { id: '998877665', nombre: 'Luis', rol: 'Uploader Externo', origen: 'MongoDB', vistasHoy: 1200, generado: 15.30, peliculas: 12, series: 4, trend: 'down' }
-            ];
-
-            renderDashboardData({
-                ingresosHoy: ingresosHoy,
-                ecpm: 0.005,
-                peticiones: 12450 + Math.floor(porcentajeDia * 5000),
-                chartData: [420, 480, 410, 500, 460, 520, ingresosHoy],
-                workers: workersData
-            });
+            if (data.success) {
+                renderDashboardData(data);
+            }
         } catch (e) {
-            console.error("Error obteniendo telemetría:", e);
+            console.error("Error sincronizando servidor:", e);
         }
     }
 
     function renderDashboardData(data) {
+        const { serverStats, workers, payoutHistory, topMovies } = data;
+
         const dRevHoy = document.getElementById('dash-revenue-hoy');
         const dEcpm = document.getElementById('dash-ecpm');
         const dReq = document.getElementById('dash-requests');
-        
-        if (dRevHoy) dRevHoy.textContent = `$${data.ingresosHoy.toFixed(2)}`;
-        if (dEcpm) dEcpm.textContent = `$${data.ecpm.toFixed(3)}`;
-        if (!liveTrafficInterval && dReq) dReq.textContent = data.peticiones.toLocaleString();
+        const dUsers = document.getElementById('dash-users-live');
+
+        if (dRevHoy) dRevHoy.textContent = `$${serverStats.revenueToday.toFixed(2)}`;
+        if (dEcpm) dEcpm.textContent = `$${serverStats.ecpm.toFixed(3)}`;
+        if (dReq && !dReq.textContent) dReq.textContent = serverStats.totalRequests.toLocaleString();
+        if (dUsers) dUsers.textContent = serverStats.usersLive;
 
         if (mainChart && mainChart.data.labels.includes('Hoy')) {
-            mainChart.data.datasets[0].data = data.chartData;
+            mainChart.data.datasets[0].data = serverStats.chartData;
             mainChart.update();
+        }
+
+        const topMoviesList = document.getElementById('top-movies-list');
+        if (topMoviesList) {
+            topMoviesList.innerHTML = '';
+            if (topMovies && topMovies.length > 0) {
+                topMovies.forEach(m => {
+                    topMoviesList.innerHTML += `
+                        <tr>
+                            <td style="padding: 10px;">${m.title}</td>
+                            <td style="padding: 10px;" class="text-yellow">${m.uploader}</td>
+                            <td style="padding: 10px;" class="text-muted">${new Date(m.date).toLocaleDateString()}</td>
+                        </tr>
+                    `;
+                });
+            } else {
+                topMoviesList.innerHTML = '<tr><td colspan="3" class="text-center text-muted">Sin actividad reciente.</td></tr>';
+            }
         }
 
         const dashWorkers = document.getElementById('dash-workers-list');
@@ -373,20 +390,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
         let nominaTotalCalculada = 0;
 
-        data.workers.forEach(w => {
-            const isCEO = w.rol.includes('CEO') || w.rol.includes('Co-Fundadora');
+        workers.forEach(w => {
+            const isCEO = w.rol.includes('CEO') || w.rol.includes('Co-Fundadora') || w.rol.includes('Admin 2');
             const isEnv = w.origen.includes('.env');
             const colorClase = isCEO ? 'var(--yellow-main)' : 'var(--blue-dev)';
             const tagOrigen = isEnv ? '<span class="tag-env">Matriz .env</span>' : '<span class="tag-db">MongoDB</span>';
             const inicial = w.nombre.charAt(0);
             
-            // Lógica de flechas dinámicas para la tendencia diaria
             let trendIcon = '';
             if (w.trend === 'up') trendIcon = '<span class="trend-live-up"><i class="fas fa-arrow-up"></i> Alta</span>';
             else if (w.trend === 'down') trendIcon = '<span class="trend-live-down"><i class="fas fa-arrow-down"></i> Baja</span>';
             else trendIcon = '<span class="trend-live-neutral"><i class="fas fa-minus"></i> Estable</span>';
 
-            // Cálculos para la pestaña Nómina y Pagos
             if (!isCEO) {
                 nominaTotalCalculada += w.generado;
                 if (nominaPagos) {
@@ -402,14 +417,33 @@ document.addEventListener('DOMContentLoaded', () => {
                             <td><i class="fas fa-film text-muted"></i> ${w.peliculas} | <i class="fas fa-tv text-muted"></i> ${w.series}</td>
                             <td class="text-yellow" style="font-weight: bold; font-size: 16px;">$${w.generado.toFixed(2)}</td>
                             <td style="text-align: right; padding-right: 15px;">
-                                <button class="btn-success" onclick="abrirModalLiquidar('${w.nombre}', ${w.generado})"><i class="fas fa-money-check-alt"></i> Liquidar Saldo</button>
+                                <button class="btn-success" onclick="abrirModalLiquidar('${w.nombre}', ${w.generado}, '${w.id}')"><i class="fas fa-money-check-alt"></i> Liberar Saldo</button>
+                            </td>
+                        </tr>
+                    `;
+                }
+            } else if (w.rol.includes('Admin 2')) {
+                nominaTotalCalculada += w.generado;
+                if (nominaPagos) {
+                    nominaPagos.innerHTML += `
+                        <tr>
+                            <td style="padding-left: 15px; font-weight: bold; font-size: 15px;">
+                                <div style="display: flex; align-items: center; gap: 10px;">
+                                    <div style="width:30px; height:30px; background:var(--yellow-main); color:black; font-weight:bold; border-radius:50%; display:flex; justify-content:center; align-items:center; font-size:12px;">${inicial}</div>
+                                    ${w.nombre}
+                                </div>
+                            </td>
+                            <td>${w.rol}</td>
+                            <td><i class="fas fa-film text-muted"></i> ${w.peliculas} | <i class="fas fa-tv text-muted"></i> ${w.series}</td>
+                            <td class="text-yellow" style="font-weight: bold; font-size: 16px;">$${w.generado.toFixed(2)}</td>
+                            <td style="text-align: right; padding-right: 15px;">
+                                <button class="btn-success" onclick="abrirModalLiquidar('${w.nombre}', ${w.generado}, '${w.id}')"><i class="fas fa-money-check-alt"></i> Liberar Saldo</button>
                             </td>
                         </tr>
                     `;
                 }
             }
 
-            // Llenado de TAB: Centro de Comando (Desempeño Diario)
             if (dashWorkers) {
                 dashWorkers.innerHTML += `
                     <tr>
@@ -434,7 +468,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 `;
             }
 
-            // Llenado de TAB: Gestión Personal (RRHH - CRUD)
             if (configWorkers) {
                 configWorkers.innerHTML += `
                     <tr>
@@ -457,13 +490,29 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        // Actualizar el monto total pendiente a liquidar
         if (tNominaTotal) tNominaTotal.textContent = `$${nominaTotalCalculada.toFixed(2)}`;
+
+        const tablaHistorial = document.getElementById('tabla-historial-pagos');
+        if (tablaHistorial) {
+            tablaHistorial.innerHTML = '';
+            if (payoutHistory && payoutHistory.length > 0) {
+                payoutHistory.forEach(recibo => {
+                    const fecha = new Date(recibo.date).toLocaleString('es-ES', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+                    tablaHistorial.innerHTML += `
+                        <tr>
+                            <td style="padding: 12px;">${fecha}</td>
+                            <td style="padding: 12px; font-weight: bold;" class="text-main">${recibo.workerName}</td>
+                            <td style="padding: 12px;" class="text-danger">-$${parseFloat(recibo.amount).toFixed(2)}</td>
+                            <td style="padding: 12px;"><span class="tag-db">Completado</span></td>
+                        </tr>
+                    `;
+                });
+            } else {
+                tablaHistorial.innerHTML = '<tr><td colspan="4" class="text-center text-muted" style="padding: 15px;">No hay recibos de liquidación guardados en BD.</td></tr>';
+            }
+        }
     }
 
-    // ==========================================
-    // 6. BÓVEDA TMDB (INYECCIÓN DE CONTENIDO)
-    // ==========================================
     const visualSearchBtn = document.getElementById('btn-realizar-busqueda');
     const visualSearchInput = document.getElementById('visual-search-input');
     const resultsGrid = document.getElementById('search-results-grid');
@@ -481,7 +530,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await res.json();
             dibujarPostersTMDB(data.results);
         } catch (error) {
-            // Mock Data en caso de desarrollo/desconexión
             const mockData = [
                 { id: 533535, title: 'Deadpool & Wolverine', poster_path: '/8cdWjvZQUrmdDO7cgYFj31GISSN.jpg', media_type: 'movie', overview: 'Wade Wilson y Logan...' },
                 { id: 1022789, title: 'Intensa-Mente 2', poster_path: '/gR7hB3a7O5wA1RzL6Fwz19UeR2m.jpg', media_type: 'movie', overview: 'Regresamos a la mente de Riley...' }
@@ -555,7 +603,6 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         
-        // Regla estricta de extracción (Prioridad .MP4)
         if (!url.toLowerCase().endsWith('.mp4') && !url.includes('mp4')) {
             alert('BLOQUEO DE SEGURIDAD: El sistema rechaza la inyección. Las directivas de Sala Cine dictan que el enlace directo principal debe ser formato .MP4.');
             return;
@@ -573,15 +620,14 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 1500);
     });
     
-    // ==========================================
-    // 7. CRUD RRHH: REGISTRO DE TRABAJADOR A LA DB
-    // ==========================================
-    document.getElementById('btn-submit-new-user')?.addEventListener('click', () => {
+    document.getElementById('btn-submit-new-user')?.addEventListener('click', async () => {
         const nombreEl = document.getElementById('add-nombre');
         const telegramEl = document.getElementById('add-telegram');
+        const rolEl = document.getElementById('add-rol');
         
         const nombre = nombreEl ? nombreEl.value.trim() : '';
         const idTelegram = telegramEl ? telegramEl.value.trim() : '';
+        const rol = rolEl ? rolEl.value : 'uploader';
         const btn = document.getElementById('btn-submit-new-user');
 
         if (!nombre || !idTelegram) {
@@ -589,17 +635,28 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        if (btn) btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Inyectando Documento...';
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Inyectando Documento...';
         
-        setTimeout(() => {
-            cerrarModal('modal-agregar-usuario');
-            if (btn) btn.innerHTML = 'Inyectar en Colección';
-            alert(`Alta completada: El trabajador ${nombre} (Telegram ID: ${idTelegram}) está activo en la colección hr_workers.\n\nEl Bot está autorizado para recibir su contenido.`);
-            
-            if (nombreEl) nombreEl.value = '';
-            if (telegramEl) telegramEl.value = '';
-            
-            fetchMasterStats(); 
-        }, 1500);
+        try {
+            const res = await fetch('/api/ceo/workers', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ nombre, telegramId: idTelegram, rol })
+            });
+
+            const data = await res.json();
+            if (data.success) {
+                cerrarModal('modal-agregar-usuario');
+                if (nombreEl) nombreEl.value = '';
+                if (telegramEl) telegramEl.value = '';
+                fetchMasterStats();
+            } else {
+                alert(data.error || 'No se pudo agregar usuario.');
+            }
+        } catch (e) {
+            alert('Error de conexión con la base de datos.');
+        } finally {
+            btn.innerHTML = 'Inyectar en Colección';
+        }
     });
 });
