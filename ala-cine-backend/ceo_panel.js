@@ -322,7 +322,7 @@ document.addEventListener('DOMContentLoaded', () => {
             
             renderDashboardData({
                 ingresosHoy: masterData.ingresosHoy,
-                ecpm: 0.005,
+                ecpm: 0.045,
                 peticiones: masterData.vistasHoy,
                 chartData: masterData.chartData,
                 workers: masterData.trabajadores.map(w => ({
@@ -332,6 +332,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     origen: 'MongoDB',
                     vistasHoy: w.vistasHoy || 0,
                     generado: w.earnedMonth || 0,
+                    deudaPendiente: w.deudaPendiente || 0,
                     generadoHoy: w.earnedToday || 0,
                     peliculas: w.peliculas || 0,
                     series: w.series || 0,
@@ -367,7 +368,7 @@ document.addEventListener('DOMContentLoaded', () => {
         let nominaTotalCalculada = 0;
 
         data.workers.forEach(w => {
-            const isCEO = w.rol.includes('CEO') || w.rol.includes('Co-Fundadora');
+            const isCEO = w.rol.includes('CEO') && !w.rol.includes('Co-Administrador');
             const isEnv = w.origen.includes('.env');
             const colorClase = isCEO ? 'var(--yellow-main)' : 'var(--blue-dev)';
             const tagOrigen = isEnv ? '<span class="tag-env">Matriz .env</span>' : '<span class="tag-db">MongoDB</span>';
@@ -379,7 +380,9 @@ document.addEventListener('DOMContentLoaded', () => {
             else trendIcon = '<span class="trend-live-neutral"><i class="fas fa-minus"></i> Estable</span>';
 
             if (!isCEO) {
-                nominaTotalCalculada += w.generado;
+                const totalAPagar = w.generado + (w.deudaPendiente || 0);
+                nominaTotalCalculada += totalAPagar;
+                
                 if (nominaPagos) {
                     nominaPagos.innerHTML += `
                         <tr>
@@ -390,10 +393,13 @@ document.addEventListener('DOMContentLoaded', () => {
                                 </div>
                             </td>
                             <td>${w.rol}</td>
-                            <td><i class="fas fa-film text-muted"></i> ${w.peliculas} | <i class="fas fa-tv text-muted"></i> ${w.series}</td>
-                            <td class="text-yellow" style="font-weight: bold; font-size: 16px;">$${w.generado.toFixed(2)}</td>
+                            <td>
+                                <span class="text-muted" style="font-size: 12px;">Mes actual:</span> $${w.generado.toFixed(2)}<br>
+                                <span class="text-danger" style="font-size: 12px;">Atrasado:</span> $${(w.deudaPendiente || 0).toFixed(2)}
+                            </td>
+                            <td class="text-yellow" style="font-weight: bold; font-size: 16px;">$${totalAPagar.toFixed(2)}</td>
                             <td style="text-align: right; padding-right: 15px;">
-                                <button class="btn-success" onclick="abrirModalLiquidar('${w.nombre}', ${w.generado}, '${w.id}')"><i class="fas fa-money-check-alt"></i> Liquidar Saldo</button>
+                                <button class="btn-success" onclick="abrirModalLiquidar('${w.nombre}', ${totalAPagar}, '${w.id}')"><i class="fas fa-money-check-alt"></i> Liquidar Saldo</button>
                             </td>
                         </tr>
                     `;
