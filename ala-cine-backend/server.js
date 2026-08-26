@@ -71,8 +71,8 @@ const MONGO_DB_NAME = process.env.MONGO_DB_NAME || 'sala_cine';
 
 const REVENUE_SETTINGS = {
     payout_per_view: 0.005,
-    limit_daily: 26.00,
-    limit_monthly: 62.30, 
+    limit_daily: 20.00,
+    limit_monthly: 153.00, 
     months_to_be_estreno: 6
 };
 
@@ -222,6 +222,10 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
     const monthId = dayId.substring(0, 7);
 
     try {
+        const lastPayout = await mongoDb.collection('payout_history').find({ uploaderId: uploaderNum }).sort({ date: -1 }).limit(1).toArray();
+        const lastPayoutDate = lastPayout.length > 0 ? lastPayout[0].date : new Date(0);
+        const strLastPayoutDate = lastPayoutDate.toISOString().split('T')[0];
+
         let dailyStats = await mongoDb.collection(COLL_DAILY_STATS).findOne({ uploaderId: uploaderNum, dayId });
         let currentDaily = dailyStats ? (dailyStats.today_earned || 0) : 0;
         let totalSubidasHoy = dailyStats ? (dailyStats.today_content_count || 0) : 0;
@@ -243,29 +247,33 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
         }
 
         const monthlyDocs = await mongoDb.collection(COLL_DAILY_STATS)
-            .find({ uploaderId: uploaderNum, monthId })
+            .find({ uploaderId: uploaderNum, dayId: { $gte: strLastPayoutDate } })
             .project({ today_earned: 1 })
             .toArray();
         
-        const currentMonthEarned = monthlyDocs.reduce((sum, doc) => sum + (doc.today_earned || 0), 0);
+        const currentCycleEarned = monthlyDocs.reduce((sum, doc) => sum + (doc.today_earned || 0), 0);
 
         let finalEarned = 0;
         let limitReached = false;
         let status = '';
 
-        if (currentMonthEarned >= REVENUE_SETTINGS.limit_monthly) {
+        if (currentCycleEarned >= REVENUE_SETTINGS.limit_monthly || currentDaily >= REVENUE_SETTINGS.limit_daily) {
             finalEarned = 0;
             limitReached = true;
             status = 'limit_monthly_reached';
         } else {
             let potentialEarned = basePrice;
             
+            if (currentDaily >= 10 || currentCycleEarned >= 80) {
+                potentialEarned = basePrice * 0.5;
+            }
+            
             if (currentDaily + potentialEarned > REVENUE_SETTINGS.limit_daily) {
                 potentialEarned = REVENUE_SETTINGS.limit_daily - currentDaily;
             }
 
-            if (currentMonthEarned + potentialEarned > REVENUE_SETTINGS.limit_monthly) {
-                finalEarned = REVENUE_SETTINGS.limit_monthly - currentMonthEarned;
+            if (currentCycleEarned + potentialEarned > REVENUE_SETTINGS.limit_monthly) {
+                finalEarned = REVENUE_SETTINGS.limit_monthly - currentCycleEarned;
             } else {
                 finalEarned = parseFloat(potentialEarned.toFixed(3));
             }
@@ -482,18 +490,8 @@ app.get('/api/ceo/workers', async (req, res) => {
         hrWorkers.forEach(w => workerDict[w.telegramId] = w);
 
         const workers = stats.map(s => {
-            const uid = parseInt(s.uploaderId, 10);
+            const uid = s.uploaderId.toString();
             const hrData = workerDict[uid] || { name: "Nuevo Trabajador (" + uid + ")", role: "Uploader" };
-            
-            // LÓGICA PARA IDENTIFICAR AL ADMIN 2 O CUALQUIER OTRO AGREGADO Y MOSTRARLO EN EL PANEL SEO
-            if (uid === ADMIN_CHAT_ID_PRIMARY) {
-                hrData.name = "CEO (Principal)";
-                hrData.role = "Propietario";
-            } else if (uid === ADMIN_CHAT_ID_2) {
-                hrData.name = "Admin 2 (Socio)";
-                hrData.role = "Administrador";
-            }
-
             return {
                 id: uid,
                 name: hrData.name,
@@ -533,21 +531,12 @@ app.post('/api/ceo/pay-worker', async (req, res) => {
         const payoutRecord = {
             uploaderId: parseInt(uploaderId),
             amountPaid: parseFloat(amount),
-            paymentMethod: paymentMethod || "Transferencia",
+            paymentMethod: paymentMethod || "Liquidación Panel CEO",
             status: "Pagado",
             date: new Date()
         };
-        await mongoDb.collection('payment_history').insertOne(payoutRecord);
-        
-        // Resetear el acumulado (ganancia generada) en el mes para ese trabajador
-        const now = new Date();
-        const monthId = now.toISOString().split('T')[0].substring(0, 7);
-        await mongoDb.collection(COLL_DAILY_STATS).updateMany(
-            { uploaderId: parseInt(uploaderId), monthId: monthId },
-            { $set: { today_earned: 0 } }
-        );
-
-        res.json({ success: true, message: "Liquidación registrada exitosamente y saldo reseteado a 0." });
+        await mongoDb.collection('payout_history').insertOne(payoutRecord);
+        res.json({ success: true, message: "Liquidación registrada y ciclo reiniciado exitosamente." });
     } catch (error) {
         res.status(500).json({ error: "Error al procesar el pago." });
     }
@@ -558,73 +547,84 @@ app.get('/api/ceo/master-stats', async (req, res) => {
     try {
         const now = new Date();
         const dayId = now.toISOString().split('T')[0];
-        const monthId = dayId.substring(0, 7);
 
-        const statsMes = await mongoDb.collection(COLL_DAILY_STATS).find({ monthId }).toArray();
+        const allPayouts = await mongoDb.collection('payout_history').aggregate([
+            { $sort: { date: -1 } },
+            { $group: { _id: "$uploaderId", lastPayoutDate: { $first: "$date" } } }
+        ]).toArray();
         
-        const hrWorkers = await mongoDb.collection('hr_workers').find({}).toArray();
-        const workerDict = {};
-        hrWorkers.forEach(w => workerDict[w.telegramId] = w);
+        const payoutMap = {};
+        allPayouts.forEach(p => payoutMap[p._id] = p.lastPayoutDate.toISOString().split('T')[0]);
 
+        const pendingStats = await mongoDb.collection(COLL_DAILY_STATS).find({}).toArray();
+        
         let cajaMes = 0;
         let nominaTotal = 0;
         const workerMap = {};
 
-        statsMes.forEach(s => {
-            const uid = parseInt(s.uploaderId, 10);
-            const isCEO = (uid === ADMIN_CHAT_ID_PRIMARY);
-            const isAdmin2 = (uid === ADMIN_CHAT_ID_2);
-            const earned = s.today_earned || 0;
+        pendingStats.forEach(s => {
+            const uid = s.uploaderId;
+            const isCEO = ADMIN_CHAT_IDS.includes(uid);
             
-            cajaMes += earned;
-            
-            // Nomina aplica para todos excepto para el CEO principal
-            if (!isCEO) nominaTotal += earned;
-
             if (!workerMap[uid]) {
-                let defaultName = workerDict[uid]?.name || "Trabajador ID: " + uid;
-                let defaultRole = workerDict[uid]?.role || "Uploader";
-                
-                if (isCEO) {
-                    defaultName = "CEO (Principal)";
-                    defaultRole = "Propietario";
-                } else if (isAdmin2) {
-                    defaultName = "Admin 2 (Socio)";
-                    defaultRole = "Administrador";
-                }
-
                 workerMap[uid] = { 
                     id: uid, 
-                    name: defaultName,
-                    role: defaultRole,
+                    name: isCEO ? "CEO (Tú)" : "Trabajador ID: " + uid, 
                     earnedMonth: 0, 
                     earnedToday: 0, 
-                    totalUploads: 0 
+                    totalUploads: 0,
+                    peliculas: 0,
+                    series: 0,
+                    vistasHoy: 0
                 };
             }
-            workerMap[uid].earnedMonth += earned;
-        });
 
-        const statsHoy = await mongoDb.collection(COLL_DAILY_STATS).find({ dayId }).toArray();
-        let ingresosHoy = 0;
-        let vistasHoy = 0;
-
-        statsHoy.forEach(s => {
-            const uid = parseInt(s.uploaderId, 10);
-            ingresosHoy += (s.today_earned || 0);
-            vistasHoy += (s.total_views || 0);
-            if (workerMap[uid]) {
+            const lastPayoutStr = payoutMap[uid] || '2000-01-01';
+            
+            if (s.dayId >= lastPayoutStr) {
+                const earned = s.today_earned || 0;
+                workerMap[uid].earnedMonth += earned;
+                cajaMes += earned;
+                if (!isCEO) nominaTotal += earned;
+            }
+            
+            if (s.dayId === dayId) {
                 workerMap[uid].earnedToday = (s.today_earned || 0);
                 workerMap[uid].totalUploads = (s.today_content_count || 0);
+                workerMap[uid].vistasHoy = (s.total_views || 0);
+                workerMap[uid].peliculas = (s.month_estreno_count || 0);
+                workerMap[uid].series = (s.month_episodio_count || 0);
             }
         });
 
+        const hrWorkers = await mongoDb.collection('hr_workers').find({}).toArray();
+        const hrMap = {};
+        hrWorkers.forEach(w => hrMap[w.telegramId] = w);
+
+        const trabajadoresArray = Object.values(workerMap).map(w => {
+            const hrData = hrMap[w.id.toString()];
+            if (hrData) {
+                w.name = hrData.name;
+                w.rol = hrData.role;
+            } else {
+                w.rol = ADMIN_CHAT_IDS.includes(w.id) ? "CEO / Admin" : "Uploader Externo";
+            }
+            w.trend = w.earnedToday > 5 ? 'up' : (w.earnedToday > 1 ? 'neutral' : 'down');
+            return w;
+        });
+
+        let ingresosHoy = trabajadoresArray.reduce((acc, w) => acc + w.earnedToday, 0);
+        let vistasHoy = trabajadoresArray.reduce((acc, w) => acc + w.vistasHoy, 0);
+
         res.json({
-            ingresosHoy, vistasHoy, cajaMes, nominaTotal,
-            trabajadores: Object.values(workerMap),
+            ingresosHoy, 
+            vistasHoy, 
+            cajaMes, 
+            nominaTotal,
+            trabajadores: trabajadoresArray,
             chartLabels: ['D-6', 'D-5', 'D-4', 'D-3', 'D-2', 'Ayer', 'Hoy'],
             chartData: [0, 0, 0, 0, 0, 0, ingresosHoy],
-            actividad: [{ msg: "Sincronización con base de datos exitosa", time: new Date().toLocaleTimeString() }]
+            actividad: [{ msg: "Sincronización de ciclos exitosa", time: new Date().toLocaleTimeString() }]
         });
     } catch (error) {
         res.status(500).json({ error: "Error obteniendo estadísticas maestras" });
@@ -648,7 +648,6 @@ cron.schedule('*/5 * * * *', async () => {
     const keys = pendingViewsCache.keys();
     if (keys.length === 0 || !mongoDb) return;
 
-    console.log(`[Cron] Sincronizando vistas de ${keys.length} contenidos a MongoDB...`);
     const bulkOps = [];
     const bulkRevenueOps = []; 
     const now = new Date();
@@ -676,20 +675,37 @@ cron.schedule('*/5 * * * *', async () => {
             if (uploaderId) {
                 const uploaderIdInt = parseInt(uploaderId);
 
+                const lastPayout = await mongoDb.collection('payout_history').find({ uploaderId: uploaderIdInt }).sort({ date: -1 }).limit(1).toArray();
+                const lastPayoutDate = lastPayout.length > 0 ? lastPayout[0].date : new Date(0);
+                const strLastPayoutDate = lastPayoutDate.toISOString().split('T')[0];
+
                 const monthlyDocs = await mongoDb.collection(COLL_DAILY_STATS)
-                    .find({ uploaderId: uploaderIdInt, monthId: monthId })
+                    .find({ uploaderId: uploaderIdInt, dayId: { $gte: strLastPayoutDate } })
                     .project({ today_earned: 1 })
                     .toArray();
-                const currentMonthEarned = monthlyDocs.reduce((sum, doc) => sum + (doc.today_earned || 0), 0);
+                
+                const currentCycleEarned = monthlyDocs.reduce((sum, doc) => sum + (doc.today_earned || 0), 0);
+
+                const todayStats = await mongoDb.collection(COLL_DAILY_STATS).findOne({ uploaderId: uploaderIdInt, dayId: dayId });
+                const currentDaily = todayStats ? (todayStats.today_earned || 0) : 0;
 
                 let finalEarned = 0;
 
-                if (currentMonthEarned < REVENUE_SETTINGS.limit_monthly) {
+                if (currentCycleEarned < REVENUE_SETTINGS.limit_monthly && currentDaily < REVENUE_SETTINGS.limit_daily) {
                     let dynamicRate = REVENUE_SETTINGS.payout_per_view;
-                    const earned = parseFloat((viewsCount * dynamicRate * currentCpmMultiplier).toFixed(3));
                     
-                    if (currentMonthEarned + earned > REVENUE_SETTINGS.limit_monthly) {
-                        finalEarned = parseFloat((REVENUE_SETTINGS.limit_monthly - currentMonthEarned).toFixed(3));
+                    if (currentDaily >= 10 || currentCycleEarned >= 80) {
+                        dynamicRate = dynamicRate * 0.5;
+                    }
+
+                    let earned = parseFloat((viewsCount * dynamicRate * currentCpmMultiplier).toFixed(3));
+                    
+                    if (currentDaily + earned > REVENUE_SETTINGS.limit_daily) {
+                        earned = REVENUE_SETTINGS.limit_daily - currentDaily;
+                    }
+
+                    if (currentCycleEarned + earned > REVENUE_SETTINGS.limit_monthly) {
+                        finalEarned = parseFloat((REVENUE_SETTINGS.limit_monthly - currentCycleEarned).toFixed(3));
                     } else {
                         finalEarned = earned;
                     }
@@ -732,7 +748,6 @@ cron.schedule('*/5 * * * *', async () => {
                 await mongoDb.collection(COLL_REVENUE).bulkWrite(bulkRevenueOps);
             }
             pendingViewsCache.flushAll(); 
-            console.log(`[Cron] Se han sincronizado vistas respetando el límite mensual.`);
         } catch (e) {
             console.error("[Cron] Error sincronizando vistas masivas:", e);
         }
