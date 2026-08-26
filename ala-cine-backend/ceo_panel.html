@@ -61,7 +61,6 @@
         .corp-article.video-container:hover .corp-bg-video { opacity: 0.45; }
         .corp-article.video-container:hover { border-color: var(--yellow-main); transform: translateY(-5px); box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
 
-        /* Animaciones para flechas de rendimiento vivo */
         @keyframes floatUpDown { 0% { transform: translateY(0); } 50% { transform: translateY(-3px); } 100% { transform: translateY(0); } }
         .trend-live-up { color: var(--green-profit); font-weight: bold; display: inline-flex; align-items: center; gap: 4px; animation: floatUpDown 2s infinite ease-in-out; }
         .trend-live-down { color: var(--red-expense); font-weight: bold; display: inline-flex; align-items: center; gap: 4px; }
@@ -72,7 +71,6 @@
 </head>
 <body>
 
-    <!-- PANTALLA DE LOGIN -->
     <div id="login-screen" class="active">
         <div class="login-box">
             <div class="login-logo"><i class="fas fa-fingerprint text-yellow"></i></div>
@@ -84,10 +82,8 @@
         </div>
     </div>
 
-    <!-- PANEL PRINCIPAL -->
     <div id="ceo-dashboard" class="hidden">
         
-        <!-- HEADER MÓVIL -->
         <div class="mobile-header">
             <div class="mobile-brand-area">
                 <button id="mobile-menu-btn"><i class="fas fa-bars"></i></button>
@@ -99,7 +95,6 @@
             </div>
         </div>
 
-        <!-- BARRA LATERAL (SIDEBAR) -->
         <nav class="sidebar" id="sidebar">
             <div class="brand">
                 <h2>Trechos <span>Visionarios</span></h2>
@@ -123,7 +118,6 @@
             </div>
         </nav>
 
-        <!-- ÁREA DE CONTENIDO -->
         <main class="content-area" id="export-pdf-area">
             
             <header class="global-header desktop-only">
@@ -156,7 +150,6 @@
                 </div>
             </header>
 
-            <!-- 1. TAB INICIO -->
             <section id="tab-inicio" class="tab-content active">
                 <div class="action-bar">
                     <div style="display: flex; gap: 15px; align-items: center;">
@@ -238,7 +231,6 @@
                     </div>
                 </div>
 
-                <!-- Modificado: Sin límites, con métricas reales de productividad -->
                 <div class="chart-box mt-4">
                     <div class="admob-card-header">
                         <h4><i class="fas fa-users-cog text-blue-dev"></i> Monitor Operativo de Planilla (Desempeño Diario)</h4>
@@ -265,7 +257,6 @@
                 </div>
             </section>
 
-            <!-- 2. TAB GESTIÓN PERSONAL (RRHH) -->
             <section id="tab-configuracion" class="tab-content hidden">
                 <div class="config-tabs" id="tabs-configuracion">
                     <div class="config-tab active" data-target="config-usuarios">Personal e Inteligencia</div>
@@ -294,23 +285,21 @@
                                 </tr>
                             </thead>
                             <tbody id="db-users-list">
-                                <!-- Se llena dinámicamente -->
                                 <tr><td colspan="4" class="text-center text-muted">Cargando nómina...</td></tr>
                             </tbody>
                         </table>
                     </div>
 
-                    <!-- Panel de Proyecciones de IA -->
                     <div class="chart-box mt-4" style="background: rgba(59, 130, 246, 0.05); border-color: rgba(59, 130, 246, 0.2);">
                         <h4 style="margin-bottom: 15px;"><i class="fas fa-brain text-blue-dev"></i> Proyecciones IA de Recursos Humanos</h4>
                         <div class="form-grid" style="grid-template-columns: 1fr 1fr; gap: 20px;">
                             <div>
                                 <p style="font-size: 14px; color: var(--text-main); margin-bottom: 10px;"><strong>Análisis de Productividad:</strong></p>
-                                <p style="font-size: 13px; color: var(--text-muted); line-height: 1.6;">El equipo de prueba (María, José y Luis) está manteniendo un ritmo de inyección de contenido que estimula un ingreso mutuo promedio de $345.00 diarios globales. Se recomienda incentivar cargas de Series durante los fines de semana.</p>
+                                <p style="font-size: 13px; color: var(--text-muted); line-height: 1.6;">El equipo operativo está manteniendo un ritmo de inyección constante. Se recomienda incentivar cargas de Series durante los fines de semana.</p>
                             </div>
                             <div>
                                 <p style="font-size: 14px; color: var(--text-main); margin-bottom: 10px;"><strong>Salud de Base de Datos HR:</strong></p>
-                                <p style="font-size: 13px; color: var(--text-muted); line-height: 1.6;"><i class="fas fa-check-circle text-green"></i> Sincronización perfecta entre variables `.env` para matriz directiva y colección `hr_workers` para uploaders dinámicos.</p>
+                                <p style="font-size: 13px; color: var(--text-muted); line-height: 1.6;"><i class="fas fa-check-circle text-green"></i> Sincronización activa entre variables `.env` (incluyendo Admin 2) y colección `hr_workers` en MongoDB.</p>
                             </div>
                         </div>
                     </div>
@@ -333,7 +322,6 @@
                 </div>
             </section>
 
-            <!-- 3. TAB PAGOS Y NÓMINA -->
             <section id="tab-pagos" class="tab-content hidden">
                 <div class="config-tabs" id="tabs-pagos">
                     <div class="config-tab active" data-target="pago-nomina">Ejecución de Nómina</div>
@@ -344,11 +332,10 @@
                     <div class="dashboard-middle">
                         <div class="chart-box">
                             <h4 style="margin-bottom: 5px;">Control Contable y Liquidación</h4>
-                            <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 20px;">Visualice el acumulado real de cada trabajador y ejecute el pago descontando saldos.</p>
+                            <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 20px;">Visualice el acumulado real de cada trabajador (incluyendo Admin 2) antes del 21 del mes y ejecute la liberación de saldo.</p>
                             
                             <h2 style="font-size: 38px; color: var(--yellow-main); margin-bottom: 15px;" id="nomina-pendiente-total">$0.00</h2>
                             
-                            <!-- Modificado: Sin rastro del límite. Foco en métricas -->
                             <table class="corporate-table">
                                 <thead>
                                     <tr>
@@ -374,20 +361,14 @@
                             <thead>
                                 <tr><th>Fecha Ejecución</th><th>Beneficiario</th><th>Monto Liquidado</th><th>Estado</th></tr>
                             </thead>
-                            <tbody>
-                                <tr>
-                                    <td>21 del mes pasado</td>
-                                    <td>Nómina General (Varios)</td>
-                                    <td class="text-danger">-$183.52</td>
-                                    <td><span class="tag-db">Completado</span></td>
-                                </tr>
+                            <tbody id="tabla-historial-pagos">
+                                <tr><td colspan="4" class="text-center text-muted">Cargando historial de pagos...</td></tr>
                             </tbody>
                         </table>
                     </div>
                 </div>
             </section>
 
-            <!-- 4. TAB BÓVEDA TMDB (INYECCIÓN) -->
             <section id="tab-bloqueo" class="tab-content hidden">
                 <div class="work-station">
                     <div class="action-bar">
@@ -443,7 +424,6 @@
                         </div>
                     </div>
 
-                    <!-- Módulo IA: Auditoría de Enlaces -->
                     <div class="chart-box mt-4">
                         <h4 style="margin-bottom: 15px;"><i class="fas fa-spider text-blue-dev"></i> Auditoría de Enlaces Caídos (Bot Crawler)</h4>
                         <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 20px;">El crawler revisa pasivamente la salud de los .MP4 en la base de datos.</p>
@@ -457,7 +437,6 @@
                 </div>
             </section>
 
-            <!-- 5. ECOSISTEMA DE APPS -->
             <section id="tab-aplicaciones" class="tab-content hidden">
                 <div class="action-bar">
                     <div>
@@ -514,7 +493,6 @@
                 </div>
             </section>
 
-            <!-- 6. REPORTES -->
             <section id="tab-informes" class="tab-content hidden">
                 <div class="action-bar">
                     <h3>Centro de Reportes Directivos</h3>
@@ -528,7 +506,6 @@
                 </div>
             </section>
 
-            <!-- 7. INFRAESTRUCTURA DE RED -->
             <section id="tab-infraestructura" class="tab-content hidden">
                 <div class="action-bar">
                     <div>
@@ -592,7 +569,6 @@
                 </div>
             </section>
 
-            <!-- 8. AUDITORÍA (LOGS) -->
             <section id="tab-historial" class="tab-content hidden">
                 <div class="action-bar">
                     <h3>Registro de Eventos (Logs del Sistema)</h3>
@@ -623,7 +599,6 @@
                 </div>
             </section>
 
-            <!-- 9. VISIÓN CORPORATIVA (TRECHOS CORP) -->
             <section id="tab-empresa" class="tab-content hidden">
                 <div class="magazine-hero video-container">
                     <div class="corp-overlay"></div>
@@ -655,9 +630,6 @@
         </main>
     </div>
 
-    <!-- ================= MODALES DEL SISTEMA ================= -->
-    
-    <!-- Modal: Agregar Usuario DB -->
     <div id="modal-agregar-usuario" class="modal-overlay">
         <div class="modal-content">
             <div class="modal-header">
@@ -690,7 +662,6 @@
         </div>
     </div>
 
-    <!-- Modal: Eliminar Usuario -->
     <div id="modal-eliminar-usuario" class="modal-overlay">
         <div class="modal-content" style="border-color: var(--red-expense); max-width: 400px;">
             <div class="modal-header" style="background: rgba(239, 68, 68, 0.1);">
@@ -710,7 +681,6 @@
         </div>
     </div>
 
-    <!-- NUEVO: Modal de Perfil Individual de Trabajador (Auditoría Avanzada) -->
     <div id="modal-perfil-usuario" class="modal-overlay">
         <div class="modal-content" style="border-color: var(--blue-dev); max-width: 600px;">
             <div class="modal-header" style="background: rgba(59, 130, 246, 0.1);">
@@ -758,7 +728,6 @@
         </div>
     </div>
 
-    <!-- Modal: Liquidar / Resetear Valores -->
     <div id="modal-liquidar-trabajador" class="modal-overlay">
         <div class="modal-content" style="border-color: var(--green-profit); max-width: 450px;">
             <div class="modal-header" style="background: rgba(16, 185, 129, 0.1);">
@@ -773,7 +742,7 @@
                     <span style="font-size: 13px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px;">Saldo Total a Cero ($0.00)</span>
                     <h1 class="text-yellow" style="font-size: 45px; margin-top: 5px;" id="liquidar-user-monto">$0.00</h1>
                 </div>
-                <p style="font-size: 13px; color: var(--text-muted); line-height: 1.5; text-align: left;"><i class="fas fa-info-circle text-blue-dev"></i> Tras la confirmación, se restará el monto total en la colección correspondiente y el trabajador comenzará un nuevo ciclo contable.</p>
+                <p style="font-size: 13px; color: var(--text-muted); line-height: 1.5; text-align: left;"><i class="fas fa-info-circle text-blue-dev"></i> Tras la confirmación, se registrará el recibo en la colección `payment_history` y el saldo del trabajador se reiniciará a $0.00 para comenzar un nuevo ciclo contable.</p>
             </div>
             <div class="modal-footer" style="justify-content: center; gap: 20px;">
                 <button class="btn-secondary" style="padding: 12px 30px;" data-dismiss="modal-liquidar-trabajador">Cancelar</button>
