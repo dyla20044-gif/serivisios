@@ -1,383 +1,235 @@
 document.addEventListener('DOMContentLoaded', () => {
-    // REFERENCIAS DEL DOM
     const loginScreen = document.getElementById('login-screen');
     const dashboard = document.getElementById('ceo-dashboard');
     const btnLogin = document.getElementById('btn-login');
     const emailInput = document.getElementById('ceo-email');
+    const titleDisplay = document.getElementById('top-title-display');
 
-    // ESTADO GLOBAL
-    let metricsChart = null;
-    let selectedTmdbData = null;
-    let currentWorkerToPay = { id: null, amount: 0 };
-
-    // ==========================================
-    // 1. SISTEMA DE LOGIN DE SEGURIDAD
-    // ==========================================
-    btnLogin?.addEventListener('click', async () => {
+    btnLogin?.addEventListener('click', () => {
         const email = emailInput?.value.trim();
         if (!email) return;
         
-        btnLogin.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Conectando a Base de Datos...';
-        try {
-            const res = await fetch('/api/ceo/login', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email })
-            });
-            const data = await res.json();
-            if(data.success) {
-                loginScreen.classList.add('hidden');
-                dashboard.classList.remove('hidden');
-                initSystem();
-            } else {
-                document.getElementById('login-error').textContent = 'Acceso denegado. Credencial administrativa incorrecta.';
-                btnLogin.innerHTML = 'Autorizar Conexión';
-            }
-        } catch (e) {
-            // Fallback si corre en entorno sin validación
+        btnLogin.innerHTML = 'CONECTANDO...';
+        setTimeout(() => {
             loginScreen.classList.add('hidden');
             dashboard.classList.remove('hidden');
             initSystem();
-        }
+        }, 800);
     });
 
-    // ==========================================
-    // 2. NAVEGACIÓN DEL PANEL (TABS)
-    // ==========================================
-    document.querySelectorAll('.nav-links li').forEach(li => {
+    window.toggleMenu = function(menuId) {
+        const menu = document.getElementById(menuId);
+        const title = menu.previousElementSibling;
+        menu.classList.toggle('open');
+        title.classList.toggle('open');
+    };
+
+    const mapTitle = {
+        'tab-dashboard': 'TRECHO CORP OVERVIEW DASHBOARD <span class="sub">| CEO ACCESS</span>',
+        'tab-fin-overview': 'TRECHO VISIONARIOS | FINANCIAL OVERVIEW <span class="sub">- CEO ACCESS</span>',
+        'tab-fin-policies': 'TRECHO VISIONARIOS | CONFIGURACIONES DE LA CUENTA Y SISTEMA',
+        'tab-fin-cashflow': 'TRECHO VISIONARIOS | ANÁLISIS DE FLUJO DE CAJA - ACCESO CEO',
+        'tab-fin-oberbia': 'TRECHO VISIONARIOS | RESUMEN GENERAL (OBERBIA) - ACCESO CEO',
+        'tab-srv-health': 'TRECHO VISIONARIOS | SERVERS <span class="sub">- CEO ACCESS</span>',
+        'tab-srv-deploy': 'TRECHO VISIONARIOS | MANUAL DEPLOYMENTS (TMDB)',
+        'tab-usr-activity': 'TRECHO VISIONARIOS | USERS <span class="sub">- CEO ACCESS</span>',
+        'tab-team-personnel': 'TRECHO VISIONARIOS | TEAM MANAGEMENT <span class="sub">- CEO ACCESS</span>',
+        'tab-team-roles': 'TRECHO VISIONARIOS | ROLES & PERMISSIONS <span class="sub">- CEO ACCESS</span>',
+        'tab-reports': 'TRECHO VISIONARIOS | CENTRO DE REPORTES <span class="sub">- ACCESO CEO</span>',
+        'tab-settings': 'TRECHO VISIONARIOS | CONFIGURACIONES DE LA CUENTA Y SISTEMA',
+        'tab-empresa': 'TRECHO CORPORATE <span class="sub">| ACERCA DE LA EMPRESA</span>'
+    };
+
+    document.querySelectorAll('.nav-item, .nav-sub-item').forEach(li => {
         li.addEventListener('click', (e) => {
-            document.querySelectorAll('.nav-links li').forEach(el => el.classList.remove('active'));
+            if (e.currentTarget.id === 'btn-logout') {
+                window.location.reload();
+                return;
+            }
+            document.querySelectorAll('.nav-item, .nav-sub-item').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            
             const current = e.currentTarget;
             current.classList.add('active');
             
-            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
             const tabId = current.getAttribute('data-tab');
-            document.getElementById(tabId).classList.add('active');
+            const tabElement = document.getElementById(tabId);
+            if (tabElement) {
+                tabElement.classList.add('active');
+                titleDisplay.innerHTML = mapTitle[tabId] || 'TRECHO VISIONARIOS';
+            }
         });
     });
 
-    // ==========================================
-    // 3. INICIALIZACIÓN Y CONEXIÓN AL SERVIDOR
-    // ==========================================
+    document.getElementById('btn-logout-icon')?.addEventListener('click', () => {
+        window.location.reload();
+    });
+
     function initSystem() {
-        initChart();
-        fetchData();
-        setInterval(fetchData, 60000); // Sincronización automática cada 60 segundos
-        generateLogs();
+        initCharts();
     }
 
-    async function fetchData() {
-        try {
-            const res = await fetch('/api/ceo/master-stats');
-            if(!res.ok) return;
-            const data = await res.json();
-            renderData(data);
-        } catch (e) {
-            console.error("Error obteniendo telemetría:", e);
-        }
-    }
-
-    function renderData(data) {
-        // ACTUALIZAR MÉTRICAS DE EMPRESA (INICIO)
-        document.getElementById('dash-corp-revenue-today').textContent = `$${data.ingresosHoy.toFixed(2)}`;
-        document.getElementById('dash-corp-revenue-month').textContent = `$${data.cajaMes.toFixed(2)}`;
-        document.getElementById('dash-payroll-total').textContent = `$${data.nominaTotal.toFixed(2)}`;
-        document.getElementById('dash-total-views').textContent = data.vistasHoy.toLocaleString();
-
-        // ACTUALIZAR GRÁFICO DE TRECHOS CORP
-        if (metricsChart && data.chartData) {
-            metricsChart.data.datasets[0].data = data.chartData;
-            metricsChart.update();
-        }
-
-        // ACTUALIZAR TABLA DE NÓMINA (CONTABILIDAD)
-        const tbody = document.getElementById('payroll-list');
-        if (tbody) {
-            tbody.innerHTML = '';
-            
-            data.trabajadores.forEach(w => {
-                const isCEO = w.rol.includes('CEO');
-                const totalDeuda = w.earnedMonth + (w.deudaPendiente || 0);
-                
-                let btnHtml = '';
-                if (isCEO) {
-                    btnHtml = `<span class="text-secondary" style="font-size: 12px; font-weight: bold;">CUENTA MATRIZ</span>`;
-                } else {
-                    btnHtml = `<button class="btn-outline btn-pay" data-id="${w.id}" data-name="${w.name}" data-amount="${totalDeuda}"><i class="fas fa-money-bill-wave"></i> Procesar Pago</button>`;
+    function initCharts() {
+        const createLineChart = (id, data, color, isFill = true) => {
+            const ctx = document.getElementById(id)?.getContext('2d');
+            if (!ctx) return;
+            let gradient = ctx.createLinearGradient(0, 0, 0, 300);
+            gradient.addColorStop(0, `rgba(${color}, 0.4)`);
+            gradient.addColorStop(1, `rgba(${color}, 0.0)`);
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: ['1', '2', '3', '4', '5', '6', '7'],
+                    datasets: [{
+                        data: data,
+                        borderColor: `rgb(${color})`,
+                        backgroundColor: isFill ? gradient : 'transparent',
+                        borderWidth: 3,
+                        fill: isFill,
+                        tension: 0.4,
+                        pointBackgroundColor: `rgb(${color})`,
+                        pointBorderColor: '#fff',
+                        pointRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: { grid: { color: '#2b2f3a' }, ticks: { color: '#9ca3af' } },
+                        x: { grid: { display: false }, ticks: { color: '#9ca3af' } }
+                    },
+                    plugins: { legend: { display: false } }
                 }
-
-                tbody.innerHTML += `
-                    <tr>
-                        <td>
-                            <strong style="color: white; font-size: 15px;">${w.name}</strong><br>
-                            <span class="text-secondary" style="font-size: 12px;">Identificador BD: ${w.id}</span>
-                        </td>
-                        <td>${w.rol}</td>
-                        <td style="font-size: 15px;">${w.vistasHoy.toLocaleString()}</td>
-                        <td class="text-yellow" style="font-weight: 700; font-size: 16px;">$${totalDeuda.toFixed(2)}</td>
-                        <td>${btnHtml}</td>
-                    </tr>
-                `;
             });
-
-            // Asignar el evento al botón de liquidar recién creado
-            document.querySelectorAll('.btn-pay').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    const target = e.currentTarget;
-                    currentWorkerToPay = {
-                        id: target.getAttribute('data-id'),
-                        name: target.getAttribute('data-name'),
-                        amount: parseFloat(target.getAttribute('data-amount'))
-                    };
-                    
-                    document.getElementById('pay-target-name').textContent = currentWorkerToPay.name;
-                    document.getElementById('pay-target-amount').textContent = `$${currentWorkerToPay.amount.toFixed(2)}`;
-                    document.getElementById('modal-payment').classList.add('active');
-                });
-            });
-        }
-    }
-
-    // ==========================================
-    // 4. CONFIGURACIONES DE POLÍTICAS DE PAGO
-    // ==========================================
-    document.getElementById('btn-save-pricing')?.addEventListener('click', async (e) => {
-        const btn = e.currentTarget;
-        const originalHTML = btn.innerHTML;
-        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Guardando Políticas...';
-        
-        const payload = {
-            mode: document.getElementById('config-mode').value,
-            customMoviePrice: document.getElementById('config-movie').value,
-            limit_daily: document.getElementById('config-limit-day').value,
-            limit_monthly: document.getElementById('config-limit-month').value
         };
 
-        try {
-            await fetch('/api/ceo/pricing', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
+        const createBarChart = (id, data, color) => {
+            const ctx = document.getElementById(id)?.getContext('2d');
+            if (!ctx) return;
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: ['1', '2', '3', '4', '5', '6', '7'],
+                    datasets: [{
+                        data: data,
+                        backgroundColor: `rgb(${color})`,
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: { display: false },
+                        x: { grid: { display: false }, ticks: { color: '#9ca3af', font: {size: 10} } }
+                    },
+                    plugins: { legend: { display: false } }
+                }
             });
-            btn.innerHTML = '<i class="fas fa-check"></i> Políticas Actualizadas';
-            setTimeout(() => btn.innerHTML = originalHTML, 2500);
-        } catch (err) {
-            btn.innerHTML = '<i class="fas fa-times"></i> Error de conexión';
-            setTimeout(() => btn.innerHTML = originalHTML, 2500);
-        }
-    });
+        };
 
-    // ==========================================
-    // 5. ENVÍO DE COMUNICADOS PUSH (BOT)
-    // ==========================================
-    document.getElementById('btn-send-bot')?.addEventListener('click', async (e) => {
-        const btn = e.currentTarget;
-        const originalHTML = btn.innerHTML;
-        const message = document.getElementById('bot-msg-text').value.trim();
-        const imageUrl = document.getElementById('bot-msg-img').value.trim();
-        const targetGroup = document.getElementById('bot-msg-target').value;
+        const createDonutChart = (id, dataArr, colorsArr) => {
+            const ctx = document.getElementById(id)?.getContext('2d');
+            if (!ctx) return;
+            new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    datasets: [{
+                        data: dataArr,
+                        backgroundColor: colorsArr,
+                        borderWidth: 0,
+                        cutout: '70%'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } }
+                }
+            });
+        };
 
-        if (!message) return alert('Por favor, ingresa el cuerpo del mensaje oficial.');
+        createLineChart('chart-dashboard-revenue', [20, 35, 50, 45, 80, 110, 150], '234, 179, 8');
+        createBarChart('chart-dashboard-activity', [40, 30, 60, 45, 80, 50, 90], '234, 179, 8');
+        createBarChart('chart-dashboard-workforce', [60, 40, 80, 65, 90, 70, 100], '234, 179, 8');
+
+        createLineChart('chart-fin-cashflow', [50, 60, 40, 70, 90, 80, 110], '234, 179, 8');
+        createDonutChart('chart-fin-expense-donut', [40, 30, 20, 10], ['#eab308', '#f97316', '#ef4444', '#6b7280']);
         
-        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Enviando Telegrams...';
-        try {
-            await fetch('/api/ceo/notify-bot', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message, imageUrl, targetGroup })
+        const ctxProduct = document.getElementById('chart-fin-product')?.getContext('2d');
+        if (ctxProduct) {
+            new Chart(ctxProduct, {
+                type: 'bar',
+                data: {
+                    labels: ['Product 1', 'Product 2', 'Product 3', 'Product 4', 'Legal'],
+                    datasets: [{ data: [15, 12, 9, 6, 3], backgroundColor: '#eab308', borderRadius: 4 }]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: { x: { grid: { color: '#2b2f3a' }, ticks: { color: '#9ca3af' } }, y: { grid: { display: false }, ticks: { color: '#9ca3af' } } },
+                    plugins: { legend: { display: false } }
+                }
             });
-            btn.innerHTML = '<i class="fas fa-check-double"></i> Mensaje Entregado';
-            document.getElementById('bot-msg-text').value = '';
-            document.getElementById('bot-msg-img').value = '';
-            setTimeout(() => btn.innerHTML = originalHTML, 2500);
-        } catch (err) {
-            btn.innerHTML = '<i class="fas fa-times"></i> Falla en servidor';
-            setTimeout(() => btn.innerHTML = originalHTML, 2500);
         }
-    });
 
-    // ==========================================
-    // 6. LIQUIDACIÓN DE NÓMINA (MODAL)
-    // ==========================================
-    const closeModal = () => document.getElementById('modal-payment').classList.remove('active');
-    document.getElementById('close-modal-payment')?.addEventListener('click', closeModal);
-    document.getElementById('btn-cancel-pay')?.addEventListener('click', closeModal);
+        createLineChart('chart-srv-performance', [10, 30, 20, 50, 40, 60, 80], '234, 179, 8');
+        createDonutChart('chart-srv-cpu', [45, 25, 20, 10], ['#eab308', '#ef4444', '#22c55e', '#6b7280']);
 
-    document.getElementById('btn-confirm-pay')?.addEventListener('click', async (e) => {
-        const btn = e.currentTarget;
-        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Escribiendo en Base de Datos...';
+        createLineChart('chart-usr-reg', [10, 15, 12, 25, 20, 35, 40], '234, 179, 8', false);
+        createLineChart('chart-usr-engagement', [20, 40, 30, 60, 50, 80, 100], '234, 179, 8');
+        createDonutChart('chart-usr-platform', [50, 30, 20], ['#eab308', '#ef4444', '#6b7280']);
 
-        try {
-            const res = await fetch('/api/ceo/pay-worker', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    uploaderId: currentWorkerToPay.id, 
-                    amount: currentWorkerToPay.amount 
-                })
+        const ctxRadar = document.getElementById('chart-roles-radar')?.getContext('2d');
+        if (ctxRadar) {
+            new Chart(ctxRadar, {
+                type: 'radar',
+                data: {
+                    labels: ['Finance', 'Server', 'User', 'Team', 'Product Lead'],
+                    datasets: [{
+                        data: [65, 59, 90, 81, 56],
+                        backgroundColor: 'rgba(234, 179, 8, 0.2)',
+                        borderColor: '#eab308',
+                        pointBackgroundColor: '#eab308'
+                    }, {
+                        data: [28, 48, 40, 19, 96],
+                        backgroundColor: 'rgba(34, 197, 94, 0.2)',
+                        borderColor: '#22c55e',
+                        pointBackgroundColor: '#22c55e'
+                    }]
+                },
+                options: { responsive: true, maintainAspectRatio: false, scales: { r: { grid: { color: '#2b2f3a' }, ticks: { display: false } } }, plugins: { legend: { display: false } } }
             });
-            
-            if (res.ok) {
-                closeModal();
-                fetchData(); // Refrescar los números de deuda de inmediato
-            }
-        } catch(err) {
-            alert('Error en conexión con el motor MongoDB.');
-        } finally {
-            btn.innerHTML = '<i class="fas fa-check"></i> Ejecutar Liquidación Segura';
         }
-    });
 
-    // ==========================================
-    // 7. INYECCIÓN A BÓVEDA TMDB
-    // ==========================================
+        createDonutChart('chart-reports-donut', [35, 25, 20, 20], ['#22c55e', '#eab308', '#ef4444', '#6b7280']);
+        createLineChart('chart-reports-usage', [5, 10, 8, 15, 12, 20, 25], '234, 179, 8');
+    }
+
     document.getElementById('btn-search-tmdb')?.addEventListener('click', async () => {
-        const query = document.getElementById('tmdb-search-input').value.trim();
-        if(!query) return;
-
-        const resultsGrid = document.getElementById('tmdb-results');
-        resultsGrid.innerHTML = '<span class="text-secondary">Consultando API de TMDB...</span>';
-
-        try {
-            const res = await fetch(`/api/tmdb-proxy?endpoint=search/multi&query=${encodeURIComponent(query)}`);
-            const data = await res.json();
-            
-            resultsGrid.innerHTML = '';
-            const valid = data.results.filter(m => m.poster_path && (m.media_type === 'movie' || m.media_type === 'tv' || m.title));
-            
-            if(valid.length === 0) return resultsGrid.innerHTML = '<span class="text-secondary">No hay coincidencias en la base de datos de películas.</span>';
-
-            valid.forEach(item => {
-                const url = `https://image.tmdb.org/t/p/w200${item.poster_path}`;
-                const div = document.createElement('div');
-                div.className = 'poster-item';
-                div.innerHTML = `<img src="${url}">`;
-                div.onclick = () => {
-                    document.querySelectorAll('.poster-item').forEach(el => el.classList.remove('selected'));
-                    div.classList.add('selected');
-                    selectedTmdbData = item;
-                    
-                    document.getElementById('tmdb-inject-area').classList.remove('hidden');
-                    document.getElementById('tmdb-selected-title').textContent = item.title || item.name;
-                };
-                resultsGrid.appendChild(div);
-            });
-        } catch(err) {
-            resultsGrid.innerHTML = '<span class="text-danger">Error conectando con la API externa de TMDB.</span>';
-        }
+        const q = document.getElementById('tmdb-search-input').value.trim();
+        if(!q) return;
+        const grid = document.getElementById('tmdb-results');
+        grid.innerHTML = '<span class="text-secondary">Searching TMDB...</span>';
+        setTimeout(() => {
+            grid.innerHTML = `
+                <div class="poster-item" onclick="selectTmdb(this, 'Movie 1')"><img src="https://image.tmdb.org/t/p/w200/8cdWjvZQUrmdDO7cgYFj31GISSN.jpg"></div>
+                <div class="poster-item" onclick="selectTmdb(this, 'Movie 2')"><img src="https://image.tmdb.org/t/p/w200/gR7hB3a7O5wA1RzL6Fwz19UeR2m.jpg"></div>
+            `;
+        }, 800);
     });
+
+    window.selectTmdb = function(el, title) {
+        document.querySelectorAll('.poster-item').forEach(i => i.classList.remove('selected'));
+        el.classList.add('selected');
+        document.getElementById('tmdb-inject-area').classList.remove('hidden');
+        document.getElementById('tmdb-selected-title').textContent = title;
+    };
 
     document.getElementById('btn-cancel-tmdb')?.addEventListener('click', () => {
         document.getElementById('tmdb-inject-area').classList.add('hidden');
         document.getElementById('tmdb-url').value = '';
-        document.querySelectorAll('.poster-item').forEach(el => el.classList.remove('selected'));
-    });
-
-    document.getElementById('btn-confirm-tmdb')?.addEventListener('click', () => {
-        const urlEl = document.getElementById('tmdb-url');
-        const url = urlEl ? urlEl.value.trim() : '';
-
-        if (!selectedTmdbData || !url) {
-            alert('Aviso corporativo: Debes adjuntar el enlace del servidor MP4.');
-            return;
-        }
-        
-        if (!url.toLowerCase().endsWith('.mp4') && !url.includes('mp4')) {
-            alert('BLOQUEO DE SEGURIDAD: Sala Cine solo admite extensión nativa MP4.');
-            return;
-        }
-
-        const btn = document.getElementById('btn-confirm-tmdb');
-        const originalHTML = btn.innerHTML;
-        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Inyectando...';
-        
-        // Simulación visual de que el backend procesó el requerimiento para la demo de interfaz.
-        setTimeout(() => {
-            btn.innerHTML = originalHTML;
-            alert(`Éxito corporativo: "${selectedTmdbData.title || selectedTmdbData.name}" ahora está disponible en la app Sala Cine.`);
-            document.getElementById('btn-cancel-tmdb')?.click();
-            document.getElementById('tmdb-search-input').value = '';
-            document.getElementById('tmdb-results').innerHTML = '';
-        }, 1500);
-    });
-
-    // ==========================================
-    // 8. GRÁFICA EMPRESARIAL
-    // ==========================================
-    function initChart() {
-        const ctx = document.getElementById('metricsChart')?.getContext('2d');
-        if (!ctx) return;
-        metricsChart = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: ['D-6', 'D-5', 'D-4', 'D-3', 'D-2', 'Ayer', 'Hoy'],
-                datasets: [{
-                    label: 'Ingresos Brutos Empresa ($)',
-                    data: [0,0,0,0,0,0,0],
-                    borderColor: '#ffb800',
-                    backgroundColor: 'rgba(255, 184, 0, 0.15)',
-                    borderWidth: 3,
-                    fill: true,
-                    tension: 0.4,
-                    pointBackgroundColor: '#fff',
-                    pointBorderColor: '#ffb800',
-                    pointRadius: 4
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                scales: {
-                    y: { grid: { color: '#262833' }, ticks: { color: '#9ca3af', callback: v => '$' + v } },
-                    x: { grid: { display: false }, ticks: { color: '#9ca3af' } }
-                },
-                plugins: { legend: { display: false } }
-            }
-        });
-    }
-
-    // ==========================================
-    // 9. LOGS (TERMINAL DE AUDITORÍA)
-    // ==========================================
-    function generateLogs() {
-        const term = document.getElementById('live-terminal');
-        if(!term) return;
-
-        const logTypes = [
-            "[Motor_DB] Sincronización exitosa con clúster MongoDB.",
-            "[Motor_TMDB] Cache de TMDB depurada y optimizada.",
-            "[Seguridad] Validación JWT aprobada para cliente App Móvil.",
-            "[Nómina] Ciclo de evaluación de ingresos uploader completado.",
-            "[Crawler] Verificando estabilidad de enlaces .MP4 en la bóveda... 0 errores."
-        ];
-
-        setInterval(() => {
-            if(document.getElementById('tab-logs').classList.contains('active')) {
-                const now = new Date();
-                const timeStr = `${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}:${now.getSeconds().toString().padStart(2,'0')}`;
-                const msg = logTypes[Math.floor(Math.random() * logTypes.length)];
-                
-                const div = document.createElement('div');
-                div.className = 'log-line';
-                div.innerHTML = `
-                    <span class="log-time">${timeStr}</span>
-                    <span class="log-msg" style="color: #6b7280;">[Trechos_Sys]</span>
-                    <span class="log-msg">${msg}</span>
-                `;
-                term.appendChild(div);
-                term.scrollTop = term.scrollHeight;
-            }
-        }, 5000);
-    }
-
-    document.getElementById('btn-run-scan')?.addEventListener('click', () => {
-        const term = document.getElementById('live-terminal');
-        if(!term) return;
-        term.innerHTML += `
-            <div class="log-line"><span class="log-time">Now</span><span class="log-msg text-yellow">> Ejecutando Diagnóstico Maestro de Trechos Corp...</span></div>
-            <div class="log-line"><span class="log-time">Now</span><span class="log-msg">> Verificando tablas: media_catalog, series_catalog, hr_workers. OK.</span></div>
-            <div class="log-line"><span class="log-time">Now</span><span class="log-msg log-success">> Estado Global de Servidores: Óptimo y escalando.</span></div>
-        `;
-        term.scrollTop = term.scrollHeight;
     });
 });
