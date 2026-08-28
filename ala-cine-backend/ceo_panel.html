@@ -3,313 +3,1330 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Trechos Corporate | Panel Gerencial</title>
+    <title>Trechos Corporate | CEO Access</title>
     <link rel="stylesheet" href="ceo_panel.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
 
-    <!-- PANTALLA DE ACCESO (LOGIN) -->
     <div id="login-screen">
         <div class="login-box">
-            <i class="fas fa-building"></i>
-            <h2>Trechos Corporate</h2>
-            <p>Panel Gerencial de Acceso Restringido</p>
-            <input type="email" id="ceo-email" placeholder="Correo administrativo">
-            <button id="btn-login" class="btn-login">Autorizar Conexión</button>
+            <i class="fas fa-layer-group logo-icon"></i>
+            <h2>TRECHOS CORPORATE</h2>
+            <p>Acceso Restringido - CEO & Directorio</p>
+            <input type="email" id="ceo-email" placeholder="Correo Corporativo">
+            <button id="btn-login" class="btn-login">AUTORIZAR ACCESO</button>
             <p id="login-error" class="error-msg"></p>
         </div>
     </div>
 
-    <!-- PANEL PRINCIPAL -->
     <div id="ceo-dashboard" class="hidden" style="width: 100%; display: flex;">
         
-        <!-- BARRA LATERAL (SIDEBAR) -->
         <aside class="sidebar">
-            <div class="workspace-header">
-                <div class="workspace-avatar">T</div>
-                <div>
-                    <span>Trechos Corp</span>
-                    <small>Workspace Gerencial</small>
+            <div class="brand-logo">
+                <i class="fas fa-layer-group"></i>
+                <div class="brand-text">
+                    <h2>TRECHOS</h2>
+                    <span>CORPORATE</span>
                 </div>
             </div>
             
-            <div class="service-nav">
-                <div class="service-title">Finanzas & Análisis</div>
-                <ul class="nav-links">
-                    <li class="active" data-tab="tab-inicio"><i class="fas fa-chart-pie"></i> Inicio (Métricas)</li>
-                    <li data-tab="tab-nomina"><i class="fas fa-wallet"></i> Contabilidad y Nómina</li>
+            <div class="nav-menu">
+                <div class="nav-item active" data-tab="tab-dashboard">
+                    <i class="fas fa-th-large"></i> Dashboard
+                </div>
+
+                <div class="nav-group-title" onclick="toggleMenu('menu-financials')">
+                    <i class="fas fa-dollar-sign" style="width: 18px;"></i> Financials <i class="fas fa-chevron-down chevron"></i>
+                </div>
+                <ul class="nav-sub-menu" id="menu-financials">
+                    <li class="nav-sub-item" data-tab="tab-fin-overview">Overview</li>
+                    <li class="nav-sub-item" data-tab="tab-fin-revenue">Revenue Detail</li>
+                    <li class="nav-sub-item" data-tab="tab-fin-expenses">Expenses Detail</li>
+                    <li class="nav-sub-item" data-tab="tab-fin-cashflow">Cash Flow</li>
+                    <li class="nav-sub-item" data-tab="tab-fin-oberbia">Oberbia</li>
                 </ul>
-            </div>
-            
-            <div class="service-nav">
-                <div class="service-title">Operaciones</div>
-                <ul class="nav-links">
-                    <li data-tab="tab-tmdb"><i class="fas fa-film"></i> Bóveda TMDB</li>
-                    <li data-tab="tab-configuraciones"><i class="fas fa-sliders-h"></i> Políticas de Pago</li>
-                    <li data-tab="tab-comunicados"><i class="fas fa-bullhorn"></i> Comunicados Push</li>
+
+                <div class="nav-group-title" onclick="toggleMenu('menu-servers')">
+                    <i class="fas fa-server" style="width: 18px;"></i> Servers <i class="fas fa-chevron-down chevron"></i>
+                </div>
+                <ul class="nav-sub-menu" id="menu-servers">
+                    <li class="nav-sub-item" data-tab="tab-srv-health">Health</li>
+                    <li class="nav-sub-item" data-tab="tab-srv-deploy">Deployments</li>
                 </ul>
-            </div>
-            
-            <div class="service-nav">
-                <div class="service-title">Sistemas</div>
-                <ul class="nav-links">
-                    <li data-tab="tab-logs"><i class="fas fa-terminal"></i> Auditoría y Logs en Vivo</li>
+
+                <div class="nav-group-title" onclick="toggleMenu('menu-users')">
+                    <i class="far fa-user" style="width: 18px;"></i> Users <i class="fas fa-chevron-down chevron"></i>
+                </div>
+                <ul class="nav-sub-menu" id="menu-users">
+                    <li class="nav-sub-item" data-tab="tab-usr-activity">Activity</li>
+                    <li class="nav-sub-item" data-tab="tab-usr-requests">Requests</li>
+                    <li class="nav-sub-item" data-tab="tab-usr-engagement">Engagement</li>
                 </ul>
+
+                <div class="nav-group-title" onclick="toggleMenu('menu-team')">
+                    <i class="fas fa-user-friends" style="width: 18px;"></i> Team Management <i class="fas fa-chevron-down chevron"></i>
+                </div>
+                <ul class="nav-sub-menu" id="menu-team">
+                    <li class="nav-sub-item" data-tab="tab-team-personnel">Personnel</li>
+                    <li class="nav-sub-item" data-tab="tab-team-roles">Roles</li>
+                    <li class="nav-sub-item" data-tab="tab-team-add">Add CEO to add staff</li>
+                </ul>
+
+                <div class="nav-item" data-tab="tab-reports">
+                    <i class="far fa-file-alt"></i> Reports
+                </div>
+                <div class="nav-item" data-tab="tab-settings">
+                    <i class="fas fa-cog"></i> Settings
+                </div>
+                <div class="nav-item" data-tab="tab-company">
+                    <i class="fas fa-building"></i> La Empresa
+                </div>
+                <div class="nav-item" id="btn-logout">
+                    <i class="fas fa-sign-out-alt"></i> Logout
+                </div>
             </div>
         </aside>
 
-        <!-- CONTENIDO CENTRAL -->
         <main class="main-content">
             
-            <!-- CABECERA SUPERIOR -->
             <header class="top-header">
-                <div class="breadcrumbs">
-                    <i class="fas fa-shield-alt text-yellow"></i> Terminal de Administración Root
+                <div class="header-title" id="top-title-display">
+                    TRECHOS CORP OVERVIEW DASHBOARD <span class="sub">| CEO ACCESS</span>
                 </div>
                 <div class="header-actions">
-                    <button class="btn-outline"><i class="fas fa-sync-alt"></i> Sincronizar Base de Datos</button>
-                    <div class="workspace-avatar" style="width: 32px; height: 32px; cursor: pointer; font-size: 14px;">LD</div>
+                    <div class="user-profile">
+                        <img src="https://ui-avatars.com/api/?name=Dylan+Narvaez&background=eab308&color=000&bold=true" alt="CEO">
+                        <span>CEO <i class="fas fa-chevron-down" style="font-size: 10px; margin-left: 5px;"></i></span>
+                    </div>
+                    <div class="header-icons">
+                        <i class="far fa-bell"></i>
+                        <i class="fas fa-sign-out-alt" id="btn-logout-icon"></i>
+                    </div>
                 </div>
             </header>
 
-            <!-- TÍTULO DEL ÁREA DE TRABAJO -->
-            <div class="service-header">
-                <div class="service-title-row">
-                    <h1>Panel de Operaciones - Sala Cine</h1>
-                    <div style="margin-left: auto; display: flex; gap: 15px;">
-                        <span class="badge-status">API Sincronizada</span>
-                    </div>
-                </div>
-                <div class="service-info">
-                    Monitoreo en tiempo real de ingresos brutos de la corporación, rendimiento de la nómina de trabajadores e inyección de contenido directo a la bóveda MongoDB.
-                </div>
-            </div>
-
-            <!-- CONTENEDOR DE PESTAÑAS -->
             <div class="tab-container">
                 
-                <!-- 1. INICIO (MÉTRICAS Y GANANCIAS DE LA EMPRESA) -->
-                <div id="tab-inicio" class="tab-content active">
-                    
-                    <h2 style="font-size: 22px; font-weight: 700; margin-bottom: 25px;">Rendimiento Financiero Global</h2>
-                    
-                    <div class="metrics-grid">
-                        <div class="metric-card" style="border-top: 3px solid var(--green-live);">
-                            <div class="metric-title">Ingresos Brutos (Hoy)</div>
-                            <div class="metric-value text-green" id="dash-corp-revenue-today">$0.00</div>
-                            <span class="metric-sub"><i class="fas fa-arrow-up"></i> Capital acumulado de la empresa</span>
+                <div id="tab-dashboard" class="tab-content active">
+                    <div class="grid-top">
+                        <div class="card glow-card" style="grid-column: span 2;">
+                            <div class="card-header"><span class="card-title">TOTAL REVENUE (MONTHLY)</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                            <div style="display: flex; align-items: center; gap: 20px;">
+                                <div class="money-huge" id="dash-revenue">$4,852,190.45</div>
+                                <div>
+                                    <div class="trend-up"><i class="fas fa-arrow-up"></i> +18.7%</div>
+                                    <div class="trend-sub">vs last month</div>
+                                </div>
+                            </div>
                         </div>
-                        <div class="metric-card" style="border-top: 3px solid var(--blue-accent);">
-                            <div class="metric-title">Proyección Caja Mensual</div>
-                            <div class="metric-value" id="dash-corp-revenue-month">$0.00</div>
-                            <span class="metric-sub" style="color: var(--text-secondary);">Estimación en base al tráfico actual</span>
-                        </div>
-                        <div class="metric-card" style="border-top: 3px solid var(--yellow-trechos);">
-                            <div class="metric-title">Nómina Operativa Acumulada</div>
-                            <div class="metric-value text-yellow" id="dash-payroll-total">$0.00</div>
-                            <span class="metric-sub" style="color: var(--text-secondary);">Total adeudado a trabajadores</span>
-                        </div>
-                        <div class="metric-card" style="border-top: 3px solid var(--text-secondary);">
-                            <div class="metric-title">Tráfico Global (Vistas Hoy)</div>
-                            <div class="metric-value" id="dash-total-views">0</div>
-                            <span class="metric-sub" style="color: var(--text-secondary);">Peticiones a la base de datos</span>
+                        <div class="card">
+                            <div class="card-header"><span class="card-title">BUSINESS METRICS</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                            <div style="display: flex; justify-content: space-between; border-bottom: 1px solid var(--border-color); padding-bottom: 10px; margin-bottom: 10px;">
+                                <div>
+                                    <div class="card-title" style="font-size: 10px;">ACTIVE USERS (TODAY)</div>
+                                    <div class="metric-large">152,430</div>
+                                </div>
+                                <i class="fas fa-users" style="color: var(--trecho-yellow);"></i>
+                            </div>
+                            <div style="display: flex; justify-content: space-between;">
+                                <div>
+                                    <div class="card-title" style="font-size: 10px;">SERVER UPTIME</div>
+                                    <div class="metric-large">99.98%</div>
+                                </div>
+                                <i class="fas fa-check-circle" style="color: var(--green-positive);"></i>
+                            </div>
                         </div>
                     </div>
 
-                    <div class="panel-section">
-                        <div class="panel-header">
-                            <h3>Evolución de Capital Bruto (Últimos 7 días)</h3>
+                    <div class="grid-half">
+                        <div class="card">
+                            <div class="card-header"><span class="card-title">NET PROFIT</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <div class="money-large">$1,324,560.20</div>
+                                <div class="trend-up"><i class="fas fa-arrow-right" style="transform: rotate(-45deg);"></i> +12.1%</div>
+                            </div>
                         </div>
-                        <div class="panel-body">
-                            <div style="height: 350px; width: 100%;">
-                                <canvas id="metricsChart"></canvas>
+                        <div class="card">
+                            <div style="display: flex; justify-content: space-between; border-bottom: 1px solid var(--border-color); padding-bottom: 10px; margin-bottom: 10px;">
+                                <div>
+                                    <div class="card-title" style="font-size: 10px;">TOTAL STAFF</div>
+                                    <div class="metric-large">145</div>
+                                </div>
+                                <i class="far fa-user" style="color: var(--trecho-yellow);"></i>
+                            </div>
+                            <div style="display: flex; justify-content: space-between;">
+                                <div>
+                                    <div class="card-title" style="font-size: 10px;">PLATFORM REQUESTS</div>
+                                    <div class="metric-large">62K/min</div>
+                                </div>
+                                <i class="fas fa-chart-line" style="color: var(--trecho-yellow);"></i>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="grid-two-one">
+                        <div class="card">
+                            <div class="card-header"><span class="card-title">REVENUE GROWTH TREND (LAST 30 DAYS)</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                            <div style="height: 250px; width: 100%;">
+                                <canvas id="chart-dashboard-revenue"></canvas>
+                            </div>
+                        </div>
+                        <div class="card">
+                            <div class="card-header"><span class="card-title">SERVER INFRASTRUCTURE HEALTH</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                            <div class="server-grid" style="margin-bottom: 20px;">
+                                <div class="server-box box-green">Active</div>
+                                <div class="server-box box-yellow">Load</div>
+                                <div class="server-box box-red">Error</div>
+                                <div class="server-box box-red">Error</div>
+                                <div class="server-box box-green">Active</div>
+                                <div class="server-box box-yellow">Load</div>
+                                <div class="server-box box-red">Error</div>
+                                <div class="server-box box-red">Error</div>
+                                <div class="server-box box-green">Active</div>
+                                <div class="server-box box-green">Active</div>
+                                <div class="server-box box-green">Active</div>
+                                <div class="server-box box-green">Active</div>
+                                <div class="server-box box-green">Active</div>
+                                <div class="server-box box-green">Active</div>
+                                <div class="server-box box-green">Active</div>
+                                <div class="server-box box-green">Active</div>
+                                <div class="server-box box-green">Active</div>
+                                <div class="server-box box-yellow">Load</div>
+                                <div class="server-box box-red">Error</div>
+                                <div class="server-box box-red">Error</div>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border-color); padding-top: 15px;">
+                                <div>
+                                    <div class="card-title" style="font-size: 10px;">SERVER LOAD</div>
+                                    <div style="font-size: 28px; font-weight: 700;">41%</div>
+                                </div>
+                                <div style="text-align: right;">
+                                    <div class="card-title" style="font-size: 10px;">GLOBAL RPS</div>
+                                    <div style="font-size: 12px; color: var(--green-positive);">Regional RPS +18.33%</div>
+                                    <div style="font-size: 12px; color: var(--green-positive);">Regional US 4.83%</div>
+                                    <div style="font-size: 12px; color: var(--green-positive);">Regional ASA 4.33%</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="grid-half">
+                        <div class="card">
+                            <div class="card-header"><span class="card-title">USER ACTIVITY & PLATFORM DEMAND</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                            <div style="height: 200px; width: 100%;">
+                                <canvas id="chart-dashboard-activity"></canvas>
+                            </div>
+                        </div>
+                        <div class="card">
+                            <div class="card-header"><span class="card-title">TEAM STATUS & MANAGEMENT</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px;">
+                                <div>
+                                    <div class="card-title" style="font-size: 10px;">WORKFORCE OVERVIEW</div>
+                                    <div style="font-size: 20px; font-weight: 700;">145/145</div>
+                                    <div style="height: 100px; margin-top: 10px;"><canvas id="chart-dashboard-workforce"></canvas></div>
+                                </div>
+                                <div>
+                                    <div class="card-title" style="font-size: 10px;">ONLINE EMPLOYEES</div>
+                                    <div style="font-size: 20px; font-weight: 700;">98/145</div>
+                                    <div class="card-title" style="font-size: 10px; margin-top: 15px;">LATEST EMPLOYEES</div>
+                                    <div style="font-size: 20px; font-weight: 700;">251/145</div>
+                                </div>
+                                <div>
+                                    <div class="card-title" style="font-size: 10px;">RECENT HIRES</div>
+                                    <div class="user-row" style="padding: 5px 0;">
+                                        <img src="https://i.pravatar.cc/150?u=1" alt="user">
+                                        <div class="user-row-info"><h4>Nakal Names</h4></div>
+                                        <span class="status-badge status-yellow">NUEVO</span>
+                                    </div>
+                                    <div class="user-row" style="padding: 5px 0;">
+                                        <img src="https://i.pravatar.cc/150?u=2" alt="user">
+                                        <div class="user-row-info"><h4>Mikal Names</h4></div>
+                                        <span class="status-badge status-yellow">NUEVO</span>
+                                    </div>
+                                    <button class="btn-outline" style="margin-top: 10px; padding: 5px;">+ Add new staff</button>
+                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- 2. CONTABILIDAD Y NÓMINA -->
-                <div id="tab-nomina" class="tab-content">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px;">
+                <div id="tab-fin-overview" class="tab-content">
+                    <div class="grid-top">
+                        <div class="card glow-card" style="grid-column: span 2;">
+                            <div class="card-header"><span class="card-title">TOTAL GROSS REVENUE (FISCAL YEAR)</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                            <div style="display: flex; align-items: center; gap: 20px;">
+                                <div class="money-huge">$58,214,330.12</div>
+                                <div>
+                                    <div class="trend-up"><i class="fas fa-arrow-up"></i> +18.7%</div>
+                                    <div class="trend-sub">vs last month</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card">
+                            <div class="card-header"><span class="card-title">TOTAL OPERATING EXPENSES</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                            <div class="money-large">$15,100,500.80</div>
+                            <div style="display: flex; justify-content: space-between; font-size: 12px; margin-top: 10px;">
+                                <span class="text-secondary">Breakdown</span><span>$15,100,500.80</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; font-size: 12px; margin-top: 5px;">
+                                <span class="text-secondary">Salaries</span><span>$2,733,230.80</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; font-size: 12px; margin-top: 5px; border-bottom: 1px solid var(--border-color); padding-bottom: 10px;">
+                                <span class="text-secondary">Marketing</span><span>$1,928,330.60</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; font-size: 14px; font-weight: 700; margin-top: 10px; color: var(--trecho-yellow);">
+                                <span>Total</span><span>$58,114,530.80</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="grid-two-one">
+                        <div class="card">
+                            <div class="card-header"><span class="card-title">CASH FLOW ANALYSIS (LAST 12 MONTHS)</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                            <div style="height: 300px; width: 100%;">
+                                <canvas id="chart-fin-cashflow"></canvas>
+                            </div>
+                        </div>
                         <div>
-                            <h2 style="font-size: 22px; font-weight: 700; margin-bottom: 5px;">Contabilidad de Uploaders</h2>
-                            <p class="text-secondary" style="font-size: 14px;">Administra los ciclos de pago y evalúa el rendimiento individual.</p>
-                        </div>
-                    </div>
-
-                    <div class="panel-section">
-                        <div class="panel-header">
-                            <h3>Planilla Activa</h3>
-                        </div>
-                        <table class="corp-table">
-                            <thead>
-                                <tr>
-                                    <th>Identidad / Uploader</th>
-                                    <th>Rol Asignado</th>
-                                    <th>Vistas (Hoy)</th>
-                                    <th>Saldo Pendiente</th>
-                                    <th>Acción Contable</th>
-                                </tr>
-                            </thead>
-                            <tbody id="payroll-list">
-                                <tr><td colspan="5" class="text-center text-secondary">Sincronizando con base de datos...</td></tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-
-                <!-- 3. INYECCIÓN TMDB -->
-                <div id="tab-tmdb" class="tab-content">
-                    <h2 style="font-size: 22px; font-weight: 700; margin-bottom: 5px;">Bóveda de Inyección (TMDB)</h2>
-                    <p class="text-secondary" style="margin-bottom: 25px; font-size: 14px;">Busca películas o series en la API oficial e inyéctalas directamente a MongoDB para los usuarios.</p>
-
-                    <div class="panel-section">
-                        <div class="panel-body">
-                            <div class="form-group" style="display: flex; gap: 15px;">
-                                <input type="text" id="tmdb-search-input" class="form-control" placeholder="Escribe el título de la película o serie..." style="margin-bottom: 0;">
-                                <button class="btn-primary" id="btn-search-tmdb" style="white-space: nowrap;"><i class="fas fa-search"></i> Buscar</button>
+                            <div class="card" style="margin-bottom: 20px;">
+                                <div class="card-header"><span class="card-title">NET CASH FLOW</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                                <div class="money-large">$43,113,829.32</div>
+                                <div style="height: 120px; width: 100%; position: relative;">
+                                    <canvas id="chart-fin-gauge"></canvas>
+                                    <div style="position: absolute; bottom: 0; left: 0; width: 100%; display: flex; justify-content: space-between; font-size: 12px; color: var(--text-secondary);">
+                                        <span>Low</span><span>High</span>
+                                    </div>
+                                </div>
                             </div>
-                            
-                            <div class="posters-grid" id="tmdb-results">
-                                <!-- Resultados javascript -->
-                            </div>
-
-                            <div id="tmdb-inject-area" class="hidden" style="margin-top: 30px; padding-top: 30px; border-top: 1px solid var(--border-color);">
-                                <h3 id="tmdb-selected-title" style="margin-bottom: 20px; font-size: 20px; color: var(--yellow-trechos);">Obra Seleccionada</h3>
+                            <div class="card">
+                                <div class="card-header"><span class="card-title">CONFIGURE FINANCIAL PARAMETERS</span><i class="fas fa-cog text-trecho" style="color: var(--trecho-yellow);"></i></div>
+                                <p class="text-secondary" style="font-size: 12px; margin-bottom: 15px;">Adjust a billing model or set revenue targets.</p>
                                 <div class="form-group">
-                                    <label>Enlace Directo del Servidor (Obligatorio .mp4)</label>
-                                    <p>Por políticas de Trechos Corp, el enlace principal debe ser MP4 para asegurar el streaming fluido en la app móvil.</p>
-                                    <input type="url" id="tmdb-url" class="form-control" placeholder="https://cdn.tuservidor.com/video.mp4">
+                                    <label style="font-size: 11px;">Billing model (as set revenue targets)</label>
+                                    <div style="display: flex; gap: 10px;">
+                                        <button class="btn-outline" style="width: 40px; margin: 0;">-</button>
+                                        <input type="text" class="form-control" value="1.000%" style="text-align: center; margin: 0;">
+                                        <button class="btn-outline" style="width: 40px; margin: 0;">+</button>
+                                    </div>
                                 </div>
-                                <div style="display: flex; gap: 15px; justify-content: flex-end; margin-top: 30px;">
-                                    <button class="btn-outline" id="btn-cancel-tmdb">Cancelar Inyección</button>
-                                    <button class="btn-primary" id="btn-confirm-tmdb"><i class="fas fa-database"></i> Insertar en MongoDB</button>
-                                </div>
+                                <button class="btn-primary" style="width: 100%;">EDIT TARGETS</button>
                             </div>
                         </div>
                     </div>
-                </div>
 
-                <!-- 4. CONFIGURACIONES Y POLÍTICAS DE PAGO -->
-                <div id="tab-configuraciones" class="tab-content">
-                    <h2 style="font-size: 22px; font-weight: 700; margin-bottom: 5px;">Políticas y Economía Interna</h2>
-                    <p class="text-secondary" style="margin-bottom: 25px; font-size: 14px;">Control maestro sobre lo que generan los uploaders. Los cambios impactan el cálculo del servidor instantáneamente.</p>
-                    
-                    <div class="panel-section">
-                        <div class="panel-header">
-                            <h3>Gestor de Tarifas y Límites</h3>
-                        </div>
-                        <div class="panel-body">
-                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px;">
-                                <div class="form-group">
-                                    <label>Estado de la Economía Operativa</label>
-                                    <p>Decide si el día de hoy es de ganancia normal, feriado o si hay un bono extra.</p>
-                                    <select id="config-mode" class="form-control">
-                                        <option value="normal">Normal (Estándar de la empresa)</option>
-                                        <option value="boost">Bono Boost (+0.10$ por subida extra)</option>
-                                        <option value="feriado">Feriado ($0 de pago, pero pueden subir)</option>
-                                    </select>
-                                </div>
-                                <div class="form-group">
-                                    <label>Tarifa Base por Película (USD)</label>
-                                    <p>Pago estándar antes de aplicar retenciones psicológicas.</p>
-                                    <input type="number" step="0.01" id="config-movie" class="form-control" value="0.50">
-                                </div>
-                                <div class="form-group">
-                                    <label>Límite Diario por Trabajador (USD)</label>
-                                    <p>Superado este monto diario, el backend registrará $0.00 de ganancia.</p>
-                                    <input type="number" step="1" id="config-limit-day" class="form-control" value="25">
-                                </div>
-                                <div class="form-group">
-                                    <label>Límite Mensual Duro (USD)</label>
-                                    <p>Límite salarial por ciclo (mes) para uploaders.</p>
-                                    <input type="number" step="1" id="config-limit-month" class="form-control" value="150">
+                    <div class="grid-three">
+                        <div class="card">
+                            <div class="card-header"><span class="card-title">EXPENSE BREAKDOWN BY CATEGORY</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                            <div style="display: flex; align-items: center; gap: 20px; height: 150px;">
+                                <div style="width: 150px; height: 150px;"><canvas id="chart-fin-expense-donut"></canvas></div>
+                                <div style="font-size: 12px; line-height: 2;">
+                                    <div><span style="color: var(--trecho-yellow);">●</span> Server Infrastructure</div>
+                                    <div><span style="color: #f97316;">●</span> Salaries</div>
+                                    <div><span style="color: #ef4444;">●</span> Marketing</div>
+                                    <div><span style="color: #6b7280;">●</span> Legal</div>
                                 </div>
                             </div>
-                            <div style="margin-top: 20px; border-top: 1px solid var(--border-color); padding-top: 25px; display: flex; justify-content: flex-end;">
-                                <button class="btn-primary" id="btn-save-pricing"><i class="fas fa-save"></i> Guardar Nuevas Políticas</button>
+                        </div>
+                        <div class="card">
+                            <div class="card-header"><span class="card-title">PROFITABILITY MARGIN TREND</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                            <div style="height: 150px; width: 100%;">
+                                <canvas id="chart-fin-margin"></canvas>
+                            </div>
+                            <div style="display: flex; justify-content: center; gap: 20px; font-size: 12px; margin-top: 10px;">
+                                <div><span style="color: var(--trecho-yellow);">●</span> Gross Margin</div>
+                                <div><span style="color: var(--green-positive);">●</span> Net Margin</div>
+                            </div>
+                        </div>
+                        <div class="card">
+                            <div class="card-header"><span class="card-title">REVENUE BY PRODUCT LINE</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                            <div style="height: 180px; width: 100%;">
+                                <canvas id="chart-fin-product"></canvas>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- 5. COMUNICADOS PUSH AL BOT -->
-                <div id="tab-comunicados" class="tab-content">
-                    <h2 style="font-size: 22px; font-weight: 700; margin-bottom: 5px;">Central de Notificaciones Push</h2>
-                    <p class="text-secondary" style="margin-bottom: 25px; font-size: 14px;">Utiliza la instancia del Bot de Telegram para enviar mensajes directos e instrucciones al equipo.</p>
-                    
-                    <div class="panel-section">
-                        <div class="panel-body">
-                            <div class="form-group">
-                                <label>Mensaje Oficial (Soporta Markdown)</label>
-                                <p>El texto que recibirán en su chat de Telegram.</p>
-                                <textarea id="bot-msg-text" class="form-control" rows="5" placeholder="Ej: 🚀 ¡Atención equipo! El CPM ha subido. Es hora ideal para subir estrenos."></textarea>
-                            </div>
-                            <div class="form-group">
-                                <label>Adjuntar Imagen (Opcional - URL directa)</label>
-                                <input type="url" id="bot-msg-img" class="form-control" placeholder="https://mi-empresa.com/imagen.jpg">
-                            </div>
-                            <div class="form-group">
-                                <label>Destinatarios</label>
-                                <select id="bot-msg-target" class="form-control">
-                                    <option value="all_admins">Todo el personal registrado (Uploaders y Admins)</option>
-                                    <option value="primary">Solo Canal de Pruebas (CEO)</option>
-                                </select>
-                            </div>
-                            <div style="margin-top: 30px; display: flex; justify-content: flex-end;">
-                                <button class="btn-primary" id="btn-send-bot"><i class="fas fa-paper-plane"></i> Despachar Mensaje</button>
-                            </div>
+                <div id="tab-fin-cashflow" class="tab-content">
+                    <div class="grid-three">
+                        <div class="card">
+                            <div class="card-header"><span class="card-title">SALDO DE EFECTIVO ACTUAL</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                            <div class="money-large text-trecho" style="color: var(--trecho-yellow);">$3,215,890.12</div>
+                            <div class="trend-up" style="font-size: 14px;"><i class="fas fa-arrow-up" style="transform: rotate(45deg);"></i> +4.5% <span class="trend-sub">vs. mes anterior</span></div>
+                        </div>
+                        <div class="card">
+                            <div class="card-header"><span class="card-title">FLUJO DE CAJA OPERATIVO (ESTE MES)</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                            <div class="money-large text-trecho" style="color: var(--trecho-yellow);">$785,412.30</div>
+                            <div class="trend-up" style="font-size: 14px;"><i class="fas fa-arrow-up" style="transform: rotate(45deg);"></i> +4.5% <span class="trend-sub">vs. mes anterior</span></div>
+                        </div>
+                        <div class="card">
+                            <div class="card-header"><span class="card-title">COBERTURA DE DEUDA (RATIO DE CAJA)</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                            <div class="money-large text-trecho" style="color: var(--trecho-yellow);">1.85x</div>
+                            <div class="trend-up" style="font-size: 14px; color: var(--trecho-yellow);"><i class="fas fa-arrow-right" style="transform: rotate(-45deg);"></i> 1.85x <span class="trend-sub">vs. mes anterior</span></div>
                         </div>
                     </div>
-                </div>
 
-                <!-- 6. AUDITORÍA Y LOGS -->
-                <div id="tab-logs" class="tab-content">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <div class="grid-two-one">
                         <div>
-                            <h2 style="font-size: 22px; font-weight: 700; margin-bottom: 5px;">Terminal de Auditoría</h2>
-                            <p class="text-secondary" style="font-size: 14px;">Monitor en vivo de eventos del sistema, base de datos y bot.</p>
+                            <div class="card" style="margin-bottom: 20px;">
+                                <div class="card-header"><span class="card-title">TENDENCIA MENSUAL DEL FLUJO DE CAJA (ÚLTIMOS 12 MESES)</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                                <div style="display: flex; justify-content: center; gap: 20px; font-size: 12px; margin-bottom: 10px;">
+                                    <div><span style="color: var(--green-positive);">●</span> Entradas de Efectivo</div>
+                                    <div><span style="color: var(--red-negative);">●</span> Salidas de Efectivo</div>
+                                    <div><span style="color: var(--trecho-yellow);">●</span> Flujo de Caja Neto</div>
+                                </div>
+                                <div style="height: 250px; width: 100%;">
+                                    <canvas id="chart-cashflow-trend"></canvas>
+                                </div>
+                            </div>
+                            <div class="grid-half">
+                                <div class="card">
+                                    <div class="card-header"><span class="card-title">RESUMEN DE CUENTAS POR COBRAR</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                                    <table class="trecho-table">
+                                        <tr><td>Adana Coklennez</td><td>$3,215.89K</td><td><span class="status-badge status-green">Estado</span></td></tr>
+                                        <tr><td>Martin Garellano</td><td>$3,215.89K</td><td><span class="status-badge status-red">Segudora</span></td></tr>
+                                        <tr><td>Martirin Bathez</td><td>$1,220.00K</td><td><span class="status-badge status-green">Pago</span></td></tr>
+                                        <tr><td>Jares C Tmaro</td><td>$1,230.00K</td><td><span class="status-badge status-green">Positivo</span></td></tr>
+                                    </table>
+                                </div>
+                                <div class="card">
+                                    <div class="card-header"><span class="card-title">RESUMEN DE CUENTAS POR PAGAR</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                                    <table class="trecho-table">
+                                        <tr><td>Proveedor</td><td>$405.00K</td><td><span class="status-badge status-green">Estado</span></td></tr>
+                                        <tr><td>Proveedor</td><td>$208.00K</td><td><span class="status-badge status-red">Dómiina</span></td></tr>
+                                        <tr><td>Proveedor</td><td>$188.50K</td><td><span class="status-badge status-green">Pago</span></td></tr>
+                                        <tr><td>Proveedor</td><td>$65.00K</td><td><span class="status-badge status-green">Próximo</span></td></tr>
+                                    </table>
+                                </div>
+                            </div>
                         </div>
-                        <button class="btn-outline" id="btn-run-scan"><i class="fas fa-stethoscope"></i> Escaneo Rápido de DB</button>
+                        <div>
+                            <div class="card" style="margin-bottom: 20px;">
+                                <div class="card-header"><span class="card-title">ALERTAS DE CAJA Y LIQUIDEZ</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                                <div class="alert-row">
+                                    <i class="far fa-bell text-red"></i>
+                                    <span>Saldo por debajo del límite de alerta ($2.5M)</span>
+                                </div>
+                                <div class="alert-row">
+                                    <i class="far fa-bell text-red"></i>
+                                    <span>Saldo por debajo del límite de alerta ($2.5M)</span>
+                                </div>
+                                <div class="alert-row" style="background: rgba(34, 197, 94, 0.05); border-color: rgba(34, 197, 94, 0.2);">
+                                    <i class="far fa-bell" style="color: var(--green-positive);"></i>
+                                    <span>Próximo pago de nómina el 1 Nov</span>
+                                </div>
+                                <div class="alert-row" style="background: rgba(34, 197, 94, 0.05); border-color: rgba(34, 197, 94, 0.2);">
+                                    <i class="far fa-bell" style="color: var(--green-positive);"></i>
+                                    <span>Próximo pago de nómina el 1 Nov</span>
+                                </div>
+                            </div>
+                            <div class="card">
+                                <div class="card-header"><span class="card-title">TRANSACCIONES RECIENTES DE CAJA</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                                <div style="display: flex; justify-content: space-between; border-bottom: 1px solid var(--border-color); padding: 10px 0;">
+                                    <div><div style="font-weight: 600;">Payment de Cliente</div><div style="font-size: 11px; color: var(--text-secondary);">23 Apr 2024 | 10 Sep</div></div>
+                                    <div style="text-align: right;"><div style="font-weight: 600;">$3,250.00</div><div style="font-size: 11px; color: var(--text-secondary);">RE T000001</div></div>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; border-bottom: 1px solid var(--border-color); padding: 10px 0;">
+                                    <div><div style="font-weight: 600;">Payment de Proveedor</div><div style="font-size: 11px; color: var(--text-secondary);">17 Apr 2024 | 10 Sep</div></div>
+                                    <div style="text-align: right;"><div style="font-weight: 600;">$335.00</div><div style="font-size: 11px; color: var(--text-secondary);">RE Y0000S</div></div>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; border-bottom: 1px solid var(--border-color); padding: 10px 0;">
+                                    <div><div style="font-weight: 600;">Renta</div><div style="font-size: 11px; color: var(--text-secondary);">25 Apr 2024 | 19 Sep</div></div>
+                                    <div style="text-align: right;"><div style="font-weight: 600;">$170.00</div><div style="font-size: 11px; color: var(--text-secondary);">RE T00001</div></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="tab-fin-oberbia" class="tab-content">
+                    <div class="grid-top">
+                        <div class="card">
+                            <div class="card-header"><span class="card-title">INGRESOS TOTALES (ESTE TRIMESTRE)</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                            <div class="money-huge" style="font-size: 40px;">$5.2M</div>
+                            <div class="trend-up" style="font-size: 14px;"><i class="fas fa-arrow-up" style="transform: rotate(45deg);"></i> +4.5% <span class="trend-sub">vs. mes anterior</span></div>
+                        </div>
+                        <div class="card">
+                            <div class="card-header"><span class="card-title">MARGEN DE BENEFICIO NETO</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <div>
+                                    <div class="money-huge" style="font-size: 40px;">28%</div>
+                                    <div class="trend-up" style="font-size: 14px;"><i class="fas fa-arrow-up" style="transform: rotate(45deg);"></i> +2.8% <span class="trend-sub">vs. mes anterior</span></div>
+                                </div>
+                                <div style="width: 80px; height: 80px;"><canvas id="chart-oberbia-gauge1"></canvas></div>
+                            </div>
+                        </div>
+                        <div class="card">
+                            <div class="card-header"><span class="card-title">COMPROMISO DE USUARIOS (DAU/MAU)</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                            <div class="money-huge" style="font-size: 40px;">65%</div>
+                            <div class="trend-up" style="font-size: 14px;"><i class="fas fa-arrow-up" style="transform: rotate(45deg);"></i> +65% <span class="trend-sub">vs. mes anterior</span></div>
+                        </div>
                     </div>
 
-                    <div class="terminal-window" id="live-terminal">
-                        <div class="log-line">
-                            <span class="log-time">12:00:00</span>
-                            <span class="log-msg" style="color: #6b7280;">[Trechos_Sys]</span>
-                            <span class="log-success">[Core] Conexión establecida con clúster MongoDB.</span>
+                    <div class="grid-two-one">
+                        <div>
+                            <div class="card" style="margin-bottom: 20px;">
+                                <div class="card-header"><span class="card-title">PANORAMA DE RENDIMIENTO DE LA EMPRESA (ÚLTIMO AÑO)</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                                <div style="display: flex; justify-content: center; gap: 20px; font-size: 12px; margin-bottom: 10px;">
+                                    <div><span style="color: var(--green-positive);">●</span> Ingresos Totales</div>
+                                    <div><span style="color: var(--red-negative);">●</span> Gastos Totales</div>
+                                    <div><span style="color: var(--trecho-yellow);">●</span> Beneficios Netos</div>
+                                </div>
+                                <div style="height: 300px; width: 100%;">
+                                    <canvas id="chart-oberbia-panorama"></canvas>
+                                </div>
+                            </div>
+                            <div class="grid-half">
+                                <div class="card">
+                                    <div class="card-header"><span class="card-title">RENDIMIENTO DE VENTAS POR PRODUCTO</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                                    <table class="trecho-table">
+                                        <tr><th>Producto</th><th>Unidades</th><th>Ingresos</th><th>Crecimiento</th></tr>
+                                        <tr><td>Producto 1</td><td>130</td><td>$5,215.0K</td><td class="text-green">+14.5%</td></tr>
+                                        <tr><td>Producto 2</td><td>100</td><td>$3,215.0K</td><td class="text-green">+16.8%</td></tr>
+                                        <tr><td>Producto 3</td><td>89</td><td>$1,220.0K</td><td class="text-green">+13.5%</td></tr>
+                                        <tr><td>Producto 4</td><td>64</td><td>$1,230.0K</td><td class="text-green">+11.7%</td></tr>
+                                    </table>
+                                </div>
+                                <div class="card">
+                                    <div class="card-header"><span class="card-title">ESTADO DE SALUD DEL SERVIDOR (DETALLE)</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                                    <table class="trecho-table">
+                                        <tr><th>Servidor</th><th>Tiempo de Actividad</th><th>Carga</th><th>Estado</th></tr>
+                                        <tr><td>Servidor 1</td><td>21 min/h</td><td>50%</td><td><span class="status-badge status-green">Positivo</span></td></tr>
+                                        <tr><td>Servidor 2</td><td>21 min/h</td><td>30%</td><td><span class="status-badge status-red">Dómiina</span></td></tr>
+                                        <tr><td>Servidor 3</td><td>21 min/h</td><td>30%</td><td><span class="status-badge status-green">Positivo</span></td></tr>
+                                        <tr><td>Servidor 4</td><td>21 min/h</td><td>50%</td><td><span class="status-badge status-green">Positivo</span></td></tr>
+                                    </table>
+                                </div>
+                            </div>
                         </div>
-                        <!-- JS inyectará logs aquí simulando tail -->
+                        <div>
+                            <div class="card" style="margin-bottom: 20px;">
+                                <div class="card-header"><span class="card-title">ALERTAS GENERALES Y DE RENDIMIENTO</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                                <div class="alert-row">
+                                    <i class="far fa-bell text-red"></i>
+                                    <div><div style="font-weight: 600; font-size: 13px;">Carga del servidor alta</div><div style="font-size: 11px; color: var(--text-secondary);">Ae apor. tido del $2.5M</div></div>
+                                </div>
+                                <div class="alert-row">
+                                    <i class="far fa-bell text-red"></i>
+                                    <div><div style="font-weight: 600; font-size: 13px;">Meta de ventas mensual no alcanzada</div></div>
+                                </div>
+                                <div class="alert-row">
+                                    <i class="far fa-bell text-red"></i>
+                                    <div><div style="font-weight: 600; font-size: 13px;">Meta de ventas mensual no alcanzada</div></div>
+                                </div>
+                                <div class="alert-row">
+                                    <i class="far fa-bell text-red"></i>
+                                    <div><div style="font-weight: 600; font-size: 13px;">Campaña de marketing alcanzada</div></div>
+                                </div>
+                            </div>
+                            <div class="card">
+                                <div class="card-header"><span class="card-title">FEED DE ACTIVIDAD RECIENTE DEL SISTEMA</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                                <div style="display: flex; gap: 15px; margin-bottom: 15px;">
+                                    <div style="color: var(--green-positive);">●</div>
+                                    <div>
+                                        <div style="font-weight: 600; font-size: 13px;">Nueva versión de software desplegada</div>
+                                        <div style="font-size: 11px; color: var(--text-secondary);">25 Apr 2024 | 19 Sep</div>
+                                    </div>
+                                </div>
+                                <div style="display: flex; gap: 15px; margin-bottom: 15px;">
+                                    <div style="color: var(--trecho-yellow);">●</div>
+                                    <div>
+                                        <div style="font-weight: 600; font-size: 13px;">Nuevo usuario corporativo registrado</div>
+                                        <div style="font-size: 11px; color: var(--text-secondary);">17 Apr 2024 | 19 Sep</div>
+                                    </div>
+                                </div>
+                                <div style="display: flex; gap: 15px; margin-bottom: 15px;">
+                                    <div style="color: #f97316;">●</div>
+                                    <div>
+                                        <div style="font-weight: 600; font-size: 13px;">Campaña de marketing lanzada</div>
+                                        <div style="font-size: 11px; color: var(--text-secondary);">28 Apr 2024 | 19 Sep</div>
+                                    </div>
+                                </div>
+                                <div style="display: flex; gap: 15px; margin-bottom: 15px;">
+                                    <div style="color: var(--green-positive);">●</div>
+                                    <div>
+                                        <div style="font-weight: 600; font-size: 13px;">Campaña de marketing lanzada</div>
+                                        <div style="font-size: 11px; color: var(--text-secondary);">16 Apr 2024 | 19 Sep</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="tab-srv-health" class="tab-content">
+                    <div class="grid-top">
+                        <div class="card glow-card" style="grid-column: span 2;">
+                            <div class="card-header"><span class="card-title">TOTAL SERVER HEALTH (LAST 30 DAYS)</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                            <div class="money-huge">99.98% <span style="font-size: 16px; color: var(--text-secondary); font-weight: 500;">Uptime <i class="fas fa-info-circle"></i></span></div>
+                        </div>
+                        <div class="card">
+                            <div class="card-header"><span class="card-title">TOTAL RESOURCE USAGE</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                            <div class="money-large text-trecho" style="color: var(--trecho-yellow);">34% <span style="font-size: 16px; color: var(--text-secondary); font-weight: 500;">Avg CPU</span></div>
+                            <div style="display: flex; justify-content: space-between; font-size: 13px; margin-top: 10px;">
+                                <span class="text-secondary">CPU</span><span>34% usage</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; font-size: 13px; margin-top: 5px;">
+                                <span class="text-secondary">RAM</span><span>34.68% usage</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; font-size: 13px; margin-top: 5px;">
+                                <span class="text-secondary">Disk</span><span>0.73% usage</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="grid-two-one">
+                        <div>
+                            <div class="card" style="margin-bottom: 20px;">
+                                <div class="card-header"><span class="card-title">SERVER PERFORMANCE TREND (LAST 12 MONTHS)</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                                <div style="height: 300px; width: 100%;">
+                                    <canvas id="chart-srv-performance"></canvas>
+                                </div>
+                            </div>
+                            <div class="grid-three">
+                                <div class="card">
+                                    <div class="card-header"><span class="card-title">CPU USAGE BREAKDOWN</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                                    <div style="display: flex; align-items: center; gap: 20px; height: 150px;">
+                                        <div style="width: 120px; height: 120px;"><canvas id="chart-srv-cpu"></canvas></div>
+                                        <div style="font-size: 12px; line-height: 2;">
+                                            <div><span style="color: var(--trecho-yellow);">●</span> Web Servers</div>
+                                            <div><span style="color: #ef4444;">●</span> DB Servers</div>
+                                            <div><span style="color: var(--green-positive);">●</span> Caching</div>
+                                            <div><span style="color: #6b7280;">●</span> Other</div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="card">
+                                    <div class="card-header"><span class="card-title">NETWORK TRAFFIC TREND</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                                    <div style="height: 120px; width: 100%;">
+                                        <canvas id="chart-srv-network"></canvas>
+                                    </div>
+                                    <div style="display: flex; justify-content: center; gap: 20px; font-size: 12px; margin-top: 10px;">
+                                        <div><span style="color: var(--trecho-yellow);">●</span> Incoming</div>
+                                        <div><span style="color: var(--red-negative);">●</span> Outgoing</div>
+                                    </div>
+                                </div>
+                                <div class="card">
+                                    <div class="card-header"><span class="card-title">TOP SERVERS BY WORKLOAD</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                                    <div style="height: 150px; width: 100%;">
+                                        <canvas id="chart-srv-workload"></canvas>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="card" style="margin-bottom: 20px;">
+                                <div class="card-header"><span class="card-title">ACTIVE DEPLOYMENTS</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                                <div class="money-large text-trecho" style="color: var(--trecho-yellow);">12</div>
+                                <span class="text-secondary" style="font-size: 13px;">Environments</span>
+                                <div style="display: flex; justify-content: space-between; margin-top: 15px; font-size: 14px; font-weight: 600;">
+                                    <div><span style="color: var(--trecho-yellow);">8</span> Prod</div>
+                                    <div><span style="color: var(--trecho-yellow);">4</span> Staging</div>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; margin-top: 10px; font-size: 14px; font-weight: 600;">
+                                    <div><span style="color: var(--trecho-yellow);">4</span> Staging</div>
+                                </div>
+                            </div>
+                            <div class="card" style="margin-bottom: 20px;">
+                                <div class="card-header"><span class="card-title">SERVER CONFIGURATION PARAMETERS</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                                <div style="display: flex; gap: 15px; margin-bottom: 15px;">
+                                    <i class="fas fa-cog text-trecho" style="font-size: 30px; color: var(--trecho-yellow);"></i>
+                                    <p class="text-secondary" style="font-size: 13px;">Adjust load balancers or set resource alerts.</p>
+                                </div>
+                                <button class="btn-primary" style="width: 100%;">CONFIGURE ALERTS</button>
+                            </div>
+                            <div class="card">
+                                <div class="card-header"><span class="card-title">AUTOMATED MAINTENANCE</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                                <div style="display: flex; gap: 15px; margin-bottom: 15px;">
+                                    <i class="fas fa-cloud text-trecho" style="font-size: 30px; color: var(--trecho-yellow);"></i>
+                                    <p class="text-secondary" style="font-size: 13px;">Schedule backups and adjust auto-scaling.</p>
+                                </div>
+                                <div class="form-group">
+                                    <label>Schedule weekly backup</label>
+                                    <div style="display: flex; gap: 10px;">
+                                        <button class="btn-outline" style="width: 40px; margin: 0;">-</button>
+                                        <input type="text" class="form-control" value="Weekly" style="text-align: center; margin: 0;">
+                                        <button class="btn-outline" style="width: 40px; margin: 0;">+</button>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label>Set scaling rules</label>
+                                    <div style="display: flex; gap: 10px;">
+                                        <button class="btn-outline" style="width: 40px; margin: 0;">-</button>
+                                        <input type="text" class="form-control" value="1" style="text-align: center; margin: 0; width: 50px;">
+                                        <button class="btn-outline" style="width: 40px; margin: 0;">+</button>
+                                        <button class="btn-primary" style="width: 100%; margin: 0;">STINKS <i class="fas fa-plus"></i></button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="tab-srv-deploy" class="tab-content">
+                    <div class="card glow-card">
+                        <div class="card-header"><span class="card-title">MANUAL DATABASE DEPLOYMENTS (TMDB)</span><i class="fas fa-database" style="color: var(--trecho-yellow);"></i></div>
+                        <p class="text-secondary" style="margin-bottom: 20px;">Inyecta contenido directamente al cluster MongoDB.</p>
+                        
+                        <div style="display: flex; gap: 15px;">
+                            <input type="text" id="tmdb-search-input" class="form-control" placeholder="Buscar título en TMDB..." style="margin-bottom: 0;">
+                            <button class="btn-primary" id="btn-search-tmdb" style="white-space: nowrap;">SEARCH</button>
+                        </div>
+                        
+                        <div class="posters-grid" id="tmdb-results" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 15px; margin-top: 20px;"></div>
+
+                        <div id="tmdb-inject-area" class="hidden" style="margin-top: 30px; border-top: 1px solid var(--border-color); padding-top: 20px;">
+                            <h3 id="tmdb-selected-title" style="color: var(--trecho-yellow); margin-bottom: 15px;">Selección</h3>
+                            <div class="form-group">
+                                <label>Direct Media Link (.mp4 only)</label>
+                                <input type="url" id="tmdb-url" class="form-control" placeholder="https://...">
+                            </div>
+                            <div style="display: flex; justify-content: flex-end; gap: 15px;">
+                                <button class="btn-outline" style="width: auto; margin: 0;" id="btn-cancel-tmdb">CANCEL</button>
+                                <button class="btn-primary" id="btn-confirm-tmdb">DEPLOY TO PROD</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="tab-usr-activity" class="tab-content">
+                    <div class="grid-four">
+                        <div class="card glow-card">
+                            <div class="card-header"><span class="card-title">TOTAL ACTIVE USERS (Last 30 Days)</span></div>
+                            <div class="money-huge" style="font-size: 36px;">253,410</div>
+                            <div class="trend-up" style="font-size: 14px;">Trend <i class="fas fa-arrow-up" style="transform: rotate(45deg);"></i></div>
+                        </div>
+                        <div class="card">
+                            <div class="card-header"><span class="card-title">USER REGISTRATION TREND</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                            <div style="height: 100px; width: 100%;"><canvas id="chart-usr-reg"></canvas></div>
+                        </div>
+                        <div class="card">
+                            <div class="card-header"><span class="card-title">NEW vs. RETURNING USERS</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                            <div style="height: 100px; width: 100%;"><canvas id="chart-usr-newret"></canvas></div>
+                        </div>
+                        <div class="card">
+                            <div class="card-header"><span class="card-title">USER CONVERSION RATE</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                            <div class="money-huge" style="font-size: 36px;">60%</div>
+                            <span class="text-secondary" style="font-size: 12px;">Free to Premium</span>
+                            <div style="width: 100%; height: 10px; background: var(--border-color); border-radius: 5px; margin-top: 10px; overflow: hidden;">
+                                <div style="width: 60%; height: 100%; background: var(--green-positive);"></div>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; font-size: 11px; margin-top: 5px;">
+                                <span>100%</span><span>11.3%</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="grid-two-one">
+                        <div>
+                            <div class="card" style="margin-bottom: 20px;">
+                                <div class="card-header"><span class="card-title">USER ENGAGEMENT TREND (LAST 12 MONTHS)</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                                <div style="display: flex; justify-content: center; gap: 20px; font-size: 12px; margin-bottom: 10px;">
+                                    <div><span style="color: var(--trecho-yellow);">●</span> Average Session Duration (ms)</div>
+                                    <div><span style="color: var(--green-positive);">●</span> Pages Per Session (1/12)</div>
+                                </div>
+                                <div style="height: 250px; width: 100%;">
+                                    <canvas id="chart-usr-engagement"></canvas>
+                                </div>
+                            </div>
+                            <div class="grid-three">
+                                <div class="card">
+                                    <div class="card-header"><span class="card-title">USER GEOGRAPHIC DISTRIBUTION</span></div>
+                                    <div class="img-placeholder" style="height: 150px; border: none;">
+                                        <i class="fas fa-globe-americas" style="font-size: 100px; color: var(--border-color);"></i>
+                                    </div>
+                                </div>
+                                <div class="card">
+                                    <div class="card-header"><span class="card-title">USER PLATFORM BREAKDOWN</span></div>
+                                    <span class="text-secondary" style="font-size: 11px;">(Web, iOS, Android)</span>
+                                    <div style="display: flex; align-items: center; gap: 10px; height: 120px; margin-top: 10px;">
+                                        <div style="width: 100px; height: 100px;"><canvas id="chart-usr-platform"></canvas></div>
+                                        <div style="font-size: 12px; line-height: 2;">
+                                            <div><span style="color: var(--trecho-yellow);">●</span> Web</div>
+                                            <div><span style="color: var(--red-negative);">●</span> Web, iOS</div>
+                                            <div><span style="color: #6b7280;">●</span> Android</div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="card">
+                                    <div class="card-header"><span class="card-title">TOP USER GEOS BY GROWTH</span></div>
+                                    <div style="height: 150px; width: 100%;"><canvas id="chart-usr-geos"></canvas></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="card" style="margin-bottom: 20px;">
+                                <div class="card-header"><span class="card-title">USER NOTIFICATION PARAMETERS</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                                <div style="display: flex; gap: 15px; margin-bottom: 20px;">
+                                    <i class="far fa-bell text-trecho" style="font-size: 30px; color: var(--trecho-yellow);"></i>
+                                    <p class="text-secondary" style="font-size: 13px;">Configure push and email notification settings.</p>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border-color);">
+                                    <span style="font-size: 13px;">Push notification</span>
+                                    <div style="width: 40px; height: 20px; background: var(--trecho-yellow); border-radius: 10px; position: relative;">
+                                        <div style="width: 16px; height: 16px; background: white; border-radius: 50%; position: absolute; top: 2px; right: 2px;"></div>
+                                    </div>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border-color); margin-bottom: 15px;">
+                                    <span style="font-size: 13px; color: var(--text-secondary);">Email notification</span>
+                                    <div style="width: 40px; height: 20px; background: var(--border-color); border-radius: 10px; position: relative;">
+                                        <div style="width: 16px; height: 16px; background: var(--text-secondary); border-radius: 50%; position: absolute; top: 2px; left: 2px;"></div>
+                                    </div>
+                                </div>
+                                <div style="display: flex; gap: 10px;">
+                                    <button class="btn-outline" style="width: 40px; margin: 0;">-</button>
+                                    <input type="text" class="form-control" value="All" style="text-align: center; margin: 0;">
+                                    <button class="btn-outline" style="width: 40px; margin: 0;">+</button>
+                                </div>
+                            </div>
+                            <div class="card">
+                                <div class="card-header"><span class="card-title">USER SEGMENTATION TOOL</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                                <div class="form-group">
+                                    <label>Set segmentation rules</label>
+                                    <div style="display: flex; gap: 10px;">
+                                        <button class="btn-outline" style="width: 40px; margin: 0;">-</button>
+                                        <input type="text" class="form-control" value="Weekly" style="text-align: center; margin: 0;">
+                                        <button class="btn-outline" style="width: 40px; margin: 0;">+</button>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label>Set scaling rules</label>
+                                    <div style="display: flex; gap: 10px;">
+                                        <button class="btn-outline" style="width: 40px; margin: 0;">-</button>
+                                        <input type="text" class="form-control" value="1" style="text-align: center; margin: 0; width: 50px;">
+                                        <button class="btn-outline" style="width: 40px; margin: 0;">+</button>
+                                        <button class="btn-primary" style="width: 100%; margin: 0;">APPLY <i class="fas fa-plus"></i></button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="tab-team-personnel" class="tab-content">
+                    <div class="grid-two-one">
+                        <div class="grid-half">
+                            <div class="card glow-card" style="grid-column: span 2;">
+                                <div class="card-header"><span class="card-title">TEAM COMPOSITION (TOTAL HEADCOUNT)</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                                <div style="display: flex; align-items: center; gap: 20px;">
+                                    <div class="money-huge" style="font-size: 60px;">182</div>
+                                    <div style="flex-grow: 1; height: 40px; display: flex; border-radius: 4px; overflow: hidden;">
+                                        <div style="width: 30%; background: var(--green-positive);"></div>
+                                        <div style="width: 25%; background: #4ade80;"></div>
+                                        <div style="width: 20%; background: #fef08a;"></div>
+                                        <div style="width: 25%; background: var(--text-secondary);"></div>
+                                    </div>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; font-size: 13px; margin-top: 15px;">
+                                    <span style="color: var(--text-secondary);">Engineering: <strong style="color: var(--trecho-yellow);">52</strong></span>
+                                    <span style="color: var(--text-secondary);">Sales: <strong style="color: var(--trecho-yellow);">45</strong></span>
+                                    <span style="color: var(--text-secondary);">Product: <strong style="color: var(--trecho-yellow);">30</strong></span>
+                                    <span style="color: var(--text-secondary);">Admin: <strong style="color: var(--trecho-yellow);">15</strong></span>
+                                    <span style="color: var(--text-secondary);">Other: <strong style="color: var(--trecho-yellow);">40</strong></span>
+                                </div>
+                            </div>
+                            <div class="card">
+                                <div class="card-header"><span class="card-title">NEW HIRES (LAST 30 DAYS)</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                                <div class="money-huge" style="font-size: 60px;">12</div>
+                                <div style="display: flex; justify-content: space-between; font-size: 13px; margin-top: 15px;">
+                                    <span style="color: var(--text-secondary);">Engineering: <strong style="color: var(--trecho-yellow);">5</strong></span>
+                                    <span style="color: var(--text-secondary);">Sales: <strong style="color: var(--trecho-yellow);">4</strong></span>
+                                    <span style="color: var(--text-secondary);">Other: <strong style="color: var(--trecho-yellow);">3</strong></span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card">
+                            <div class="card-header"><span class="card-title">TEAM STATUS OVERVIEW</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                            <div style="display: flex; justify-content: space-around; text-align: center; margin-top: 20px;">
+                                <div>
+                                    <i class="fas fa-user-check" style="font-size: 30px; color: var(--green-positive); margin-bottom: 10px;"></i>
+                                    <div class="card-title" style="margin-bottom: 5px;">Active</div>
+                                    <div style="font-size: 24px; font-weight: 700;">174</div>
+                                </div>
+                                <div>
+                                    <i class="fas fa-suitcase-rolling" style="font-size: 30px; color: var(--trecho-yellow); margin-bottom: 10px;"></i>
+                                    <div class="card-title" style="margin-bottom: 5px;">On Leave</div>
+                                    <div style="font-size: 24px; font-weight: 700;">8</div>
+                                </div>
+                                <div>
+                                    <i class="fas fa-sign-out-alt" style="font-size: 30px; color: var(--red-negative); margin-bottom: 10px;"></i>
+                                    <div class="card-title" style="margin-bottom: 5px;">Offboarding</div>
+                                    <div style="font-size: 24px; font-weight: 700;">2</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="grid-two-one">
+                        <div>
+                            <div class="card" style="margin-bottom: 20px;">
+                                <div class="card-header"><span class="card-title">PERSONAL MILESTONES & EVENTS (NEXT 30 DAYS)</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                                <div class="timeline">
+                                    <div class="timeline-item">
+                                        <div class="timeline-icon" style="border-color: var(--red-negative); color: var(--red-negative); box-shadow: none;"><i class="fas fa-birthday-cake"></i></div>
+                                        <div class="timeline-date">Jan 12:</div>
+                                        <div class="timeline-text">Birthday<br>(A. Chen)</div>
+                                    </div>
+                                    <div class="timeline-item">
+                                        <div class="timeline-icon" style="border-color: var(--green-positive); color: var(--green-positive); box-shadow: none;"><i class="fas fa-handshake"></i></div>
+                                        <div class="timeline-date">Jan 15:</div>
+                                        <div class="timeline-text">New Hire Onboarding<br>(J. Doe)</div>
+                                    </div>
+                                    <div class="timeline-item">
+                                        <div class="timeline-icon"><i class="fas fa-suitcase"></i></div>
+                                        <div class="timeline-date" style="font-size: 14px;">Jan 18-22:</div>
+                                        <div class="timeline-text" style="color: white; font-weight: 600;">Vacation<br>(M. Garcia)</div>
+                                    </div>
+                                    <div class="timeline-item">
+                                        <div class="timeline-icon" style="border-color: var(--green-positive); color: var(--green-positive); box-shadow: none;"><i class="fas fa-arrow-up"></i></div>
+                                        <div class="timeline-date">Jan 25:</div>
+                                        <div class="timeline-text">Role Promotion Review<br>(D. Lee)</div>
+                                    </div>
+                                    <div class="timeline-item">
+                                        <div class="timeline-icon"><i class="fas fa-glass-cheers"></i></div>
+                                        <div class="timeline-date">Jan 28:</div>
+                                        <div class="timeline-text">Anniversary<br>(Y. Kim)</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="grid-three">
+                                <div class="card">
+                                    <div class="card-header"><span class="card-title">TEAM TENURE DISTRIBUTION</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                                    <span class="text-secondary" style="font-size: 11px;">(Years of Service)</span>
+                                    <div style="margin-top: 15px;">
+                                        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+                                            <span style="width: 40px; font-size: 12px; color: var(--text-secondary);">&lt;1 yr</span>
+                                            <div style="flex-grow: 1; height: 15px; display: flex;"><div style="width: 25%; background: var(--trecho-yellow);"></div><div style="width: 75%; background: var(--border-color);"></div></div>
+                                            <span style="width: 30px; text-align: right; font-size: 12px;">25%</span>
+                                        </div>
+                                        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+                                            <span style="width: 40px; font-size: 12px; color: var(--text-secondary);">1-2 yrs</span>
+                                            <div style="flex-grow: 1; height: 15px; display: flex;"><div style="width: 25%; background: var(--trecho-yellow);"></div><div style="width: 75%; background: var(--border-color);"></div></div>
+                                            <span style="width: 30px; text-align: right; font-size: 12px;">25%</span>
+                                        </div>
+                                        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+                                            <span style="width: 40px; font-size: 12px; color: var(--text-secondary);">3-5 yrs</span>
+                                            <div style="flex-grow: 1; height: 15px; display: flex;"><div style="width: 33%; background: var(--green-positive);"></div><div style="width: 67%; background: var(--border-color);"></div></div>
+                                            <span style="width: 30px; text-align: right; font-size: 12px;">33%</span>
+                                        </div>
+                                        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+                                            <span style="width: 40px; font-size: 12px; color: var(--text-secondary);">5+ yrs</span>
+                                            <div style="flex-grow: 1; height: 15px; display: flex;"><div style="width: 40%; background: var(--green-positive);"></div><div style="width: 60%; background: var(--border-color);"></div></div>
+                                            <span style="width: 30px; text-align: right; font-size: 12px;">40%</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="card">
+                                    <div class="card-header"><span class="card-title">ROLES BY SPECIALIZATION & SKILLSET</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                                    <div style="height: 150px; width: 100%;"><canvas id="chart-team-roles"></canvas></div>
+                                </div>
+                                <div class="card">
+                                    <div class="card-header"><span class="card-title">RECENT KEY ACHIEVEMENTS</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                                    <span class="text-secondary" style="font-size: 11px;">(with Team Photos)</span>
+                                    <div class="user-row" style="padding: 10px 0;">
+                                        <img src="https://i.pravatar.cc/150?u=3" alt="user">
+                                        <div class="user-row-info"><h4>M. Silva - Contract Signed</h4><span style="font-size: 10px;">Qualitative: Intervislow for team...</span></div>
+                                    </div>
+                                    <div class="user-row" style="padding: 10px 0;">
+                                        <img src="https://i.pravatar.cc/150?u=4" alt="user">
+                                        <div class="user-row-info"><h4>A. Patel - Product Launch</h4><span style="font-size: 10px;">Qualitative: Cosnltiants at tiranzd...</span></div>
+                                    </div>
+                                    <div class="user-row" style="padding: 10px 0; border: none;">
+                                        <img src="https://i.pravatar.cc/150?u=5" alt="user">
+                                        <div class="user-row-info"><h4>K. Lee - Patent Pending</h4><span style="font-size: 10px;">Qualitative: Team Ward as not in...</span></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="card" style="margin-bottom: 20px;">
+                                <div class="card-header"><span class="card-title">TEAM MANAGEMENT QUICK ACTIONS</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                                <button class="btn-outline">Create New Role</button>
+                                <button class="btn-outline">Initiate Hiring Request</button>
+                                <button class="btn-outline">Post Internal Job</button>
+                                <p class="text-secondary" style="font-size: 12px; margin-top: 10px;">Post Internal Job to help request team management io our quick actions.</p>
+                            </div>
+                            <div class="card">
+                                <div class="card-header"><span class="card-title">PENDING REQUESTS STATUS</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                                <div style="display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border-color);">
+                                    <span style="font-size: 13px;"><i class="fas fa-suitcase text-trecho" style="width: 20px; color: var(--trecho-yellow);"></i> Vacation Requests</span>
+                                    <span style="background: rgba(234, 179, 8, 0.2); color: var(--trecho-yellow); padding: 2px 8px; border-radius: 10px; font-size: 12px;">4</span>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border-color);">
+                                    <span style="font-size: 13px;"><i class="fas fa-sync-alt text-trecho" style="width: 20px; color: var(--trecho-yellow);"></i> Role Change Requests</span>
+                                    <span style="background: rgba(234, 179, 8, 0.2); color: var(--trecho-yellow); padding: 2px 8px; border-radius: 10px; font-size: 12px;">2</span>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border-color); margin-bottom: 15px;">
+                                    <span style="font-size: 13px;"><i class="fas fa-laptop text-trecho" style="width: 20px; color: var(--trecho-yellow);"></i> Equipment Requests</span>
+                                    <span style="background: rgba(234, 179, 8, 0.2); color: var(--trecho-yellow); padding: 2px 8px; border-radius: 10px; font-size: 12px;">1</span>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; align-items: center;">
+                                    <p class="text-secondary" style="font-size: 11px; max-width: 150px;">Pending requests to statuss and changet requests.</p>
+                                    <button class="btn-primary" style="padding: 5px 15px; font-size: 12px;">SUBMIT</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="tab-team-roles" class="tab-content">
+                    <div class="grid-four">
+                        <div class="card">
+                            <div class="card-header"><span class="card-title">TOTAL ROLES COUNT</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <i class="fas fa-user-tag" style="font-size: 40px; color: var(--trecho-yellow);"></i>
+                                <div class="money-huge" style="font-size: 40px;">34</div>
+                            </div>
+                            <div style="display: flex; flex-direction: column; gap: 5px; font-size: 13px; margin-top: 10px;">
+                                <div><span style="color: var(--green-positive);">●</span> Global: <span style="float: right;">5</span></div>
+                                <div><span style="color: var(--text-secondary);">●</span> Dept-Specific: <span style="float: right;">29</span></div>
+                            </div>
+                        </div>
+                        <div class="card">
+                            <div class="card-header"><span class="card-title">ACTIVE ROLE ALLOCATIONS</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                            <div class="money-huge" style="font-size: 40px;">165 <i class="fas fa-arrow-up" style="font-size: 20px; color: var(--green-positive);"></i></div>
+                            <span class="text-secondary" style="font-size: 12px;">Number of users assigned to roles</span>
+                        </div>
+                        <div class="card">
+                            <div class="card-header"><span class="card-title">UNASSIGNED ROLES</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <i class="fas fa-user-times" style="font-size: 40px; color: var(--trecho-yellow);"></i>
+                                <div class="money-huge" style="font-size: 40px;">5</div>
+                            </div>
+                            <div style="display: flex; flex-direction: column; gap: 5px; font-size: 13px; margin-top: 10px;">
+                                <div><span style="color: var(--green-positive);">●</span> New roles: <span style="float: right;">2</span></div>
+                                <div><span style="color: var(--red-negative);">●</span> Legacy roles: <span style="float: right;">3</span></div>
+                            </div>
+                        </div>
+                        <div class="card">
+                            <div class="card-header"><span class="card-title">TOTAL PERMISSIES</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                            <div class="money-huge" style="font-size: 40px;">5</div>
+                        </div>
+                    </div>
+
+                    <div class="grid-two-one">
+                        <div>
+                            <div class="card" style="margin-bottom: 20px;">
+                                <div class="card-header"><span class="card-title">ROLES OVERVIEW TABLE</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                                <table class="trecho-table">
+                                    <tr><th>ROLE TITLE</th><th>DESCRIPTION</th><th>MEMBERS</th><th>PRIMARY DEPARTMENT</th><th>KEY PERMISSIONS SUMMARY</th></tr>
+                                    <tr><td>CEO</td><td>Acceso total a la plataforma</td><td class="text-trecho" style="color: var(--trecho-yellow);">34</td><td>Engineering</td><td><i class="fas fa-user-shield text-trecho" style="color: var(--trecho-yellow);"></i> <i class="fas fa-check-circle text-green" style="color: var(--green-positive);"></i></td></tr>
+                                    <tr><td>CTO</td><td>Gestión técnica y de arquitectura</td><td class="text-trecho" style="color: var(--trecho-yellow);">35</td><td>Engineering</td><td><i class="fas fa-user-shield text-trecho" style="color: var(--trecho-yellow);"></i> <i class="fas fa-check-circle text-green" style="color: var(--green-positive);"></i></td></tr>
+                                    <tr><td>Senior Software Engineer</td><td>Desarrollo de sistemas y código</td><td class="text-trecho" style="color: var(--trecho-yellow);">18</td><td>Admin</td><td><i class="fas fa-user-shield text-trecho" style="color: var(--trecho-yellow);"></i> <i class="fas fa-check-circle text-green" style="color: var(--green-positive);"></i></td></tr>
+                                    <tr><td>Sales Lead</td><td>Estrategia de ventas e ingresos</td><td class="text-trecho" style="color: var(--trecho-yellow);">20</td><td>Sales</td><td><i class="fas fa-user-shield text-trecho" style="color: var(--trecho-yellow);"></i> <i class="fas fa-check-circle text-green" style="color: var(--green-positive);"></i></td></tr>
+                                    <tr><td>HR Manager</td><td>Gestión del equipo y nómina</td><td class="text-trecho" style="color: var(--trecho-yellow);">18</td><td>HR</td><td><i class="fas fa-user-shield text-trecho" style="color: var(--trecho-yellow);"></i> <i class="fas fa-check-circle text-green" style="color: var(--green-positive);"></i></td></tr>
+                                </table>
+                            </div>
+                            <div class="grid-three">
+                                <div class="card">
+                                    <div class="card-header"><span class="card-title">ROLE DISTRIBUTION</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                                    <span class="text-secondary" style="font-size: 11px;">(By Department)</span>
+                                    <div style="margin-top: 15px;">
+                                        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+                                            <span style="width: 70px; font-size: 12px; color: var(--text-secondary);">Engineering</span>
+                                            <div style="flex-grow: 1; height: 15px; display: flex;"><div style="width: 57%; background: var(--trecho-yellow);"></div><div style="width: 43%; background: var(--green-positive);"></div></div>
+                                            <span style="width: 30px; text-align: right; font-size: 12px;">57%</span>
+                                        </div>
+                                        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+                                            <span style="width: 70px; font-size: 12px; color: var(--text-secondary);">Sales</span>
+                                            <div style="flex-grow: 1; height: 15px; display: flex;"><div style="width: 35%; background: var(--trecho-yellow);"></div><div style="width: 65%; background: var(--green-positive);"></div></div>
+                                            <span style="width: 30px; text-align: right; font-size: 12px;">35%</span>
+                                        </div>
+                                        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+                                            <span style="width: 70px; font-size: 12px; color: var(--text-secondary);">HR</span>
+                                            <div style="flex-grow: 1; height: 15px; display: flex;"><div style="width: 25%; background: var(--green-positive);"></div><div style="width: 75%; background: var(--border-color);"></div></div>
+                                            <span style="width: 30px; text-align: right; font-size: 12px;">25%</span>
+                                        </div>
+                                        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+                                            <span style="width: 70px; font-size: 12px; color: var(--text-secondary);">Ops</span>
+                                            <div style="flex-grow: 1; height: 15px; display: flex;"><div style="width: 25%; background: var(--green-positive);"></div><div style="width: 75%; background: var(--border-color);"></div></div>
+                                            <span style="width: 30px; text-align: right; font-size: 12px;">25%</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="card">
+                                    <div class="card-header"><span class="card-title">PERMISSIONS COMPLEXITY ANALYSIS</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                                    <div style="height: 150px; width: 100%;"><canvas id="chart-roles-radar"></canvas></div>
+                                </div>
+                                <div class="card">
+                                    <div class="card-header"><span class="card-title">RECENT ROLE AUDITS</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                                    <span class="text-secondary" style="font-size: 11px;">(Recent Permission changes)</span>
+                                    <div style="border-left: 2px solid var(--green-positive); padding-left: 10px; margin-top: 15px; margin-bottom: 15px;">
+                                        <div style="font-weight: 600; font-size: 13px;">Role: Senior Dev</div>
+                                        <div style="font-size: 12px; color: var(--text-secondary);">Permissions changed</div>
+                                        <div style="font-size: 11px; color: var(--text-secondary); margin-top: 5px;">Modified by: CEO | Date: Jan 22</div>
+                                    </div>
+                                    <div style="border-left: 2px solid var(--red-negative); padding-left: 10px;">
+                                        <div style="font-weight: 600; font-size: 13px;">New Role: Product Lead</div>
+                                        <div style="font-size: 11px; color: var(--text-secondary); margin-top: 5px;">Created by: CEO | Date: Jan 20</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="card" style="margin-bottom: 20px;">
+                                <div class="card-header"><span class="card-title">ROLES & PERMISSIONS QUICK ACTIONS</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                                <button class="btn-outline">Create New Role</button>
+                                <button class="btn-outline">Audit Permissions Schema</button>
+                                <button class="btn-outline">Define Permission Groups</button>
+                                <p class="text-secondary" style="font-size: 12px; margin-top: 10px;">Post Internal Job to help request team management io our quick actions.</p>
+                            </div>
+                            <div class="card">
+                                <div class="card-header"><span class="card-title">PERMISSIONS & ROLE CHANGE REQUESTS</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                                <div style="display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border-color);">
+                                    <i class="far fa-user text-trecho" style="color: var(--trecho-yellow);"></i> <span style="font-size: 13px;">Role assignment</span>
+                                </div>
+                                <div style="display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border-color);">
+                                    <i class="fas fa-unlock text-trecho" style="color: var(--trecho-yellow);"></i> <span style="font-size: 13px;">Permission override</span>
+                                </div>
+                                <div style="display: flex; align-items: center; gap: 10px; padding: 10px 0;">
+                                    <i class="far fa-file-alt text-trecho" style="color: var(--trecho-yellow);"></i> <span style="font-size: 13px;">New role definition</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="tab-reports" class="tab-content">
+                    <div class="grid-four">
+                        <div class="card glow-card">
+                            <div class="card-header"><span class="card-title">TOTAL DE REPORTES DISPONIBLES</span></div>
+                            <div class="money-huge" style="font-size: 60px;">55</div>
+                        </div>
+                        <div class="card">
+                            <div class="card-header"><span class="card-title">REPORTES GENERADOS (ESTE MES)</span></div>
+                            <div class="money-huge" style="font-size: 60px;">210 <i class="fas fa-arrow-up" style="font-size: 30px; color: var(--green-positive);"></i></div>
+                        </div>
+                        <div class="card">
+                            <div class="card-header"><span class="card-title">REPORTES PROGRAMADOS</span></div>
+                            <div class="money-huge" style="font-size: 60px;">15</div>
+                        </div>
+                        <div class="card">
+                            <div class="card-header"><span class="card-title">FUENTES DE DATOS CONECTADAS</span></div>
+                            <div class="money-huge" style="font-size: 60px;">10</div>
+                        </div>
+                    </div>
+
+                    <div class="grid-two-one">
+                        <div>
+                            <div class="card" style="margin-bottom: 20px;">
+                                <div class="card-header"><span class="card-title">DIRECTORIO DE REPORTES DISPONIBLES</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                                <table class="trecho-table">
+                                    <tr><th>TÍTULO DEL REPORTE</th><th>TIPO</th><th>FUENTE DE DATOS</th><th>ÚLTIMA GENERACIÓN</th><th>COMPARTIDO CON</th></tr>
+                                    <tr><td>Rendimiento Trimestral de Ventas</td><td>Análisis</td><td>Finanzas</td><td class="text-trecho" style="color: var(--trecho-yellow);">15 Oct 2024</td><td class="text-trecho" style="color: var(--trecho-yellow);">Equipo Ejecutivo</td></tr>
+                                    <tr><td>Rendimiento Trimestral de</td><td>Análisis</td><td>Finanzas</td><td class="text-trecho" style="color: var(--trecho-yellow);">15 Oct 2024</td><td class="text-trecho" style="color: var(--trecho-yellow);">Equipo Ejecutivo</td></tr>
+                                    <tr><td>Análisis de Tiempo de Actividad</td><td>Tiempo Análisics</td><td>Finanzas</td><td class="text-trecho" style="color: var(--trecho-yellow);">15 Oct 2024</td><td class="text-trecho" style="color: var(--trecho-yellow);">Equipo Ejecutivo</td></tr>
+                                    <tr><td>Tendencias de Compromiso del</td><td>Engulations</td><td>Análisis</td><td class="text-trecho" style="color: var(--trecho-yellow);">15 Oct 2024</td><td class="text-trecho" style="color: var(--trecho-yellow);">Equipo Ejecutivo</td></tr>
+                                    <tr><td>Tendencias de Compromiso del ...</td><td>Web</td><td>Producto Análisics</td><td class="text-trecho" style="color: var(--trecho-yellow);">15 Oct 2024</td><td class="text-trecho" style="color: var(--trecho-yellow);">Equipo Ejecutivo</td></tr>
+                                </table>
+                            </div>
+                            <div class="grid-three">
+                                <div class="card">
+                                    <div class="card-header"><span class="card-title">REPORTES POR CATEGORÍA</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                                    <span class="text-secondary" style="font-size: 11px;">(Por Categoría)</span>
+                                    <div style="display: flex; align-items: center; gap: 20px; height: 150px; margin-top: 10px;">
+                                        <div style="width: 120px; height: 120px;"><canvas id="chart-reports-donut"></canvas></div>
+                                        <div style="font-size: 12px; line-height: 2;">
+                                            <div><span style="color: var(--green-positive);">●</span> Financial</div>
+                                            <div><span style="color: var(--trecho-yellow);">●</span> Operational</div>
+                                            <div><span style="color: #ef4444;">●</span> HR</div>
+                                            <div><span style="color: #6b7280;">●</span> Product</div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="card">
+                                    <div class="card-header"><span class="card-title">USO DE REPORTES EN EL TIEMPO</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                                    <div style="height: 150px; width: 100%;">
+                                        <canvas id="chart-reports-usage"></canvas>
+                                    </div>
+                                </div>
+                                <div class="card">
+                                    <div class="card-header"><span class="card-title">REGISTROS DE ACCESO A REPORTES</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                                    <div style="font-size: 12px; line-height: 2.5;">
+                                        <div><span class="text-trecho" style="color: var(--trecho-yellow);">CEO</span> vio "Detalle de Ingresos" <span class="text-secondary">| 2 mins ago</span></div>
+                                        <div><span class="text-trecho" style="color: var(--trecho-yellow);">CEO</span> vio "Detalle de Ingresos" <span class="text-secondary">| 2 mins ago</span></div>
+                                        <div><span class="text-trecho" style="color: var(--trecho-yellow);">CEO</span> vio "Detalle de Ingresos" <span class="text-secondary">| 2 mins ago</span></div>
+                                        <div><span class="text-trecho" style="color: var(--trecho-yellow);">CEO</span> vio "Detalle de Ingresos" <span class="text-secondary">| 2 mins ago</span></div>
+                                        <div><span class="text-trecho" style="color: var(--trecho-yellow);">CEO</span> vio "Detalle de Ingresos" <span class="text-secondary">| 2 mins ago</span></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="card" style="margin-bottom: 20px;">
+                                <div class="card-header"><span class="card-title">ACCIONES DE GENERACIÓN DE REPORTES</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                                <button class="btn-outline">Crear Nuevo Reporte Personalizado</button>
+                                <button class="btn-outline">Exportar Reporte (PDF/Excel)</button>
+                                <button class="btn-outline">Programar Envío de Reporte</button>
+                                <p class="text-secondary" style="font-size: 12px; margin-top: 10px;">Post Internal Job to help request team management io our quick actions.</p>
+                            </div>
+                            <div class="card">
+                                <div class="card-header"><span class="card-title">REPORTES RECIENTEMENTE GENERADOS</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                                <div style="border-bottom: 1px solid var(--border-color); padding: 10px 0;">
+                                    <div style="font-size: 13px;">Rendimiento de Ventas del Trimestre</div>
+                                    <div style="font-size: 11px; color: var(--text-secondary); margin-top: 5px;">| PDF | Generado: 2h ago</div>
+                                </div>
+                                <div style="border-bottom: 1px solid var(--border-color); padding: 10px 0;">
+                                    <div style="font-size: 13px;">Análisis de Tiempo de Actividad del Servidor</div>
+                                    <div style="font-size: 11px; color: var(--text-secondary); margin-top: 5px;">| Excel | Generado: 4h ago</div>
+                                </div>
+                                <div style="border-bottom: 1px solid var(--border-color); padding: 10px 0;">
+                                    <div style="font-size: 13px;">Tendencias de Compromiso del Usuario</div>
+                                    <div style="font-size: 11px; color: var(--text-secondary); margin-top: 5px;">| Web | Generado: 1d ago</div>
+                                </div>
+                                <div style="padding: 10px 0;">
+                                    <div style="font-size: 13px;">Tendencias de Compromiso del Usuario</div>
+                                    <div style="font-size: 11px; color: var(--text-secondary); margin-top: 5px;">| Web | Generado: 1d ago</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="tab-settings" class="tab-content">
+                    <div class="grid-three">
+                        <div>
+                            <div class="card" style="margin-bottom: 20px;">
+                                <div class="card-header"><span class="card-title">PERFIL Y CUENTA</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                                <div style="display: flex; gap: 20px; align-items: flex-start; margin-bottom: 20px;">
+                                    <img src="https://i.pravatar.cc/150?img=11" style="width: 80px; height: 80px; border-radius: 50%;">
+                                    <div style="flex-grow: 1;">
+                                        <div class="form-group" style="margin-bottom: 10px;">
+                                            <label style="font-size: 11px; margin-bottom: 5px;">Nombre de Usuario</label>
+                                            <input type="text" class="form-control" value="Administrador CEO" style="padding: 8px;">
+                                        </div>
+                                        <div class="form-group" style="margin-bottom: 10px;">
+                                            <label style="font-size: 11px; margin-bottom: 5px;">Correo Electrónico</label>
+                                            <input type="email" class="form-control" value="ceo@trecho.visionaries" style="padding: 8px;">
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label style="font-size: 11px; margin-bottom: 5px;">Teléfono</label>
+                                    <input type="text" class="form-control" value="(...) - ....." style="padding: 8px;">
+                                </div>
+                                <button class="btn-outline" style="width: 100%;">Actualizar Perfil</button>
+                            </div>
+                            <div class="card">
+                                <div class="card-header"><span class="card-title">PREFERENCIAS DEL SISTEMA</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                                <div class="form-group">
+                                    <label>Idioma</label>
+                                    <select class="form-control"><option>Español (ES)</option></select>
+                                </div>
+                                <div class="form-group">
+                                    <label>Zona Horaria</label>
+                                    <select class="form-control"><option>America/Guayaquil (UTC-5)</option></select>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border-color); padding-top: 15px;">
+                                    <span>Tema del Panel</span>
+                                    <div><i class="fas fa-sun text-trecho" style="color: var(--trecho-yellow);"></i> <i class="fas fa-toggle-on text-secondary" style="font-size: 20px; margin: 0 10px;"></i> <i class="fas fa-moon text-secondary"></i></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="card" style="margin-bottom: 20px;">
+                                <div class="card-header"><span class="card-title">SEGURIDAD Y ACCESO</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                                <button class="btn-outline" style="width: 100%; margin-bottom: 20px;">Cambiar Contraseña</button>
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                                    <div>
+                                        <div style="font-size: 13px; font-weight: 600;">Autenticación de Dos Factores</div>
+                                        <div style="font-size: 11px; color: var(--text-secondary);">Autenticación de Dos Factores</div>
+                                    </div>
+                                    <div style="background: rgba(34, 197, 94, 0.2); color: var(--green-positive); padding: 5px 15px; border-radius: 15px; font-weight: 700; border: 1px solid var(--green-positive);">ON</div>
+                                </div>
+                                <div style="margin-bottom: 15px;">
+                                    <div style="font-size: 13px; font-weight: 600;">Administración de Sesiones</div>
+                                </div>
+                                <button class="btn-outline" style="width: 100%;">Ver Sesiones Activas</button>
+                            </div>
+                            <div class="card">
+                                <div class="card-header"><span class="card-title">PLAN Y FACTURACIÓN</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                                <div style="margin-bottom: 15px;">
+                                    <div style="font-size: 12px; color: var(--text-secondary);">Plan Actual</div>
+                                    <div style="font-size: 14px; font-weight: 600;">Plan Corporativo Premium</div>
+                                </div>
+                                <div style="margin-bottom: 15px;">
+                                    <div style="font-size: 12px; color: var(--text-secondary);">Próximo Pago</div>
+                                    <div style="font-size: 14px; font-weight: 600;">1 Nov 2024</div>
+                                </div>
+                                <div style="margin-bottom: 20px;">
+                                    <div style="font-size: 12px; color: var(--text-secondary);">Método de Pago</div>
+                                    <div style="font-size: 14px; font-weight: 600;">Tarjeta (...4567)</div>
+                                </div>
+                                <button class="btn-outline" style="width: 100%;">Ver Historial de Facturas</button>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="card" style="margin-bottom: 20px;">
+                                <div class="card-header"><span class="card-title">GESTIÓN DE SESIONES Y EQUIPO</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                                <div style="border: 1px solid var(--green-positive); padding: 15px; border-radius: 8px; display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+                                    <i class="far fa-user text-green"></i> <span>Admin CEO <span style="color: var(--green-positive);">(Activo)</span></span>
+                                </div>
+                                <div style="border: 1px solid var(--border-color); padding: 15px; border-radius: 8px; display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+                                    <i class="far fa-user"></i> <span>CTO <span style="color: var(--green-positive);">(Conectado)</span></span>
+                                </div>
+                                <div style="border: 1px solid var(--border-color); padding: 15px; border-radius: 8px; display: flex; align-items: center; gap: 10px; margin-bottom: 20px;">
+                                    <i class="far fa-user"></i> <span>Lead Dev <span style="color: var(--green-positive);">(Conectado)</span></span>
+                                </div>
+                                <button class="btn-outline" style="width: 100%;">Cerrar todas las sesiones</button>
+                            </div>
+                            <div class="card">
+                                <div class="card-header"><span class="card-title">REGISTRO DE CAMBIOS DE CONFIGURACIÓN</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
+                                <div style="border-bottom: 1px solid var(--border-color); padding: 10px 0;">
+                                    <div style="font-size: 13px;">Plan de Facturación Actualizado</div>
+                                    <div style="font-size: 11px; color: var(--text-secondary);">Stripe | 1 Oct</div>
+                                </div>
+                                <div style="border-bottom: 1px solid var(--border-color); padding: 10px 0;">
+                                    <div style="font-size: 13px;">Contraseña Cambiada</div>
+                                    <div style="font-size: 11px; color: var(--text-secondary);">CEO | 30 Sep</div>
+                                </div>
+                                <div style="border-bottom: 1px solid var(--border-color); padding: 10px 0;">
+                                    <div style="font-size: 13px;">Nueva API Key Creada</div>
+                                    <div style="font-size: 11px; color: var(--text-secondary);">AWS | 29 Sep</div>
+                                </div>
+                                <div style="padding: 10px 0;">
+                                    <div style="font-size: 13px;">Idioma de Interfaz Cambiado</div>
+                                    <div style="font-size: 11px; color: var(--text-secondary);">Admin | 28 Sep</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="tab-empresa" class="tab-content">
+                    <div class="hero-company">
+                        <span class="badge-year">EST. 2023</span>
+                        <h1>TRECHOS CORPORATE</h1>
+                        <p>Fundada en Zaruma, El Oro, Ecuador por Dylan Narváez. Una empresa legalmente constituida enfocada en liderar la infraestructura de software, la automatización masiva de datos y el futuro del ecosistema de streaming global.</p>
+                    </div>
+
+                    <div class="history-grid">
+                        <div class="card">
+                            <div class="card-header"><span class="card-title">FUNDADORES E INVERSIONISTAS</span><i class="fas fa-users text-secondary"></i></div>
+                            <p class="text-secondary" style="font-size: 13px;">Directorio ejecutivo de la corporación Trechos.</p>
+                            <div class="img-placeholder">
+                                <img src="https://images.unsplash.com/photo-1556761175-5973dc0f32d7?auto=format&fit=crop&q=80" alt="Inversionistas">
+                            </div>
+                        </div>
+
+                        <div class="card">
+                            <div class="card-header"><span class="card-title">TRAYECTORIA (PODCAST / MEDIOS)</span><i class="fas fa-microphone text-secondary"></i></div>
+                            <p class="text-secondary" style="font-size: 13px;">Documentación y entrevistas del crecimiento de la empresa.</p>
+                            <div class="img-placeholder">
+                                <img src="https://images.unsplash.com/photo-1581368135153-a506cf13b1e1?auto=format&fit=crop&q=80" alt="Podcast">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="company-history-area">
+                        <h2 style="font-size: 24px; color: var(--trecho-yellow); margin-bottom: 15px;">¿Quieres agregar más historia corporativa?</h2>
+                        <p style="color: var(--text-secondary); max-width: 600px; margin: 0 auto;">Este es el contenedor principal de la empresa. Aquí podrás insertar enlaces a nuevas fotografías, videos institucionales o hitos a medida que Trechos Corporate siga expandiéndose internacionalmente.</p>
                     </div>
                 </div>
 
             </div>
         </main>
-    </div>
-
-    <!-- MODAL DE PAGO / LIQUIDACIÓN -->
-    <div class="modal" id="modal-payment">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3>Liquidar Ciclo Contable</h3>
-                <button class="btn-close" id="close-modal-payment"><i class="fas fa-times"></i></button>
-            </div>
-            <div class="modal-body text-center">
-                <i class="fas fa-file-invoice-dollar" style="font-size: 50px; color: var(--green-live); margin-bottom: 20px;"></i>
-                <h2 id="pay-target-name" style="margin-bottom: 10px; font-size: 24px;">Nombre del Trabajador</h2>
-                <p class="text-secondary" style="font-size: 14px; margin-bottom: 25px; line-height: 1.5;">Al confirmar, la base de datos guardará este recibo en <code>payout_history</code> y la cuenta del trabajador se reiniciará para un nuevo mes.</p>
-                <div style="background: var(--bg-main); padding: 25px; border-radius: 12px; border: 1px solid var(--border-color);">
-                    <span style="font-size: 12px; text-transform: uppercase; color: var(--text-secondary); font-weight: 700; letter-spacing: 1px;">Suma a Liquidar</span>
-                    <h1 style="color: var(--yellow-trechos); margin-top: 10px; font-size: 42px;" id="pay-target-amount">$0.00</h1>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button class="btn-outline" id="btn-cancel-pay">Cancelar</button>
-                <button class="btn-primary" id="btn-confirm-pay"><i class="fas fa-check"></i> Ejecutar Liquidación Segura</button>
-            </div>
-        </div>
     </div>
 
     <script src="ceo_panel.js"></script>
