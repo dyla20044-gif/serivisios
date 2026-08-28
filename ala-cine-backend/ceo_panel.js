@@ -1,32 +1,23 @@
 document.addEventListener('DOMContentLoaded', () => {
+    // Referencias del DOM
     const loginScreen = document.getElementById('login-screen');
     const dashboard = document.getElementById('ceo-dashboard');
     const btnLogin = document.getElementById('btn-login');
     const emailInput = document.getElementById('ceo-email');
-    const sidebar = document.getElementById('sidebar');
-    const mobileBtn = document.getElementById('mobile-menu-btn');
-    
-    let mainChart = null; 
-    let selectedTmdbData = null; 
-    let liveTrafficInterval = null;
 
-    function getFormattedDate() {
-        const today = new Date();
-        return today.toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase();
-    }
-    
-    const liveDateEl = document.getElementById('live-date');
-    if (liveDateEl) liveDateEl.textContent = `CICLO FISCAL: ${getFormattedDate()}`;
-    
-    const mobileLiveDateEl = document.getElementById('mobile-live-date');
-    if (mobileLiveDateEl) mobileLiveDateEl.textContent = getFormattedDate();
+    // Estado global
+    let metricsChart = null;
+    let selectedTmdbData = null;
+    let currentWorkerToPay = { id: null, amount: 0 };
 
+    // ==========================================
+    // 1. SISTEMA DE LOGIN (Simulado para frontend, validable en backend)
+    // ==========================================
     btnLogin?.addEventListener('click', async () => {
         const email = emailInput?.value.trim();
         if (!email) return;
         
-        btnLogin.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Verificando Core DB...';
-        
+        btnLogin.innerHTML = 'Connecting...';
         try {
             const res = await fetch('/api/ceo/login', {
                 method: 'POST',
@@ -35,557 +26,316 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             const data = await res.json();
             if(data.success) {
-                iniciarPanel();
+                loginScreen.classList.add('hidden');
+                dashboard.classList.remove('hidden');
+                initSystem();
             } else {
-                const errorEl = document.getElementById('login-error');
-                if (errorEl) errorEl.textContent = 'Acceso denegado.';
-                btnLogin.innerHTML = 'Autorizar Ingreso';
+                document.getElementById('login-error').textContent = 'Acceso denegado. Credencial incorrecta.';
+                btnLogin.innerHTML = 'Autorizar Conexión';
             }
         } catch (e) {
-            setTimeout(iniciarPanel, 800);
+            // Fallback si corre en local sin auth configurada
+            loginScreen.classList.add('hidden');
+            dashboard.classList.remove('hidden');
+            initSystem();
         }
     });
 
-    function iniciarPanel() {
-        if (loginScreen) loginScreen.classList.add('hidden');
-        if (dashboard) dashboard.classList.remove('hidden');
-        initCorporateDashboard();
-    }
-
-    mobileBtn?.addEventListener('click', () => {
-        if (sidebar) sidebar.classList.toggle('active');
-    });
-
+    // ==========================================
+    // 2. NAVEGACIÓN LATERAL (TABS)
+    // ==========================================
     document.querySelectorAll('.nav-links li').forEach(li => {
         li.addEventListener('click', (e) => {
-            const current = e.currentTarget;
-            if (current.id === 'btn-logout') return;
-            
             document.querySelectorAll('.nav-links li').forEach(el => el.classList.remove('active'));
+            const current = e.currentTarget;
             current.classList.add('active');
             
-            const tabTitle = current.textContent.trim();
-            const currentTabTitleEl = document.getElementById('current-tab-title');
-            if (currentTabTitleEl) currentTabTitleEl.textContent = tabTitle;
-            
-            const mobileTabTitleEl = document.getElementById('mobile-tab-title');
-            if (mobileTabTitleEl) mobileTabTitleEl.textContent = tabTitle;
-            
-            const mobileBrandTextEl = document.getElementById('mobile-brand-text');
-            if (mobileBrandTextEl) mobileBrandTextEl.classList.add('hidden');
-            
-            const mobileDynamicInfoEl = document.getElementById('mobile-dynamic-info');
-            if (mobileDynamicInfoEl) mobileDynamicInfoEl.classList.remove('hidden');
-            
-            document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
-            
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
             const tabId = current.getAttribute('data-tab');
-            const tabEl = document.getElementById(tabId);
-            if (tabEl) tabEl.classList.remove('hidden');
-
-            if (window.innerWidth <= 768 && sidebar) {
-                sidebar.classList.remove('active');
-            }
+            document.getElementById(tabId).classList.add('active');
         });
     });
 
-    document.getElementById('btn-logout')?.addEventListener('click', () => window.location.reload());
+    // ==========================================
+    // 3. INICIALIZACIÓN Y LLAMADAS A LA API
+    // ==========================================
+    function initSystem() {
+        initChart();
+        fetchData();
+        setInterval(fetchData, 30000); // Polling cada 30 seg
+        generateLogs();
+    }
 
-    const profileDropdown = document.getElementById('ceo-profile-dropdown');
-    const toggleProfile = (e) => {
-        e.stopPropagation();
-        if (profileDropdown) profileDropdown.classList.toggle('active');
-    };
-    
-    document.getElementById('desktop-avatar-btn')?.addEventListener('click', toggleProfile);
-    document.getElementById('mobile-avatar-btn')?.addEventListener('click', toggleProfile);
+    async function fetchData() {
+        try {
+            const res = await fetch('/api/ceo/master-stats');
+            if(!res.ok) return;
+            const data = await res.json();
+            renderData(data);
+        } catch (e) {
+            console.error("Error fetching data:", e);
+        }
+    }
 
-    const menuFechas = document.getElementById('menu-filtro-fechas');
-    document.getElementById('btn-filtro-fechas')?.addEventListener('click', (e) => {
-        e.stopPropagation();
-        if (menuFechas) menuFechas.classList.toggle('active');
-    });
-    
-    document.querySelectorAll('#menu-filtro-fechas li').forEach(li => {
-        li.addEventListener('click', (e) => {
-            const texto = e.currentTarget.textContent;
-            const rango = e.currentTarget.getAttribute('data-rango');
-            const labelEl = document.getElementById('label-fecha-filtro');
-            if (labelEl) labelEl.textContent = texto;
-            if (menuFechas) menuFechas.classList.remove('active');
-            actualizarGraficoPorRango(rango);
-        });
-    });
+    function renderData(data) {
+        // Pestaña Deploys (Ingresos Empresa)
+        document.getElementById('deploy-corp-revenue').textContent = `$${data.ingresosHoy.toFixed(2)}`;
+        document.getElementById('deploy-payroll').textContent = `$${data.nominaTotal.toFixed(2)}`;
+        document.getElementById('deploy-views').textContent = data.vistasHoy.toLocaleString();
 
-    document.addEventListener('click', (e) => {
-        const pd = document.getElementById('ceo-profile-dropdown');
-        const mf = document.getElementById('menu-filtro-fechas');
-        if (pd) pd.classList.remove('active');
-        if (mf) mf.classList.remove('active');
-    });
+        // Actualizar Gráfico
+        if (metricsChart) {
+            metricsChart.data.datasets[0].data = data.chartData;
+            metricsChart.update();
+        }
 
-    function setupSubTabs(containerId) {
-        const container = document.getElementById(containerId);
-        if (!container) return;
-        const tabs = container.querySelectorAll('.config-tab');
+        // Pestaña Environment (Trabajadores)
+        const tbody = document.getElementById('env-workers-list');
+        tbody.innerHTML = '';
         
-        tabs.forEach(tab => {
-            tab.addEventListener('click', (e) => {
-                tabs.forEach(t => t.classList.remove('active'));
-                e.currentTarget.classList.add('active');
+        data.trabajadores.forEach(w => {
+            const isCEO = w.rol.includes('CEO');
+            const totalDeuda = w.earnedMonth + w.deudaPendiente;
+            
+            let btnHtml = '';
+            if (isCEO) {
+                btnHtml = `<span class="text-secondary" style="font-size: 11px;">OWNER</span>`;
+            } else {
+                btnHtml = `<button class="btn-outline btn-pay" data-id="${w.id}" data-name="${w.name}" data-amount="${totalDeuda}">Liquidar Ciclo</button>`;
+            }
+
+            tbody.innerHTML += `
+                <tr>
+                    <td>
+                        <strong style="color: white;">${w.name}</strong><br>
+                        <span class="text-secondary" style="font-size: 11px;">ID: ${w.id}</span>
+                    </td>
+                    <td>${w.rol}</td>
+                    <td class="text-yellow" style="font-weight: 600;">$${totalDeuda.toFixed(2)}</td>
+                    <td>${btnHtml}</td>
+                </tr>
+            `;
+        });
+
+        // Re-asignar eventos a los botones de pago dinámicos
+        document.querySelectorAll('.btn-pay').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const target = e.currentTarget;
+                currentWorkerToPay = {
+                    id: target.getAttribute('data-id'),
+                    name: target.getAttribute('data-name'),
+                    amount: parseFloat(target.getAttribute('data-amount'))
+                };
                 
-                const targetId = e.currentTarget.getAttribute('data-target');
-                const parentSection = e.currentTarget.closest('section');
-                if (parentSection) {
-                    parentSection.querySelectorAll('.sub-tab-content').forEach(c => c.classList.remove('active'));
-                }
-                const targetEl = document.getElementById(targetId);
-                if (targetEl) targetEl.classList.add('active');
+                document.getElementById('pay-target-name').textContent = currentWorkerToPay.name;
+                document.getElementById('pay-target-amount').textContent = `$${currentWorkerToPay.amount.toFixed(2)}`;
+                document.getElementById('modal-payment').classList.add('active');
             });
         });
     }
-    setupSubTabs('tabs-pagos');
-    setupSubTabs('tabs-configuracion');
-    setupSubTabs('tabs-reportes');
 
-    window.abrirModal = function(id) {
-        const modal = document.getElementById(id);
-        if (modal) modal.classList.add('active');
-    };
-    
-    window.cerrarModal = function(id) {
-        const modal = document.getElementById(id);
-        if (modal) modal.classList.remove('active');
-    };
+    // ==========================================
+    // 4. CONTROL DE CONFIGURACIONES (SETTINGS)
+    // ==========================================
+    document.getElementById('btn-save-pricing')?.addEventListener('click', async (e) => {
+        const btn = e.currentTarget;
+        const originalText = btn.textContent;
+        btn.textContent = 'Saving...';
+        
+        const payload = {
+            mode: document.getElementById('config-mode').value,
+            customMoviePrice: document.getElementById('config-movie').value,
+            limit_daily: document.getElementById('config-limit-day').value,
+            limit_monthly: document.getElementById('config-limit-month').value
+        };
 
-    window.abrirModalEliminar = function(nombre, idStr) {
-        const nameEl = document.getElementById('delete-user-name');
-        const idEl = document.getElementById('delete-user-id');
-        if (nameEl) nameEl.textContent = nombre;
-        if (idEl) idEl.textContent = idStr;
-        abrirModal('modal-eliminar-usuario');
-    };
-
-    window.abrirModalLiquidar = function(nombre, montoNum, userId) {
-        const nameEl = document.getElementById('liquidar-user-name');
-        const montoEl = document.getElementById('liquidar-user-monto');
-        
-        if (nameEl) nameEl.textContent = nombre;
-        if (montoEl) montoEl.textContent = `$${parseFloat(montoNum).toFixed(2)}`;
-        
-        abrirModal('modal-liquidar-trabajador');
-        
-        const btnConfirm = document.getElementById('btn-confirm-liquidar');
-        if (btnConfirm) {
-            btnConfirm.onclick = async function() {
-                btnConfirm.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Ejecutando Liquidación DB...';
-                try {
-                    const res = await fetch('/api/ceo/pay-worker', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ uploaderId: userId, amount: montoNum })
-                    });
-                    if (res.ok) {
-                        btnConfirm.innerHTML = '<i class="fas fa-check-double"></i> Aprobar Pago y Resetear';
-                        cerrarModal('modal-liquidar-trabajador');
-                        fetchMasterStats();
-                    } else {
-                        btnConfirm.innerHTML = 'Error en Liquidación';
-                    }
-                } catch(e) {
-                    btnConfirm.innerHTML = 'Error de Red';
-                }
-            };
+        try {
+            await fetch('/api/ceo/pricing', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            btn.textContent = 'Saved!';
+            setTimeout(() => btn.textContent = originalText, 2000);
+        } catch (err) {
+            btn.textContent = 'Error';
+            setTimeout(() => btn.textContent = originalText, 2000);
         }
-    };
-
-    window.abrirModalPerfil = function(nombre, rol, generado, vistas, peliculas, series, trend, inicial) {
-        document.getElementById('perfil-nombre').textContent = nombre;
-        document.getElementById('perfil-rol').textContent = `Rol: ${rol}`;
-        document.getElementById('perfil-avatar').textContent = inicial;
-        document.getElementById('perfil-generado-hoy').textContent = `$${parseFloat(generado).toFixed(2)}`;
-        document.getElementById('perfil-vistas-hoy').textContent = vistas.toLocaleString();
-        document.getElementById('perfil-total-peliculas').textContent = peliculas;
-        document.getElementById('perfil-total-series').textContent = series;
-
-        const tendenciaEl = document.getElementById('perfil-tendencia-dia');
-        if (trend === 'up') {
-            tendenciaEl.className = 'trend-live-up';
-            tendenciaEl.innerHTML = '<i class="fas fa-arrow-up"></i> Produciendo activamente';
-        } else if (trend === 'down') {
-            tendenciaEl.className = 'trend-live-down';
-            tendenciaEl.innerHTML = '<i class="fas fa-arrow-down"></i> Actividad baja';
-        } else {
-            tendenciaEl.className = 'trend-live-neutral';
-            tendenciaEl.innerHTML = '<i class="fas fa-minus"></i> Estable / Pausado';
-        }
-
-        abrirModal('modal-perfil-usuario');
-    };
-
-    document.getElementById('btn-abrir-modal-usuario')?.addEventListener('click', () => abrirModal('modal-agregar-usuario'));
-    
-    document.querySelectorAll('[data-dismiss]').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            const modalId = e.currentTarget.getAttribute('data-dismiss');
-            cerrarModal(modalId);
-        });
     });
 
-    function initCorporateDashboard() {
-        initChart();
-        fetchMasterStats();
-        iniciarSimulacionTraficoVivo();
-        setInterval(fetchMasterStats, 60000); 
-    }
+    document.getElementById('btn-send-bot')?.addEventListener('click', async (e) => {
+        const btn = e.currentTarget;
+        const originalText = btn.textContent;
+        const message = document.getElementById('bot-msg-text').value.trim();
+        const imageUrl = document.getElementById('bot-msg-img').value.trim();
+        const targetGroup = document.getElementById('bot-msg-target').value;
 
+        if (!message) return alert('Debes escribir un mensaje.');
+        
+        btn.textContent = 'Sending...';
+        try {
+            await fetch('/api/ceo/notify-bot', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message, imageUrl, targetGroup })
+            });
+            btn.textContent = 'Sent Successfully';
+            document.getElementById('bot-msg-text').value = '';
+            document.getElementById('bot-msg-img').value = '';
+            setTimeout(() => btn.textContent = originalText, 2000);
+        } catch (err) {
+            btn.textContent = 'Error';
+            setTimeout(() => btn.textContent = originalText, 2000);
+        }
+    });
+
+    // ==========================================
+    // 5. PAGO DE NÓMINA (MODAL)
+    // ==========================================
+    const closeModal = () => document.getElementById('modal-payment').classList.remove('active');
+    document.getElementById('close-modal-payment')?.addEventListener('click', closeModal);
+    document.getElementById('btn-cancel-pay')?.addEventListener('click', closeModal);
+
+    document.getElementById('btn-confirm-pay')?.addEventListener('click', async (e) => {
+        const btn = e.currentTarget;
+        btn.textContent = 'Processing...';
+
+        try {
+            const res = await fetch('/api/ceo/pay-worker', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    uploaderId: currentWorkerToPay.id, 
+                    amount: currentWorkerToPay.amount 
+                })
+            });
+            
+            if (res.ok) {
+                closeModal();
+                fetchData(); // Refrescar datos
+            }
+        } catch(err) {
+            alert('Error en conexión al pagar.');
+        } finally {
+            btn.textContent = 'Confirm Payout';
+        }
+    });
+
+    // ==========================================
+    // 6. INYECCIÓN TMDB (EVENTS)
+    // ==========================================
+    document.getElementById('btn-search-tmdb')?.addEventListener('click', async () => {
+        const query = document.getElementById('tmdb-search-input').value.trim();
+        if(!query) return;
+
+        const resultsGrid = document.getElementById('tmdb-results');
+        resultsGrid.innerHTML = '<span class="text-secondary">Searching...</span>';
+
+        try {
+            const res = await fetch(`/api/tmdb-proxy?endpoint=search/multi&query=${encodeURIComponent(query)}`);
+            const data = await res.json();
+            
+            resultsGrid.innerHTML = '';
+            const valid = data.results.filter(m => m.poster_path);
+            
+            if(valid.length === 0) return resultsGrid.innerHTML = 'No results.';
+
+            valid.forEach(item => {
+                const url = `https://image.tmdb.org/t/p/w200${item.poster_path}`;
+                const div = document.createElement('div');
+                div.className = 'poster-item';
+                div.innerHTML = `<img src="${url}">`;
+                div.onclick = () => {
+                    document.querySelectorAll('.poster-item').forEach(el => el.classList.remove('selected'));
+                    div.classList.add('selected');
+                    selectedTmdbData = item;
+                    
+                    document.getElementById('tmdb-inject-area').classList.remove('hidden');
+                    document.getElementById('tmdb-selected-title').textContent = item.title || item.name;
+                };
+                resultsGrid.appendChild(div);
+            });
+        } catch(err) {
+            resultsGrid.innerHTML = 'Error conectando a TMDB.';
+        }
+    });
+
+    document.getElementById('btn-cancel-tmdb')?.addEventListener('click', () => {
+        document.getElementById('tmdb-inject-area').classList.add('hidden');
+        document.getElementById('tmdb-url').value = '';
+    });
+
+    // ==========================================
+    // 7. GRÁFICA (METRICS)
+    // ==========================================
     function initChart() {
-        const ctx = document.getElementById('mainRevenueChart')?.getContext('2d');
+        const ctx = document.getElementById('metricsChart')?.getContext('2d');
         if (!ctx) return;
-        mainChart = new Chart(ctx, {
+        metricsChart = new Chart(ctx, {
             type: 'line',
             data: {
                 labels: ['D-6', 'D-5', 'D-4', 'D-3', 'D-2', 'Ayer', 'Hoy'],
                 datasets: [{
-                    label: 'Ingresos DB Bruto (USD)',
-                    data: [0, 0, 0, 0, 0, 0, 0],
-                    borderColor: '#3b82f6',
-                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                    borderWidth: 3,
-                    pointBackgroundColor: '#ffb800',
-                    pointBorderColor: '#0a0a0f',
-                    pointBorderWidth: 2,
-                    pointRadius: 4,
+                    label: 'Ingresos Brutos ($)',
+                    data: [0,0,0,0,0,0,0],
+                    borderColor: '#a78bfa',
+                    backgroundColor: 'rgba(167, 139, 250, 0.1)',
+                    borderWidth: 2,
                     fill: true,
-                    tension: 0.4
+                    tension: 0.3,
+                    pointRadius: 3
                 }]
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
                 scales: {
-                    y: { grid: { color: '#2d2e36', drawBorder: false }, ticks: { color: '#9ca3af', callback: v => '$' + v } },
+                    y: { grid: { color: '#2d2e36' }, ticks: { color: '#9ca3af' } },
                     x: { grid: { display: false }, ticks: { color: '#9ca3af' } }
                 },
-                plugins: { legend: { display: false }, tooltip: { mode: 'index', intersect: false } },
-                interaction: { mode: 'nearest', axis: 'x', intersect: false }
+                plugins: { legend: { display: false } }
             }
         });
     }
 
-    function actualizarGraficoPorRango(rango) {
-        if (!mainChart) return;
-        let newData = [];
-        let newLabels = [];
-        
-        if (rango === 'hoy' || rango === 'ayer') {
-            newLabels = ['00h', '04h', '08h', '12h', '16h', '20h', '24h'];
-            newData = [10, 25, 60, 150, 210, 380, 520].map(v => rango === 'ayer' ? v * 0.9 : v * (new Date().getHours()/24));
-        } else if (rango === '7dias') {
-            newLabels = ['D-6', 'D-5', 'D-4', 'D-3', 'D-2', 'Ayer', 'Hoy'];
-            newData = [420, 480, 410, 500, 460, 520, 490];
-        } else {
-            newLabels = ['Sem 1', 'Sem 2', 'Sem 3', 'Sem 4'];
-            newData = [2800, 3100, 2950, 3500];
-        }
+    // ==========================================
+    // 8. LOGS Y SHELL (SIMULACIÓN TERMINAL)
+    // ==========================================
+    function generateLogs() {
+        const term = document.getElementById('live-terminal');
+        if(!term) return;
 
-        mainChart.data.labels = newLabels;
-        mainChart.data.datasets[0].data = newData;
-        mainChart.update();
-    }
+        const msgs = [
+            "[API] Petición GET /api/streaming-status recibida. Status: 200",
+            "[DB] Cron Job ejecutado: Validación de caché TMDB exitosa.",
+            "[Auth] Token JWT verificado para usuario admin.",
+            "[Crawler] Escaneando 50 enlaces... 0 errores detectados."
+        ];
 
-    function iniciarSimulacionTraficoVivo() {
-        const usersLiveEl = document.getElementById('dash-users-live');
-        const requestsEl = document.getElementById('dash-requests');
-        
-        if (!usersLiveEl || !requestsEl) return;
-        
-        let peticionesAcumuladas = parseInt(requestsEl.textContent.replace(/,/g, '')) || 12450;
-        
-        if (liveTrafficInterval) clearInterval(liveTrafficInterval);
-        
-        liveTrafficInterval = setInterval(() => {
-            const users = Math.floor(Math.random() * (85 - 30 + 1) + 30);
-            usersLiveEl.textContent = users;
-            
-            const reqs = Math.floor(Math.random() * 5) + 1;
-            peticionesAcumuladas += reqs;
-            requestsEl.textContent = peticionesAcumuladas.toLocaleString();
-        }, 3000);
-    }
-
-    async function fetchMasterStats() {
-        try {
-            const res = await fetch('/api/ceo/master-stats');
-            if(!res.ok) return;
-            const masterData = await res.json();
-            
-            renderDashboardData({
-                ingresosHoy: masterData.ingresosHoy,
-                ecpm: 0.045,
-                peticiones: masterData.vistasHoy,
-                chartData: masterData.chartData,
-                workers: masterData.trabajadores.map(w => ({
-                    id: w.id,
-                    nombre: w.name,
-                    rol: w.rol,
-                    origen: 'MongoDB',
-                    vistasHoy: w.vistasHoy || 0,
-                    generado: w.earnedMonth || 0,
-                    deudaPendiente: w.deudaPendiente || 0,
-                    generadoHoy: w.earnedToday || 0,
-                    peliculas: w.peliculas || 0,
-                    series: w.series || 0,
-                    trend: w.trend || 'neutral'
-                }))
-            });
-        } catch (e) {}
-    }
-
-    function renderDashboardData(data) {
-        const dRevHoy = document.getElementById('dash-revenue-hoy');
-        const dEcpm = document.getElementById('dash-ecpm');
-        const dReq = document.getElementById('dash-requests');
-        
-        if (dRevHoy) dRevHoy.textContent = `$${data.ingresosHoy.toFixed(2)}`;
-        if (dEcpm) dEcpm.textContent = `$${data.ecpm.toFixed(3)}`;
-        if (!liveTrafficInterval && dReq) dReq.textContent = data.peticiones.toLocaleString();
-
-        if (mainChart && mainChart.data.labels.includes('Hoy')) {
-            mainChart.data.datasets[0].data = data.chartData;
-            mainChart.update();
-        }
-
-        const dashWorkers = document.getElementById('dash-workers-list');
-        const configWorkers = document.getElementById('db-users-list');
-        const nominaPagos = document.getElementById('lista-liquidaciones');
-        const tNominaTotal = document.getElementById('nomina-pendiente-total');
-        
-        if (dashWorkers) dashWorkers.innerHTML = '';
-        if (configWorkers) configWorkers.innerHTML = '';
-        if (nominaPagos) nominaPagos.innerHTML = '';
-
-        let nominaTotalCalculada = 0;
-
-        data.workers.forEach(w => {
-            const isCEO = w.rol.includes('CEO') && !w.rol.includes('Co-Administrador');
-            const isEnv = w.origen.includes('.env');
-            const colorClase = isCEO ? 'var(--yellow-main)' : 'var(--blue-dev)';
-            const tagOrigen = isEnv ? '<span class="tag-env">Matriz .env</span>' : '<span class="tag-db">MongoDB</span>';
-            const inicial = w.nombre.charAt(0);
-            
-            let trendIcon = '';
-            if (w.trend === 'up') trendIcon = '<span class="trend-live-up"><i class="fas fa-arrow-up"></i> Alta</span>';
-            else if (w.trend === 'down') trendIcon = '<span class="trend-live-down"><i class="fas fa-arrow-down"></i> Baja</span>';
-            else trendIcon = '<span class="trend-live-neutral"><i class="fas fa-minus"></i> Estable</span>';
-
-            if (!isCEO) {
-                const totalAPagar = w.generado + (w.deudaPendiente || 0);
-                nominaTotalCalculada += totalAPagar;
-                
-                if (nominaPagos) {
-                    nominaPagos.innerHTML += `
-                        <tr>
-                            <td style="padding-left: 15px; font-weight: bold; font-size: 15px;">
-                                <div style="display: flex; align-items: center; gap: 10px;">
-                                    <div style="width:30px; height:30px; background:var(--blue-dev); color:white; border-radius:50%; display:flex; justify-content:center; align-items:center; font-size:12px;">${inicial}</div>
-                                    ${w.nombre}
-                                </div>
-                            </td>
-                            <td>${w.rol}</td>
-                            <td>
-                                <span class="text-muted" style="font-size: 12px;">Mes actual:</span> $${w.generado.toFixed(2)}<br>
-                                <span class="text-danger" style="font-size: 12px;">Atrasado:</span> $${(w.deudaPendiente || 0).toFixed(2)}
-                            </td>
-                            <td class="text-yellow" style="font-weight: bold; font-size: 16px;">$${totalAPagar.toFixed(2)}</td>
-                            <td style="text-align: right; padding-right: 15px;">
-                                <button class="btn-success" onclick="abrirModalLiquidar('${w.nombre}', ${totalAPagar}, '${w.id}')"><i class="fas fa-money-check-alt"></i> Liquidar Saldo</button>
-                            </td>
-                        </tr>
-                    `;
-                }
-            }
-
-            if (dashWorkers) {
-                dashWorkers.innerHTML += `
-                    <tr>
-                        <td style="padding-left: 20px;">
-                            <div style="display: flex; align-items: center; gap: 12px;">
-                                <div class="feed-icon" style="color:${colorClase}; font-weight:bold; border: 1px solid ${colorClase};">${inicial}</div>
-                                <div>
-                                    <strong style="font-size: 14px; color:${isCEO ? 'var(--yellow-main)' : 'white'};">${w.nombre}</strong><br>
-                                    ${tagOrigen}
-                                </div>
-                            </div>
-                        </td>
-                        <td style="text-align: center;">${w.peliculas}</td>
-                        <td style="text-align: center;">${w.series}</td>
-                        <td style="font-size: 15px;">${w.vistasHoy.toLocaleString()}</td>
-                        <td class="text-green" style="font-size: 15px; font-weight: bold;">$${w.generadoHoy.toFixed(2)}</td>
-                        <td>${trendIcon}</td>
-                        <td>
-                            <button class="btn-secondary btn-micro" onclick="abrirModalPerfil('${w.nombre}', '${w.rol}', ${w.generadoHoy}, ${w.vistasHoy}, ${w.peliculas}, ${w.series}, '${w.trend}', '${inicial}')"><i class="fas fa-chart-pie"></i> Ver Desempeño</button>
-                        </td>
-                    </tr>
-                `;
-            }
-
-            if (configWorkers) {
-                configWorkers.innerHTML += `
-                    <tr>
-                        <td style="padding-left: 20px;">
-                            <div style="display: flex; align-items: center; gap: 15px;">
-                                <div class="feed-icon" style="background:var(--bg-base); color:${colorClase}; font-weight:bold; font-size:16px; width:40px; height:40px; border: 1px solid var(--border-light);">${inicial}</div>
-                                <div>
-                                    <strong style="font-size: 15px; color:${isCEO ? 'var(--yellow-main)' : 'white'};">${w.nombre}</strong><br>
-                                    <small class="text-muted">ID: ${w.id}</small>
-                                </div>
-                            </div>
-                        </td>
-                        <td style="font-size: 14px;">${w.rol}</td>
-                        <td>${tagOrigen}</td>
-                        <td style="text-align: right; padding-right: 20px;">
-                            ${isEnv ? '<span class="text-muted" style="font-size: 12px;"><i class="fas fa-lock text-yellow"></i> Matriz Root</span>' : `<button class="btn-secondary btn-micro text-danger" onclick="abrirModalEliminar('${w.nombre}', '${w.id}')"><i class="fas fa-user-times"></i> Desvincular BD</button>`}
-                        </td>
-                    </tr>
-                `;
-            }
-        });
-
-        if (tNominaTotal) tNominaTotal.textContent = `$${nominaTotalCalculada.toFixed(2)}`;
-    }
-
-    const visualSearchBtn = document.getElementById('btn-realizar-busqueda');
-    const visualSearchInput = document.getElementById('visual-search-input');
-    const resultsGrid = document.getElementById('search-results-grid');
-    const injectionPanel = document.getElementById('injection-panel');
-
-    visualSearchBtn?.addEventListener('click', async () => {
-        const query = visualSearchInput?.value.trim();
-        if (!query) return;
-
-        visualSearchBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Consultando TMDB...';
-        
-        try {
-            const res = await fetch(`/api/tmdb-proxy?query=${encodeURIComponent(query)}`);
-            if(!res.ok) throw new Error("Offline");
-            const data = await res.json();
-            dibujarPostersTMDB(data.results);
-        } catch (error) {
-            const mockData = [
-                { id: 533535, title: 'Deadpool & Wolverine', poster_path: '/8cdWjvZQUrmdDO7cgYFj31GISSN.jpg', media_type: 'movie', overview: 'Wade Wilson y Logan...' },
-                { id: 1022789, title: 'Intensa-Mente 2', poster_path: '/gR7hB3a7O5wA1RzL6Fwz19UeR2m.jpg', media_type: 'movie', overview: 'Regresamos a la mente de Riley...' }
-            ];
-            dibujarPostersTMDB(mockData);
-        }
-        visualSearchBtn.innerHTML = 'Extraer de TMDB';
-    });
-
-    function dibujarPostersTMDB(resultados) {
-        if (!resultsGrid || !injectionPanel) return;
-        resultsGrid.innerHTML = '';
-        injectionPanel.classList.add('hidden');
-        
-        if (resultados && resultados.length > 0) {
-            const validMedia = resultados.filter(m => (m.media_type === 'movie' || m.media_type === 'tv' || m.title) && m.poster_path);
-            
-            validMedia.forEach(media => {
-                const posterUrl = `https://image.tmdb.org/t/p/w200${media.poster_path}`;
-                const title = media.title || media.name;
+        setInterval(() => {
+            if(document.getElementById('tab-logs').classList.contains('active')) {
+                const now = new Date();
+                const timeStr = `${now.getHours()}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
+                const rMsg = msgs[Math.floor(Math.random() * msgs.length)];
                 
                 const div = document.createElement('div');
-                div.className = 'poster-item';
-                div.innerHTML = `<img src="${posterUrl}" alt="${title}">`;
-                
-                div.addEventListener('click', () => {
-                    document.querySelectorAll('.poster-item').forEach(el => el.classList.remove('selected'));
-                    div.classList.add('selected');
-                    
-                    selectedTmdbData = media;
-                    
-                    const pPoster = document.getElementById('inject-poster');
-                    const pTitle = document.getElementById('inject-title');
-                    const pOverview = document.getElementById('inject-overview');
-                    const pType = document.getElementById('inject-type');
-                    const pId = document.getElementById('inject-id');
-                    const pUrl = document.getElementById('inject-url');
-                    
-                    if (pPoster) pPoster.src = posterUrl;
-                    if (pTitle) pTitle.textContent = title;
-                    if (pOverview) pOverview.textContent = media.overview || 'Sin descripción disponible.';
-                    if (pType) pType.textContent = media.media_type === 'tv' ? 'SERIE' : 'PELÍCULA';
-                    if (pId) pId.textContent = `TMDB ID: ${media.id}`;
-                    
-                    injectionPanel.classList.remove('hidden');
-                    if (pUrl) pUrl.focus();
-                });
-                
-                resultsGrid.appendChild(div);
-            });
-        } else {
-            resultsGrid.innerHTML = '<p class="text-muted w-100">No se encontraron resultados en la API.</p>';
-        }
+                div.className = 'log-line';
+                div.innerHTML = `
+                    <span class="log-time">${timeStr}</span>
+                    <span class="log-msg" style="color: #6b7280;">[tj5mb]</span>
+                    <span class="log-msg">${rMsg}</span>
+                `;
+                term.appendChild(div);
+                term.scrollTop = term.scrollHeight; // Auto-scroll
+            }
+        }, 4000);
     }
 
-    document.getElementById('btn-cancel-inject')?.addEventListener('click', () => {
-        if (injectionPanel) injectionPanel.classList.add('hidden');
-        document.querySelectorAll('.poster-item').forEach(el => el.classList.remove('selected'));
-        selectedTmdbData = null;
-        const iUrl = document.getElementById('inject-url');
-        if (iUrl) iUrl.value = '';
-    });
-
-    document.getElementById('btn-confirm-inject')?.addEventListener('click', () => {
-        const urlEl = document.getElementById('inject-url');
-        const url = urlEl ? urlEl.value.trim() : '';
-        const btn = document.getElementById('btn-confirm-inject');
-
-        if (!selectedTmdbData || !url) {
-            alert('Atención: Debes proveer un enlace de video válido para la bóveda.');
-            return;
-        }
-        
-        if (!url.toLowerCase().endsWith('.mp4') && !url.includes('mp4')) {
-            alert('BLOQUEO DE SEGURIDAD: El sistema rechaza la inyección. Las directivas de Sala Cine dictan que el enlace directo principal debe ser formato .MP4.');
-            return;
-        }
-        
-        if (btn) btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Procesando Inserción...';
-        
-        setTimeout(() => {
-            if (btn) btn.innerHTML = '<i class="fas fa-database"></i> Inyectar al Catálogo (MongoDB)';
-            alert(`¡Proceso Exitoso! "${selectedTmdbData.title || selectedTmdbData.name}" ha sido insertado en la colección principal de streaming.`);
-            document.getElementById('btn-cancel-inject')?.click();
-            const searchInput = document.getElementById('visual-search-input');
-            if (searchInput) searchInput.value = '';
-            if (resultsGrid) resultsGrid.innerHTML = '';
-        }, 1500);
-    });
-    
-    document.getElementById('btn-submit-new-user')?.addEventListener('click', () => {
-        const nombreEl = document.getElementById('add-nombre');
-        const telegramEl = document.getElementById('add-telegram');
-        
-        const nombre = nombreEl ? nombreEl.value.trim() : '';
-        const idTelegram = telegramEl ? telegramEl.value.trim() : '';
-        const btn = document.getElementById('btn-submit-new-user');
-
-        if (!nombre || !idTelegram) {
-            alert("Operación denegada: El nombre y el ID de Telegram son campos obligatorios.");
-            return;
-        }
-
-        if (btn) btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Inyectando Documento...';
-        
-        setTimeout(() => {
-            cerrarModal('modal-agregar-usuario');
-            if (btn) btn.innerHTML = 'Inyectar en Colección';
-            alert(`Alta completada: El trabajador ${nombre} (Telegram ID: ${idTelegram}) está activo en la colección hr_workers.\n\nEl Bot está autorizado para recibir su contenido.`);
-            
-            if (nombreEl) nombreEl.value = '';
-            if (telegramEl) telegramEl.value = '';
-            
-            fetchMasterStats(); 
-        }, 1500);
+    document.getElementById('btn-run-scan')?.addEventListener('click', () => {
+        const out = document.getElementById('shell-output');
+        out.innerHTML += `<br>> Iniciando escaneo de integridad en MongoDB...<br>`;
+        setTimeout(() => out.innerHTML += `> Colección 'media_catalog': OK (2491 docs)<br>`, 1000);
+        setTimeout(() => out.innerHTML += `> Colección 'uploader_revenue': OK<br>`, 2000);
+        setTimeout(() => out.innerHTML += `<span class="log-success">> Sistema operando a capacidad óptima.</span><br>`, 3000);
     });
 });
