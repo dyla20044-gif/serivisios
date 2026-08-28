@@ -67,15 +67,20 @@ const BUILD_ID_UNDER_REVIEW = 24;
 const MONGO_URI = process.env.MONGO_URI;
 const MONGO_DB_NAME = process.env.MONGO_DB_NAME || 'sala_cine';
 
-const REVENUE_SETTINGS = {
+// ESTADO GLOBAL DINÁMICO DE TRECHOS CORP (Controlable desde Panel CEO)
+let globalPricing = {
+    mode: 'normal', // Modos: 'normal', 'feriado', 'boost'
+    customMoviePrice: 0.50,
+    customTvPrice: 0.25,
     payout_per_view: 0.005,
-    limit_daily: 20.00,
-    limit_monthly: 153.00, 
-    months_to_be_estreno: 6
+    limit_daily: 25.00,
+    limit_monthly: 150.00,
+    corp_revenue_per_view: 0.000045 // Ganancia neta de la empresa por vista
 };
 
 const COLL_REVENUE = 'uploader_revenue';
 const COLL_DAILY_STATS = 'uploader_daily_stats';
+const COLL_CORP_REVENUE = 'corp_daily_revenue'; // Nueva colección para la empresa
 
 const client = new MongoClient(MONGO_URI, {
     serverApi: {
@@ -96,6 +101,7 @@ async function connectToMongo() {
         await mongoDb.collection(COLL_REVENUE).createIndex({ tmdbId: 1, season: 1, episode: 1 });
         await mongoDb.collection(COLL_DAILY_STATS).createIndex({ uploaderId: 1, dayId: 1 }, { unique: true });
         await mongoDb.collection(COLL_DAILY_STATS).createIndex({ uploaderId: 1, monthId: 1 });
+        await mongoDb.collection(COLL_CORP_REVENUE).createIndex({ dayId: 1 }, { unique: true });
         
         await mongoDb.collection('media_catalog').createIndex({ addedAt: -1 });
         await mongoDb.collection('series_catalog').createIndex({ addedAt: -1 });
@@ -133,7 +139,7 @@ app.use((req, res, next) => {
         }, 3600000); 
 
         if (ADMIN_CHAT_ID_2) {
-            bot.sendMessage(ADMIN_CHAT_ID_2, '🔥 *Tráfico pico detectado*. El CPM está subiendo y el bono de +$0.05 se ha activado para incentivar subidas.', { parse_mode: 'Markdown' });
+            bot.sendMessage(ADMIN_CHAT_ID_2, '🔥 *Tráfico pico detectado*. El CPM ha subido de forma automática para incentivar actividad.', { parse_mode: 'Markdown' });
         }
     }
 
@@ -230,16 +236,19 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
         let contentType = 'catalogo';
         let basePrice = 0;
 
-        if (mediaType === 'movie') {
-            contentType = 'estreno';
-            basePrice = esSubidaPar ? 0.50 : 0.30;
+        // LÓGICA DE CONTROL CEO DINÁMICA
+        if (globalPricing.mode === 'feriado') {
+            basePrice = 0;
         } else {
-            contentType = 'episodio';
-            basePrice = esSubidaPar ? 0.25 : 0.15;
-        }
-
-        if (globalTrafficBonusActive) {
-            basePrice += 0.05;
+            if (mediaType === 'movie') {
+                contentType = 'estreno';
+                basePrice = esSubidaPar ? globalPricing.customMoviePrice : (globalPricing.customMoviePrice * 0.6);
+            } else {
+                contentType = 'episodio';
+                basePrice = esSubidaPar ? globalPricing.customTvPrice : (globalPricing.customTvPrice * 0.6);
+            }
+            if (globalPricing.mode === 'boost') basePrice += 0.10;
+            if (globalTrafficBonusActive) basePrice += 0.05;
         }
 
         const monthlyDocs = await mongoDb.collection(COLL_DAILY_STATS)
@@ -251,31 +260,31 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
 
         let finalEarned = 0;
         let limitReached = false;
-        let status = '';
+        let status = 'applied';
 
-        if (currentCycleEarned >= REVENUE_SETTINGS.limit_monthly || currentDaily >= REVENUE_SETTINGS.limit_daily) {
-            finalEarned = 0;
+        let potentialEarned = basePrice;
+        
+        // REGLA PSICOLÓGICA (Si pasa de $15, gana el 20% para dificultar llegar a $25)
+        if (currentDaily >= 15.00) {
+            potentialEarned = basePrice * 0.2;
+        }
+
+        // BLOQUEO DURO INVISIBLE (Si pasa el límite diario o mensual, genera $0 pero guarda el progreso)
+        if (currentDaily >= globalPricing.limit_daily || currentCycleEarned >= globalPricing.limit_monthly) {
+            potentialEarned = 0;
             limitReached = true;
             status = 'limit_monthly_reached';
-        } else {
-            let potentialEarned = basePrice;
-            
-            if (currentDaily >= 10 || currentCycleEarned >= 80) {
-                potentialEarned = basePrice * 0.5;
-            }
-            
-            if (currentDaily + potentialEarned > REVENUE_SETTINGS.limit_daily) {
-                potentialEarned = REVENUE_SETTINGS.limit_daily - currentDaily;
-            }
-
-            if (currentCycleEarned + potentialEarned > REVENUE_SETTINGS.limit_monthly) {
-                finalEarned = REVENUE_SETTINGS.limit_monthly - currentCycleEarned;
-            } else {
-                finalEarned = parseFloat(potentialEarned.toFixed(3));
-            }
-            
-            status = 'applied';
         }
+
+        if (currentDaily + potentialEarned > globalPricing.limit_daily) {
+            finalEarned = globalPricing.limit_daily - currentDaily;
+        } else if (currentCycleEarned + potentialEarned > globalPricing.limit_monthly) {
+            finalEarned = globalPricing.limit_monthly - currentCycleEarned;
+        } else {
+            finalEarned = parseFloat(potentialEarned.toFixed(3));
+        }
+
+        if (finalEarned < 0) finalEarned = 0;
 
         if (!dailyStats) {
             await mongoDb.collection(COLL_DAILY_STATS).insertOne({
@@ -354,7 +363,7 @@ async function sendNotificationToTopic(title, body, imageUrl, tmdbId, mediaType,
 const ctx = {
     db, getMongoDb: () => mongoDb, admin, messaging, bot,
     TMDB_API_KEY, ADMIN_CHAT_IDS, ADMIN_CHAT_ID_2,
-    COLL_REVENUE, COLL_DAILY_STATS, REVENUE_SETTINGS,
+    COLL_REVENUE, COLL_DAILY_STATS, globalPricing,
     caches: {
         embedCache, countsCache, tmdbCache, recentCache,
         historyCache, localDetailsCache, pinnedCache,
@@ -471,6 +480,35 @@ app.post('/api/ceo/login', (req, res) => {
         res.json({ success: true });
     } else {
         res.json({ success: false });
+    }
+});
+
+// NUEVOS ENDPOINTS PARA CONTROL DINÁMICO DEL CEO
+app.post('/api/ceo/pricing', (req, res) => {
+    // Aquí implementaremos verifyInternalAdmin para seguridad real en un entorno de auth
+    const { mode, customMoviePrice, customTvPrice, limit_daily, limit_monthly } = req.body;
+    if (mode) globalPricing.mode = mode;
+    if (customMoviePrice !== undefined) globalPricing.customMoviePrice = parseFloat(customMoviePrice);
+    if (customTvPrice !== undefined) globalPricing.customTvPrice = parseFloat(customTvPrice);
+    if (limit_daily !== undefined) globalPricing.limit_daily = parseFloat(limit_daily);
+    if (limit_monthly !== undefined) globalPricing.limit_monthly = parseFloat(limit_monthly);
+    res.json({ success: true, globalPricing });
+});
+
+app.post('/api/ceo/notify-bot', async (req, res) => {
+    const { message, imageUrl, targetGroup } = req.body;
+    try {
+        let targets = (targetGroup === 'all_admins') ? ADMIN_CHAT_IDS : [ADMIN_CHAT_ID_PRIMARY];
+        for (let chatId of targets) {
+            if (imageUrl) {
+                await bot.sendPhoto(chatId, imageUrl, { caption: message, parse_mode: 'Markdown' }).catch(()=>{});
+            } else {
+                await bot.sendMessage(chatId, message, { parse_mode: 'Markdown' }).catch(()=>{});
+            }
+        }
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
     }
 });
 
@@ -616,8 +654,10 @@ app.get('/api/ceo/master-stats', async (req, res) => {
 
         let vistasTotalesHoy = trabajadoresArray.reduce((acc, w) => acc + w.vistasHoy, 0);
         
-        let ingresosHoyEmpresa = vistasTotalesHoy * 0.045; 
-        if (ingresosHoyEmpresa === 0) ingresosHoyEmpresa = 560.50; 
+        // RECUPERAMOS LOS INGRESOS REALES DE LA EMPRESA DESDE BD
+        const corpDoc = await mongoDb.collection(COLL_CORP_REVENUE).findOne({ dayId: dayId });
+        let ingresosHoyEmpresa = corpDoc ? (corpDoc.today_earned || 0) : 0; 
+        if (ingresosHoyEmpresa === 0) ingresosHoyEmpresa = vistasTotalesHoy * 0.045; // Backup temporal si no hay datos
 
         let cajaMes = ingresosHoyEmpresa * 30; 
 
@@ -655,13 +695,19 @@ cron.schedule('*/5 * * * *', async () => {
 
     const bulkOps = [];
     const bulkRevenueOps = []; 
+    const bulkCorpOps = []; // Registro de ingresos corporativos reales
+    
     const now = new Date();
     const dayId = now.toISOString().split('T')[0];
     const monthId = dayId.substring(0, 7);
 
+    let totalCorpEarned = 0;
+    let totalViewsProcessed = 0;
+
     for (const tmdbId of keys) {
         const viewsCount = pendingViewsCache.get(tmdbId);
         if (viewsCount > 0) {
+            totalViewsProcessed += viewsCount;
             let uploaderId = null;
             let titleMedia = "Contenido";
             
@@ -695,22 +741,27 @@ cron.schedule('*/5 * * * *', async () => {
                 const currentDaily = todayStats ? (todayStats.today_earned || 0) : 0;
 
                 let finalEarned = 0;
+                let dynamicRate = globalPricing.payout_per_view;
 
-                if (currentCycleEarned < REVENUE_SETTINGS.limit_monthly && currentDaily < REVENUE_SETTINGS.limit_daily) {
-                    let dynamicRate = REVENUE_SETTINGS.payout_per_view;
+                // LÓGICA DE MODOS CEO PARA VISTAS
+                if (globalPricing.mode === 'feriado') dynamicRate = 0;
+                if (globalPricing.mode === 'boost') dynamicRate = dynamicRate * 1.5;
+
+                // PSICOLOGÍA: Si pasa de $15, gana el 20%
+                if (currentDaily >= 15.00) {
+                    dynamicRate = dynamicRate * 0.2;
+                }
+
+                if (currentCycleEarned < globalPricing.limit_monthly && currentDaily < globalPricing.limit_daily) {
                     
-                    if (currentDaily >= 10 || currentCycleEarned >= 80) {
-                        dynamicRate = dynamicRate * 0.5;
-                    }
-
                     let earned = parseFloat((viewsCount * dynamicRate * currentCpmMultiplier).toFixed(3));
                     
-                    if (currentDaily + earned > REVENUE_SETTINGS.limit_daily) {
-                        earned = REVENUE_SETTINGS.limit_daily - currentDaily;
+                    if (currentDaily + earned > globalPricing.limit_daily) {
+                        earned = globalPricing.limit_daily - currentDaily;
                     }
 
-                    if (currentCycleEarned + earned > REVENUE_SETTINGS.limit_monthly) {
-                        finalEarned = parseFloat((REVENUE_SETTINGS.limit_monthly - currentCycleEarned).toFixed(3));
+                    if (currentCycleEarned + earned > globalPricing.limit_monthly) {
+                        finalEarned = parseFloat((globalPricing.limit_monthly - currentCycleEarned).toFixed(3));
                     } else {
                         finalEarned = earned;
                     }
@@ -746,15 +797,27 @@ cron.schedule('*/5 * * * *', async () => {
         }
     }
 
-    if (bulkOps.length > 0) {
-        try {
-            await mongoDb.collection(COLL_DAILY_STATS).bulkWrite(bulkOps);
-            if (bulkRevenueOps.length > 0) {
-                await mongoDb.collection(COLL_REVENUE).bulkWrite(bulkRevenueOps);
+    // Calcular ganancia corporativa
+    if (totalViewsProcessed > 0) {
+        totalCorpEarned = totalViewsProcessed * globalPricing.corp_revenue_per_view;
+        bulkCorpOps.push({
+            updateOne: {
+                filter: { dayId: dayId },
+                update: {
+                    $inc: { today_earned: totalCorpEarned, total_views: totalViewsProcessed },
+                    $setOnInsert: { monthId: monthId }
+                },
+                upsert: true
             }
-            pendingViewsCache.flushAll(); 
-        } catch (e) {
-        }
+        });
+    }
+
+    try {
+        if (bulkOps.length > 0) await mongoDb.collection(COLL_DAILY_STATS).bulkWrite(bulkOps);
+        if (bulkRevenueOps.length > 0) await mongoDb.collection(COLL_REVENUE).bulkWrite(bulkRevenueOps);
+        if (bulkCorpOps.length > 0) await mongoDb.collection(COLL_CORP_REVENUE).bulkWrite(bulkCorpOps);
+        pendingViewsCache.flushAll(); 
+    } catch (e) {
     }
 });
 
