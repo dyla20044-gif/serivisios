@@ -3,20 +3,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>serivisios | Dashboard</title>
+    <title>Trechos Corporate | Panel Gerencial</title>
     <link rel="stylesheet" href="ceo_panel.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
 
-    <!-- PANTALLA DE LOGIN -->
+    <!-- PANTALLA DE ACCESO (LOGIN) -->
     <div id="login-screen">
         <div class="login-box">
-            <i class="fas fa-fingerprint" style="font-size: 40px; color: #a78bfa; margin-bottom: 15px;"></i>
-            <h2>Trechos Visionarios</h2>
-            <p>Acceso Root a Base de Datos Central</p>
-            <input type="email" id="ceo-email" placeholder="Correo corporativo del CEO">
+            <i class="fas fa-building"></i>
+            <h2>Trechos Corporate</h2>
+            <p>Panel Gerencial de Acceso Restringido</p>
+            <input type="email" id="ceo-email" placeholder="Correo administrativo">
             <button id="btn-login" class="btn-login">Autorizar Conexión</button>
             <p id="login-error" class="error-msg"></p>
         </div>
@@ -25,37 +25,37 @@
     <!-- PANEL PRINCIPAL -->
     <div id="ceo-dashboard" class="hidden" style="width: 100%; display: flex;">
         
-        <!-- SIDEBAR -->
+        <!-- BARRA LATERAL (SIDEBAR) -->
         <aside class="sidebar">
             <div class="workspace-header">
-                <div class="workspace-avatar">D</div>
-                <span>Dyla's workspace</span>
-                <i class="fas fa-chevron-down" style="margin-left: auto; font-size: 10px;"></i>
+                <div class="workspace-avatar">T</div>
+                <div>
+                    <span>Trechos Corp</span>
+                    <small>Workspace Gerencial</small>
+                </div>
             </div>
             
             <div class="service-nav">
-                <div class="service-title"><i class="fas fa-globe"></i> serivisios</div>
+                <div class="service-title">Finanzas & Análisis</div>
                 <ul class="nav-links">
-                    <li class="active" data-tab="tab-deploys"><i class="fas fa-rocket"></i> Deploys (Inicio)</li>
-                    <li data-tab="tab-settings"><i class="fas fa-cog"></i> Settings</li>
+                    <li class="active" data-tab="tab-inicio"><i class="fas fa-chart-pie"></i> Inicio (Métricas)</li>
+                    <li data-tab="tab-nomina"><i class="fas fa-wallet"></i> Contabilidad y Nómina</li>
                 </ul>
             </div>
             
             <div class="service-nav">
-                <div class="service-title">Monitor</div>
+                <div class="service-title">Operaciones</div>
                 <ul class="nav-links">
-                    <li data-tab="tab-events"><i class="fas fa-list-ul"></i> Events (TMDB)</li>
-                    <li data-tab="tab-logs"><i class="fas fa-search"></i> Logs</li>
-                    <li data-tab="tab-metrics"><i class="fas fa-chart-line"></i> Metrics</li>
+                    <li data-tab="tab-tmdb"><i class="fas fa-film"></i> Bóveda TMDB</li>
+                    <li data-tab="tab-configuraciones"><i class="fas fa-sliders-h"></i> Políticas de Pago</li>
+                    <li data-tab="tab-comunicados"><i class="fas fa-bullhorn"></i> Comunicados Push</li>
                 </ul>
             </div>
             
             <div class="service-nav">
-                <div class="service-title">Manage</div>
+                <div class="service-title">Sistemas</div>
                 <ul class="nav-links">
-                    <li data-tab="tab-environment"><i class="fas fa-server"></i> Environment</li>
-                    <li data-tab="tab-shell"><i class="fas fa-terminal"></i> Shell</li>
-                    <li data-tab="tab-compute"><i class="fas fa-microchip"></i> Compute</li>
+                    <li data-tab="tab-logs"><i class="fas fa-terminal"></i> Auditoría y Logs en Vivo</li>
                 </ul>
             </div>
         </aside>
@@ -63,319 +63,225 @@
         <!-- CONTENIDO CENTRAL -->
         <main class="main-content">
             
+            <!-- CABECERA SUPERIOR -->
             <header class="top-header">
                 <div class="breadcrumbs">
-                    <i class="fas fa-globe"></i> serivisios <i class="fas fa-chevron-down" style="font-size: 10px;"></i>
+                    <i class="fas fa-shield-alt text-yellow"></i> Terminal de Administración Root
                 </div>
                 <div class="header-actions">
-                    <button class="btn-outline"><i class="fas fa-search"></i> Search</button>
-                    <button class="btn-outline"><i class="fas fa-plus"></i> New</button>
-                    <div class="workspace-avatar" style="width: 28px; height: 28px; cursor: pointer;">D</div>
+                    <button class="btn-outline"><i class="fas fa-sync-alt"></i> Sincronizar Base de Datos</button>
+                    <div class="workspace-avatar" style="width: 32px; height: 32px; cursor: pointer; font-size: 14px;">LD</div>
                 </div>
             </header>
 
+            <!-- TÍTULO DEL ÁREA DE TRABAJO -->
             <div class="service-header">
                 <div class="service-title-row">
-                    <i class="fas fa-globe" style="font-size: 20px; color: var(--text-secondary);"></i>
-                    <span class="text-secondary" style="font-size: 12px; letter-spacing: 1px;">WEB SERVICE</span>
-                </div>
-                <div class="service-title-row">
-                    <h1>serivisios</h1>
-                    <span class="badge-node">Node</span>
-                    <span class="badge-plan">0.5c-512mb</span>
-                    <div style="margin-left: auto; display: flex; gap: 10px;">
-                        <button class="btn-outline">Connect <i class="fas fa-chevron-down"></i></button>
-                        <button class="btn-primary">Manual Deploy <i class="fas fa-chevron-down"></i></button>
+                    <h1>Panel de Operaciones - Sala Cine</h1>
+                    <div style="margin-left: auto; display: flex; gap: 15px;">
+                        <span class="badge-status">API Sincronizada</span>
                     </div>
                 </div>
                 <div class="service-info">
-                    <span>Service ID: <strong style="color: white;">srv-d330dd8dl3ps738ft5tg</strong> <i class="far fa-copy" style="cursor: pointer;"></i></span>
-                    <span><i class="fab fa-github"></i> dyla20044-gif / serivisios <i class="fas fa-code-branch" style="margin-left: 10px;"></i> main</span>
-                    <a href="https://serivisios.onrender.com" target="_blank">https://serivisios.onrender.com <i class="fas fa-external-link-alt" style="font-size: 10px;"></i></a>
-                    <div class="live-status">Live</div>
+                    Monitoreo en tiempo real de ingresos brutos de la corporación, rendimiento de la nómina de trabajadores e inyección de contenido directo a la bóveda MongoDB.
                 </div>
             </div>
 
+            <!-- CONTENEDOR DE PESTAÑAS -->
             <div class="tab-container">
                 
-                <!-- 1. DEPLOYS (INICIO) -->
-                <div id="tab-deploys" class="tab-content active">
+                <!-- 1. INICIO (MÉTRICAS Y GANANCIAS DE LA EMPRESA) -->
+                <div id="tab-inicio" class="tab-content active">
+                    
+                    <h2 style="font-size: 22px; font-weight: 700; margin-bottom: 25px;">Rendimiento Financiero Global</h2>
+                    
                     <div class="metrics-grid">
-                        <div class="metric-card">
-                            <div class="metric-title">Ingresos Trechos Corp (Mes)</div>
-                            <div class="metric-value" id="deploy-corp-revenue">$0.00</div>
-                            <span class="metric-sub">Capital libre de nómina</span>
+                        <div class="metric-card" style="border-top: 3px solid var(--green-live);">
+                            <div class="metric-title">Ingresos Brutos (Hoy)</div>
+                            <div class="metric-value text-green" id="dash-corp-revenue-today">$0.00</div>
+                            <span class="metric-sub"><i class="fas fa-arrow-up"></i> Capital acumulado de la empresa</span>
                         </div>
-                        <div class="metric-card">
-                            <div class="metric-title">Nómina Operativa Pendiente</div>
-                            <div class="metric-value text-yellow" id="deploy-payroll">$0.00</div>
-                            <span class="metric-sub" style="color: var(--text-secondary);">A liquidar el día 21</span>
+                        <div class="metric-card" style="border-top: 3px solid var(--blue-accent);">
+                            <div class="metric-title">Proyección Caja Mensual</div>
+                            <div class="metric-value" id="dash-corp-revenue-month">$0.00</div>
+                            <span class="metric-sub" style="color: var(--text-secondary);">Estimación en base al tráfico actual</span>
                         </div>
-                        <div class="metric-card">
-                            <div class="metric-title">Vistas de API Totales</div>
-                            <div class="metric-value" id="deploy-views">0</div>
-                            <span class="metric-sub">Tráfico general de apps</span>
+                        <div class="metric-card" style="border-top: 3px solid var(--yellow-trechos);">
+                            <div class="metric-title">Nómina Operativa Acumulada</div>
+                            <div class="metric-value text-yellow" id="dash-payroll-total">$0.00</div>
+                            <span class="metric-sub" style="color: var(--text-secondary);">Total adeudado a trabajadores</span>
                         </div>
-                    </div>
-
-                    <div class="panel-section">
-                        <div class="panel-header">
-                            <h3>Deploys Registrados</h3>
-                            <span class="text-secondary" style="font-size: 12px;">Últimos sincronizados</span>
-                        </div>
-                        <table class="render-table">
-                            <thead>
-                                <tr>
-                                    <th>Deploy</th>
-                                    <th>Trigger</th>
-                                    <th>Duration</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr>
-                                    <td>
-                                        <div style="display: flex; align-items: center; gap: 10px;">
-                                            <i class="fas fa-check-circle" style="color: var(--green-live);"></i>
-                                            <div>
-                                                <strong>Update ecpm and calculate total payment for workers</strong><br>
-                                                <span class="text-secondary" style="font-size: 12px;">78d2f84 • Deployed on <span id="deploy-time-1">Today</span></span>
-                                            </div>
-                                        </div>
-                                    </td>
-                                    <td>Compute plan updated</td>
-                                    <td>21, 4s</td>
-                                </tr>
-                                <tr>
-                                    <td>
-                                        <div style="display: flex; align-items: center; gap: 10px;">
-                                            <i class="fas fa-times-circle" style="color: var(--text-secondary);"></i>
-                                            <div>
-                                                <strong>Update ecpm and calculate total payment for workers</strong><br>
-                                                <span class="text-secondary" style="font-size: 12px;">78d2f84 • Deployed yesterday</span>
-                                            </div>
-                                        </div>
-                                    </td>
-                                    <td>Compute plan updated</td>
-                                    <td>6, 8s</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-
-                <!-- 2. SETTINGS (CONFIGURACIONES DE EMPRESA) -->
-                <div id="tab-settings" class="tab-content">
-                    <h2 style="font-size: 20px; font-weight: 600; margin-bottom: 20px;">Settings</h2>
-                    
-                    <div class="panel-section">
-                        <div class="panel-header">
-                            <h3>Pricing & Payment Controls</h3>
-                        </div>
-                        <div class="panel-body">
-                            <p class="text-secondary" style="margin-bottom: 20px; font-size: 13px;">Ajusta los límites de ganancias de los uploaders. Al guardar, los cambios se aplican en vivo sin reiniciar el servidor.</p>
-                            
-                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
-                                <div class="form-group">
-                                    <label>Modo de Trabajo Operativo</label>
-                                    <p>Determina la regla global de pagos.</p>
-                                    <select id="config-mode" class="form-control">
-                                        <option value="normal">Normal (Pago Estándar)</option>
-                                        <option value="boost">Boost (+ Pago Extra para motivar)</option>
-                                        <option value="feriado">Feriado ($0 ganancia, pero pueden subir)</option>
-                                    </select>
-                                </div>
-                                <div class="form-group">
-                                    <label>Pago Base Película ($)</label>
-                                    <p>Lo que gana un usuario por película inyectada.</p>
-                                    <input type="number" step="0.01" id="config-movie" class="form-control" value="0.50">
-                                </div>
-                                <div class="form-group">
-                                    <label>Límite Diario ($)</label>
-                                    <p>A partir de aquí, sus vistas no generan dinero.</p>
-                                    <input type="number" step="1" id="config-limit-day" class="form-control" value="25">
-                                </div>
-                                <div class="form-group">
-                                    <label>Límite Mensual Duro ($)</label>
-                                    <p>Tope máximo permitido por uploader.</p>
-                                    <input type="number" step="1" id="config-limit-month" class="form-control" value="150">
-                                </div>
-                            </div>
-                            <button class="btn-primary" id="btn-save-pricing" style="margin-top: 10px;">Save Changes</button>
+                        <div class="metric-card" style="border-top: 3px solid var(--text-secondary);">
+                            <div class="metric-title">Tráfico Global (Vistas Hoy)</div>
+                            <div class="metric-value" id="dash-total-views">0</div>
+                            <span class="metric-sub" style="color: var(--text-secondary);">Peticiones a la base de datos</span>
                         </div>
                     </div>
 
                     <div class="panel-section">
                         <div class="panel-header">
-                            <h3>Push Notifications to Automator Bot</h3>
+                            <h3>Evolución de Capital Bruto (Últimos 7 días)</h3>
                         </div>
                         <div class="panel-body">
-                            <p class="text-secondary" style="margin-bottom: 20px; font-size: 13px;">Envía comunicados instantáneos a los chats de Telegram de tus administradores.</p>
-                            
-                            <div class="form-group">
-                                <label>Mensaje Markdown</label>
-                                <textarea id="bot-msg-text" class="form-control" rows="3" placeholder="Ej: 🚀 ¡El CPM ha subido! Suban películas ahora para ganar el doble."></textarea>
-                            </div>
-                            <div class="form-group">
-                                <label>URL de Imagen (Opcional)</label>
-                                <input type="url" id="bot-msg-img" class="form-control" placeholder="https://ejemplo.com/imagen.jpg">
-                            </div>
-                            <div class="form-group">
-                                <label>Público Objetivo</label>
-                                <select id="bot-msg-target" class="form-control">
-                                    <option value="all_admins">Todos los Administradores y Uploaders</option>
-                                    <option value="primary">Solo Admin Principal (Pruebas)</option>
-                                </select>
-                            </div>
-                            <button class="btn-trechos" id="btn-send-bot">Trigger Broadcast</button>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- 3. EVENTS (TMDB INJECTOR) -->
-                <div id="tab-events" class="tab-content">
-                    <div class="panel-section">
-                        <div class="panel-header" style="background: rgba(255, 184, 0, 0.1);">
-                            <h3 class="text-yellow">Inyección Manual a MongoDB (Bypass API)</h3>
-                            <button class="btn-outline" id="btn-search-tmdb">Query TMDB</button>
-                        </div>
-                        <div class="panel-body">
-                            <div class="form-group">
-                                <label>Search Parameter</label>
-                                <input type="text" id="tmdb-search-input" class="form-control" placeholder="Títúlo de la obra...">
-                            </div>
-                            <div class="posters-grid" id="tmdb-results">
-                                <!-- Resultados javascript -->
-                            </div>
-
-                            <div id="tmdb-inject-area" class="hidden" style="margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--border-color);">
-                                <h4 id="tmdb-selected-title" style="margin-bottom: 15px;">Seleccionado</h4>
-                                <div class="form-group">
-                                    <label>Direct Source Link (.mp4)</label>
-                                    <input type="url" id="tmdb-url" class="form-control" placeholder="https://...">
-                                </div>
-                                <div style="display: flex; gap: 10px;">
-                                    <button class="btn-outline" id="btn-cancel-tmdb">Cancel</button>
-                                    <button class="btn-primary" id="btn-confirm-tmdb">Inject Event to DB</button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- 4. LOGS (TERMINAL) -->
-                <div id="tab-logs" class="tab-content">
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 15px;">
-                        <div class="form-control" style="width: 300px; display: flex; align-items: center; gap: 10px; padding: 5px 12px;">
-                            <i class="fas fa-search text-secondary"></i>
-                            <input type="text" placeholder="Search logs" style="background: transparent; border: none; color: white; outline: none; width: 100%;">
-                        </div>
-                        <button class="btn-outline"><i class="far fa-clock"></i> Last hour <i class="fas fa-chevron-down"></i></button>
-                    </div>
-
-                    <div class="terminal-window" id="live-terminal">
-                        <div class="log-line">
-                            <span class="log-time">Aug 28 11:03:42 AM</span>
-                            <span class="log-msg" style="color: #6b7280;">[tj5mb]</span>
-                            <span class="log-success">[Core] Conexión establecida con MongoDB 'sala_cine'.</span>
-                        </div>
-                        <!-- JS inyectará logs aquí simulando tail -->
-                    </div>
-                </div>
-
-                <!-- 5. METRICS -->
-                <div id="tab-metrics" class="tab-content">
-                    <div style="background: rgba(76, 43, 146, 0.1); border: 1px solid var(--purple-render); padding: 15px 20px; border-radius: 8px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
-                        <span><i class="fas fa-info-circle text-secondary"></i> Want to stream your metrics to another observability tool?</span>
-                        <a href="#" style="color: #a78bfa; font-weight: 600; text-decoration: none;">Visit Integrations <i class="fas fa-times" style="margin-left: 10px; color: var(--text-secondary);"></i></a>
-                    </div>
-                    
-                    <h2 style="font-size: 20px; font-weight: 600; margin-bottom: 20px;">Application Metrics</h2>
-                    
-                    <div class="panel-section">
-                        <div class="panel-body">
-                            <h3 style="margin-bottom: 5px; font-size: 16px;">Server Load & Revenue Correlation</h3>
-                            <span class="text-secondary" style="font-size: 12px;">Limit: 512 MB</span>
-                            <div style="height: 300px; margin-top: 20px; width: 100%;">
+                            <div style="height: 350px; width: 100%;">
                                 <canvas id="metricsChart"></canvas>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- 6. ENVIRONMENT (TRABAJADORES) -->
-                <div id="tab-environment" class="tab-content">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                        <h2 style="font-size: 20px; font-weight: 600;">Environment Variables (Workers)</h2>
-                        <button class="btn-outline"><i class="fas fa-plus"></i> Create environment group</button>
+                <!-- 2. CONTABILIDAD Y NÓMINA -->
+                <div id="tab-nomina" class="tab-content">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px;">
+                        <div>
+                            <h2 style="font-size: 22px; font-weight: 700; margin-bottom: 5px;">Contabilidad de Uploaders</h2>
+                            <p class="text-secondary" style="font-size: 14px;">Administra los ciclos de pago y evalúa el rendimiento individual.</p>
+                        </div>
                     </div>
 
                     <div class="panel-section">
                         <div class="panel-header">
-                            <div>
-                                <h3>Active Personnel Configuration</h3>
-                                <p class="text-secondary" style="font-size: 12px; margin-top: 5px;">Visualiza y liquida la nómina pendiente de cada variable de usuario.</p>
-                            </div>
-                            <div style="display: flex; gap: 10px;">
-                                <button class="btn-outline">Export <i class="fas fa-chevron-down"></i></button>
-                                <button class="btn-primary"><i class="fas fa-pen"></i> Edit</button>
-                            </div>
+                            <h3>Planilla Activa</h3>
                         </div>
-                        <table class="render-table">
+                        <table class="corp-table">
                             <thead>
                                 <tr>
-                                    <th>KEY (Uploader)</th>
-                                    <th>VALUE (Rol)</th>
-                                    <th>METRIC (Deuda)</th>
-                                    <th>ACTION</th>
+                                    <th>Identidad / Uploader</th>
+                                    <th>Rol Asignado</th>
+                                    <th>Vistas (Hoy)</th>
+                                    <th>Saldo Pendiente</th>
+                                    <th>Acción Contable</th>
                                 </tr>
                             </thead>
-                            <tbody id="env-workers-list">
-                                <tr><td colspan="4" class="text-center text-secondary">Sincronizando con MongoDB...</td></tr>
+                            <tbody id="payroll-list">
+                                <tr><td colspan="5" class="text-center text-secondary">Sincronizando con base de datos...</td></tr>
                             </tbody>
                         </table>
                     </div>
                 </div>
 
-                <!-- 7. SHELL -->
-                <div id="tab-shell" class="tab-content">
-                    <h2 style="font-size: 20px; font-weight: 600; margin-bottom: 10px;">Web Shell</h2>
-                    <p class="text-secondary" style="font-size: 13px; margin-bottom: 20px;">Run commands inside your service without setting up SSH.</p>
+                <!-- 3. INYECCIÓN TMDB -->
+                <div id="tab-tmdb" class="tab-content">
+                    <h2 style="font-size: 22px; font-weight: 700; margin-bottom: 5px;">Bóveda de Inyección (TMDB)</h2>
+                    <p class="text-secondary" style="margin-bottom: 25px; font-size: 14px;">Busca películas o series en la API oficial e inyéctalas directamente a MongoDB para los usuarios.</p>
 
-                    <div style="background: #000; border: 1px solid var(--border-color); border-radius: 8px; font-family: 'Courier New', monospace; padding: 20px; height: 350px;">
-                        <div style="color: white; margin-bottom: 10px;">render@srv-d330dd8dl3ps738ft5tg-7997658678-tj5mb:~/project/src/ala-cine-backend$ <span id="cursor-blink" style="background: white; width: 8px; height: 15px; display: inline-block; vertical-align: middle; animation: blink 1s infinite;"></span></div>
-                        <div id="shell-output" style="color: var(--text-secondary); font-size: 12px; line-height: 1.6;"></div>
-                    </div>
-                    <button class="btn-outline" style="margin-top: 15px;" id="btn-run-scan"><i class="fas fa-search"></i> Run System Scan</button>
-                </div>
-
-                <!-- 8. COMPUTE -->
-                <div id="tab-compute" class="tab-content">
-                    <h2 style="font-size: 20px; font-weight: 600; margin-bottom: 20px;">Compute Plan</h2>
-                    
                     <div class="panel-section">
-                        <div class="panel-header">
-                            <h3>Ecosistema Operativo</h3>
-                        </div>
                         <div class="panel-body">
-                            <div style="display: flex; gap: 20px;">
-                                <div style="flex: 1; border: 1px solid var(--purple-render); border-radius: 8px; padding: 20px; background: rgba(76, 43, 146, 0.05);">
-                                    <div style="display: flex; justify-content: space-between;">
-                                        <h4 style="font-size: 16px; margin-bottom: 10px;"><i class="fab fa-android text-green"></i> Sala Cine App</h4>
-                                        <span class="badge-plan">Primary</span>
-                                    </div>
-                                    <p class="text-secondary" style="font-size: 13px; margin-bottom: 15px;">Google Play Endpoint. Maneja el 90% del tráfico y la caché de streaming.</p>
-                                    <button class="btn-outline w-100 justify-content-center">Manage Service</button>
+                            <div class="form-group" style="display: flex; gap: 15px;">
+                                <input type="text" id="tmdb-search-input" class="form-control" placeholder="Escribe el título de la película o serie..." style="margin-bottom: 0;">
+                                <button class="btn-primary" id="btn-search-tmdb" style="white-space: nowrap;"><i class="fas fa-search"></i> Buscar</button>
+                            </div>
+                            
+                            <div class="posters-grid" id="tmdb-results">
+                                <!-- Resultados javascript -->
+                            </div>
+
+                            <div id="tmdb-inject-area" class="hidden" style="margin-top: 30px; padding-top: 30px; border-top: 1px solid var(--border-color);">
+                                <h3 id="tmdb-selected-title" style="margin-bottom: 20px; font-size: 20px; color: var(--yellow-trechos);">Obra Seleccionada</h3>
+                                <div class="form-group">
+                                    <label>Enlace Directo del Servidor (Obligatorio .mp4)</label>
+                                    <p>Por políticas de Trechos Corp, el enlace principal debe ser MP4 para asegurar el streaming fluido en la app móvil.</p>
+                                    <input type="url" id="tmdb-url" class="form-control" placeholder="https://cdn.tuservidor.com/video.mp4">
                                 </div>
-                                <div style="flex: 1; border: 1px solid var(--border-color); border-radius: 8px; padding: 20px;">
-                                    <div style="display: flex; justify-content: space-between;">
-                                        <h4 style="font-size: 16px; margin-bottom: 10px;"><i class="fab fa-telegram text-blue-dev"></i> Automator Bot</h4>
-                                        <span class="badge-node">Background</span>
-                                    </div>
-                                    <p class="text-secondary" style="font-size: 13px; margin-bottom: 15px;">Script de inyección directa a TMDB. Ejecución concurrente en Node.</p>
-                                    <button class="btn-outline w-100 justify-content-center">Manage Service</button>
+                                <div style="display: flex; gap: 15px; justify-content: flex-end; margin-top: 30px;">
+                                    <button class="btn-outline" id="btn-cancel-tmdb">Cancelar Inyección</button>
+                                    <button class="btn-primary" id="btn-confirm-tmdb"><i class="fas fa-database"></i> Insertar en MongoDB</button>
                                 </div>
                             </div>
                         </div>
+                    </div>
+                </div>
+
+                <!-- 4. CONFIGURACIONES Y POLÍTICAS DE PAGO -->
+                <div id="tab-configuraciones" class="tab-content">
+                    <h2 style="font-size: 22px; font-weight: 700; margin-bottom: 5px;">Políticas y Economía Interna</h2>
+                    <p class="text-secondary" style="margin-bottom: 25px; font-size: 14px;">Control maestro sobre lo que generan los uploaders. Los cambios impactan el cálculo del servidor instantáneamente.</p>
+                    
+                    <div class="panel-section">
+                        <div class="panel-header">
+                            <h3>Gestor de Tarifas y Límites</h3>
+                        </div>
+                        <div class="panel-body">
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px;">
+                                <div class="form-group">
+                                    <label>Estado de la Economía Operativa</label>
+                                    <p>Decide si el día de hoy es de ganancia normal, feriado o si hay un bono extra.</p>
+                                    <select id="config-mode" class="form-control">
+                                        <option value="normal">Normal (Estándar de la empresa)</option>
+                                        <option value="boost">Bono Boost (+0.10$ por subida extra)</option>
+                                        <option value="feriado">Feriado ($0 de pago, pero pueden subir)</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label>Tarifa Base por Película (USD)</label>
+                                    <p>Pago estándar antes de aplicar retenciones psicológicas.</p>
+                                    <input type="number" step="0.01" id="config-movie" class="form-control" value="0.50">
+                                </div>
+                                <div class="form-group">
+                                    <label>Límite Diario por Trabajador (USD)</label>
+                                    <p>Superado este monto diario, el backend registrará $0.00 de ganancia.</p>
+                                    <input type="number" step="1" id="config-limit-day" class="form-control" value="25">
+                                </div>
+                                <div class="form-group">
+                                    <label>Límite Mensual Duro (USD)</label>
+                                    <p>Límite salarial por ciclo (mes) para uploaders.</p>
+                                    <input type="number" step="1" id="config-limit-month" class="form-control" value="150">
+                                </div>
+                            </div>
+                            <div style="margin-top: 20px; border-top: 1px solid var(--border-color); padding-top: 25px; display: flex; justify-content: flex-end;">
+                                <button class="btn-primary" id="btn-save-pricing"><i class="fas fa-save"></i> Guardar Nuevas Políticas</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 5. COMUNICADOS PUSH AL BOT -->
+                <div id="tab-comunicados" class="tab-content">
+                    <h2 style="font-size: 22px; font-weight: 700; margin-bottom: 5px;">Central de Notificaciones Push</h2>
+                    <p class="text-secondary" style="margin-bottom: 25px; font-size: 14px;">Utiliza la instancia del Bot de Telegram para enviar mensajes directos e instrucciones al equipo.</p>
+                    
+                    <div class="panel-section">
+                        <div class="panel-body">
+                            <div class="form-group">
+                                <label>Mensaje Oficial (Soporta Markdown)</label>
+                                <p>El texto que recibirán en su chat de Telegram.</p>
+                                <textarea id="bot-msg-text" class="form-control" rows="5" placeholder="Ej: 🚀 ¡Atención equipo! El CPM ha subido. Es hora ideal para subir estrenos."></textarea>
+                            </div>
+                            <div class="form-group">
+                                <label>Adjuntar Imagen (Opcional - URL directa)</label>
+                                <input type="url" id="bot-msg-img" class="form-control" placeholder="https://mi-empresa.com/imagen.jpg">
+                            </div>
+                            <div class="form-group">
+                                <label>Destinatarios</label>
+                                <select id="bot-msg-target" class="form-control">
+                                    <option value="all_admins">Todo el personal registrado (Uploaders y Admins)</option>
+                                    <option value="primary">Solo Canal de Pruebas (CEO)</option>
+                                </select>
+                            </div>
+                            <div style="margin-top: 30px; display: flex; justify-content: flex-end;">
+                                <button class="btn-primary" id="btn-send-bot"><i class="fas fa-paper-plane"></i> Despachar Mensaje</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 6. AUDITORÍA Y LOGS -->
+                <div id="tab-logs" class="tab-content">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                        <div>
+                            <h2 style="font-size: 22px; font-weight: 700; margin-bottom: 5px;">Terminal de Auditoría</h2>
+                            <p class="text-secondary" style="font-size: 14px;">Monitor en vivo de eventos del sistema, base de datos y bot.</p>
+                        </div>
+                        <button class="btn-outline" id="btn-run-scan"><i class="fas fa-stethoscope"></i> Escaneo Rápido de DB</button>
+                    </div>
+
+                    <div class="terminal-window" id="live-terminal">
+                        <div class="log-line">
+                            <span class="log-time">12:00:00</span>
+                            <span class="log-msg" style="color: #6b7280;">[Trechos_Sys]</span>
+                            <span class="log-success">[Core] Conexión establecida con clúster MongoDB.</span>
+                        </div>
+                        <!-- JS inyectará logs aquí simulando tail -->
                     </div>
                 </div>
 
@@ -383,7 +289,7 @@
         </main>
     </div>
 
-    <!-- MODAL DE PAGO -->
+    <!-- MODAL DE PAGO / LIQUIDACIÓN -->
     <div class="modal" id="modal-payment">
         <div class="modal-content">
             <div class="modal-header">
@@ -391,22 +297,21 @@
                 <button class="btn-close" id="close-modal-payment"><i class="fas fa-times"></i></button>
             </div>
             <div class="modal-body text-center">
-                <i class="fas fa-wallet" style="font-size: 40px; color: var(--green-live); margin-bottom: 15px;"></i>
-                <h2 id="pay-target-name" style="margin-bottom: 5px;">Trabajador</h2>
-                <p class="text-secondary" style="font-size: 13px; margin-bottom: 20px;">Se registrará en payout_history y la cuenta volverá a $0.00</p>
-                <div style="background: var(--bg-main); padding: 20px; border-radius: 8px; border: 1px solid var(--border-color);">
-                    <span style="font-size: 11px; text-transform: uppercase; color: var(--text-secondary);">Monto a Aprobar</span>
-                    <h1 style="color: white; margin-top: 5px; font-size: 36px;" id="pay-target-amount">$0.00</h1>
+                <i class="fas fa-file-invoice-dollar" style="font-size: 50px; color: var(--green-live); margin-bottom: 20px;"></i>
+                <h2 id="pay-target-name" style="margin-bottom: 10px; font-size: 24px;">Nombre del Trabajador</h2>
+                <p class="text-secondary" style="font-size: 14px; margin-bottom: 25px; line-height: 1.5;">Al confirmar, la base de datos guardará este recibo en <code>payout_history</code> y la cuenta del trabajador se reiniciará para un nuevo mes.</p>
+                <div style="background: var(--bg-main); padding: 25px; border-radius: 12px; border: 1px solid var(--border-color);">
+                    <span style="font-size: 12px; text-transform: uppercase; color: var(--text-secondary); font-weight: 700; letter-spacing: 1px;">Suma a Liquidar</span>
+                    <h1 style="color: var(--yellow-trechos); margin-top: 10px; font-size: 42px;" id="pay-target-amount">$0.00</h1>
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn-outline" id="btn-cancel-pay">Cancel</button>
-                <button class="btn-primary" id="btn-confirm-pay">Confirm Payout</button>
+                <button class="btn-outline" id="btn-cancel-pay">Cancelar</button>
+                <button class="btn-primary" id="btn-confirm-pay"><i class="fas fa-check"></i> Ejecutar Liquidación Segura</button>
             </div>
         </div>
     </div>
 
     <script src="ceo_panel.js"></script>
-    <style>@keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }</style>
 </body>
 </html>
