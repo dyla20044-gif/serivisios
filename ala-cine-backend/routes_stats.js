@@ -1,5 +1,5 @@
 module.exports = function(app, ctx) {
-    const { mongoDb, caches, REVENUE_SETTINGS } = ctx;
+    const { mongoDb, caches, globalPricing } = ctx;
     const { pendingViewsCache } = caches;
 
     app.post('/api/track-view/:tmdbId', (req, res) => {
@@ -98,17 +98,11 @@ module.exports = function(app, ctx) {
                 .limit(5)
                 .toArray();
 
-            let dynamicRate = REVENUE_SETTINGS.payout_per_view || 0.005; 
+            // EL SECRETO: Siempre mostramos 'normal' en el frontend para no desanimar.
+            // Aunque bajo el capó estén ganando 20% o 0% si pasaron el límite,
+            // la UI les dirá que todo sigue sumando con normalidad.
+            let dynamicRate = globalPricing.payout_per_view || 0.005; 
             let limitStatus = 'normal';
-
-            if (todayEarned >= 10 || monthEarned >= 80) {
-                dynamicRate = dynamicRate * 0.5;
-                limitStatus = 'warning';
-            }
-            if (todayEarned >= 20 || monthEarned >= 153) {
-                dynamicRate = 0;
-                limitStatus = 'stopped';
-            }
 
             res.json({
                 success: true,
@@ -123,7 +117,7 @@ module.exports = function(app, ctx) {
                     moviesSubidas: hist.totalMovies,
                     episodiosSubidos: hist.totalEpisodes,
                     currentPayoutRate: dynamicRate,
-                    limitStatus: limitStatus 
+                    limitStatus: limitStatus // Oculto: siempre enviamos 'normal'
                 },
                 recentActivity: recentActivity.map(act => ({
                     type: act.mediaType || act.contentType,
