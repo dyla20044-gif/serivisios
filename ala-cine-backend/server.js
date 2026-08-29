@@ -75,12 +75,12 @@ let globalPricing = {
     payout_per_view: 0.005,
     limit_daily: 25.00,
     limit_monthly: 150.00,
-    corp_revenue_per_view: 0.000045 // Ganancia neta de la empresa por vista
+    corp_revenue_per_view: 0.045 // Multiplicador base de empresa
 };
 
 const COLL_REVENUE = 'uploader_revenue';
 const COLL_DAILY_STATS = 'uploader_daily_stats';
-const COLL_CORP_REVENUE = 'corp_daily_revenue'; // Nueva colección para la empresa
+const COLL_CORP_REVENUE = 'corp_daily_revenue'; // Colección exclusiva de la empresa
 
 const client = new MongoClient(MONGO_URI, {
     serverApi: {
@@ -119,6 +119,7 @@ app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
 let trafficCount = 0;
+let companyAccumulatedTraffic = 0; // ACUMULADOR CORPORATIVO INDEPENDIENTE
 let lastTrafficAlert = 0;
 let currentCpmMultiplier = 1.0; 
 let globalTrafficBonusActive = false;
@@ -128,6 +129,8 @@ setInterval(() => { trafficCount = 0; }, 60000);
 
 app.use((req, res, next) => {
     trafficCount++;
+    companyAccumulatedTraffic++; // Cada vez que alguien usa la app (búsqueda, navegación), la empresa lo registra
+    
     if (trafficCount > TRAFFIC_THRESHOLD && (Date.now() - lastTrafficAlert > 3600000)) {
         lastTrafficAlert = Date.now();
         currentCpmMultiplier = 1.5; 
@@ -236,7 +239,6 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
         let contentType = 'catalogo';
         let basePrice = 0;
 
-        // LÓGICA DE CONTROL CEO DINÁMICA
         if (globalPricing.mode === 'feriado') {
             basePrice = 0;
         } else {
@@ -264,12 +266,10 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
 
         let potentialEarned = basePrice;
         
-        // REGLA PSICOLÓGICA (Si pasa de $15, gana el 20% para dificultar llegar a $25)
         if (currentDaily >= 15.00) {
             potentialEarned = basePrice * 0.2;
         }
 
-        // BLOQUEO DURO INVISIBLE (Si pasa el límite diario o mensual, genera $0 pero guarda el progreso)
         if (currentDaily >= globalPricing.limit_daily || currentCycleEarned >= globalPricing.limit_monthly) {
             potentialEarned = 0;
             limitReached = true;
@@ -377,13 +377,12 @@ const ctx = {
 
 global.ctx = ctx;
 
-// AQUÍ CONECTAMOS TODOS TUS MÓDULOS INCLUYENDO EL NUEVO DEL CEO
 require('./routes_user.js')(app, ctx);
 require('./routes_content.js')(app, ctx);
 require('./routes_live.js')(app, ctx);
 require('./routes_stats.js')(app, ctx); 
 require('./routes_tvision.js')(app, ctx);
-require('./routes_ceo.js')(app, ctx); // <--- ESTO LE DA VIDA AL PANEL CEO
+require('./routes_ceo.js')(app, ctx); 
 
 app.get('/', (req, res) => { res.send('Activo'); });
 
@@ -394,7 +393,6 @@ if (process.env.NODE_ENV === 'production' && token) {
         bot.processUpdate(req.body);
         res.sendStatus(200);
     });
-} else if (!token && process.env.NODE_ENV === 'production'){
 }
 
 app.get('/app/details/:tmdbId', (req, res) => {
@@ -485,7 +483,6 @@ app.post('/api/ceo/login', (req, res) => {
     }
 });
 
-// Dejamos las rutas de trabajadores HR por seguridad y compatibilidad futura
 app.get('/api/ceo/workers', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "DB no conectada" });
     try {
@@ -545,19 +542,21 @@ app.get('/api/tmdb-proxy', async (req, res) => {
 
 cron.schedule('*/5 * * * *', async () => {
     const keys = pendingViewsCache.keys();
-    if (keys.length === 0 || !mongoDb) return;
+    
+    // Si no hay base de datos conectada, salir.
+    if (!mongoDb) return;
 
     const bulkOps = [];
     const bulkRevenueOps = []; 
-    const bulkCorpOps = []; // Registro de ingresos corporativos reales
+    const bulkCorpOps = []; 
     
     const now = new Date();
     const dayId = now.toISOString().split('T')[0];
     const monthId = dayId.substring(0, 7);
 
-    let totalCorpEarned = 0;
     let totalViewsProcessed = 0;
 
+    // 1. PROCESAMIENTO DE UPLOADERS (INTACTO)
     for (const tmdbId of keys) {
         const viewsCount = pendingViewsCache.get(tmdbId);
         if (viewsCount > 0) {
@@ -597,23 +596,18 @@ cron.schedule('*/5 * * * *', async () => {
                 let finalEarned = 0;
                 let dynamicRate = globalPricing.payout_per_view;
 
-                // LÓGICA DE MODOS CEO PARA VISTAS
                 if (globalPricing.mode === 'feriado') dynamicRate = 0;
                 if (globalPricing.mode === 'boost') dynamicRate = dynamicRate * 1.5;
 
-                // PSICOLOGÍA: Si pasa de $15, gana el 20%
                 if (currentDaily >= 15.00) {
                     dynamicRate = dynamicRate * 0.2;
                 }
 
                 if (currentCycleEarned < globalPricing.limit_monthly && currentDaily < globalPricing.limit_daily) {
-                    
                     let earned = parseFloat((viewsCount * dynamicRate * currentCpmMultiplier).toFixed(3));
-                    
                     if (currentDaily + earned > globalPricing.limit_daily) {
                         earned = globalPricing.limit_daily - currentDaily;
                     }
-
                     if (currentCycleEarned + earned > globalPricing.limit_monthly) {
                         finalEarned = parseFloat((globalPricing.limit_monthly - currentCycleEarned).toFixed(3));
                     } else {
@@ -651,14 +645,27 @@ cron.schedule('*/5 * * * *', async () => {
         }
     }
 
-    // Calcular ganancia corporativa
-    if (totalViewsProcessed > 0) {
-        totalCorpEarned = totalViewsProcessed * globalPricing.corp_revenue_per_view;
+    // 2. LÓGICA DE INGRESOS EXCLUSIVA DE LA EMPRESA
+    // Toma el tráfico general acumulado en estos 5 minutos y lo reinicia
+    let trafficToProcess = companyAccumulatedTraffic;
+    companyAccumulatedTraffic = 0; 
+
+    // Calculamos el dinero corporativo basándonos en el tráfico bruto de la app y las vistas
+    let revenueFromViews = totalViewsProcessed * globalPricing.corp_revenue_per_view;
+    let revenueFromRequests = trafficToProcess * 0.015; // Ganancia corporativa: $0.015 por petición en la API
+
+    let totalCorpEarned = revenueFromViews + revenueFromRequests;
+
+    if (totalCorpEarned > 0 || totalViewsProcessed > 0 || trafficToProcess > 0) {
         bulkCorpOps.push({
             updateOne: {
                 filter: { dayId: dayId },
                 update: {
-                    $inc: { today_earned: totalCorpEarned, total_views: totalViewsProcessed },
+                    $inc: { 
+                        today_earned: totalCorpEarned, 
+                        total_views: totalViewsProcessed,
+                        total_requests: trafficToProcess 
+                    },
                     $setOnInsert: { monthId: monthId }
                 },
                 upsert: true
