@@ -4,12 +4,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnLogin = document.getElementById('btn-login');
     const emailInput = document.getElementById('ceo-email');
     const titleDisplay = document.getElementById('top-title-display');
+    
+    let currentCharts = {}; // Para destruir gráficos viejos al recargar
 
     btnLogin?.addEventListener('click', () => {
         const email = emailInput?.value.trim();
         if (!email) return;
         
-        btnLogin.innerHTML = 'CONECTANDO...';
+        btnLogin.innerHTML = 'CONECTANDO AL CLUSTER...';
         setTimeout(() => {
             loginScreen.classList.add('hidden');
             dashboard.classList.remove('hidden');
@@ -24,20 +26,24 @@ document.addEventListener('DOMContentLoaded', () => {
         title.classList.toggle('open');
     };
 
+    // Títulos traducidos al español corporativo
     const mapTitle = {
-        'tab-dashboard': 'TRECHO CORP OVERVIEW DASHBOARD <span class="sub">| CEO ACCESS</span>',
-        'tab-fin-overview': 'TRECHO VISIONARIOS | FINANCIAL OVERVIEW <span class="sub">- CEO ACCESS</span>',
-        'tab-fin-policies': 'TRECHO VISIONARIOS | CONFIGURACIONES DE LA CUENTA Y SISTEMA',
-        'tab-fin-cashflow': 'TRECHO VISIONARIOS | ANÁLISIS DE FLUJO DE CAJA - ACCESO CEO',
-        'tab-fin-oberbia': 'TRECHO VISIONARIOS | RESUMEN GENERAL (OBERBIA) - ACCESO CEO',
-        'tab-srv-health': 'TRECHO VISIONARIOS | SERVERS <span class="sub">- CEO ACCESS</span>',
-        'tab-srv-deploy': 'TRECHO VISIONARIOS | MANUAL DEPLOYMENTS (TMDB)',
-        'tab-usr-activity': 'TRECHO VISIONARIOS | USERS <span class="sub">- CEO ACCESS</span>',
-        'tab-team-personnel': 'TRECHO VISIONARIOS | TEAM MANAGEMENT <span class="sub">- CEO ACCESS</span>',
-        'tab-team-roles': 'TRECHO VISIONARIOS | ROLES & PERMISSIONS <span class="sub">- CEO ACCESS</span>',
-        'tab-reports': 'TRECHO VISIONARIOS | CENTRO DE REPORTES <span class="sub">- ACCESO CEO</span>',
-        'tab-settings': 'TRECHO VISIONARIOS | CONFIGURACIONES DE LA CUENTA Y SISTEMA',
-        'tab-empresa': 'TRECHO CORPORATE <span class="sub">| ACERCA DE LA EMPRESA</span>'
+        'tab-dashboard': 'PANEL DE CONTROL PRINCIPAL <span class="sub">| ACCESO CEO</span>',
+        'tab-fin-overview': 'FINANZAS | VISIÓN GENERAL <span class="sub">- ACCESO CEO</span>',
+        'tab-fin-revenue': 'FINANZAS | DETALLE DE INGRESOS <span class="sub">- ACCESO CEO</span>',
+        'tab-fin-expenses': 'FINANZAS | DETALLE DE GASTOS <span class="sub">- ACCESO CEO</span>',
+        'tab-fin-cashflow': 'FINANZAS | FLUJO DE CAJA <span class="sub">- ACCESO CEO</span>',
+        'tab-fin-oberbia': 'FINANZAS | RESUMEN CORPORATIVO <span class="sub">- ACCESO CEO</span>',
+        'tab-srv-health': 'SERVIDORES | ESTADO Y SALUD <span class="sub">- ACCESO CEO</span>',
+        'tab-srv-deploy': 'SERVIDORES | DESPLIEGUES MANUALES (TMDB)',
+        'tab-usr-activity': 'PLATAFORMA | ACTIVIDAD GLOBAL <span class="sub">- ACCESO CEO</span>',
+        'tab-usr-payments': 'PLATAFORMA | UPLOADERS & PAGOS <span class="sub">- RECURSOS HUMANOS</span>',
+        'tab-usr-engagement': 'PLATAFORMA | RETENCIÓN DE USUARIOS <span class="sub">- ACCESO CEO</span>',
+        'tab-team-personnel': 'RECURSOS HUMANOS | NÓMINA Y PERSONAL',
+        'tab-team-roles': 'RECURSOS HUMANOS | ROLES Y JERARQUÍAS',
+        'tab-reports': 'CENTRO DE REPORTES Y ANALÍTICA',
+        'tab-settings': 'CONFIGURACIONES DEL SISTEMA',
+        'tab-empresa': 'TRECHOS CORPORATE <span class="sub">| ACERCA DE LA EMPRESA</span>'
     };
 
     document.querySelectorAll('.nav-item, .nav-sub-item').forEach(li => {
@@ -56,7 +62,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const tabElement = document.getElementById(tabId);
             if (tabElement) {
                 tabElement.classList.add('active');
-                titleDisplay.innerHTML = mapTitle[tabId] || 'TRECHO VISIONARIOS';
+                titleDisplay.innerHTML = mapTitle[tabId] || 'TRECHOS CORPORATE';
             }
         });
     });
@@ -65,29 +71,78 @@ document.addEventListener('DOMContentLoaded', () => {
         window.location.reload();
     });
 
-    function initSystem() {
-        initCharts();
+    // SISTEMA NÚCLEO: Conexión asíncrona preparada para la Fase 2
+    async function initSystem() {
+        try {
+            // Animación de carga visual
+            document.getElementById('dash-revenue-today').innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+            document.getElementById('dash-revenue-month').innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+            document.getElementById('dash-revenue-total').innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+
+            // INTENTO DE CONEXIÓN A TU API REAL (Se implementará en Fase 2)
+            const response = await fetch('/api/ceo/master-stats').catch(() => null);
+            
+            let data;
+            if (response && response.ok) {
+                data = await response.json();
+            } else {
+                // FALLBACK: Datos simulados para visualizar la interfaz hoy mientras programamos la Fase 2
+                data = generarDatosDePrueba();
+            }
+
+            // Inyectar datos al DOM
+            document.getElementById('dash-revenue-today').innerText = `$${parseFloat(data.ingresosHoy).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+            document.getElementById('dash-revenue-month').innerText = `$${parseFloat(data.cajaMes).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+            document.getElementById('dash-revenue-total').innerText = `$${parseFloat(data.ingresosHistoricos).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+            document.getElementById('dash-active-users').innerText = data.vistasHoy.toLocaleString();
+
+            renderDynamicCharts(data);
+            renderWorkersTable(data.trabajadores);
+
+        } catch (error) {
+            console.error("Fallo al inicializar el sistema:", error);
+            document.getElementById('dash-revenue-today').innerText = "ERROR";
+        }
     }
 
-    function initCharts() {
-        const createLineChart = (id, data, color, isFill = true) => {
-            const ctx = document.getElementById(id)?.getContext('2d');
-            if (!ctx) return;
-            let gradient = ctx.createLinearGradient(0, 0, 0, 300);
-            gradient.addColorStop(0, `rgba(${color}, 0.4)`);
-            gradient.addColorStop(1, `rgba(${color}, 0.0)`);
-            new Chart(ctx, {
+    function generarDatosDePrueba() {
+        // Esto se borrará en la Fase 2 cuando Node.js devuelva los datos reales
+        return {
+            ingresosHoy: 543.20,
+            cajaMes: 16296.00,
+            ingresosHistoricos: 245890.50,
+            vistasHoy: 152430,
+            chartLabels: ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Hoy'],
+            chartData: [450, 480, 520, 590, 610, 580, 543.20],
+            trabajadores: [
+                { id: "11111111", name: "Dylan (CEO)", rol: "Admin CEO", totalUploads: 5, earnedToday: 0.00, deudaPendiente: 0.00, trend: 'neutral' },
+                { id: "22222222", name: "Uploader Externo 1", rol: "Uploader", totalUploads: 42, earnedToday: 12.50, deudaPendiente: 85.00, trend: 'up' },
+                { id: "33333333", name: "Uploader Externo 2", rol: "Uploader", totalUploads: 18, earnedToday: 4.20, deudaPendiente: 22.10, trend: 'down' }
+            ]
+        };
+    }
+
+    function renderDynamicCharts(apiData) {
+        const ctxRevenue = document.getElementById('chart-dashboard-revenue');
+        if (ctxRevenue) {
+            if(currentCharts['revenue']) currentCharts['revenue'].destroy();
+            
+            let gradient = ctxRevenue.getContext('2d').createLinearGradient(0, 0, 0, 300);
+            gradient.addColorStop(0, 'rgba(234, 179, 8, 0.4)');
+            gradient.addColorStop(1, 'rgba(234, 179, 8, 0.0)');
+
+            currentCharts['revenue'] = new Chart(ctxRevenue.getContext('2d'), {
                 type: 'line',
                 data: {
-                    labels: ['1', '2', '3', '4', '5', '6', '7'],
+                    labels: apiData.chartLabels,
                     datasets: [{
-                        data: data,
-                        borderColor: `rgb(${color})`,
-                        backgroundColor: isFill ? gradient : 'transparent',
+                        data: apiData.chartData,
+                        borderColor: 'rgb(234, 179, 8)',
+                        backgroundColor: gradient,
                         borderWidth: 3,
-                        fill: isFill,
+                        fill: true,
                         tension: 0.4,
-                        pointBackgroundColor: `rgb(${color})`,
+                        pointBackgroundColor: 'rgb(234, 179, 8)',
                         pointBorderColor: '#fff',
                         pointRadius: 4
                     }]
@@ -102,134 +157,51 @@ document.addEventListener('DOMContentLoaded', () => {
                     plugins: { legend: { display: false } }
                 }
             });
-        };
-
-        const createBarChart = (id, data, color) => {
-            const ctx = document.getElementById(id)?.getContext('2d');
-            if (!ctx) return;
-            new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels: ['1', '2', '3', '4', '5', '6', '7'],
-                    datasets: [{
-                        data: data,
-                        backgroundColor: `rgb(${color})`,
-                        borderRadius: 4
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    scales: {
-                        y: { display: false },
-                        x: { grid: { display: false }, ticks: { color: '#9ca3af', font: {size: 10} } }
-                    },
-                    plugins: { legend: { display: false } }
-                }
-            });
-        };
-
-        const createDonutChart = (id, dataArr, colorsArr) => {
-            const ctx = document.getElementById(id)?.getContext('2d');
-            if (!ctx) return;
-            new Chart(ctx, {
-                type: 'doughnut',
-                data: {
-                    datasets: [{
-                        data: dataArr,
-                        backgroundColor: colorsArr,
-                        borderWidth: 0,
-                        cutout: '70%'
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: { legend: { display: false } }
-                }
-            });
-        };
-
-        createLineChart('chart-dashboard-revenue', [20, 35, 50, 45, 80, 110, 150], '234, 179, 8');
-        createBarChart('chart-dashboard-activity', [40, 30, 60, 45, 80, 50, 90], '234, 179, 8');
-        createBarChart('chart-dashboard-workforce', [60, 40, 80, 65, 90, 70, 100], '234, 179, 8');
-
-        createLineChart('chart-fin-cashflow', [50, 60, 40, 70, 90, 80, 110], '234, 179, 8');
-        createDonutChart('chart-fin-expense-donut', [40, 30, 20, 10], ['#eab308', '#f97316', '#ef4444', '#6b7280']);
-        
-        const ctxProduct = document.getElementById('chart-fin-product')?.getContext('2d');
-        if (ctxProduct) {
-            new Chart(ctxProduct, {
-                type: 'bar',
-                data: {
-                    labels: ['Product 1', 'Product 2', 'Product 3', 'Product 4', 'Legal'],
-                    datasets: [{ data: [15, 12, 9, 6, 3], backgroundColor: '#eab308', borderRadius: 4 }]
-                },
-                options: {
-                    indexAxis: 'y',
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    scales: { x: { grid: { color: '#2b2f3a' }, ticks: { color: '#9ca3af' } }, y: { grid: { display: false }, ticks: { color: '#9ca3af' } } },
-                    plugins: { legend: { display: false } }
-                }
-            });
         }
-
-        createLineChart('chart-srv-performance', [10, 30, 20, 50, 40, 60, 80], '234, 179, 8');
-        createDonutChart('chart-srv-cpu', [45, 25, 20, 10], ['#eab308', '#ef4444', '#22c55e', '#6b7280']);
-
-        createLineChart('chart-usr-reg', [10, 15, 12, 25, 20, 35, 40], '234, 179, 8', false);
-        createLineChart('chart-usr-engagement', [20, 40, 30, 60, 50, 80, 100], '234, 179, 8');
-        createDonutChart('chart-usr-platform', [50, 30, 20], ['#eab308', '#ef4444', '#6b7280']);
-
-        const ctxRadar = document.getElementById('chart-roles-radar')?.getContext('2d');
-        if (ctxRadar) {
-            new Chart(ctxRadar, {
-                type: 'radar',
-                data: {
-                    labels: ['Finance', 'Server', 'User', 'Team', 'Product Lead'],
-                    datasets: [{
-                        data: [65, 59, 90, 81, 56],
-                        backgroundColor: 'rgba(234, 179, 8, 0.2)',
-                        borderColor: '#eab308',
-                        pointBackgroundColor: '#eab308'
-                    }, {
-                        data: [28, 48, 40, 19, 96],
-                        backgroundColor: 'rgba(34, 197, 94, 0.2)',
-                        borderColor: '#22c55e',
-                        pointBackgroundColor: '#22c55e'
-                    }]
-                },
-                options: { responsive: true, maintainAspectRatio: false, scales: { r: { grid: { color: '#2b2f3a' }, ticks: { display: false } } }, plugins: { legend: { display: false } } }
-            });
-        }
-
-        createDonutChart('chart-reports-donut', [35, 25, 20, 20], ['#22c55e', '#eab308', '#ef4444', '#6b7280']);
-        createLineChart('chart-reports-usage', [5, 10, 8, 15, 12, 20, 25], '234, 179, 8');
     }
+
+    function renderWorkersTable(trabajadores) {
+        const tbody = document.getElementById('workers-table-body');
+        if (!tbody) return;
+        
+        tbody.innerHTML = '';
+        if(trabajadores.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align: center;">No hay trabajadores activos.</td></tr>';
+            return;
+        }
+
+        trabajadores.forEach(t => {
+            const badgeClass = t.rol.includes('CEO') ? 'status-green' : 'status-yellow';
+            const html = `
+                <tr>
+                    <td><strong>${t.name}</strong><br><span style="font-size: 11px; color: var(--text-secondary);">ID: ${t.id}</span></td>
+                    <td><span class="status-badge ${badgeClass}">${t.rol}</span></td>
+                    <td>${t.totalUploads}</td>
+                    <td class="text-green">+$${t.earnedToday.toFixed(2)}</td>
+                    <td style="font-weight: bold; color: var(--trecho-yellow);">$${t.deudaPendiente.toFixed(2)}</td>
+                    <td><button class="btn-outline" style="padding: 5px 10px; width: auto; font-size: 11px;" onclick="alert('Módulo de Pago en Fase 3')">Liquidar</button></td>
+                </tr>
+            `;
+            tbody.insertAdjacentHTML('beforeend', html);
+        });
+    }
+
+    // Botón de Enlace Mágico
+    document.getElementById('btn-generar-enlace')?.addEventListener('click', () => {
+        const fakeLink = "https://app.trechovisionaries.com/invite?token=" + Math.random().toString(36).substr(2, 9);
+        prompt("Copia este enlace y envíalo a tu nuevo trabajador por WhatsApp:", fakeLink);
+    });
 
     document.getElementById('btn-search-tmdb')?.addEventListener('click', async () => {
         const q = document.getElementById('tmdb-search-input').value.trim();
         if(!q) return;
         const grid = document.getElementById('tmdb-results');
-        grid.innerHTML = '<span class="text-secondary">Searching TMDB...</span>';
+        grid.innerHTML = '<span class="text-secondary">Buscando en TMDB...</span>';
         setTimeout(() => {
             grid.innerHTML = `
-                <div class="poster-item" onclick="selectTmdb(this, 'Movie 1')"><img src="https://image.tmdb.org/t/p/w200/8cdWjvZQUrmdDO7cgYFj31GISSN.jpg"></div>
-                <div class="poster-item" onclick="selectTmdb(this, 'Movie 2')"><img src="https://image.tmdb.org/t/p/w200/gR7hB3a7O5wA1RzL6Fwz19UeR2m.jpg"></div>
+                <div class="poster-item" style="width: 130px; height: 195px; background: #333; border-radius: 8px; display: flex; align-items: center; justify-content: center; cursor: pointer; border: 2px solid transparent;" onclick="this.style.borderColor='var(--trecho-yellow)'">Película 1</div>
+                <div class="poster-item" style="width: 130px; height: 195px; background: #333; border-radius: 8px; display: flex; align-items: center; justify-content: center; cursor: pointer; border: 2px solid transparent;" onclick="this.style.borderColor='var(--trecho-yellow)'">Película 2</div>
             `;
         }, 800);
-    });
-
-    window.selectTmdb = function(el, title) {
-        document.querySelectorAll('.poster-item').forEach(i => i.classList.remove('selected'));
-        el.classList.add('selected');
-        document.getElementById('tmdb-inject-area').classList.remove('hidden');
-        document.getElementById('tmdb-selected-title').textContent = title;
-    };
-
-    document.getElementById('btn-cancel-tmdb')?.addEventListener('click', () => {
-        document.getElementById('tmdb-inject-area').classList.add('hidden');
-        document.getElementById('tmdb-url').value = '';
     });
 });
