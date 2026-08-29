@@ -7,7 +7,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     window.myCharts = {}; 
 
-    // Funciones globales para abrir y cerrar paneles flotantes y modales
+    // -------- FUNCIONES GLOBALES PARA ABRIR PANELES FLOTANTES -------- //
+
     window.openCustomModal = function(id) {
         const modal = document.getElementById(id);
         if(modal) modal.classList.add('active');
@@ -32,6 +33,25 @@ document.addEventListener('DOMContentLoaded', () => {
                 window.miniChartCreado = true;
             }
         }
+        
+        if(id === 'modal-gastos-operativos') {
+            const ctx = document.getElementById('chart-modal-gastos-detalle')?.getContext('2d');
+            if(ctx && !window.chartModalGastosCreado) {
+                new Chart(ctx, {
+                    type: 'doughnut',
+                    data: {
+                        datasets: [{
+                            data: [8.28, 13.91, 51.21, 12.77, 8.20, 5.62],
+                            backgroundColor: ['#3b82f6', '#8b5cf6', '#eab308', '#f97316', '#06b6d4', '#6b7280'],
+                            borderWidth: 0,
+                            cutout: '65%'
+                        }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+                });
+                window.chartModalGastosCreado = true;
+            }
+        }
     };
 
     window.closeCustomModal = function(id) {
@@ -49,6 +69,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const panel = document.getElementById(id);
         if(panel) panel.classList.remove('open');
     };
+
+    // -------- NAVEGACIÓN Y LOGIN -------- //
 
     btnLogin?.addEventListener('click', () => {
         const email = emailInput?.value.trim();
@@ -124,7 +146,7 @@ document.addEventListener('DOMContentLoaded', () => {
             
             const data = await response.json();
 
-            // Actualización de montos
+            // Pestaña Principal (Dashboard)
             document.getElementById('dash-revenue-today').innerText = `$${parseFloat(data.ingresosHoy || 0).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
             document.getElementById('dash-revenue-month').innerText = `$${parseFloat(data.cajaMes || 0).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
             document.getElementById('dash-revenue-total').innerText = `$${parseFloat(data.ingresosHistoricos || 0).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
@@ -136,6 +158,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 trendEl.className = 'trend-up text-green';
             }
 
+            // Pestaña Visión General (Sincronizando los totales globales para que no queden estáticos)
+            const totalHistoricoStr = `$${parseFloat(data.ingresosHistoricos || 0).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+            
+            const revenueYtdEl = document.getElementById('fin-revenue-ytd');
+            if(revenueYtdEl) revenueYtdEl.innerText = totalHistoricoStr;
+            
+            const netCashflowEl = document.getElementById('fin-net-cashflow');
+            // Por ahora, sincronizamos el flujo de caja con el histórico real hasta que creemos la base de datos de gastos.
+            if(netCashflowEl) netCashflowEl.innerText = totalHistoricoStr;
+
+            // Gráfico del Dashboard (Línea de tendencia)
             if (window.myCharts['chart-dashboard-revenue'] && data.chartLabels && data.chartData) {
                 window.myCharts['chart-dashboard-revenue'].data.labels = data.chartLabels;
                 window.myCharts['chart-dashboard-revenue'].data.datasets[0].data = data.chartData;
@@ -185,7 +218,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Lista Elegante del Dashboard Principal
+    // Lista Elegante del Dashboard Principal (Estado de Equipo)
     function renderElegantTeamList(trabajadores) {
         const container = document.getElementById('dashboard-team-list');
         if (!container) return;
@@ -197,11 +230,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         trabajadores.forEach(t => {
-            const isCEO = t.rol.includes('CEO');
             const statusClass = t.earnedToday > 0 ? 'badge-success' : 'badge-neutral';
             const statusText = t.earnedToday > 0 ? '<i class="fas fa-check-circle"></i> Activo Hoy' : '<i class="fas fa-moon"></i> Inactivo';
             
-            // Generador de foto de perfil automatica con el nombre
+            // Generador de foto de perfil automatica
             const avatarUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(t.name)}&background=random&color=fff&bold=true`;
 
             const html = `
@@ -334,7 +366,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         y: { display: false } 
                     },
                     plugins: { legend: { display: false } },
-                    elements: { point: { radius: 0 } } // Oculta los puntos para dar efecto de ondas de tráfico
+                    elements: { point: { radius: 0 } } // Oculta los puntos para dar efecto de ondas
                 }
             });
         }
