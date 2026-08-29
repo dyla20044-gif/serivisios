@@ -7,6 +7,49 @@ document.addEventListener('DOMContentLoaded', () => {
 
     window.myCharts = {}; 
 
+    // Funciones globales para abrir y cerrar paneles flotantes y modales
+    window.openCustomModal = function(id) {
+        const modal = document.getElementById(id);
+        if(modal) modal.classList.add('active');
+        
+        if(id === 'modal-detalle-hoy') {
+            const options = { day: 'numeric', month: 'long', year: 'numeric' };
+            document.getElementById('modal-hoy-date').innerText = new Date().toLocaleDateString('es-ES', options);
+            document.getElementById('modal-hoy-monto').innerText = document.getElementById('dash-revenue-today').innerText;
+        }
+
+        if(id === 'modal-crecimiento') {
+            document.getElementById('modal-mes-monto').innerText = document.getElementById('dash-revenue-month').innerText;
+            document.getElementById('modal-mes-trafico').innerText = document.getElementById('dash-active-users').innerText;
+            
+            const ctx = document.getElementById('mini-chart-crecimiento')?.getContext('2d');
+            if(ctx && !window.miniChartCreado) {
+                new Chart(ctx, {
+                    type: 'line',
+                    data: { labels: ['1','2','3','4','5','6','7'], datasets: [{ data: [10, 30, 20, 50, 70, 90, 150], borderColor: '#22c55e', backgroundColor: 'rgba(34, 197, 94, 0.2)', fill: true, tension: 0.4 }] },
+                    options: { responsive: true, maintainAspectRatio: false, scales: { x: {display: false}, y: {display: false} }, plugins: { legend: {display: false} } }
+                });
+                window.miniChartCreado = true;
+            }
+        }
+    };
+
+    window.closeCustomModal = function(id) {
+        const modal = document.getElementById(id);
+        if(modal) modal.classList.remove('active');
+    };
+
+    window.openSidePanel = function(id) {
+        document.getElementById('panel-teso-total').innerText = document.getElementById('dash-revenue-today').innerText;
+        const panel = document.getElementById(id);
+        if(panel) panel.classList.add('open');
+    };
+
+    window.closeSidePanel = function(id) {
+        const panel = document.getElementById(id);
+        if(panel) panel.classList.remove('open');
+    };
+
     btnLogin?.addEventListener('click', () => {
         const email = emailInput?.value.trim();
         if (!email) return;
@@ -81,7 +124,7 @@ document.addEventListener('DOMContentLoaded', () => {
             
             const data = await response.json();
 
-            // Actualización de montos sin datos falsos. Si la base está vacía, mostrará $0.00 hasta que entre tráfico.
+            // Actualización de montos
             document.getElementById('dash-revenue-today').innerText = `$${parseFloat(data.ingresosHoy || 0).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
             document.getElementById('dash-revenue-month').innerText = `$${parseFloat(data.cajaMes || 0).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
             document.getElementById('dash-revenue-total').innerText = `$${parseFloat(data.ingresosHistoricos || 0).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
@@ -100,6 +143,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             renderWorkersTable(data.trabajadores || []);
+            renderElegantTeamList(data.trabajadores || []);
 
         } catch (error) {
             console.error("Fallo al inicializar el sistema dinámico:", error);
@@ -114,6 +158,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // Tabla de la pestaña Uploaders & Pagos
     function renderWorkersTable(trabajadores) {
         const tbody = document.getElementById('workers-table-body');
         if (!tbody) return;
@@ -137,6 +182,44 @@ document.addEventListener('DOMContentLoaded', () => {
                 </tr>
             `;
             tbody.insertAdjacentHTML('beforeend', html);
+        });
+    }
+
+    // Lista Elegante del Dashboard Principal
+    function renderElegantTeamList(trabajadores) {
+        const container = document.getElementById('dashboard-team-list');
+        if (!container) return;
+        
+        container.innerHTML = '';
+        if(trabajadores.length === 0) {
+            container.innerHTML = '<div style="text-align: center; padding: 20px; color: var(--text-secondary);">No hay personal activo en la plataforma.</div>';
+            return;
+        }
+
+        trabajadores.forEach(t => {
+            const isCEO = t.rol.includes('CEO');
+            const statusClass = t.earnedToday > 0 ? 'badge-success' : 'badge-neutral';
+            const statusText = t.earnedToday > 0 ? '<i class="fas fa-check-circle"></i> Activo Hoy' : '<i class="fas fa-moon"></i> Inactivo';
+            
+            // Generador de foto de perfil automatica con el nombre
+            const avatarUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(t.name)}&background=random&color=fff&bold=true`;
+
+            const html = `
+                <div class="team-list-item">
+                    <div class="team-info">
+                        <img src="${avatarUrl}" alt="user">
+                        <div class="team-meta">
+                            <span style="font-weight: 600; font-size: 13px; color: var(--text-primary);">${t.name}</span>
+                            <span class="badge-status ${statusClass}">${statusText}</span>
+                        </div>
+                    </div>
+                    <div class="team-financial">
+                        <span style="font-size: 11px; color: var(--text-secondary);">Saldo: <strong style="color: var(--trecho-yellow);">$${(t.deudaPendiente || 0).toFixed(2)}</strong></span>
+                        <button class="btn-liquidar" onclick="alert('Iniciando proceso de pago...')">Liquidar</button>
+                    </div>
+                </div>
+            `;
+            container.insertAdjacentHTML('beforeend', html);
         });
     }
 
@@ -229,7 +312,33 @@ document.addEventListener('DOMContentLoaded', () => {
         };
 
         createLineChart('chart-dashboard-revenue', [0, 0, 0, 0, 0, 0, 0], '234, 179, 8');
-        createBarChart('chart-dashboard-activity', [40, 30, 60, 45, 80, 50, 90], '234, 179, 8');
+        
+        // MODIFICACIÓN: Monitor de Tráfico por Horas (Ondas múltiples)
+        const ctxActivity = document.getElementById('chart-dashboard-activity')?.getContext('2d');
+        if (ctxActivity) {
+            window.myCharts['chart-dashboard-activity'] = new Chart(ctxActivity, {
+                type: 'line',
+                data: {
+                    labels: ['0:00', '4:00', '8:00', '12:00', '16:00', '20:00', '24:00'],
+                    datasets: [
+                        { label: 'Tráfico 4K', data: [5, 10, 5, 25, 15, 30, 10], borderColor: '#eab308', tension: 0.4, borderWidth: 2 },
+                        { label: 'Tráfico HD', data: [2, 5, 8, 15, 10, 20, 5], borderColor: '#22c55e', tension: 0.4, borderWidth: 2 },
+                        { label: 'Tráfico SD', data: [1, 2, 3, 8, 5, 10, 2], borderColor: '#ef4444', tension: 0.4, borderWidth: 2 }
+                    ]
+                },
+                options: {
+                    responsive: true, 
+                    maintainAspectRatio: false,
+                    scales: { 
+                        x: { grid: {display: false}, ticks: {color: '#9ca3af'} }, 
+                        y: { display: false } 
+                    },
+                    plugins: { legend: { display: false } },
+                    elements: { point: { radius: 0 } } // Oculta los puntos para dar efecto de ondas de tráfico
+                }
+            });
+        }
+
         createBarChart('chart-dashboard-workforce', [60, 40, 80, 65, 90, 70, 100], '234, 179, 8');
 
         createLineChart('chart-fin-cashflow', [50, 60, 40, 70, 90, 80, 110], '234, 179, 8');
