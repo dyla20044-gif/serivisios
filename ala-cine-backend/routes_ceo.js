@@ -1,16 +1,16 @@
 module.exports = function(app, ctx) {
     const { globalPricing, bot, ADMIN_CHAT_IDS } = ctx;
     
-    // CORRECCIÓN VITAL: Extraemos MongoDB usando la función correcta de tu servidor
-    const mongoDb = typeof ctx.getMongoDb === 'function' ? ctx.getMongoDb() : ctx.mongoDb;
-    
     const COLL_DAILY_STATS = ctx.COLL_DAILY_STATS || 'uploader_daily_stats';
     const COLL_REVENUE = ctx.COLL_REVENUE || 'uploader_revenue';
     const COLL_CORP_REVENUE = 'corp_daily_revenue';
 
     // 1. MASTER STATS: El cerebro del Dashboard Principal
     app.get('/api/ceo/master-stats', async (req, res) => {
-        if (!mongoDb) return res.status(503).json({ error: "DB no conectada" });
+        
+        // CORRECCIÓN VITAL: Solicitamos la DB *dentro* de la petición, asegurando que ya esté conectada.
+        const dbInstance = typeof ctx.getMongoDb === 'function' ? ctx.getMongoDb() : ctx.mongoDb;
+        if (!dbInstance) return res.status(503).json({ error: "DB no conectada" });
         
         try {
             const now = new Date();
@@ -18,7 +18,7 @@ module.exports = function(app, ctx) {
             const currentMonthPrefix = dayId.substring(0, 7);
 
             // A. Histórico de Pagos y Trabajadores (Uploaders)
-            const allPayouts = await mongoDb.collection('payout_history').aggregate([
+            const allPayouts = await dbInstance.collection('payout_history').aggregate([
                 { $sort: { date: -1 } },
                 { $group: { _id: "$uploaderId", lastPayoutDate: { $first: "$date" } } }
             ]).toArray();
@@ -26,7 +26,7 @@ module.exports = function(app, ctx) {
             const payoutMap = {};
             allPayouts.forEach(p => payoutMap[p._id] = p.lastPayoutDate.toISOString().split('T')[0]);
 
-            const pendingStats = await mongoDb.collection(COLL_DAILY_STATS).find({}).toArray();
+            const pendingStats = await dbInstance.collection(COLL_DAILY_STATS).find({}).toArray();
             
             let nominaTotal = 0;
             let vistasTotalesHoy = 0;
@@ -72,7 +72,7 @@ module.exports = function(app, ctx) {
             });
 
             // Obtener nombres reales del departamento de RRHH
-            const hrWorkers = await mongoDb.collection('hr_workers').find({}).toArray();
+            const hrWorkers = await dbInstance.collection('hr_workers').find({}).toArray();
             const hrMap = {};
             hrWorkers.forEach(w => hrMap[w.telegramId] = w);
 
@@ -89,12 +89,12 @@ module.exports = function(app, ctx) {
             });
 
             // B. Ingresos Corporativos Reales (El dinero que gana la empresa independiente)
-            const corpDoc = await mongoDb.collection(COLL_CORP_REVENUE).findOne({ dayId: dayId });
+            const corpDoc = await dbInstance.collection(COLL_CORP_REVENUE).findOne({ dayId: dayId });
             let ingresosHoyEmpresa = corpDoc ? (corpDoc.today_earned || 0) : 0; 
             let peticionesTotales = corpDoc ? (corpDoc.total_requests || 0) : 0;
 
             // C. Cálculo del Total Histórico de la Empresa
-            const historicalCorp = await mongoDb.collection(COLL_CORP_REVENUE).aggregate([
+            const historicalCorp = await dbInstance.collection(COLL_CORP_REVENUE).aggregate([
                 { $group: { _id: null, total: { $sum: "$today_earned" } } }
             ]).toArray();
             let ingresosHistoricos = historicalCorp.length > 0 ? historicalCorp[0].total : 0;
@@ -140,8 +140,10 @@ module.exports = function(app, ctx) {
 
     // 3. PAGOS Y NÓMINA: Registrar la liquidación de un trabajador
     app.post('/api/ceo/pay-worker', async (req, res) => {
+        const dbInstance = typeof ctx.getMongoDb === 'function' ? ctx.getMongoDb() : ctx.mongoDb;
+        if (!dbInstance) return res.status(503).json({ error: "DB no conectada" });
+
         const { uploaderId, amount, paymentMethod } = req.body;
-        if (!mongoDb) return res.status(503).json({ error: "DB no conectada" });
 
         try {
             const payoutRecord = {
@@ -151,7 +153,7 @@ module.exports = function(app, ctx) {
                 status: "Pagado",
                 date: new Date()
             };
-            await mongoDb.collection('payout_history').insertOne(payoutRecord);
+            await dbInstance.collection('payout_history').insertOne(payoutRecord);
             res.json({ success: true, message: "Liquidación registrada y ciclo reiniciado exitosamente." });
         } catch (error) {
             res.status(500).json({ error: "Error al procesar el pago." });
