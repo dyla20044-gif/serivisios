@@ -377,11 +377,13 @@ const ctx = {
 
 global.ctx = ctx;
 
+// AQUÍ CONECTAMOS TODOS TUS MÓDULOS INCLUYENDO EL NUEVO DEL CEO
 require('./routes_user.js')(app, ctx);
 require('./routes_content.js')(app, ctx);
 require('./routes_live.js')(app, ctx);
 require('./routes_stats.js')(app, ctx); 
 require('./routes_tvision.js')(app, ctx);
+require('./routes_ceo.js')(app, ctx); // <--- ESTO LE DA VIDA AL PANEL CEO
 
 app.get('/', (req, res) => { res.send('Activo'); });
 
@@ -483,35 +485,7 @@ app.post('/api/ceo/login', (req, res) => {
     }
 });
 
-// NUEVOS ENDPOINTS PARA CONTROL DINÁMICO DEL CEO
-app.post('/api/ceo/pricing', (req, res) => {
-    // Aquí implementaremos verifyInternalAdmin para seguridad real en un entorno de auth
-    const { mode, customMoviePrice, customTvPrice, limit_daily, limit_monthly } = req.body;
-    if (mode) globalPricing.mode = mode;
-    if (customMoviePrice !== undefined) globalPricing.customMoviePrice = parseFloat(customMoviePrice);
-    if (customTvPrice !== undefined) globalPricing.customTvPrice = parseFloat(customTvPrice);
-    if (limit_daily !== undefined) globalPricing.limit_daily = parseFloat(limit_daily);
-    if (limit_monthly !== undefined) globalPricing.limit_monthly = parseFloat(limit_monthly);
-    res.json({ success: true, globalPricing });
-});
-
-app.post('/api/ceo/notify-bot', async (req, res) => {
-    const { message, imageUrl, targetGroup } = req.body;
-    try {
-        let targets = (targetGroup === 'all_admins') ? ADMIN_CHAT_IDS : [ADMIN_CHAT_ID_PRIMARY];
-        for (let chatId of targets) {
-            if (imageUrl) {
-                await bot.sendPhoto(chatId, imageUrl, { caption: message, parse_mode: 'Markdown' }).catch(()=>{});
-            } else {
-                await bot.sendMessage(chatId, message, { parse_mode: 'Markdown' }).catch(()=>{});
-            }
-        }
-        res.json({ success: true });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
+// Dejamos las rutas de trabajadores HR por seguridad y compatibilidad futura
 app.get('/api/ceo/workers', async (req, res) => {
     if (!mongoDb) return res.status(503).json({ error: "DB no conectada" });
     try {
@@ -553,126 +527,6 @@ app.post('/api/ceo/workers/add', async (req, res) => {
         res.json({ success: true, message: "Trabajador registrado/actualizado en RRHH." });
     } catch (error) {
         res.status(500).json({ error: "Error al registrar trabajador en RRHH." });
-    }
-});
-
-app.post('/api/ceo/pay-worker', async (req, res) => {
-    const { uploaderId, amount, paymentMethod } = req.body;
-    if (!mongoDb) return res.status(503).json({ error: "DB no conectada" });
-
-    try {
-        const payoutRecord = {
-            uploaderId: parseInt(uploaderId),
-            amountPaid: parseFloat(amount),
-            paymentMethod: paymentMethod || "Liquidación Panel CEO",
-            status: "Pagado",
-            date: new Date()
-        };
-        await mongoDb.collection('payout_history').insertOne(payoutRecord);
-        res.json({ success: true, message: "Liquidación registrada y ciclo reiniciado exitosamente." });
-    } catch (error) {
-        res.status(500).json({ error: "Error al procesar el pago." });
-    }
-});
-
-app.get('/api/ceo/master-stats', async (req, res) => {
-    if (!mongoDb) return res.status(503).json({ error: "DB no conectada" });
-    try {
-        const now = new Date();
-        const dayId = now.toISOString().split('T')[0];
-        const currentMonthPrefix = dayId.substring(0, 7);
-
-        const allPayouts = await mongoDb.collection('payout_history').aggregate([
-            { $sort: { date: -1 } },
-            { $group: { _id: "$uploaderId", lastPayoutDate: { $first: "$date" } } }
-        ]).toArray();
-        
-        const payoutMap = {};
-        allPayouts.forEach(p => payoutMap[p._id] = p.lastPayoutDate.toISOString().split('T')[0]);
-
-        const pendingStats = await mongoDb.collection(COLL_DAILY_STATS).find({}).toArray();
-        
-        let nominaTotal = 0;
-        const workerMap = {};
-
-        pendingStats.forEach(s => {
-            const uid = s.uploaderId;
-            const isCEO = (uid === ADMIN_CHAT_ID_PRIMARY); 
-            
-            if (!workerMap[uid]) {
-                workerMap[uid] = { 
-                    id: uid, 
-                    name: isCEO ? "CEO (Tú)" : "Trabajador ID: " + uid, 
-                    earnedMonth: 0, 
-                    deudaPendiente: 0, 
-                    earnedToday: 0, 
-                    totalUploads: 0,
-                    peliculas: 0,
-                    series: 0,
-                    vistasHoy: 0
-                };
-            }
-
-            const lastPayoutStr = payoutMap[uid] || '2000-01-01';
-            
-            if (s.dayId >= lastPayoutStr) {
-                const earned = s.today_earned || 0;
-                
-                if (s.dayId.startsWith(currentMonthPrefix)) {
-                    workerMap[uid].earnedMonth += earned; 
-                } else {
-                    workerMap[uid].deudaPendiente += earned; 
-                }
-                
-                if (!isCEO) nominaTotal += earned;
-            }
-            
-            if (s.dayId === dayId) {
-                workerMap[uid].earnedToday = (s.today_earned || 0);
-                workerMap[uid].totalUploads = (s.today_content_count || 0);
-                workerMap[uid].vistasHoy = (s.total_views || 0);
-                workerMap[uid].peliculas = (s.month_estreno_count || 0);
-                workerMap[uid].series = (s.month_episodio_count || 0);
-            }
-        });
-
-        const hrWorkers = await mongoDb.collection('hr_workers').find({}).toArray();
-        const hrMap = {};
-        hrWorkers.forEach(w => hrMap[w.telegramId] = w);
-
-        const trabajadoresArray = Object.values(workerMap).map(w => {
-            const hrData = hrMap[w.id.toString()];
-            if (hrData) {
-                w.name = hrData.name;
-                w.rol = hrData.role;
-            } else {
-                w.rol = (w.id === ADMIN_CHAT_ID_PRIMARY) ? "CEO / Admin" : (w.id === ADMIN_CHAT_ID_2 ? "Co-Administrador" : "Uploader Externo");
-            }
-            w.trend = w.earnedToday > 5 ? 'up' : (w.earnedToday > 1 ? 'neutral' : 'down');
-            return w;
-        });
-
-        let vistasTotalesHoy = trabajadoresArray.reduce((acc, w) => acc + w.vistasHoy, 0);
-        
-        // RECUPERAMOS LOS INGRESOS REALES DE LA EMPRESA DESDE BD
-        const corpDoc = await mongoDb.collection(COLL_CORP_REVENUE).findOne({ dayId: dayId });
-        let ingresosHoyEmpresa = corpDoc ? (corpDoc.today_earned || 0) : 0; 
-        if (ingresosHoyEmpresa === 0) ingresosHoyEmpresa = vistasTotalesHoy * 0.045; // Backup temporal si no hay datos
-
-        let cajaMes = ingresosHoyEmpresa * 30; 
-
-        res.json({
-            ingresosHoy: ingresosHoyEmpresa, 
-            vistasHoy: vistasTotalesHoy, 
-            cajaMes, 
-            nominaTotal,
-            trabajadores: trabajadoresArray,
-            chartLabels: ['D-6', 'D-5', 'D-4', 'D-3', 'D-2', 'Ayer', 'Hoy'],
-            chartData: [450, 480, 520, 590, 610, 580, ingresosHoyEmpresa], 
-            actividad: [{ msg: "Sincronización de ciclos exitosa", time: new Date().toLocaleTimeString() }]
-        });
-    } catch (error) {
-        res.status(500).json({ error: "Error obteniendo estadísticas maestras" });
     }
 });
 
