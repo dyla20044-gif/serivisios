@@ -705,6 +705,10 @@ body {
     left: 0;
 }
 
+/* =========================================================
+   SISTEMA DE MODALES Y PANELES LATERALES
+   ========================================================= */
+
 .modal {
     position: fixed;
     top: 0;
@@ -771,7 +775,7 @@ body {
 @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
 
 /* =========================================================
-   ESTILOS INYECTADOS (MODALES, PANELES Y EFECTOS CORPORATIVOS)
+   ESTILOS INYECTADOS: TARJETAS INTERACTIVAS Y LISTA EQUIPO
    ========================================================= */
 
 .clickable-card { 
