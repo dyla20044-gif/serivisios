@@ -5,7 +5,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const emailInput = document.getElementById('ceo-email');
     const titleDisplay = document.getElementById('top-title-display');
 
-    window.myCharts = {}; // Almacenará los gráficos para actualizarlos sin borrarlos
+    window.myCharts = {}; 
 
     btnLogin?.addEventListener('click', () => {
         const email = emailInput?.value.trim();
@@ -15,8 +15,9 @@ document.addEventListener('DOMContentLoaded', () => {
         setTimeout(() => {
             loginScreen.classList.add('hidden');
             dashboard.classList.remove('hidden');
-            initCharts(); // Dibuja todos tus gráficos de diseño estáticos primero
-            initSystem(); // Actualiza dinámicamente los gráficos y números reales
+            initCharts(); 
+            initSystem(); 
+            setInterval(initSystem, 10000); // Se actualiza automáticamente cada 10 segundos
         }, 800);
     });
 
@@ -71,55 +72,46 @@ document.addEventListener('DOMContentLoaded', () => {
         window.location.reload();
     });
 
-    // -------- LÓGICA DINÁMICA DE LA FASE 1 -------- //
+    // -------- LÓGICA DE CONEXIÓN EN TIEMPO REAL A LA BASE DE DATOS -------- //
 
     async function initSystem() {
         try {
-            // Intento de conexión al backend
             const response = await fetch('/api/ceo/master-stats').catch(() => null);
+            if (!response || !response.ok) throw new Error("No hay conexión con el servidor");
             
-            let data;
-            if (response && response.ok) {
-                data = await response.json();
-            } else {
-                // FALLBACK: Datos simulados para visualizar la interfaz hoy mientras programamos la Fase 2
-                data = generarDatosDePrueba();
+            const data = await response.json();
+
+            // Actualización de montos sin datos falsos. Si la base está vacía, mostrará $0.00 hasta que entre tráfico.
+            document.getElementById('dash-revenue-today').innerText = `$${parseFloat(data.ingresosHoy || 0).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+            document.getElementById('dash-revenue-month').innerText = `$${parseFloat(data.cajaMes || 0).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+            document.getElementById('dash-revenue-total').innerText = `$${parseFloat(data.ingresosHistoricos || 0).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+            document.getElementById('dash-active-users').innerText = (data.vistasHoy || 0).toLocaleString();
+
+            const trendEl = document.getElementById('dash-trend');
+            if (trendEl) {
+                trendEl.innerHTML = `<i class="fas fa-arrow-up"></i> Sistema Online`;
+                trendEl.className = 'trend-up text-green';
             }
 
-            // Inyectar datos al DOM de forma segura
-            document.getElementById('dash-revenue-today').innerText = `$${parseFloat(data.ingresosHoy).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
-            document.getElementById('dash-revenue-month').innerText = `$${parseFloat(data.cajaMes).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
-            document.getElementById('dash-revenue-total').innerText = `$${parseFloat(data.ingresosHistoricos).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
-            document.getElementById('dash-active-users').innerText = data.vistasHoy.toLocaleString();
-
-            // Actualizar solo el gráfico del Dashboard sin destruir los demás
-            if (window.myCharts['chart-dashboard-revenue']) {
+            if (window.myCharts['chart-dashboard-revenue'] && data.chartLabels && data.chartData) {
                 window.myCharts['chart-dashboard-revenue'].data.labels = data.chartLabels;
                 window.myCharts['chart-dashboard-revenue'].data.datasets[0].data = data.chartData;
                 window.myCharts['chart-dashboard-revenue'].update();
             }
 
-            renderWorkersTable(data.trabajadores);
+            renderWorkersTable(data.trabajadores || []);
 
         } catch (error) {
             console.error("Fallo al inicializar el sistema dinámico:", error);
+            document.getElementById('dash-revenue-today').innerText = "$0.00";
+            document.getElementById('dash-revenue-month').innerText = "$0.00";
+            document.getElementById('dash-revenue-total').innerText = "$0.00";
+            const trendEl = document.getElementById('dash-trend');
+            if (trendEl) {
+                trendEl.innerHTML = `<i class="fas fa-exclamation-triangle"></i> Desconectado`;
+                trendEl.className = 'trend-down text-red';
+            }
         }
-    }
-
-    function generarDatosDePrueba() {
-        return {
-            ingresosHoy: 543.20,
-            cajaMes: 16296.00,
-            ingresosHistoricos: 245890.50,
-            vistasHoy: 152430,
-            chartLabels: ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Hoy'],
-            chartData: [450, 480, 520, 590, 610, 580, 543.20],
-            trabajadores: [
-                { id: "11111111", name: "Dylan (CEO)", rol: "Admin CEO", totalUploads: 5, earnedToday: 0.00, deudaPendiente: 0.00, trend: 'neutral' },
-                { id: "22222222", name: "Uploader Externo 1", rol: "Uploader", totalUploads: 42, earnedToday: 12.50, deudaPendiente: 85.00, trend: 'up' },
-                { id: "33333333", name: "Uploader Externo 2", rol: "Uploader", totalUploads: 18, earnedToday: 4.20, deudaPendiente: 22.10, trend: 'down' }
-            ]
-        };
     }
 
     function renderWorkersTable(trabajadores) {
@@ -139,8 +131,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     <td><strong>${t.name}</strong><br><span style="font-size: 11px; color: var(--text-secondary);">ID: ${t.id}</span></td>
                     <td><span class="status-badge ${badgeClass}">${t.rol}</span></td>
                     <td>${t.totalUploads}</td>
-                    <td class="text-green">+$${t.earnedToday.toFixed(2)}</td>
-                    <td style="font-weight: bold; color: var(--trecho-yellow);">$${t.deudaPendiente.toFixed(2)}</td>
+                    <td class="text-green">+$${(t.earnedToday || 0).toFixed(2)}</td>
+                    <td style="font-weight: bold; color: var(--trecho-yellow);">$${(t.deudaPendiente || 0).toFixed(2)}</td>
                     <td><button class="btn-outline" style="padding: 5px 10px; width: auto; font-size: 11px;" onclick="alert('Módulo de Pago en Fase 3')">Liquidar</button></td>
                 </tr>
             `;
@@ -148,13 +140,12 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Botón de Enlace Mágico
     document.getElementById('btn-generar-enlace')?.addEventListener('click', () => {
         const fakeLink = "https://app.trechovisionaries.com/invite?token=" + Math.random().toString(36).substr(2, 9);
         prompt("Copia este enlace y envíalo a tu nuevo trabajador por WhatsApp:", fakeLink);
     });
 
-    // -------- LÓGICA DE MAQUETACIÓN ORIGINAL (No borrar) -------- //
+    // -------- LÓGICA DE MAQUETACIÓN ORIGINAL DE GRÁFICOS -------- //
 
     function initCharts() {
         const createLineChart = (id, data, color, isFill = true) => {
@@ -237,8 +228,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         };
 
-        // Renderiza absolutamente todos los gráficos originales de tu diseño
-        createLineChart('chart-dashboard-revenue', [20, 35, 50, 45, 80, 110, 150], '234, 179, 8');
+        createLineChart('chart-dashboard-revenue', [0, 0, 0, 0, 0, 0, 0], '234, 179, 8');
         createBarChart('chart-dashboard-activity', [40, 30, 60, 45, 80, 50, 90], '234, 179, 8');
         createBarChart('chart-dashboard-workforce', [60, 40, 80, 65, 90, 70, 100], '234, 179, 8');
 
