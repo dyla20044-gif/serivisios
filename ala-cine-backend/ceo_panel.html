@@ -8,7 +8,6 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
-        /* Estilos inyectados para las ventanas flotantes y animaciones */
         .clickable-card { cursor: pointer; transition: transform 0.2s, box-shadow 0.2s; }
         .clickable-card:hover { transform: translateY(-3px); box-shadow: 0 5px 15px rgba(234, 179, 8, 0.15); border-color: var(--trecho-yellow); }
         
@@ -64,7 +63,7 @@
                     <i class="fas fa-dollar-sign" style="width: 18px;"></i> Finanzas <i class="fas fa-chevron-down chevron"></i>
                 </div>
                 <ul class="nav-sub-menu" id="menu-financials">
-                    <li class="nav-sub-item" data-tab="tab-fin-overview">Visión General</li>
+                    <li class="nav-sub-item" data-tab="tab-fin-overview" style="color: var(--trecho-yellow);">Visión General</li>
                     <li class="nav-sub-item" data-tab="tab-fin-revenue">Detalle de Ingresos</li>
                     <li class="nav-sub-item" data-tab="tab-fin-expenses">Detalle de Gastos</li>
                     <li class="nav-sub-item" data-tab="tab-fin-cashflow">Flujo de Caja</li>
@@ -83,8 +82,8 @@
                     <i class="far fa-user" style="width: 18px;"></i> Usuarios y Equipo <i class="fas fa-chevron-down chevron"></i>
                 </div>
                 <ul class="nav-sub-menu" id="menu-users">
-                    <li class="nav-sub-item" data-tab="tab-usr-activity">Actividad</li>
-                    <li class="nav-sub-item" data-tab="tab-usr-payments" style="color: var(--trecho-yellow);">Uploaders y Pagos</li>
+                    <li class="nav-sub-item" data-tab="tab-usr-activity">Actividad Global</li>
+                    <li class="nav-sub-item" data-tab="tab-usr-payments">Uploaders & Pagos</li>
                     <li class="nav-sub-item" data-tab="tab-usr-engagement">Retención (Engagement)</li>
                 </ul>
 
@@ -92,7 +91,7 @@
                     <i class="fas fa-user-friends" style="width: 18px;"></i> Gestión Interna <i class="fas fa-chevron-down chevron"></i>
                 </div>
                 <ul class="nav-sub-menu" id="menu-team">
-                    <li class="nav-sub-item" data-tab="tab-team-personnel">Personal</li>
+                    <li class="nav-sub-item" data-tab="tab-team-personnel">Nómina y Personal</li>
                     <li class="nav-sub-item" data-tab="tab-team-roles">Roles y Permisos</li>
                     <li class="nav-sub-item" data-tab="tab-team-add">Añadir Staff (CEO)</li>
                 </ul>
@@ -132,12 +131,11 @@
 
             <div class="tab-container">
                 
-                <!-- TAB 1: DASHBOARD PRINCIPAL REFACCIONADO (Con diseño en 4 tarjetas + Modales) -->
+                <!-- TAB 1: DASHBOARD PRINCIPAL -->
                 <div id="tab-dashboard" class="tab-content active">
                     
                     <div class="grid-three" style="grid-template-columns: 1fr 1fr 1fr 0.8fr; margin-bottom: 20px;">
                         
-                        <!-- TARJETA: INGRESOS HOY (Abre Modal Detalle) -->
                         <div class="card glow-card clickable-card" onclick="openCustomModal('modal-detalle-hoy')">
                             <div class="card-header"><span class="card-title">INGRESOS DE HOY</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
                             <div style="display: flex; flex-direction: column; gap: 5px;">
@@ -146,7 +144,6 @@
                             </div>
                         </div>
 
-                        <!-- TARJETA: CAJA MENSUAL (Abre Modal Crecimiento) -->
                         <div class="card clickable-card" onclick="openCustomModal('modal-crecimiento')">
                             <div class="card-header"><span class="card-title">INGRESOS DEL MES (MOM)</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
                             <div style="display: flex; flex-direction: column; justify-content: center; height: 100%;">
@@ -155,7 +152,6 @@
                             </div>
                         </div>
 
-                        <!-- TARJETA: TOTAL HISTÓRICO (Abre Panel Tesorería) -->
                         <div class="card clickable-card" onclick="openSidePanel('panel-tesoreria')">
                             <div class="card-header"><span class="card-title">TOTAL HISTÓRICO</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
                             <div style="display: flex; flex-direction: column; justify-content: center; height: 100%;">
@@ -164,7 +160,6 @@
                             </div>
                         </div>
 
-                        <!-- TARJETA: MÉTRICAS -->
                         <div class="card" style="display: flex; flex-direction: column; justify-content: space-between;">
                             <div>
                                 <div class="card-header"><span class="card-title">MÉTRICAS EMPRESA</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
@@ -195,27 +190,12 @@
                         </div>
                         <div class="card">
                             <div class="card-header"><span class="card-title">SALUD DE INFRAESTRUCTURA</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
-                            <div class="server-grid" style="margin-bottom: 20px;">
-                                <div class="server-box box-green">Activo</div>
-                                <div class="server-box box-yellow">Carga</div>
-                                <div class="server-box box-red">Error</div>
-                                <div class="server-box box-red">Error</div>
-                                <div class="server-box box-green">Activo</div>
-                                <div class="server-box box-yellow">Carga</div>
-                                <div class="server-box box-red">Error</div>
-                                <div class="server-box box-red">Error</div>
-                                <div class="server-box box-green">Activo</div>
-                                <div class="server-box box-green">Activo</div>
-                                <div class="server-box box-green">Activo</div>
-                                <div class="server-box box-green">Activo</div>
-                                <div class="server-box box-green">Activo</div>
-                                <div class="server-box box-green">Activo</div>
-                                <div class="server-box box-green">Activo</div>
-                                <div class="server-box box-green">Activo</div>
-                                <div class="server-box box-green">Activo</div>
-                                <div class="server-box box-yellow">Carga</div>
-                                <div class="server-box box-red">Error</div>
-                                <div class="server-box box-red">Error</div>
+                            <div class="server-grid" style="margin-bottom: 20px; grid-template-columns: repeat(4, 1fr);">
+                                <div class="server-box box-green">Activo</div><div class="server-box box-yellow">Carga</div><div class="server-box box-red">Error</div><div class="server-box box-red">Error</div>
+                                <div class="server-box box-green">Activo</div><div class="server-box box-yellow">Carga</div><div class="server-box box-red">Error</div><div class="server-box box-red">Error</div>
+                                <div class="server-box box-green">Activo</div><div class="server-box box-green">Activo</div><div class="server-box box-green">Activo</div><div class="server-box box-green">Activo</div>
+                                <div class="server-box box-green">Activo</div><div class="server-box box-green">Activo</div><div class="server-box box-green">Activo</div><div class="server-box box-green">Activo</div>
+                                <div class="server-box box-green">Activo</div><div class="server-box box-yellow">Carga</div><div class="server-box box-red">Error</div><div class="server-box box-red">Error</div>
                             </div>
                             <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border-color); padding-top: 15px;">
                                 <div>
@@ -254,29 +234,35 @@
                     </div>
                 </div>
 
+                <!-- TAB 2: VISIÓN GENERAL (FINANZAS) - Refactorizada con IDs para Fase 2 -->
                 <div id="tab-fin-overview" class="tab-content">
                     <div class="grid-top">
                         <div class="card glow-card" style="grid-column: span 2;">
                             <div class="card-header"><span class="card-title">INGRESOS BRUTOS TOTALES (AÑO FISCAL)</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
                             <div style="display: flex; align-items: center; gap: 20px;">
-                                <div class="money-huge">$58,214,330.12</div>
+                                <div class="money-huge" id="fin-revenue-ytd">$58,214,330.12</div>
                                 <div>
                                     <div class="trend-up"><i class="fas fa-arrow-up"></i> +18.7%</div>
                                     <div class="trend-sub">vs mes pasado</div>
                                 </div>
                             </div>
                         </div>
+                        
+                        <!-- TARJETA REFACTORIZADA CON BOTÓN FLOTANTE DE GASTOS -->
                         <div class="card">
-                            <div class="card-header"><span class="card-title">GASTOS OPERATIVOS TOTALES</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
-                            <div class="money-large">$15,100,500.80</div>
+                            <div class="card-header">
+                                <span class="card-title">GASTOS OPERATIVOS TOTALES</span>
+                                <button class="btn-outline" style="width: auto; padding: 2px 10px; font-size: 11px; margin: 0; border-color: var(--trecho-yellow); color: var(--trecho-yellow);" onclick="openCustomModal('modal-gastos-operativos')">Ver Detalles</button>
+                            </div>
+                            <div class="money-large" id="fin-expenses-total">$15,100,500.80</div>
                             <div style="display: flex; justify-content: space-between; font-size: 12px; margin-top: 10px;">
                                 <span class="text-secondary">Desglose</span><span>$15,100,500.80</span>
                             </div>
                             <div style="display: flex; justify-content: space-between; font-size: 12px; margin-top: 5px;">
-                                <span class="text-secondary">Salarios</span><span>$2,733,230.80</span>
+                                <span class="text-secondary">Salarios</span><span id="fin-expenses-salaries">$2,733,230.80</span>
                             </div>
                             <div style="display: flex; justify-content: space-between; font-size: 12px; margin-top: 5px; border-bottom: 1px solid var(--border-color); padding-bottom: 10px;">
-                                <span class="text-secondary">Marketing</span><span>$1,928,330.60</span>
+                                <span class="text-secondary">Marketing</span><span id="fin-expenses-marketing">$1,928,330.60</span>
                             </div>
                             <div style="display: flex; justify-content: space-between; font-size: 14px; font-weight: 700; margin-top: 10px; color: var(--trecho-yellow);">
                                 <span>Total</span><span>$58,114,530.80</span>
@@ -294,7 +280,7 @@
                         <div>
                             <div class="card" style="margin-bottom: 20px;">
                                 <div class="card-header"><span class="card-title">FLUJO DE CAJA NETO</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
-                                <div class="money-large">$43,113,829.32</div>
+                                <div class="money-large" id="fin-net-cashflow">$43,113,829.32</div>
                                 <div style="height: 120px; width: 100%; position: relative;">
                                     <canvas id="chart-fin-gauge"></canvas>
                                     <div style="position: absolute; bottom: 0; left: 0; width: 100%; display: flex; justify-content: space-between; font-size: 12px; color: var(--text-secondary);">
@@ -346,6 +332,62 @@
                             <div style="height: 180px; width: 100%;">
                                 <canvas id="chart-fin-product"></canvas>
                             </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- (RESTO DE TABS INTACTAS) -->
+                <div id="tab-fin-revenue" class="tab-content"><div class="card"><p>Pestaña Detalle de Ingresos en desarrollo...</p></div></div>
+                <div id="tab-fin-expenses" class="tab-content"><div class="card"><p>Pestaña Detalle de Gastos en desarrollo...</p></div></div>
+
+                <!-- TAB UPLOADERS & PAGOS -->
+                <div id="tab-usr-payments" class="tab-content">
+                    <div class="grid-two-one">
+                        <div class="card glow-card" style="grid-column: span 2;">
+                            <div class="card-header">
+                                <span class="card-title">NÓMINA DE TRABAJADORES (UPLOADERS)</span>
+                                <button class="btn-primary" id="btn-generar-enlace"><i class="fas fa-link"></i> Generar Enlace Mágico de Invitación</button>
+                            </div>
+                            <p class="text-secondary" style="margin-bottom: 15px;">Gestiona a los creadores de contenido, visualiza sus ganancias en tiempo real y liquida sus saldos.</p>
+                            <table class="trecho-table">
+                                <thead>
+                                    <tr>
+                                        <th>Uploader / ID</th>
+                                        <th>Rol</th>
+                                        <th>Subidas Hoy</th>
+                                        <th>Generado Hoy</th>
+                                        <th>Saldo Retirable</th>
+                                        <th>Acción</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="workers-table-body">
+                                    <tr>
+                                        <td colspan="6" style="text-align: center; color: var(--text-secondary);">Cargando nómina desde la base de datos...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="card">
+                            <div class="card-header"><span class="card-title">POLÍTICAS DE PAGO RÁPIDO</span><i class="fas fa-cog text-secondary"></i></div>
+                            <p class="text-secondary" style="font-size: 12px; margin-bottom: 15px;">Ajusta cuánto gana cada Uploader por su trabajo instantáneamente.</p>
+                            
+                            <div class="form-group">
+                                <label style="font-size: 11px;">Modo de Ingresos (Actual: Normal)</label>
+                                <select class="form-control" id="ceo-pricing-mode">
+                                    <option value="normal">Modo Normal (Estándar)</option>
+                                    <option value="feriado">Modo Feriado (Ganancias $0)</option>
+                                    <option value="boost">Modo Boost (Bono Tráfico)</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label style="font-size: 11px;">Límite Diario por Trabajador ($)</label>
+                                <input type="number" class="form-control" value="25.00" id="ceo-limit-daily">
+                            </div>
+                            <div class="form-group">
+                                <label style="font-size: 11px;">Límite Mensual por Trabajador ($)</label>
+                                <input type="number" class="form-control" value="150.00" id="ceo-limit-monthly">
+                            </div>
+                            <button class="btn-primary" style="width: 100%;" id="btn-save-policies">APLICAR POLÍTICAS AHORA</button>
                         </div>
                     </div>
                 </div>
@@ -1303,6 +1345,46 @@
         </div>
     </div>
 
+    <!-- MODAL 3: GASTOS OPERATIVOS -->
+    <div id="modal-gastos-operativos" class="modal">
+        <div class="modal-content" style="width: 700px;">
+            <div class="modal-header">
+                <h3>DESGLOSE DETALLADO DE GASTOS OPERATIVOS (AÑO FISCAL) <span style="color: var(--text-secondary); font-weight: normal;">- ACCESO CEO</span></h3>
+                <button class="btn-close" onclick="closeCustomModal('modal-gastos-operativos')"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body" style="padding: 20px;">
+                <h2 style="color: var(--trecho-yellow); margin-bottom: 20px; font-size: 24px;">TOTAL GASTOS OPERATIVOS: <span id="modal-gastos-monto">$15,100,500.80</span></h2>
+                
+                <table class="trecho-table" style="margin-bottom: 20px;">
+                    <thead>
+                        <tr>
+                            <th>Categoría</th>
+                            <th>Descripción</th>
+                            <th>Monto</th>
+                            <th>% del Total</th>
+                        </tr>
+                    </thead>
+                    <tbody id="modal-gastos-tabla">
+                        <tr><td><i class="fas fa-laptop text-secondary"></i> Equipo y Hardware</td><td>(Laptop Dev, Office Equip, Soft)</td><td style="font-weight: bold;">$1,250,300.00</td><td>8.28%</td></tr>
+                        <tr><td><i class="fas fa-network-wired text-secondary"></i> Tráfico de Red y CDN</td><td>(Ancho de banda, Tráfico Cloudflare)</td><td style="font-weight: bold;">$2,100,500.00</td><td>13.91%</td></tr>
+                        <tr><td><i class="fas fa-money-bill-wave text-secondary"></i> Salarios y Beneficios</td><td>(Sueldos del equipo, Seguros, Bonus)</td><td style="font-weight: bold;">$7,733,230.80</td><td>51.21%</td></tr>
+                        <tr><td><i class="fas fa-bullhorn text-secondary"></i> Marketing y Publicidad</td><td>(Campañas digitales, RR.PP.)</td><td style="font-weight: bold;">$1,928,330.60</td><td>12.77%</td></tr>
+                        <tr><td><i class="fas fa-server text-secondary"></i> Infraestructura Servidores</td><td>(AWS EC2, S3, RDS, Google Cloud)</td><td style="font-weight: bold;">$1,238,139.40</td><td>8.20%</td></tr>
+                        <tr><td><i class="fas fa-gavel text-secondary"></i> Servicios Legales</td><td>(Asesoría Legal, Consultoría)</td><td style="font-weight: bold;">$850,000.00</td><td>5.62%</td></tr>
+                    </tbody>
+                </table>
+                
+                <div style="display: flex; justify-content: center; height: 200px;">
+                    <canvas id="chart-modal-gastos-detalle"></canvas>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-outline" style="width: auto; margin: 0;" onclick="closeCustomModal('modal-gastos-operativos')">Cerrar</button>
+                <button class="btn-primary" style="margin: 0;">Exportar Informe (PDF)</button>
+            </div>
+        </div>
+    </div>
+
     <!-- PANEL LATERAL: TESORERÍA (Histórico) -->
     <div id="panel-tesoreria" class="side-panel">
         <div class="side-panel-header">
@@ -1347,7 +1429,6 @@
         </div>
     </div>
 
-    <!-- Funciones locales para controlar la aparición visual de los modales -->
     <script>
         function openCustomModal(id) {
             const modal = document.getElementById(id);
@@ -1371,6 +1452,25 @@
                         options: { responsive: true, maintainAspectRatio: false, scales: { x: {display: false}, y: {display: false} }, plugins: { legend: {display: false} } }
                     });
                     window.miniChartCreado = true;
+                }
+            }
+            
+            if(id === 'modal-gastos-operativos') {
+                const ctx = document.getElementById('chart-modal-gastos-detalle')?.getContext('2d');
+                if(ctx && !window.chartModalGastosCreado) {
+                    new Chart(ctx, {
+                        type: 'doughnut',
+                        data: {
+                            datasets: [{
+                                data: [8.28, 13.91, 51.21, 12.77, 8.20, 5.62],
+                                backgroundColor: ['#3b82f6', '#8b5cf6', '#eab308', '#f97316', '#06b6d4', '#6b7280'],
+                                borderWidth: 0,
+                                cutout: '65%'
+                            }]
+                        },
+                        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+                    });
+                    window.chartModalGastosCreado = true;
                 }
             }
         }
