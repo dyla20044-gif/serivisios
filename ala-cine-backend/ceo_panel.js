@@ -4,18 +4,19 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnLogin = document.getElementById('btn-login');
     const emailInput = document.getElementById('ceo-email');
     const titleDisplay = document.getElementById('top-title-display');
-    
-    let currentCharts = {}; // Para destruir gráficos viejos al recargar
+
+    window.myCharts = {}; // Almacenará los gráficos para actualizarlos sin borrarlos
 
     btnLogin?.addEventListener('click', () => {
         const email = emailInput?.value.trim();
         if (!email) return;
         
-        btnLogin.innerHTML = 'CONECTANDO AL CLUSTER...';
+        btnLogin.innerHTML = 'CONECTANDO...';
         setTimeout(() => {
             loginScreen.classList.add('hidden');
             dashboard.classList.remove('hidden');
-            initSystem();
+            initCharts(); // Dibuja todos tus gráficos de diseño estáticos primero
+            initSystem(); // Actualiza dinámicamente los gráficos y números reales
         }, 800);
     });
 
@@ -26,7 +27,6 @@ document.addEventListener('DOMContentLoaded', () => {
         title.classList.toggle('open');
     };
 
-    // Títulos traducidos al español corporativo
     const mapTitle = {
         'tab-dashboard': 'PANEL DE CONTROL PRINCIPAL <span class="sub">| ACCESO CEO</span>',
         'tab-fin-overview': 'FINANZAS | VISIÓN GENERAL <span class="sub">- ACCESO CEO</span>',
@@ -62,7 +62,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const tabElement = document.getElementById(tabId);
             if (tabElement) {
                 tabElement.classList.add('active');
-                titleDisplay.innerHTML = mapTitle[tabId] || 'TRECHOS CORPORATE';
+                titleDisplay.innerHTML = mapTitle[tabId] || 'TRECHO CORPORATE';
             }
         });
     });
@@ -71,15 +71,11 @@ document.addEventListener('DOMContentLoaded', () => {
         window.location.reload();
     });
 
-    // SISTEMA NÚCLEO: Conexión asíncrona preparada para la Fase 2
+    // -------- LÓGICA DINÁMICA DE LA FASE 1 -------- //
+
     async function initSystem() {
         try {
-            // Animación de carga visual
-            document.getElementById('dash-revenue-today').innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
-            document.getElementById('dash-revenue-month').innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
-            document.getElementById('dash-revenue-total').innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
-
-            // INTENTO DE CONEXIÓN A TU API REAL (Se implementará en Fase 2)
+            // Intento de conexión al backend
             const response = await fetch('/api/ceo/master-stats').catch(() => null);
             
             let data;
@@ -90,23 +86,27 @@ document.addEventListener('DOMContentLoaded', () => {
                 data = generarDatosDePrueba();
             }
 
-            // Inyectar datos al DOM
+            // Inyectar datos al DOM de forma segura
             document.getElementById('dash-revenue-today').innerText = `$${parseFloat(data.ingresosHoy).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
             document.getElementById('dash-revenue-month').innerText = `$${parseFloat(data.cajaMes).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
             document.getElementById('dash-revenue-total').innerText = `$${parseFloat(data.ingresosHistoricos).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
             document.getElementById('dash-active-users').innerText = data.vistasHoy.toLocaleString();
 
-            renderDynamicCharts(data);
+            // Actualizar solo el gráfico del Dashboard sin destruir los demás
+            if (window.myCharts['chart-dashboard-revenue']) {
+                window.myCharts['chart-dashboard-revenue'].data.labels = data.chartLabels;
+                window.myCharts['chart-dashboard-revenue'].data.datasets[0].data = data.chartData;
+                window.myCharts['chart-dashboard-revenue'].update();
+            }
+
             renderWorkersTable(data.trabajadores);
 
         } catch (error) {
-            console.error("Fallo al inicializar el sistema:", error);
-            document.getElementById('dash-revenue-today').innerText = "ERROR";
+            console.error("Fallo al inicializar el sistema dinámico:", error);
         }
     }
 
     function generarDatosDePrueba() {
-        // Esto se borrará en la Fase 2 cuando Node.js devuelva los datos reales
         return {
             ingresosHoy: 543.20,
             cajaMes: 16296.00,
@@ -120,44 +120,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 { id: "33333333", name: "Uploader Externo 2", rol: "Uploader", totalUploads: 18, earnedToday: 4.20, deudaPendiente: 22.10, trend: 'down' }
             ]
         };
-    }
-
-    function renderDynamicCharts(apiData) {
-        const ctxRevenue = document.getElementById('chart-dashboard-revenue');
-        if (ctxRevenue) {
-            if(currentCharts['revenue']) currentCharts['revenue'].destroy();
-            
-            let gradient = ctxRevenue.getContext('2d').createLinearGradient(0, 0, 0, 300);
-            gradient.addColorStop(0, 'rgba(234, 179, 8, 0.4)');
-            gradient.addColorStop(1, 'rgba(234, 179, 8, 0.0)');
-
-            currentCharts['revenue'] = new Chart(ctxRevenue.getContext('2d'), {
-                type: 'line',
-                data: {
-                    labels: apiData.chartLabels,
-                    datasets: [{
-                        data: apiData.chartData,
-                        borderColor: 'rgb(234, 179, 8)',
-                        backgroundColor: gradient,
-                        borderWidth: 3,
-                        fill: true,
-                        tension: 0.4,
-                        pointBackgroundColor: 'rgb(234, 179, 8)',
-                        pointBorderColor: '#fff',
-                        pointRadius: 4
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    scales: {
-                        y: { grid: { color: '#2b2f3a' }, ticks: { color: '#9ca3af' } },
-                        x: { grid: { display: false }, ticks: { color: '#9ca3af' } }
-                    },
-                    plugins: { legend: { display: false } }
-                }
-            });
-        }
     }
 
     function renderWorkersTable(trabajadores) {
@@ -192,6 +154,148 @@ document.addEventListener('DOMContentLoaded', () => {
         prompt("Copia este enlace y envíalo a tu nuevo trabajador por WhatsApp:", fakeLink);
     });
 
+    // -------- LÓGICA DE MAQUETACIÓN ORIGINAL (No borrar) -------- //
+
+    function initCharts() {
+        const createLineChart = (id, data, color, isFill = true) => {
+            const ctx = document.getElementById(id)?.getContext('2d');
+            if (!ctx) return;
+            let gradient = ctx.createLinearGradient(0, 0, 0, 300);
+            gradient.addColorStop(0, `rgba(${color}, 0.4)`);
+            gradient.addColorStop(1, `rgba(${color}, 0.0)`);
+            window.myCharts[id] = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: ['1', '2', '3', '4', '5', '6', '7'],
+                    datasets: [{
+                        data: data,
+                        borderColor: `rgb(${color})`,
+                        backgroundColor: isFill ? gradient : 'transparent',
+                        borderWidth: 3,
+                        fill: isFill,
+                        tension: 0.4,
+                        pointBackgroundColor: `rgb(${color})`,
+                        pointBorderColor: '#fff',
+                        pointRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: { grid: { color: '#2b2f3a' }, ticks: { color: '#9ca3af' } },
+                        x: { grid: { display: false }, ticks: { color: '#9ca3af' } }
+                    },
+                    plugins: { legend: { display: false } }
+                }
+            });
+        };
+
+        const createBarChart = (id, data, color) => {
+            const ctx = document.getElementById(id)?.getContext('2d');
+            if (!ctx) return;
+            window.myCharts[id] = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: ['1', '2', '3', '4', '5', '6', '7'],
+                    datasets: [{
+                        data: data,
+                        backgroundColor: `rgb(${color})`,
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: { display: false },
+                        x: { grid: { display: false }, ticks: { color: '#9ca3af', font: {size: 10} } }
+                    },
+                    plugins: { legend: { display: false } }
+                }
+            });
+        };
+
+        const createDonutChart = (id, dataArr, colorsArr) => {
+            const ctx = document.getElementById(id)?.getContext('2d');
+            if (!ctx) return;
+            window.myCharts[id] = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    datasets: [{
+                        data: dataArr,
+                        backgroundColor: colorsArr,
+                        borderWidth: 0,
+                        cutout: '70%'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } }
+                }
+            });
+        };
+
+        // Renderiza absolutamente todos los gráficos originales de tu diseño
+        createLineChart('chart-dashboard-revenue', [20, 35, 50, 45, 80, 110, 150], '234, 179, 8');
+        createBarChart('chart-dashboard-activity', [40, 30, 60, 45, 80, 50, 90], '234, 179, 8');
+        createBarChart('chart-dashboard-workforce', [60, 40, 80, 65, 90, 70, 100], '234, 179, 8');
+
+        createLineChart('chart-fin-cashflow', [50, 60, 40, 70, 90, 80, 110], '234, 179, 8');
+        createDonutChart('chart-fin-expense-donut', [40, 30, 20, 10], ['#eab308', '#f97316', '#ef4444', '#6b7280']);
+        
+        const ctxProduct = document.getElementById('chart-fin-product')?.getContext('2d');
+        if (ctxProduct) {
+            window.myCharts['chart-fin-product'] = new Chart(ctxProduct, {
+                type: 'bar',
+                data: {
+                    labels: ['Producto 1', 'Producto 2', 'Producto 3', 'Producto 4', 'Legal'],
+                    datasets: [{ data: [15, 12, 9, 6, 3], backgroundColor: '#eab308', borderRadius: 4 }]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: { x: { grid: { color: '#2b2f3a' }, ticks: { color: '#9ca3af' } }, y: { grid: { display: false }, ticks: { color: '#9ca3af' } } },
+                    plugins: { legend: { display: false } }
+                }
+            });
+        }
+
+        createLineChart('chart-srv-performance', [10, 30, 20, 50, 40, 60, 80], '234, 179, 8');
+        createDonutChart('chart-srv-cpu', [45, 25, 20, 10], ['#eab308', '#ef4444', '#22c55e', '#6b7280']);
+
+        createLineChart('chart-usr-reg', [10, 15, 12, 25, 20, 35, 40], '234, 179, 8', false);
+        createLineChart('chart-usr-engagement', [20, 40, 30, 60, 50, 80, 100], '234, 179, 8');
+        createDonutChart('chart-usr-platform', [50, 30, 20], ['#eab308', '#ef4444', '#6b7280']);
+
+        const ctxRadar = document.getElementById('chart-roles-radar')?.getContext('2d');
+        if (ctxRadar) {
+            window.myCharts['chart-roles-radar'] = new Chart(ctxRadar, {
+                type: 'radar',
+                data: {
+                    labels: ['Finanzas', 'Servidor', 'Usuario', 'Equipo', 'Líder Producto'],
+                    datasets: [{
+                        data: [65, 59, 90, 81, 56],
+                        backgroundColor: 'rgba(234, 179, 8, 0.2)',
+                        borderColor: '#eab308',
+                        pointBackgroundColor: '#eab308'
+                    }, {
+                        data: [28, 48, 40, 19, 96],
+                        backgroundColor: 'rgba(34, 197, 94, 0.2)',
+                        borderColor: '#22c55e',
+                        pointBackgroundColor: '#22c55e'
+                    }]
+                },
+                options: { responsive: true, maintainAspectRatio: false, scales: { r: { grid: { color: '#2b2f3a' }, ticks: { display: false } } }, plugins: { legend: { display: false } } }
+            });
+        }
+
+        createDonutChart('chart-reports-donut', [35, 25, 20, 20], ['#22c55e', '#eab308', '#ef4444', '#6b7280']);
+        createLineChart('chart-reports-usage', [5, 10, 8, 15, 12, 20, 25], '234, 179, 8');
+    }
+
     document.getElementById('btn-search-tmdb')?.addEventListener('click', async () => {
         const q = document.getElementById('tmdb-search-input').value.trim();
         if(!q) return;
@@ -203,5 +307,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="poster-item" style="width: 130px; height: 195px; background: #333; border-radius: 8px; display: flex; align-items: center; justify-content: center; cursor: pointer; border: 2px solid transparent;" onclick="this.style.borderColor='var(--trecho-yellow)'">Película 2</div>
             `;
         }, 800);
+    });
+
+    window.selectTmdb = function(el, title) {
+        document.querySelectorAll('.poster-item').forEach(i => i.classList.remove('selected'));
+        el.classList.add('selected');
+        document.getElementById('tmdb-inject-area').classList.remove('hidden');
+        document.getElementById('tmdb-selected-title').textContent = title;
+    };
+
+    document.getElementById('btn-cancel-tmdb')?.addEventListener('click', () => {
+        document.getElementById('tmdb-inject-area').classList.add('hidden');
+        document.getElementById('tmdb-url').value = '';
     });
 });
