@@ -43,8 +43,8 @@ try {
     admin.initializeApp({
       credential: admin.credential.cert(serviceAccount)
     });
-} catch (error) {
-}
+} catch (error) {}
+
 const db = admin.firestore();
 const messaging = admin.messaging();
 
@@ -101,7 +101,6 @@ async function connectToMongo() {
         await mongoDb.collection(COLL_DAILY_STATS).createIndex({ uploaderId: 1, dayId: 1 }, { unique: true });
         await mongoDb.collection(COLL_DAILY_STATS).createIndex({ uploaderId: 1, monthId: 1 });
         await mongoDb.collection(COLL_CORP_REVENUE).createIndex({ dayId: 1 }, { unique: true });
-        
         await mongoDb.collection('media_catalog').createIndex({ addedAt: -1 });
         await mongoDb.collection('series_catalog').createIndex({ addedAt: -1 });
         await mongoDb.collection('media_catalog').createIndex({ isPinned: 1, addedAt: -1 });
@@ -113,6 +112,7 @@ async function connectToMongo() {
         process.exit(1);
     }
 }
+
 const adminState = {};
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
@@ -120,41 +120,39 @@ app.use(bodyParser.urlencoded({ extended: true }));
 let trafficCount = 0;
 let companyAccumulatedTraffic = 0;
 let lastTrafficAlert = 0;
-let currentCpmMultiplier = 1.0; 
-let globalTrafficBonusActive = false;
-const TRAFFIC_THRESHOLD = 300; 
 
+let spmActive = false;
+let currentMovieBoost = 0;
+let currentTvBoost = 0;
 let spmCooldown = 6 * 60 * 60 * 1000;
-let spmDuration = 2 * 60 * 60 * 1000;
 
-setInterval(async () => { 
-    if (trafficCount > TRAFFIC_THRESHOLD && (Date.now() - lastTrafficAlert > spmCooldown)) {
-        lastTrafficAlert = Date.now();
-        globalTrafficBonusActive = true; 
-        
-        let randomBoost = parseFloat((Math.random() * 0.15 + 0.05).toFixed(2));
-        let boostAmount = Math.min(0.30, globalPricing.payout_per_view + randomBoost) - globalPricing.payout_per_view;
-        globalPricing.payout_per_view += boostAmount;
-        currentCpmMultiplier = 1.5;
+setInterval(async () => {
+    if (trafficCount > 20) {
+        spmActive = true;
+        let scaling = Math.min((trafficCount - 20) / 80, 1);
+        currentMovieBoost = parseFloat((0.20 * scaling).toFixed(3));
+        currentTvBoost = parseFloat((0.05 * scaling).toFixed(3));
 
-        try {
-            const topRequests = await mongoDb.collection('movie_requests')
-                .find({ status: { $ne: 'subido' } }).sort({ votes: -1 }).limit(3).toArray();
-            const moviesStr = topRequests.map(r => r.title || r.name).join(', ');
+        if (trafficCount > 50 && (Date.now() - lastTrafficAlert > spmCooldown)) {
+            lastTrafficAlert = Date.now();
+            try {
+                if (mongoDb) {
+                    const topRequests = await mongoDb.collection('movie_requests')
+                        .find({ status: { $ne: 'subido' } }).sort({ votes: -1 }).limit(3).toArray();
+                    const moviesStr = topRequests.map(r => r.title || r.name).join(', ');
 
-            if (ADMIN_CHAT_ID_PRIMARY) {
-                bot.sendMessage(ADMIN_CHAT_ID_PRIMARY, `🔥 *¡ALTA DEMANDA EN LA APP!* 🔥\n\nEl SPM ha subido a *$${globalPricing.payout_per_view.toFixed(3)}* por las próximas 2 horas. ¡Aprovechen para subir contenido!\n\n🍿 *Lo que la gente está buscando ahora mismo:*\n${moviesStr}`, { parse_mode: 'Markdown' });
-            }
-        } catch(e) {}
-
-        setTimeout(() => { 
-            globalPricing.payout_per_view -= boostAmount;
-            currentCpmMultiplier = 1.0;
-            globalTrafficBonusActive = false; 
-            if (ADMIN_CHAT_ID_PRIMARY) bot.sendMessage(ADMIN_CHAT_ID_PRIMARY, "📉 El SPM ha vuelto a la normalidad. Buen trabajo equipo.");
-        }, spmDuration); 
+                    if (ADMIN_CHAT_ID_PRIMARY) {
+                        bot.sendMessage(ADMIN_CHAT_ID_PRIMARY, `🔥 *¡ALTA DEMANDA EN LA APP!* 🔥\n\nEl SPM en películas ha subido +$${currentMovieBoost} extra. ¡Aprovechen para subir!\n\n🍿 *La gente está buscando:*\n${moviesStr}`, { parse_mode: 'Markdown' });
+                    }
+                }
+            } catch(e) {}
+        }
+    } else {
+        spmActive = false;
+        currentMovieBoost = 0;
+        currentTvBoost = 0;
     }
-    trafficCount = 0; 
+    trafficCount = 0;
 }, 60000);
 
 app.use((req, res, next) => {
@@ -170,8 +168,7 @@ app.use((req, res, next) => {
 
 try {
     require('./bridge.js')(app);
-} catch (error) {
-}
+} catch (error) {}
 
 async function verifyIdToken(req, res, next) {
     const authHeader = req.headers.authorization;
@@ -259,13 +256,12 @@ async function calculateAndRecordRevenue({ uploaderId, tmdbId, mediaType, title,
         } else {
             if (mediaType === 'movie') {
                 contentType = 'estreno';
-                basePrice = esSubidaPar ? globalPricing.customMoviePrice : (globalPricing.customMoviePrice * 0.6);
+                basePrice = (esSubidaPar ? globalPricing.customMoviePrice : (globalPricing.customMoviePrice * 0.6)) + currentMovieBoost;
             } else {
                 contentType = 'episodio';
-                basePrice = esSubidaPar ? globalPricing.customTvPrice : (globalPricing.customTvPrice * 0.6);
+                basePrice = (esSubidaPar ? globalPricing.customTvPrice : (globalPricing.customTvPrice * 0.6)) + currentTvBoost;
             }
             if (globalPricing.mode === 'boost') basePrice += 0.10;
-            if (globalTrafficBonusActive) basePrice += 0.05;
         }
 
         const monthlyDocs = await mongoDb.collection(COLL_DAILY_STATS)
@@ -555,6 +551,50 @@ app.get('/api/tmdb-proxy', async (req, res) => {
     }
 });
 
+app.get('/api/spm-status', async (req, res) => {
+    try {
+        let requests = [];
+        if (mongoDb) {
+            requests = await mongoDb.collection('movie_requests')
+                .find({ status: { $ne: 'subido' } }).sort({ votes: -1 }).limit(5).toArray();
+        }
+        res.json({
+            active: spmActive,
+            movieBoost: currentMovieBoost,
+            tvBoost: currentTvBoost,
+            topRequests: requests.map(r => ({ title: r.title || r.name, votes: r.votes }))
+        });
+    } catch(e) {
+        res.json({ active: false, movieBoost: 0, tvBoost: 0, topRequests: [] });
+    }
+});
+
+app.post('/api/bank-info', async (req, res) => {
+    const { uid, banco, cuenta, titular } = req.body;
+    if (!mongoDb) return res.status(500).json({ error: "DB no conectada" });
+    try {
+        await mongoDb.collection('user_banks').updateOne(
+            { uid: uid },
+            { $set: { banco, cuenta, titular, updatedAt: new Date() } },
+            { upsert: true }
+        );
+        res.json({ success: true });
+    } catch(e) {
+        res.status(500).json({ error: "Error" });
+    }
+});
+
+app.get('/api/bank-info/:uid', async (req, res) => {
+    if (!mongoDb) return res.status(500).json({ error: "DB no conectada" });
+    try {
+        const bank = await mongoDb.collection('user_banks').findOne({ uid: req.params.uid });
+        if (bank) res.json({ success: true, bank });
+        else res.json({ success: false });
+    } catch(e) {
+        res.status(500).json({ error: "Error" });
+    }
+});
+
 cron.schedule('*/5 * * * *', async () => {
     const keys = pendingViewsCache.keys();
     
@@ -617,7 +657,7 @@ cron.schedule('*/5 * * * *', async () => {
                 }
 
                 if (currentCycleEarned < globalPricing.limit_monthly && currentDaily < globalPricing.limit_daily) {
-                    let earned = parseFloat((viewsCount * dynamicRate * currentCpmMultiplier).toFixed(3));
+                    let earned = parseFloat((viewsCount * dynamicRate).toFixed(3));
                     if (currentDaily + earned > globalPricing.limit_daily) {
                         earned = globalPricing.limit_daily - currentDaily;
                     }
@@ -688,8 +728,7 @@ cron.schedule('*/5 * * * *', async () => {
         if (bulkRevenueOps.length > 0) await mongoDb.collection(COLL_REVENUE).bulkWrite(bulkRevenueOps);
         if (bulkCorpOps.length > 0) await mongoDb.collection(COLL_CORP_REVENUE).bulkWrite(bulkCorpOps);
         pendingViewsCache.flushAll(); 
-    } catch (e) {
-    }
+    } catch (e) {}
 });
 
 cron.schedule('0 18 * * *', () => { if (ADMIN_CHAT_ID_2) bot.sendMessage(ADMIN_CHAT_ID_2, 'Hora pico detectada.'); }, { scheduled: true, timezone: "America/Guayaquil" });
