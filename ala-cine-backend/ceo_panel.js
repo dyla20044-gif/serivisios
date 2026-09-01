@@ -7,8 +7,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     window.myCharts = {}; 
 
-    // -------- FUNCIONES GLOBALES PARA ABRIR PANELES FLOTANTES -------- //
-
     window.openCustomModal = function(id) {
         const modal = document.getElementById(id);
         if(modal) modal.classList.add('active');
@@ -70,8 +68,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if(panel) panel.classList.remove('open');
     };
 
-    // -------- NAVEGACIÓN Y LOGIN -------- //
-
     btnLogin?.addEventListener('click', () => {
         const email = emailInput?.value.trim();
         if (!email) return;
@@ -82,7 +78,7 @@ document.addEventListener('DOMContentLoaded', () => {
             dashboard.classList.remove('hidden');
             initCharts(); 
             initSystem(); 
-            setInterval(initSystem, 10000); // Se actualiza automáticamente cada 10 segundos
+            setInterval(initSystem, 10000); 
         }, 800);
     });
 
@@ -137,8 +133,6 @@ document.addEventListener('DOMContentLoaded', () => {
         window.location.reload();
     });
 
-    // -------- LÓGICA DE CONEXIÓN EN TIEMPO REAL A LA BASE DE DATOS -------- //
-
     async function initSystem() {
         try {
             const response = await fetch('/api/ceo/master-stats').catch(() => null);
@@ -146,7 +140,6 @@ document.addEventListener('DOMContentLoaded', () => {
             
             const data = await response.json();
 
-            // Pestaña Principal (Dashboard)
             document.getElementById('dash-revenue-today').innerText = `$${parseFloat(data.ingresosHoy || 0).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
             document.getElementById('dash-revenue-month').innerText = `$${parseFloat(data.cajaMes || 0).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
             document.getElementById('dash-revenue-total').innerText = `$${parseFloat(data.ingresosHistoricos || 0).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
@@ -158,17 +151,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 trendEl.className = 'trend-up text-green';
             }
 
-            // Pestaña Visión General (Sincronizando los totales globales para que no queden estáticos)
             const totalHistoricoStr = `$${parseFloat(data.ingresosHistoricos || 0).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
             
             const revenueYtdEl = document.getElementById('fin-revenue-ytd');
             if(revenueYtdEl) revenueYtdEl.innerText = totalHistoricoStr;
             
             const netCashflowEl = document.getElementById('fin-net-cashflow');
-            // Por ahora, sincronizamos el flujo de caja con el histórico real hasta que creemos la base de datos de gastos.
             if(netCashflowEl) netCashflowEl.innerText = totalHistoricoStr;
 
-            // Gráfico del Dashboard (Línea de tendencia)
             if (window.myCharts['chart-dashboard-revenue'] && data.chartLabels && data.chartData) {
                 window.myCharts['chart-dashboard-revenue'].data.labels = data.chartLabels;
                 window.myCharts['chart-dashboard-revenue'].data.datasets[0].data = data.chartData;
@@ -179,7 +169,6 @@ document.addEventListener('DOMContentLoaded', () => {
             renderElegantTeamList(data.trabajadores || []);
 
         } catch (error) {
-            console.error("Fallo al inicializar el sistema dinámico:", error);
             document.getElementById('dash-revenue-today').innerText = "$0.00";
             document.getElementById('dash-revenue-month').innerText = "$0.00";
             document.getElementById('dash-revenue-total').innerText = "$0.00";
@@ -191,7 +180,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Tabla de la pestaña Uploaders & Pagos
     function renderWorkersTable(trabajadores) {
         const tbody = document.getElementById('workers-table-body');
         if (!tbody) return;
@@ -218,7 +206,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Lista Elegante del Dashboard Principal (Estado de Equipo)
     function renderElegantTeamList(trabajadores) {
         const container = document.getElementById('dashboard-team-list');
         if (!container) return;
@@ -232,8 +219,6 @@ document.addEventListener('DOMContentLoaded', () => {
         trabajadores.forEach(t => {
             const statusClass = t.earnedToday > 0 ? 'badge-success' : 'badge-neutral';
             const statusText = t.earnedToday > 0 ? '<i class="fas fa-check-circle"></i> Activo Hoy' : '<i class="fas fa-moon"></i> Inactivo';
-            
-            // Generador de foto de perfil automatica
             const avatarUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(t.name)}&background=random&color=fff&bold=true`;
 
             const html = `
@@ -259,8 +244,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const fakeLink = "https://app.trechovisionaries.com/invite?token=" + Math.random().toString(36).substr(2, 9);
         prompt("Copia este enlace y envíalo a tu nuevo trabajador por WhatsApp:", fakeLink);
     });
-
-    // -------- LÓGICA DE MAQUETACIÓN ORIGINAL DE GRÁFICOS -------- //
 
     function initCharts() {
         const createLineChart = (id, data, color, isFill = true) => {
@@ -345,7 +328,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         createLineChart('chart-dashboard-revenue', [0, 0, 0, 0, 0, 0, 0], '234, 179, 8');
         
-        // MODIFICACIÓN: Monitor de Tráfico por Horas (Ondas múltiples)
         const ctxActivity = document.getElementById('chart-dashboard-activity')?.getContext('2d');
         if (ctxActivity) {
             window.myCharts['chart-dashboard-activity'] = new Chart(ctxActivity, {
@@ -366,7 +348,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         y: { display: false } 
                     },
                     plugins: { legend: { display: false } },
-                    elements: { point: { radius: 0 } } // Oculta los puntos para dar efecto de ondas
+                    elements: { point: { radius: 0 } }
                 }
             });
         }
