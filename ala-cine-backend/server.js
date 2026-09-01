@@ -117,7 +117,6 @@ const adminState = {};
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-let trafficCount = 0;
 let companyAccumulatedTraffic = 0;
 let lastTrafficAlert = 0;
 
@@ -126,14 +125,33 @@ let currentMovieBoost = 0;
 let currentTvBoost = 0;
 let spmCooldown = 6 * 60 * 60 * 1000;
 
+const activeFreeUsers = new Map();
+
+app.post('/api/heartbeat', (req, res) => {
+    const { uid, isPremium } = req.body;
+    if (uid && !isPremium) {
+        activeFreeUsers.set(uid, Date.now());
+    }
+    res.json({ success: true });
+});
+
 setInterval(async () => {
-    if (trafficCount > 20) {
+    const currentTime = Date.now();
+    for (let [uid, timestamp] of activeFreeUsers.entries()) {
+        if (currentTime - timestamp > 120000) {
+            activeFreeUsers.delete(uid);
+        }
+    }
+
+    let currentFreeUsers = activeFreeUsers.size;
+
+    if (currentFreeUsers > 20) {
         spmActive = true;
-        let scaling = Math.min((trafficCount - 20) / 80, 1);
+        let scaling = Math.min((currentFreeUsers - 20) / 80, 1);
         currentMovieBoost = parseFloat((0.20 * scaling).toFixed(3));
         currentTvBoost = parseFloat((0.05 * scaling).toFixed(3));
 
-        if (trafficCount > 50 && (Date.now() - lastTrafficAlert > spmCooldown)) {
+        if (currentFreeUsers > 50 && (Date.now() - lastTrafficAlert > spmCooldown)) {
             lastTrafficAlert = Date.now();
             try {
                 if (mongoDb) {
@@ -152,13 +170,10 @@ setInterval(async () => {
         currentMovieBoost = 0;
         currentTvBoost = 0;
     }
-    trafficCount = 0;
 }, 60000);
 
 app.use((req, res, next) => {
-    trafficCount++;
     companyAccumulatedTraffic++;
-    
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, DELETE');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-salacine-internal-token');
