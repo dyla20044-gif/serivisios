@@ -6,6 +6,368 @@ document.addEventListener('DOMContentLoaded', () => {
     const titleDisplay = document.getElementById('top-title-display');
 
     window.myCharts = {}; 
+    let deleteQueue = [];
+    let currentTestItem = null;
+
+    window.openCustomModal = function(id) {
+        const modal = document.getElementById(id);
+        if(modal) modal.classList.add('active');
+        
+        if(id === 'modal-detalle-hoy') {
+            const options = { day: 'numeric', month: 'long', year: 'numeric' };
+            document.getElementById('modal-hoy-date').innerText = new Date().toLocaleDateString('es-ES', options);
+            document.getElementById('modal-hoy-monto').innerText = document.getElementById('dash-revenue-today').innerText;
+        }
+
+        if(id === 'modal-crecimiento') {
+            document.getElementById('modal-mes-monto').innerText = document.getElementById('dash-revenue-month').innerText;
+            document.getElementById('modal-mes-trafico').innerText = document.getElementById('dash-active-users').innerText;
+            
+            const ctx = document.getElementById('mini-chart-crecimiento')?.getContext('2d');
+            if(ctx && !window.miniChartCreado) {
+                new Chart(ctx, {
+                    type: 'line',
+                    data: { labels: ['1','2','3','4','5','6','7'], datasets: [{ data: [10, 30, 20, 50, 70, 90, 150], borderColor: '#22c55e', backgroundColor: 'rgba(34, 197, 94, 0.2)', fill: true, tension: 0.4 }] },
+                    options: { responsive: true, maintainAspectRatio: false, scales: { x: {display: false}, y: {display: false} }, plugins: { legend: {display: false} } }
+                });
+                window.miniChartCreado = true;
+            }
+        }
+        
+        if(id === 'modal-gastos-operativos') {
+            const ctx = document.getElementById('chart-modal-gastos-detalle')?.getContext('2d');
+            if(ctx && !window.chartModalGastosCreado) {
+                new Chart(ctx, {
+                    type: 'doughnut',
+                    data: {
+                        datasets: [{
+                            data: [8.28, 13.91, 51.21, 12.77, 8.20, 5.62],
+                            backgroundColor: ['#3b82f6', '#8b5cf6', '#eab308', '#f97316', '#06b6d4', '#6b7280'],
+                            borderWidth: 0,
+                            cutout: '65%'
+                        }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+                });
+                window.chartModalGastosCreado = true;
+            }
+        }
+    };
+
+    window.closeCustomModal = function(id) {
+        const modal = document.getElementById(id);
+        if(modal) modal.classList.remove('active');
+        if(id === 'modal-test-video') {
+            const iframe = document.getElementById('test-video-iframe');
+            if(iframe) iframe.src = '';
+        }
+    };
+
+    window.openSidePanel = function(id) {
+        document.getElementById('panel-teso-total').innerText = document.getElementById('dash-revenue-today').innerText;
+        const panel = document.getElementById(id);
+        if(panel) panel.classList.add('open');
+    };
+
+    window.closeSidePanel = function(id) {
+        const panel = document.getElementById(id);
+        if(panel) panel.classList.remove('open');
+    };
+
+    btnLogin?.addEventListener('click', async () => {
+        const role = document.getElementById('login-role').value;
+        const email = emailInput?.value.trim();
+        const password = document.getElementById('ceo-password').value.trim();
+        
+        if (!email || !password) {
+            document.getElementById('login-error').innerText = "Completa todos los campos.";
+            return;
+        }
+        
+        btnLogin.innerHTML = 'CONECTANDO...';
+        
+        try {
+            const res = await fetch('/api/ceo/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, role, password })
+            });
+            const data = await res.json();
+            
+            if (data.success) {
+                const headerName = document.getElementById('header-ceo-name');
+                if (headerName) {
+                    headerName.innerHTML = `${data.role === 'ceo' ? 'Admin CEO' : 'Co-Fundadora'} <i class="fas fa-chevron-down" style="font-size: 10px; margin-left: 5px;"></i>`;
+                }
+                loginScreen.classList.add('hidden');
+                dashboard.classList.remove('hidden');
+                initCharts(); 
+                initSystem(); 
+                setInterval(initSystem, 10000); 
+            } else {
+                document.getElementById('login-error').innerText = data.message;
+                btnLogin.innerHTML = 'AUTORIZAR ACCESO';
+            }
+        } catch (error) {
+            document.getElementById('login-error').innerText = "Error de conexión al servidor.";
+            btnLogin.innerHTML = 'AUTORIZAR ACCESO';
+        }
+    });
+
+    window.toggleMenu = function(menuId) {
+        const menu = document.getElementById(menuId);
+        const title = menu.previousElementSibling;
+        menu.classList.toggle('open');
+        title.classList.toggle('open');
+    };
+
+    const mapTitle = {
+        'tab-dashboard': 'PANEL DE CONTROL PRINCIPAL <span class="sub">| ACCESO CEO</span>',
+        'tab-fin-overview': 'FINANZAS | VISIÓN GENERAL <span class="sub">- ACCESO CEO</span>',
+        'tab-fin-revenue': 'FINANZAS | DETALLE DE INGRESOS <span class="sub">- ACCESO CEO</span>',
+        'tab-fin-expenses': 'FINANZAS | DETALLE DE GASTOS <span class="sub">- ACCESO CEO</span>',
+        'tab-fin-cashflow': 'FINANZAS | FLUJO DE CAJA <span class="sub">- ACCESO CEO</span>',
+        'tab-fin-oberbia': 'FINANZAS | RESUMEN CORPORATIVO <span class="sub">- ACCESO CEO</span>',
+        'tab-srv-health': 'SERVIDORES | ESTADO Y SALUD <span class="sub">- ACCESO CEO</span>',
+        'tab-srv-deploy': 'SERVIDORES | GESTOR DE ENLACES',
+        'tab-usr-activity': 'PLATAFORMA | ACTIVIDAD GLOBAL <span class="sub">- ACCESO CEO</span>',
+        'tab-usr-payments': 'PLATAFORMA | UPLOADERS & PAGOS <span class="sub">- RECURSOS HUMANOS</span>',
+        'tab-bot-broadcast': 'PLATAFORMA | BROADCAST & BOT <span class="sub">- COMUNICADOS</span>',
+        'tab-team-personnel': 'RECURSOS HUMANOS | NÓMINA Y PERSONAL',
+        'tab-team-roles': 'RECURSOS HUMANOS | ROLES Y JERARQUÍAS',
+        'tab-reports': 'CENTRO DE REPORTES Y ANALÍTICA',
+        'tab-settings': 'CONFIGURACIONES DEL SISTEMA',
+        'tab-empresa': 'TRECHOS CORPORATE <span class="sub">| ACERCA DE LA EMPRESA</span>'
+    };
+
+    document.querySelectorAll('.nav-item, .nav-sub-item').forEach(li => {
+        li.addEventListener('click', (e) => {
+            if (e.currentTarget.id === 'btn-logout') {
+                window.location.reload();
+                return;
+            }
+            document.querySelectorAll('.nav-item, .nav-sub-item').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            
+            const current = e.currentTarget;
+            current.classList.add('active');
+            
+            const tabId = current.getAttribute('data-tab');
+            const tabElement = document.getElementById(tabId);
+            if (tabElement) {
+                tabElement.classList.add('active');
+                titleDisplay.innerHTML = mapTitle[tabId] || 'TRECHO CORPORATE';
+            }
+        });
+    });
+
+    document.getElementById('btn-logout-icon')?.addEventListener('click', () => {
+        window.location.reload();
+    });
+
+    async function initSystem() {
+        try {
+            const response = await fetch('/api/ceo/master-stats').catch(() => null);
+            if (!response || !response.ok) throw new Error("No hay conexión con el servidor");
+            
+            const data = await response.json();
+
+            document.getElementById('dash-revenue-today').innerText = `$${parseFloat(data.ingresosHoy || 0).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+            document.getElementById('dash-revenue-month').innerText = `$${parseFloat(data.cajaMes || 0).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+            document.getElementById('dash-revenue-total').innerText = `$${parseFloat(data.ingresosHistoricos || 0).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+            document.getElementById('dash-active-users').innerText = (data.vistasHoy || 0).toLocaleString();
+
+            const trendEl = document.getElementById('dash-trend');
+            if (trendEl) {
+                trendEl.innerHTML = `<i class="fas fa-arrow-up"></i> Sistema Online`;
+                trendEl.className = 'trend-up text-green';
+            }
+
+            const totalHistoricoStr = `$${parseFloat(data.ingresosHistoricos || 0).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+            
+            const revenueYtdEl = document.getElementById('fin-revenue-ytd');
+            if(revenueYtdEl) revenueYtdEl.innerText = totalHistoricoStr;
+            
+            const netCashflowEl = document.getElementById('fin-net-cashflow');
+            if(netCashflowEl) netCashflowEl.innerText = totalHistoricoStr;
+
+            if (window.myCharts['chart-dashboard-revenue'] && data.chartLabels && data.chartData) {
+                window.myCharts['chart-dashboard-revenue'].data.labels = data.chartLabels;
+                window.myCharts['chart-dashboard-revenue'].data.datasets[0].data = data.chartData;
+                window.myCharts['chart-dashboard-revenue'].update();
+            }
+
+            renderWorkersTable(data.trabajadores || []);
+            renderElegantTeamList(data.trabajadores || []);
+
+        } catch (error) {
+            document.getElementById('dash-revenue-today').innerText = "$0.00";
+            document.getElementById('dash-revenue-month').innerText = "$0.00";
+            document.getElementById('dash-revenue-total').innerText = "$0.00";
+            const trendEl = document.getElementById('dash-trend');
+            if (trendEl) {
+                trendEl.innerHTML = `<i class="fas fa-exclamation-triangle"></i> Desconectado`;
+                trendEl.className = 'trend-down text-red';
+            }
+        }
+    }
+
+    function renderWorkersTable(trabajadores) {
+        const tbody = document.getElementById('workers-table-body');
+        const tbodyBank = document.getElementById('tabla-retiros-bancarios');
+        const godSelect = document.getElementById('god-uid');
+        const inspectorSelect = document.getElementById('inspector-uid');
+        
+        if (tbody) tbody.innerHTML = '';
+        if (tbodyBank) tbodyBank.innerHTML = '';
+        
+        const currentValueGod = godSelect ? godSelect.value : '';
+        const currentValueInspector = inspectorSelect ? inspectorSelect.value : '';
+
+        if (godSelect) godSelect.innerHTML = '<option value="">Selecciona un usuario...</option>';
+        if (inspectorSelect) inspectorSelect.innerHTML = '<option value="">Selecciona un Uploader...</option>';
+        
+        let hasBank = false;
+
+        trabajadores.forEach(t => {
+            const badgeClass = t.rol.includes('CEO') ? 'status-green' : (t.rol.includes('Co-Fundador') ? 'status-yellow' : 'status-neutral');
+            
+            if (tbody) {
+                tbody.insertAdjacentHTML('beforeend', `
+                    <tr>
+                        <td><strong>${t.name}</strong><br><span style="font-size: 11px; color: var(--text-secondary);">ID: ${t.id}</span></td>
+                        <td><span class="status-badge ${badgeClass}">${t.rol}</span></td>
+                        <td>${t.totalUploads}</td>
+                        <td class="text-green">+$${(t.earnedToday || 0).toFixed(2)}</td>
+                        <td style="font-weight: bold; color: var(--trecho-yellow);">$${(t.deudaPendiente || 0).toFixed(2)}</td>
+                        <td><button class="btn-outline" style="padding: 5px 10px; width: auto; font-size: 11px;" onclick="prepararLiquidacion('${t.id}', '${t.name}', ${t.deudaPendiente}, 'Panel Principal')">Liquidar</button></td>
+                    </tr>
+                `);
+            }
+
+            if (t.bank && tbodyBank) {
+                hasBank = true;
+                tbodyBank.insertAdjacentHTML('beforeend', `
+                    <tr>
+                        <td><strong>${t.name}</strong><br><span style="font-size: 11px; color: var(--text-secondary);">ID: ${t.id}</span></td>
+                        <td>${t.bank.banco}</td>
+                        <td>${t.bank.cuenta}</td>
+                        <td>${t.bank.titular}</td>
+                        <td class="text-trecho" style="font-weight: bold;">$${(t.deudaPendiente || 0).toFixed(2)}</td>
+                        <td><button class="btn-liquidar" onclick="prepararLiquidacion('${t.id}', '${t.name}', ${t.deudaPendiente}, 'Banco: ${t.bank.banco}')">Marcar Pagado</button></td>
+                    </tr>
+                `);
+            }
+
+            if (godSelect) {
+                godSelect.insertAdjacentHTML('beforeend', `<option value="${t.id}">${t.name} (Saldo: $${(t.deudaPendiente || 0).toFixed(2)})</option>`);
+            }
+            if (inspectorSelect) {
+                inspectorSelect.insertAdjacentHTML('beforeend', `<option value="${t.id}">${t.name} (${t.id})</option>`);
+            }
+        });
+
+        if (!hasBank && tbodyBank) {
+            tbodyBank.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-secondary);">No hay solicitudes bancarias guardadas.</td></tr>';
+        }
+
+        if (godSelect && currentValueGod) godSelect.value = currentValueGod;
+        if (inspectorSelect && currentValueInspector) inspectorSelect.value = currentValueInspector;
+    }
+
+    let liquidacionActual = null;
+    
+    window.prepararLiquidacion = function(uid, name, amount, defaultMethod = "Transferencia Bancaria") {
+        liquidacionActual = uid;
+        document.getElementById('liq-name').innerText = name;
+        document.getElementById('liq-amount').innerText = `$${parseFloat(amount).toFixed(2)}`;
+        document.getElementById('liq-method').value = defaultMethod;
+        openCustomModal('modal-liquidar');
+    };
+
+    document.getElementById('btn-confirm-liquidar')?.addEventListener('click', async () => {
+        if (!liquidacionActual) return;
+        const amountStr = document.getElementById('liq-amount').innerText.replace('$', '');
+        const method = document.getElementById('liq-method').value;
+
+        try {
+            const res = await fetch('/api/ceo/pay-worker', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ uploaderId: liquidacionActual, amount: parseFloat(amountStr), paymentMethod: method })
+            });
+            const result = await res.json();
+            if (result.success) {
+                closeCustomModal('modal-liquidar');
+                alert('Pago registrado correctamente. El saldo del usuario ha vuelto a $0.00');
+                initSystem(); 
+            }
+        } catch(e) {
+            alert('Error al liquidar.');
+        }
+    });
+
+    document.getElementById('btn-force-balance')?.addEventListener('click', async () => {
+        const uid = document.getElementById('god-uid').value;
+        const newBalance = document.getElementById('god-balance').value;
+        if(!uid || newBalance === '') return alert("Completa los campos.");
+
+        try {
+            const res = await fetch('/api/ceo/fix-balance', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ uid, newBalance })
+            });
+            const result = await res.json();
+            if(result.success) {
+                alert("Saldo sobrescrito con éxito. Errores negativos borrados.");
+                document.getElementById('god-balance').value = '';
+                initSystem();
+            }
+        } catch(e) { 
+            alert("Error al intentar corregir."); 
+        }
+    });
+
+    document.getElementById('btn-send-broadcast')?.addEventListener('click', async () => {
+        const message = document.getElementById('bot-msg-text').value;
+        const imageUrl = document.getElementById('bot-msg-img').value;
+        if(!message) return alert("El mensaje no puede estar vacío.");
+
+        const btn = document.getElementById('btn-send-broadcast');
+        btn.innerText = "ENVIANDO...";
+
+        try {
+            const res = await fetch('/api/ceo/notify-bot', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message, imageUrl, targetGroup: 'all_admins' })
+            });
+            const result = await res.json();
+            if(result.success) {
+                alert("Comunicado enviado con éxito al Bot de Telegram.");
+                document.getElementById('bot-msg-text').value = '';
+                document.getElementById('bot-msg-img').value = '';
+            }
+        } catch(e) { 
+            alert("Error al enviar el comunicado."); 
+        }
+        
+        btn.innerHTML = '<i class="fas fa-paper-plane"></i> ENVIAR COMUNICADO AHORA';
+    });
+
+    document.getElementById('btn-load-content')?.addEventListener('click', async () => {
+        const uid = document.getElementById('inspector-uid').valueEl script del panel de administración centraliza la lógica de autenticación, visualización de métricas financieras mediante Chart.js, gestión de trabajadores y envío de comunicados[cite: 1]. 
+
+```javascript
+document.addEventListener('DOMContentLoaded', () => {
+    const loginScreen = document.getElementById('login-screen');
+    const dashboard = document.getElementById('ceo-dashboard');
+    const btnLogin = document.getElementById('btn-login');
+    const emailInput = document.getElementById('ceo-email');
+    const titleDisplay = document.getElementById('top-title-display');
+
+    window.myCharts = {}; 
 
     window.openCustomModal = function(id) {
         const modal = document.getElementById(id);
@@ -325,7 +687,7 @@ document.addEventListener('DOMContentLoaded', () => {
         trabajadores.forEach(t => {
             const statusClass = t.earnedToday > 0 ? 'badge-success' : 'badge-neutral';
             const statusText = t.earnedToday > 0 ? '<i class="fas fa-check-circle"></i> Activo Hoy' : '<i class="fas fa-moon"></i> Inactivo';
-            const avatarUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(t.name)}&background=random&color=fff&bold=true`;
+            const avatarUrl = `[https://ui-avatars.com/api/?name=$](https://ui-avatars.com/api/?name=$){encodeURIComponent(t.name)}&background=random&color=fff&bold=true`;
 
             const html = `
                 <div class="team-list-item">
@@ -347,7 +709,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     document.getElementById('btn-generar-enlace')?.addEventListener('click', () => {
-        const fakeLink = "https://app.trechovisionaries.com/invite?token=" + Math.random().toString(36).substr(2, 9);
+        const fakeLink = "[https://app.trechovisionaries.com/invite?token=](https://app.trechovisionaries.com/invite?token=)" + Math.random().toString(36).substr(2, 9);
         prompt("Copia este enlace y envíalo a tu nuevo trabajador por WhatsApp:", fakeLink);
     });
 
