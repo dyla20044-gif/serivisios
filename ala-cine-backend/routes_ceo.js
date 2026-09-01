@@ -139,8 +139,7 @@ module.exports = function(app, ctx) {
         const { uid, newBalance } = req.body;
         const uploaderIdInt = parseInt(uid);
         const now = new Date();
-        const dayId = now.toISOString().split('T')[0];
-        const monthId = dayId.substring(0, 7);
+        const monthId = now.toISOString().split('T')[0].substring(0, 7);
 
         let currentCycleStart;
         if (now.getDate() >= 21) {
@@ -151,14 +150,21 @@ module.exports = function(app, ctx) {
         const strCurrentCycle = currentCycleStart.toISOString().split('T')[0];
 
         try {
-            await dbInstance.collection(COLL_DAILY_STATS).updateMany(
-                { uploaderId: uploaderIdInt, dayId: { $gte: strCurrentCycle } },
-                { $set: { today_earned: 0 } }
-            );
+            const docs = await dbInstance.collection(COLL_DAILY_STATS)
+                .find({ uploaderId: uploaderIdInt, dayId: { $gte: strCurrentCycle } })
+                .project({ today_earned: 1 })
+                .toArray();
+            
+            const currentTotal = docs.reduce((sum, doc) => sum + (doc.today_earned || 0), 0);
+            
+            const diferencia = parseFloat(newBalance) - currentTotal;
 
             await dbInstance.collection(COLL_DAILY_STATS).updateOne(
-                { uploaderId: uploaderIdInt, dayId: dayId },
-                { $set: { today_earned: parseFloat(newBalance), monthId: monthId } },
+                { uploaderId: uploaderIdInt, dayId: strCurrentCycle },
+                { 
+                    $inc: { today_earned: diferencia },
+                    $setOnInsert: { monthId: monthId, today_content_count: 0 }
+                },
                 { upsert: true }
             );
 
