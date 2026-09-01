@@ -62,7 +62,7 @@
                 <ul class="nav-sub-menu" id="menu-users">
                     <li class="nav-sub-item" data-tab="tab-usr-activity">Actividad Global</li>
                     <li class="nav-sub-item" data-tab="tab-usr-payments">Uploaders & Pagos</li>
-                    <li class="nav-sub-item" data-tab="tab-usr-engagement">Retención (Engagement)</li>
+                    <li class="nav-sub-item" data-tab="tab-bot-broadcast"><i class="fas fa-bullhorn text-trecho" style="margin-right: 5px;"></i> Broadcast & Bot</li>
                 </ul>
 
                 <div class="nav-group-title" onclick="toggleMenu('menu-team')">
@@ -733,6 +733,21 @@
                     </div>
                 </div>
 
+                <div id="tab-bot-broadcast" class="tab-content">
+                    <div class="card glow-card" style="max-width: 600px; margin: 0 auto;">
+                        <div class="card-header"><span class="card-title">COMUNICADOS OFICIALES AL BOT</span></div>
+                        <div class="form-group">
+                            <label>Título / Mensaje</label>
+                            <textarea id="bot-msg-text" class="form-control" rows="5" placeholder="Escribe el comunicado aquí... Admite *negritas* y _cursivas_"></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label>URL de Imagen (PNG/JPG) - Opcional</label>
+                            <input type="text" id="bot-msg-img" class="form-control" placeholder="https://ejemplo.com/imagen.png">
+                        </div>
+                        <button class="btn-primary" id="btn-send-broadcast" style="width: 100%;"><i class="fas fa-paper-plane"></i> ENVIAR COMUNICADO AHORA</button>
+                    </div>
+                </div>
+
                 <div id="tab-team-personnel" class="tab-content">
                     <div class="grid-two-one">
                         <div class="grid-half">
@@ -1024,6 +1039,22 @@
                 </div>
 
                 <div id="tab-settings" class="tab-content">
+                    <div class="card" style="margin-bottom: 20px; border-color: var(--red-negative);">
+                        <div class="card-header"><span class="card-title" style="color: var(--red-negative);">CORRECTOR DE SALDOS (MODO DIOS)</span><i class="fas fa-exclamation-triangle text-red"></i></div>
+                        <p class="text-secondary" style="font-size: 12px; margin-bottom: 15px;">Usa esto para eliminar saldos negativos (-$80) o corregir errores en las cuentas de los uploaders.</p>
+                        <div class="form-group">
+                            <label>ID del Uploader</label>
+                            <select id="god-uid" class="form-control">
+                                <option value="">Cargando usuarios...</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Nuevo Saldo Real ($)</label>
+                            <input type="number" id="god-balance" class="form-control" placeholder="Ej: 15.50">
+                        </div>
+                        <button class="btn-outline" style="color: var(--red-negative); border-color: var(--red-negative);" id="btn-force-balance">SOBREESCRIBIR SALDO</button>
+                    </div>
+
                     <div class="grid-three">
                         <div>
                             <div class="card" style="margin-bottom: 20px;">
@@ -1323,6 +1354,27 @@
             <div class="modal-footer">
                 <button class="btn-outline" style="width: auto; margin: 0;" onclick="closeCustomModal('modal-gastos-operativos')">Cerrar</button>
                 <button class="btn-primary" style="margin: 0;">Exportar Informe (PDF)</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-liquidar" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>LIQUIDAR PAGO</h3>
+                <button class="btn-close" onclick="closeCustomModal('modal-liquidar')"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body">
+                <p>Vas a marcar como pagado al uploader <strong id="liq-name" style="color: var(--trecho-yellow);"></strong>.</p>
+                <h2 class="money-huge" id="liq-amount" style="font-size: 36px; margin: 15px 0;">$0.00</h2>
+                <div class="form-group" style="text-align: left;">
+                    <label>Método de Pago Utilizado</label>
+                    <input type="text" id="liq-method" class="form-control" value="Transferencia Bancaria">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-outline" style="width: auto; margin: 0;" onclick="closeCustomModal('modal-liquidar')">Cancelar</button>
+                <button class="btn-primary" style="margin: 0;" id="btn-confirm-liquidar">Confirmar Pago</button>
             </div>
         </div>
     </div>
