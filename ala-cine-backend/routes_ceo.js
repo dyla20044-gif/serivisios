@@ -247,11 +247,16 @@ module.exports = function(app, ctx) {
         const dbInstance = typeof ctx.getMongoDb === 'function' ? ctx.getMongoDb() : ctx.mongoDb;
         if (!dbInstance) return res.status(503).json({ error: "DB no conectada" });
 
-        const uid = req.params.uid;
+        const uidString = req.params.uid;
+        const uidNumber = parseInt(uidString, 10);
+        
+        const query = {
+            uploaderId: isNaN(uidNumber) ? uidString : { $in: [uidNumber, uidString] }
+        };
         
         try {
-            const movies = await dbInstance.collection('media_catalog').find({ uploaderId: uid }).toArray();
-            const series = await dbInstance.collection('series_catalog').find({ uploaderId: uid }).toArray();
+            const movies = await dbInstance.collection('media_catalog').find(query).toArray();
+            const series = await dbInstance.collection('series_catalog').find(query).toArray();
             res.json({ success: true, movies, series });
         } catch (error) {
             res.status(500).json({ error: "Error al obtener contenido." });
