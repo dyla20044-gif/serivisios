@@ -111,15 +111,26 @@
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px;">
                 <div class="card dark-card" id="rendimientoCard" style="margin-bottom: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; aspect-ratio: 1/1;">
                     <h3 style="font-size: 11px; color: var(--text-muted); margin-bottom: 10px;">RENDIMIENTO</h3>
-                    <span id="trendIcon" class="text-green" style="font-size: 24px; margin-bottom: 10px;"><i class="fa-solid fa-arrow-trend-up"></i></span>
-                    <h2 id="trendText" class="text-green" style="font-size: 16px;">Calculando...</h2>
+                    <div style="display: flex; gap: 15px; margin-bottom: 10px; width: 100%; justify-content: center;">
+                        <div>
+                            <p style="font-size: 10px; color: var(--text-muted);">Ayer</p>
+                            <h4 id="rendAyer" class="text-cyan">$0.00</h4>
+                        </div>
+                        <div>
+                            <p style="font-size: 10px; color: var(--text-muted);">Hoy</p>
+                            <h4 id="rendHoy" class="text-green">$0.00</h4>
+                        </div>
+                    </div>
+                    <span id="trendIcon" class="text-green" style="font-size: 18px; margin-bottom: 5px;"><i class="fa-solid fa-arrow-trend-up"></i></span>
+                    <h2 id="trendText" class="text-green" style="font-size: 12px;">Calculando...</h2>
                 </div>
                 
-                <div class="card dark-card" id="spmCard" style="margin-bottom: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; aspect-ratio: 1/1; cursor: pointer; border: 2px solid transparent;">
-                    <h3 style="font-size: 11px; color: var(--text-muted); margin-bottom: 10px;">SPM PELÍCULAS</h3>
-                    <span id="spmIcon" class="text-yellow" style="font-size: 24px; margin-bottom: 10px;"><i class="fa-solid fa-fire-flame-curved"></i></span>
-                    <h2 id="spmValueText" class="text-yellow" style="font-size: 20px; margin-bottom: 5px;">Normal</h2>
-                    <p id="spmRateText" style="font-size: 12px; font-weight: bold; color: white;">Base</p>
+                <div class="card dark-card" id="spmCard" style="margin-bottom: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; aspect-ratio: 1/1; cursor: pointer; border: 2px solid transparent; position: relative; overflow: hidden;">
+                    <div id="spmSpinner" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 4px solid transparent; border-top: 4px solid var(--accent-yellow); border-radius: 50%; opacity: 0; transition: 0.3s; pointer-events: none;"></div>
+                    <h3 style="font-size: 11px; color: var(--text-muted); margin-bottom: 10px; z-index: 2;">SPM PELÍCULAS</h3>
+                    <span id="spmIcon" class="text-yellow" style="font-size: 24px; margin-bottom: 10px; z-index: 2;"><i class="fa-solid fa-stopwatch"></i></span>
+                    <h2 id="spmValueText" class="text-yellow" style="font-size: 18px; margin-bottom: 5px; z-index: 2;">Normal</h2>
+                    <p id="spmRateText" style="font-size: 11px; font-weight: bold; color: white; z-index: 2;">Base</p>
                 </div>
             </div>
 
