@@ -1394,6 +1394,11 @@
                 <button class="btn-close" onclick="closeCustomModal('modal-test-video')"><i class="fas fa-times"></i></button>
             </div>
             <div class="modal-body" style="padding: 0;">
+                <div id="tv-selector-container" style="display: none; padding: 10px; background: #1a1a1a; border-bottom: 1px solid var(--border-color); text-align: center;">
+                    <select id="tv-season-select" class="form-control" style="width: auto; display: inline-block; margin-right: 10px; margin-bottom: 0; padding: 5px; color: var(--trecho-yellow);"></select>
+                    <select id="tv-episode-select" class="form-control" style="width: auto; display: inline-block; margin-bottom: 0; padding: 5px; color: var(--trecho-yellow);"></select>
+                    <button class="btn-primary" id="btn-load-episode" style="width: auto; margin: 0; padding: 6px 15px; font-size: 11px;">REPRODUCIR</button>
+                </div>
                 <div style="width: 100%; height: 350px; background: #000;">
                     <iframe id="test-video-iframe" style="width: 100%; height: 100%; border: none;" allowfullscreen></iframe>
                 </div>
