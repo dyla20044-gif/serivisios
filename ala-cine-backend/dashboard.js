@@ -39,6 +39,12 @@ document.addEventListener('DOMContentLoaded', () => {
         mod.style.opacity = '1';
     });
 
+    document.getElementById('spmCard').addEventListener('click', () => {
+        const mod = document.getElementById('spmModal');
+        mod.style.display = 'flex';
+        mod.style.opacity = '1';
+    });
+
     const ADMIN_2_ID = "00000000"; 
     const ADMIN_2_PHOTO = "https://iili.io/CTsdfdN.jpg"; 
     const ADMIN_2_NAME = "Nadia"; 
@@ -71,6 +77,7 @@ document.addEventListener('DOMContentLoaded', () => {
             mainApp.style.filter = 'none';
             if (uploaderId) {
                 iniciarConexionServidor(uploaderId);
+                checkBankInfo(uploaderId);
             } else {
                 alert("Error de seguridad: ID no detectado.");
             }
@@ -91,6 +98,94 @@ document.addEventListener('DOMContentLoaded', () => {
             el.classList.add('flash-update');
         }
     }
+
+    async function checkBankInfo(uid) {
+        try {
+            const res = await fetch(`/api/bank-info/${uid}`);
+            const data = await res.json();
+            const formContainer = document.getElementById('formBancarioContainer');
+            
+            if (data.success && data.bank) {
+                formContainer.innerHTML = `
+                    <h3 style="margin-bottom: 15px; font-size: 14px;"><i class="fa-solid fa-building-columns"></i> DATOS BANCARIOS</h3>
+                    <div style="background: rgba(34, 197, 94, 0.1); border: 1px solid rgba(34, 197, 94, 0.3); padding: 15px; border-radius: 8px;">
+                        <p style="color: var(--green-positive); font-size: 13px; margin-bottom: 10px;"><i class="fa-solid fa-circle-check"></i> Tus datos de pago están guardados.</p>
+                        <p style="font-size: 12px; color: var(--text-main);"><strong>Banco:</strong> ${data.bank.banco}</p>
+                        <p style="font-size: 12px; color: var(--text-main);"><strong>Cuenta:</strong> ${data.bank.cuenta}</p>
+                        <p style="font-size: 12px; color: var(--text-main);"><strong>Titular:</strong> ${data.bank.titular}</p>
+                    </div>
+                `;
+            }
+        } catch (e) {}
+    }
+
+    const formRetiroBancario = document.getElementById('formRetiroBancario');
+    if (formRetiroBancario) {
+        formRetiroBancario.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const bancoNombre = document.getElementById('bancoNombre').value;
+            const cuentaNumero = document.getElementById('cuentaNumero').value;
+            const titularNombre = document.getElementById('titularNombre').value;
+            
+            try {
+                const res = await fetch('/api/bank-info', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ uid: uploaderId, banco: bancoNombre, cuenta: cuentaNumero, titular: titularNombre })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    alert('Datos bancarios guardados correctamente.');
+                    checkBankInfo(uploaderId);
+                } else {
+                    alert('Error al guardar datos.');
+                }
+            } catch (error) {
+                alert('Error de conexión.');
+            }
+        });
+    }
+
+    async function fetchSpmStatus() {
+        try {
+            const res = await fetch('/api/spm-status');
+            const data = await res.json();
+            
+            const spmCard = document.getElementById('spmCard');
+            const spmValueText = document.getElementById('spmValueText');
+            const spmRateText = document.getElementById('spmRateText');
+            const modalSpmBoost = document.getElementById('modalSpmBoost');
+            const spmTopPedidasList = document.getElementById('spmTopPedidasList');
+
+            if (data.active && data.movieBoost > 0) {
+                spmCard.classList.add('spm-active-anim');
+                spmValueText.innerText = "¡ALTO!";
+                spmValueText.classList.remove('text-yellow');
+                spmValueText.classList.add('text-green');
+                spmRateText.innerText = `+$${data.movieBoost} Extra`;
+                modalSpmBoost.innerText = `+$${data.movieBoost}`;
+            } else {
+                spmCard.classList.remove('spm-active-anim');
+                spmValueText.innerText = "Normal";
+                spmValueText.classList.remove('text-green');
+                spmValueText.classList.add('text-yellow');
+                spmRateText.innerText = "Base";
+                modalSpmBoost.innerText = "+$0.00";
+            }
+
+            if (data.topRequests && data.topRequests.length > 0) {
+                spmTopPedidasList.innerHTML = '';
+                data.topRequests.forEach(req => {
+                    spmTopPedidasList.innerHTML += `<li><span>🎬 ${req.title}</span> <span class="votos" style="color: var(--accent-yellow); font-weight: bold;">${req.votes} peticiones</span></li>`;
+                });
+            } else {
+                spmTopPedidasList.innerHTML = '<li>Sin peticiones masivas ahora.</li>';
+            }
+        } catch(e) {}
+    }
+    
+    setInterval(fetchSpmStatus, 5000);
+    fetchSpmStatus();
 
     async function iniciarConexionServidor(uid) {
         document.getElementById('userIdDisplay').innerText = `ID: ${uid}`;
@@ -175,25 +270,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        const spmValueText = document.getElementById('spmValueText');
-        const spmRateText = document.getElementById('spmRateText');
-        const spmAlertMsg = document.getElementById('spmAlertMsg');
-        
-        if (spmValueText && spmRateText && spmAlertMsg) {
-            const currentRate = f.currentPayoutRate || 0.005;
-            spmRateText.innerText = `$${currentRate.toFixed(3)} / vista`;
-            
-            if (currentRate > 0.01) {
-                spmValueText.innerText = "¡ALTO!";
-                spmValueText.style.color = "var(--accent-green)";
-                spmAlertMsg.style.display = "block";
-            } else {
-                spmValueText.innerText = "Normal";
-                spmValueText.style.color = "var(--accent-yellow)";
-                spmAlertMsg.style.display = "none";
-            }
-        }
-
         const listPedidas = document.getElementById('topPedidasList');
         if(listPedidas) {
             listPedidas.innerHTML = '';
@@ -245,45 +321,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 listaPagos.innerHTML = `<li><span class="text-muted"><i class="fa-solid fa-box-open"></i> Aún no hay liquidaciones registradas.</span></li>`;
             }
         }
-    }
-
-    const formRetiroBancario = document.getElementById('formRetiroBancario');
-    if (formRetiroBancario) {
-        formRetiroBancario.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            
-            const bancoNombre = document.getElementById('bancoNombre').value;
-            const cuentaNumero = document.getElementById('cuentaNumero').value;
-            const titularNombre = document.getElementById('titularNombre').value;
-            
-            const urlParams = new URLSearchParams(window.location.search);
-            const uid = urlParams.get('uid');
-
-            try {
-                const res = await fetch('/api/request-withdrawal', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        uid: uid,
-                        banco: bancoNombre,
-                        cuenta: cuentaNumero,
-                        titular: titularNombre
-                    })
-                });
-                
-                const data = await res.json();
-                if (data.success) {
-                    alert('Datos bancarios enviados correctamente. Su pago será procesado pronto.');
-                    formRetiroBancario.reset();
-                } else {
-                    alert('Hubo un error al enviar los datos. Intente de nuevo.');
-                }
-            } catch (error) {
-                alert('Error de conexión.');
-            }
-        });
     }
 
     function renderAdminDashboard(data) {
