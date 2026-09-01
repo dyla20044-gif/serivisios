@@ -379,7 +379,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     const displayTitle = item.title || item.name;
                     const poster = item.poster_path ? `https://image.tmdb.org/t/p/w200${item.poster_path}` : 'https://via.placeholder.com/200x300';
                     grid.insertAdjacentHTML('beforeend', `
-                        <div class="poster-item" style="cursor: pointer; position: relative; border-radius: 8px; overflow: hidden; border: 2px solid transparent;" onclick="testLink('${item.tmdbId}', '${displayTitle}', '${type}')">
+                        <div class="poster-item" style="cursor: pointer; position: relative; border-radius: 8px; overflow: hidden; border: 2px solid transparent;" onclick="testLink('${item.tmdbId}', '${displayTitle.replace(/'/g, "\\'")}', '${type}')">
                             <img src="${poster}" style="width: 100%; height: 160px; object-fit: cover;">
                             <div style="position: absolute; bottom: 0; background: rgba(0,0,0,0.8); width: 100%; font-size: 10px; padding: 5px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${displayTitle}</div>
                         </div>
@@ -391,36 +391,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    window.testLink = function(tmdbId, title, type) {
-        currentTestItem = { tmdbId, title, type };
-        document.getElementById('test-video-title').innerText = "Probando: " + title;
-        const iframe = document.getElementById('test-video-iframe');
-        
-        let videoUrl = '';
-        if (window.currentLoadedContent) {
-            const item = window.currentLoadedContent.find(i => String(i.tmdbId) === String(tmdbId));
-            if (item) {
-                if (type === 'movie') {
-                    videoUrl = item.freeEmbedCode || item.proEmbedCode || '';
-                } else {
-                    if (item.seasons) {
-                        for (let s in item.seasons) {
-                            if (item.seasons[s].episodes) {
-                                for (let e in item.seasons[s].episodes) {
-                                    let ep = item.seasons[s].episodes[e];
-                                    if (ep.freeEmbedCode || ep.proEmbedCode) {
-                                        videoUrl = ep.freeEmbedCode || ep.proEmbedCode;
-                                        break;
-                                    }
-                                }
-                            }
-                            if (videoUrl) break;
-                        }
-                    }
-                }
-            }
-        }
-
+    function loadVideoInIframe(iframe, videoUrl) {
         if (!videoUrl) {
             iframe.srcdoc = '<h2 style="color:#ef4444;text-align:center;font-family:sans-serif;margin-top:20%;">No se encontró ningún enlace guardado en la base de datos.</h2>';
         } else {
@@ -430,7 +401,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <head>
                     <meta charset="UTF-8">
                     <style>body { margin: 0; background: #000; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }</style>
-                    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+                    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"><\/script>
                 </head>
                 <body>
                     <video id="video" controls autoplay style="width: 100%; height: 100%; max-height: 100vh; display: none;"></video>
@@ -460,20 +431,90 @@ document.addEventListener('DOMContentLoaded', () => {
                         } else {
                             document.body.innerHTML = '<iframe src="' + videoSrc + '" style="width:100%; height:100%; border:none;" allowfullscreen></iframe>';
                         }
-                    </script>
+                    <\/script>
                 </body>
                 </html>
             `;
             iframe.srcdoc = playerHtml;
         }
+    }
+
+    window.testLink = function(tmdbId, title, type) {
+        currentTestItem = { tmdbId, title, type };
+        document.getElementById('test-video-title').innerText = "Probando: " + title;
         
+        const iframe = document.getElementById('test-video-iframe');
+        const tvSelector = document.getElementById('tv-selector-container');
+        const sSelect = document.getElementById('tv-season-select');
+        const eSelect = document.getElementById('tv-episode-select');
+        
+        if (window.currentLoadedContent) {
+            const item = window.currentLoadedContent.find(i => String(i.tmdbId) === String(tmdbId));
+            if (item) {
+                if (type === 'movie') {
+                    tvSelector.style.display = 'none';
+                    const videoUrl = item.freeEmbedCode || item.proEmbedCode || '';
+                    loadVideoInIframe(iframe, videoUrl);
+                } else {
+                    tvSelector.style.display = 'block';
+                    sSelect.innerHTML = '';
+                    eSelect.innerHTML = '';
+                    
+                    if (item.seasons && Object.keys(item.seasons).length > 0) {
+                        for (let s in item.seasons) {
+                            sSelect.insertAdjacentHTML('beforeend', `<option value="${s}">Temporada ${s}</option>`);
+                        }
+                        
+                        const updateEpisodes = () => {
+                            eSelect.innerHTML = '';
+                            const selSeason = sSelect.value;
+                            if(item.seasons[selSeason] && item.seasons[selSeason].episodes) {
+                                for(let e in item.seasons[selSeason].episodes) {
+                                    eSelect.insertAdjacentHTML('beforeend', `<option value="${e}">Episodio ${e}</option>`);
+                                }
+                            }
+                        };
+                        
+                        sSelect.onchange = updateEpisodes;
+                        updateEpisodes(); 
+                        
+                        document.getElementById('btn-load-episode').onclick = () => {
+                            const s = sSelect.value;
+                            const e = eSelect.value;
+                            currentTestItem.season = s;
+                            currentTestItem.episode = e;
+                            currentTestItem.fullTitle = `${title} (S${s}E${e})`;
+                            document.getElementById('test-video-title').innerText = "Probando: " + currentTestItem.fullTitle;
+                            
+                            let epUrl = '';
+                            if(item.seasons[s] && item.seasons[s].episodes && item.seasons[s].episodes[e]) {
+                                const ep = item.seasons[s].episodes[e];
+                                epUrl = ep.freeEmbedCode || ep.proEmbedCode || '';
+                            }
+                            loadVideoInIframe(iframe, epUrl);
+                        };
+                        
+                        document.getElementById('btn-load-episode').click();
+                    } else {
+                        loadVideoInIframe(iframe, ''); 
+                    }
+                }
+            }
+        }
         openCustomModal('modal-test-video');
     };
 
     document.getElementById('btn-mark-broken')?.addEventListener('click', () => {
         if(!currentTestItem) return;
-        if(!deleteQueue.find(i => i.tmdbId === currentTestItem.tmdbId)) {
-            deleteQueue.push(currentTestItem);
+        
+        const queueKey = currentTestItem.type === 'tv' 
+            ? `${currentTestItem.tmdbId}_${currentTestItem.season}_${currentTestItem.episode}`
+            : currentTestItem.tmdbId;
+            
+        const displayTitle = currentTestItem.type === 'tv' ? currentTestItem.fullTitle : currentTestItem.title;
+        
+        if(!deleteQueue.find(i => (i.type === 'tv' ? `${i.tmdbId}_${i.season}_${i.episode}` : i.tmdbId) === queueKey)) {
+            deleteQueue.push({ ...currentTestItem, displayTitle });
             renderDeleteQueue();
         }
         closeCustomModal('modal-test-video');
@@ -489,7 +530,7 @@ document.addEventListener('DOMContentLoaded', () => {
         deleteQueue.forEach((item, index) => {
             ul.insertAdjacentHTML('beforeend', `
                 <li style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border-color);">
-                    <span><i class="fas fa-unlink text-red" style="margin-right: 5px;"></i> ${item.title}</span>
+                    <span><i class="fas fa-unlink text-red" style="margin-right: 5px;"></i> ${item.displayTitle}</span>
                     <button style="background:none; border:none; color: var(--text-secondary); cursor:pointer;" onclick="removeFromQueue(${index})"><i class="fas fa-times"></i></button>
                 </li>
             `);
@@ -510,11 +551,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 await fetch('/api/ceo/delete-content', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ tmdbId: item.tmdbId, type: item.type })
+                    body: JSON.stringify({ 
+                        tmdbId: item.tmdbId, 
+                        type: item.type,
+                        season: item.season,
+                        episode: item.episode
+                    })
                 });
             }
             
-            const titles = deleteQueue.map(i => i.title);
+            const titles = deleteQueue.map(i => i.displayTitle);
             await fetch('/api/ceo/notify-deleted', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
