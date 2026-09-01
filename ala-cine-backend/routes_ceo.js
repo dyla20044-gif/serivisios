@@ -270,10 +270,17 @@ module.exports = function(app, ctx) {
         const { tmdbId, type } = req.body;
 
         try {
+            const tmdbIdString = String(tmdbId).trim();
+            const tmdbIdNumber = parseInt(tmdbIdString, 10);
+            
+            const query = {
+                tmdbId: isNaN(tmdbIdNumber) ? tmdbIdString : { $in: [tmdbIdString, tmdbIdNumber] }
+            };
+
             if (type === 'movie') {
-                await dbInstance.collection('media_catalog').deleteOne({ tmdbId: String(tmdbId).trim() });
+                await dbInstance.collection('media_catalog').deleteOne(query);
             } else if (type === 'tv') {
-                await dbInstance.collection('series_catalog').deleteOne({ tmdbId: String(tmdbId).trim() });
+                await dbInstance.collection('series_catalog').deleteOne(query);
             }
 
             if (ctx.caches && ctx.caches.catalogCache) ctx.caches.catalogCache.flushAll();
