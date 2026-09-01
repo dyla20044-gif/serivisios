@@ -5,26 +5,26 @@ module.exports = function(app, ctx) {
     const COLL_REVENUE = ctx.COLL_REVENUE || 'uploader_revenue';
     const COLL_CORP_REVENUE = 'corp_daily_revenue';
 
-    // 1. MASTER STATS: El cerebro del Dashboard Principal
     app.get('/api/ceo/master-stats', async (req, res) => {
-        
-        // CORRECCIÓN VITAL: Solicitamos la DB *dentro* de la petición, asegurando que ya esté conectada.
         const dbInstance = typeof ctx.getMongoDb === 'function' ? ctx.getMongoDb() : ctx.mongoDb;
         if (!dbInstance) return res.status(503).json({ error: "DB no conectada" });
         
         try {
             const now = new Date();
-            const dayId = now.toISOString().split('T')[0];
-            const currentMonthPrefix = dayId.substring(0, 7);
-
-            // A. Histórico de Pagos y Trabajadores (Uploaders)
-            const allPayouts = await dbInstance.collection('payout_history').aggregate([
-                { $sort: { date: -1 } },
-                { $group: { _id: "$uploaderId", lastPayoutDate: { $first: "$date" } } }
-            ]).toArray();
+            let currentCycleStart, previousCycleStart;
             
-            const payoutMap = {};
-            allPayouts.forEach(p => payoutMap[p._id] = p.lastPayoutDate.toISOString().split('T')[0]);
+            if (now.getDate() >= 21) {
+                currentCycleStart = new Date(now.getFullYear(), now.getMonth(), 21);
+            } else {
+                currentCycleStart = new Date(now.getFullYear(), now.getMonth() - 1, 21);
+            }
+
+            const strCurrentCycle = currentCycleStart.toISOString().split('T')[0];
+            const dayId = now.toISOString().split('T')[0];
+
+            const allBanks = await dbInstance.collection('user_banks').find({}).toArray();
+            const bankMap = {};
+            allBanks.forEach(b => bankMap[b.uid.toString()] = b);
 
             const pendingStats = await dbInstance.collection(COLL_DAILY_STATS).find({}).toArray();
             
@@ -32,35 +32,27 @@ module.exports = function(app, ctx) {
             let vistasTotalesHoy = 0;
             const workerMap = {};
             
-            // Asignamos automáticamente al dueño/CEO basándonos en tu .env
-            const CEO_ID = (ADMIN_CHAT_IDS && ADMIN_CHAT_IDS.length > 0) ? ADMIN_CHAT_IDS[0] : 11111111;
+            const CEO_ID = (ADMIN_CHAT_IDS && ADMIN_CHAT_IDS.length > 0) ? ADMIN_CHAT_IDS[0].toString() : "11111111";
 
             pendingStats.forEach(s => {
-                const uid = s.uploaderId;
-                const isCEO = (uid === CEO_ID); 
+                const uid = s.uploaderId.toString();
                 
                 if (!workerMap[uid]) {
                     workerMap[uid] = { 
                         id: uid, 
-                        name: isCEO ? "CEO (Tú)" : "Trabajador ID: " + uid, 
-                        earnedMonth: 0, 
+                        name: "Uploader " + uid, 
                         deudaPendiente: 0, 
                         earnedToday: 0, 
                         totalUploads: 0,
-                        vistasHoy: 0
+                        vistasHoy: 0,
+                        bank: bankMap[uid] || null
                     };
                 }
-
-                const lastPayoutStr = payoutMap[uid] || '2000-01-01';
                 
-                if (s.dayId >= lastPayoutStr) {
-                    const earned = s.today_earned || 0;
-                    if (s.dayId.startsWith(currentMonthPrefix)) {
-                        workerMap[uid].earnedMonth += earned; 
-                    } else {
-                        workerMap[uid].deudaPendiente += earned; 
-                    }
-                    if (!isCEO) nominaTotal += earned;
+                if (s.dayId >= strCurrentCycle) {
+                    const earned = parseFloat(s.today_earned) || 0;
+                    workerMap[uid].deudaPendiente += earned; 
+                    if (uid !== CEO_ID && uid !== "00000000") nominaTotal += earned;
                 }
                 
                 if (s.dayId === dayId) {
@@ -71,41 +63,44 @@ module.exports = function(app, ctx) {
                 }
             });
 
-            // Obtener nombres reales del departamento de RRHH
             const hrWorkers = await dbInstance.collection('hr_workers').find({}).toArray();
             const hrMap = {};
             hrWorkers.forEach(w => hrMap[w.telegramId] = w);
 
             const trabajadoresArray = Object.values(workerMap).map(w => {
-                const hrData = hrMap[w.id.toString()];
+                const hrData = hrMap[w.id];
                 if (hrData) {
                     w.name = hrData.name;
                     w.rol = hrData.role;
                 } else {
-                    w.rol = w.name.includes("CEO") ? "Admin CEO" : "Uploader Externo";
+                    w.rol = "Uploader Externo";
                 }
+
+                if (w.id === CEO_ID) {
+                    w.rol = "Admin CEO";
+                    w.name = "CEO (Tú)";
+                } else if (w.id === "00000000") {
+                    w.rol = "Co-Fundador / CEO Secundario";
+                    if (!hrData) w.name = "Nadia";
+                }
+
                 w.trend = w.earnedToday > 5 ? 'up' : (w.earnedToday > 1 ? 'neutral' : 'down');
                 return w;
             });
 
-            // B. Ingresos Corporativos Reales (El dinero que gana la empresa independiente)
             const corpDoc = await dbInstance.collection(COLL_CORP_REVENUE).findOne({ dayId: dayId });
             let ingresosHoyEmpresa = corpDoc ? (corpDoc.today_earned || 0) : 0; 
             let peticionesTotales = corpDoc ? (corpDoc.total_requests || 0) : 0;
 
-            // C. Cálculo del Total Histórico de la Empresa
             const historicalCorp = await dbInstance.collection(COLL_CORP_REVENUE).aggregate([
                 { $group: { _id: null, total: { $sum: "$today_earned" } } }
             ]).toArray();
             let ingresosHistoricos = historicalCorp.length > 0 ? historicalCorp[0].total : 0;
 
-            // Si es el primer día de la empresa, igualamos el histórico a los ingresos de hoy
             if (ingresosHistoricos === 0) ingresosHistoricos = ingresosHoyEmpresa;
 
-            // Proyección de la caja a 30 días basada en el rendimiento de hoy
             let cajaMes = ingresosHoyEmpresa * 30; 
 
-            // D. Datos para alimentar el Gráfico en tiempo real (Limpio y real)
             const chartData = [0, 0, 0, 0, 0, 0, ingresosHoyEmpresa]; 
             const chartLabels = ['D-6', 'D-5', 'D-4', 'D-3', 'D-2', 'Ayer', 'Hoy'];
 
@@ -126,7 +121,6 @@ module.exports = function(app, ctx) {
         }
     });
 
-    // 2. POLÍTICAS FINANCIERAS: Cambiar precios y modos en tiempo real sin apagar el servidor
     app.post('/api/ceo/pricing', (req, res) => {
         const { mode, customMoviePrice, customTvPrice, limit_daily, limit_monthly } = req.body;
         if (mode) globalPricing.mode = mode;
@@ -138,35 +132,86 @@ module.exports = function(app, ctx) {
         res.json({ success: true, message: "Políticas aplicadas en caliente.", globalPricing });
     });
 
-    // 3. PAGOS Y NÓMINA: Registrar la liquidación de un trabajador
+    app.post('/api/ceo/fix-balance', async (req, res) => {
+        const dbInstance = typeof ctx.getMongoDb === 'function' ? ctx.getMongoDb() : ctx.mongoDb;
+        if (!dbInstance) return res.status(503).json({ error: "DB no conectada" });
+
+        const { uid, newBalance } = req.body;
+        const uploaderIdInt = parseInt(uid);
+        const now = new Date();
+        const dayId = now.toISOString().split('T')[0];
+        const monthId = dayId.substring(0, 7);
+
+        let currentCycleStart;
+        if (now.getDate() >= 21) {
+            currentCycleStart = new Date(now.getFullYear(), now.getMonth(), 21);
+        } else {
+            currentCycleStart = new Date(now.getFullYear(), now.getMonth() - 1, 21);
+        }
+        const strCurrentCycle = currentCycleStart.toISOString().split('T')[0];
+
+        try {
+            await dbInstance.collection(COLL_DAILY_STATS).updateMany(
+                { uploaderId: uploaderIdInt, dayId: { $gte: strCurrentCycle } },
+                { $set: { today_earned: 0 } }
+            );
+
+            await dbInstance.collection(COLL_DAILY_STATS).updateOne(
+                { uploaderId: uploaderIdInt, dayId: dayId },
+                { $set: { today_earned: parseFloat(newBalance), monthId: monthId } },
+                { upsert: true }
+            );
+
+            res.json({ success: true });
+        } catch (error) {
+            res.status(500).json({ error: "Error al corregir saldo." });
+        }
+    });
+
     app.post('/api/ceo/pay-worker', async (req, res) => {
         const dbInstance = typeof ctx.getMongoDb === 'function' ? ctx.getMongoDb() : ctx.mongoDb;
         if (!dbInstance) return res.status(503).json({ error: "DB no conectada" });
 
         const { uploaderId, amount, paymentMethod } = req.body;
+        const uploaderIdInt = parseInt(uploaderId);
+        const now = new Date();
+
+        let currentCycleStart;
+        if (now.getDate() >= 21) {
+            currentCycleStart = new Date(now.getFullYear(), now.getMonth(), 21);
+        } else {
+            currentCycleStart = new Date(now.getFullYear(), now.getMonth() - 1, 21);
+        }
+        const strCurrentCycle = currentCycleStart.toISOString().split('T')[0];
 
         try {
             const payoutRecord = {
-                uploaderId: parseInt(uploaderId),
+                uploaderId: uploaderIdInt,
                 amountPaid: parseFloat(amount),
-                paymentMethod: paymentMethod || "Liquidación Panel CEO",
+                paymentMethod: paymentMethod || "Transferencia Bancaria",
                 status: "Pagado",
-                date: new Date()
+                date: now
             };
+            
             await dbInstance.collection('payout_history').insertOne(payoutRecord);
-            res.json({ success: true, message: "Liquidación registrada y ciclo reiniciado exitosamente." });
+            
+            await dbInstance.collection(COLL_DAILY_STATS).updateMany(
+                { uploaderId: uploaderIdInt, dayId: { $gte: strCurrentCycle } },
+                { $set: { today_earned: 0 } }
+            );
+
+            res.json({ success: true });
         } catch (error) {
             res.status(500).json({ error: "Error al procesar el pago." });
         }
     });
 
-    // 4. NOTIFICACIONES PUSH & BOT DE TELEGRAM
     app.post('/api/ceo/notify-bot', async (req, res) => {
         const { message, imageUrl, targetGroup } = req.body;
         try {
             let targets = (targetGroup === 'all_admins') ? ADMIN_CHAT_IDS : [ADMIN_CHAT_IDS[0]];
             for (let chatId of targets) {
-                if (imageUrl) {
+                if (imageUrl && imageUrl.trim() !== '') {
                     await bot.sendPhoto(chatId, imageUrl, { caption: message, parse_mode: 'Markdown' }).catch(()=>{});
                 } else {
                     await bot.sendMessage(chatId, message, { parse_mode: 'Markdown' }).catch(()=>{});
