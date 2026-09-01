@@ -267,7 +267,7 @@ module.exports = function(app, ctx) {
         const dbInstance = typeof ctx.getMongoDb === 'function' ? ctx.getMongoDb() : ctx.mongoDb;
         if (!dbInstance) return res.status(503).json({ error: "DB no conectada" });
 
-        const { tmdbId, type } = req.body;
+        const { tmdbId, type, season, episode } = req.body;
 
         try {
             const tmdbIdString = String(tmdbId).trim();
@@ -280,11 +280,29 @@ module.exports = function(app, ctx) {
             if (type === 'movie') {
                 await dbInstance.collection('media_catalog').deleteOne(query);
             } else if (type === 'tv') {
-                await dbInstance.collection('series_catalog').deleteOne(query);
+                if (season !== undefined && episode !== undefined) {
+                    const sNum = parseInt(season);
+                    const eNum = parseInt(episode);
+                    await dbInstance.collection('series_catalog').updateOne(query, {
+                        $unset: { [`seasons.${sNum}.episodes.${eNum}`]: "" }
+                    });
+                } else {
+                    await dbInstance.collection('series_catalog').deleteOne(query);
+                }
             }
 
             if (ctx.caches && ctx.caches.catalogCache) ctx.caches.catalogCache.flushAll();
             if (ctx.caches && ctx.caches.recentCache) ctx.caches.recentCache.flushAll();
+            
+            if (ctx.caches && ctx.caches.embedCache) {
+                if (type === 'tv' && season !== undefined && episode !== undefined) {
+                    ctx.caches.embedCache.del(`embed-${tmdbId}-${season}-${episode}-pro`);
+                    ctx.caches.embedCache.del(`embed-${tmdbId}-${season}-${episode}-free`);
+                } else {
+                    ctx.caches.embedCache.del(`embed-${tmdbId}-movie-1-pro`);
+                    ctx.caches.embedCache.del(`embed-${tmdbId}-movie-1-free`);
+                }
+            }
 
             res.json({ success: true });
         } catch (error) {
@@ -298,7 +316,7 @@ module.exports = function(app, ctx) {
 
         try {
             const listado = titles.map(t => `❌ ${t}`).join('\n');
-            const message = `⚠️ *ATENCIÓN UPLOADERS*\n\nSe han detectado enlaces rotos o caídos en el servidor. Las siguientes películas/series han sido removidas temporalmente:\n\n${listado}\n\n🎬 *Por favor, vuelvan a subir este contenido con enlaces funcionales para no perder el tráfico actual.*`;
+            const message = `⚠️ *ATENCIÓN UPLOADERS*\n\nSe han detectado enlaces rotos o caídos en el servidor. El siguiente contenido ha sido removido temporalmente:\n\n${listado}\n\n🎬 *Por favor, vuelvan a subir este contenido con enlaces funcionales para no perder el tráfico actual.*`;
             
             for (let chatId of ADMIN_CHAT_IDS) {
                 await bot.sendMessage(chatId, message, { parse_mode: 'Markdown' }).catch(()=>{});
