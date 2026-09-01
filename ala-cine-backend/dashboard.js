@@ -156,19 +156,38 @@ document.addEventListener('DOMContentLoaded', () => {
             const spmRateText = document.getElementById('spmRateText');
             const modalSpmBoost = document.getElementById('modalSpmBoost');
             const spmTopPedidasList = document.getElementById('spmTopPedidasList');
+            const spmSpinner = document.getElementById('spmSpinner');
+            const spmIcon = document.getElementById('spmIcon');
 
             if (data.active && data.movieBoost > 0) {
                 spmCard.classList.add('spm-active-anim');
-                spmValueText.innerText = "¡ALTO!";
+                if(spmSpinner) {
+                    spmSpinner.style.opacity = '1';
+                    spmSpinner.style.animation = 'spinSpm 1s linear infinite';
+                    spmSpinner.style.borderTopColor = 'var(--accent-green)';
+                }
+                spmValueText.innerText = "¡Va Subiendo!";
                 spmValueText.classList.remove('text-yellow');
                 spmValueText.classList.add('text-green');
+                if(spmIcon) {
+                    spmIcon.classList.remove('text-yellow');
+                    spmIcon.classList.add('text-green');
+                }
                 spmRateText.innerText = `+$${data.movieBoost} Extra`;
                 modalSpmBoost.innerText = `+$${data.movieBoost}`;
             } else {
                 spmCard.classList.remove('spm-active-anim');
+                if(spmSpinner) {
+                    spmSpinner.style.opacity = '0';
+                    spmSpinner.style.animation = 'none';
+                }
                 spmValueText.innerText = "Normal";
                 spmValueText.classList.remove('text-green');
                 spmValueText.classList.add('text-yellow');
+                if(spmIcon) {
+                    spmIcon.classList.remove('text-green');
+                    spmIcon.classList.add('text-yellow');
+                }
                 spmRateText.innerText = "Base";
                 modalSpmBoost.innerText = "+$0.00";
             }
@@ -240,6 +259,11 @@ document.addEventListener('DOMContentLoaded', () => {
         updateVal('valRetirable', f.monthEarned); 
         updateVal('valRetirableGrande', f.monthEarned);
         updateVal('valBonos', f.bonos);
+
+        const rendAyer = document.getElementById('rendAyer');
+        const rendHoy = document.getElementById('rendHoy');
+        if(rendAyer) rendAyer.innerText = `$${(f.yesterdayEarned || 0).toFixed(2)}`;
+        if(rendHoy) rendHoy.innerText = `$${(f.todayEarned || 0).toFixed(2)}`;
 
         const montoMax = document.getElementById('montoMaxAdelanto');
         if(montoMax) montoMax.innerText = `$${(f.monthEarned * 0.5).toFixed(2)}`;
