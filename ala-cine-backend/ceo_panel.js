@@ -8,6 +8,7 @@ document.addEventListener('DOMContentLoaded', () => {
     window.myCharts = {}; 
     let deleteQueue = [];
     let currentTestItem = null;
+    window.currentLoadedContent = [];
 
     window.openCustomModal = function(id) {
         const modal = document.getElementById(id);
@@ -59,7 +60,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if(modal) modal.classList.remove('active');
         if(id === 'modal-test-video') {
             const iframe = document.getElementById('test-video-iframe');
-            if(iframe) iframe.src = '';
+            if(iframe) iframe.srcdoc = '';
         }
     };
 
@@ -368,6 +369,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if(data.success) {
                 grid.innerHTML = '';
                 const allItems = [...data.movies, ...data.series];
+                window.currentLoadedContent = allItems;
                 if(allItems.length === 0) {
                     grid.innerHTML = '<span class="text-secondary">No hay contenido subido.</span>';
                     return;
@@ -393,7 +395,78 @@ document.addEventListener('DOMContentLoaded', () => {
         currentTestItem = { tmdbId, title, type };
         document.getElementById('test-video-title').innerText = "Probando: " + title;
         const iframe = document.getElementById('test-video-iframe');
-        iframe.src = `/api/get-embed-code?id=${tmdbId}`; 
+        
+        let videoUrl = '';
+        if (window.currentLoadedContent) {
+            const item = window.currentLoadedContent.find(i => String(i.tmdbId) === String(tmdbId));
+            if (item) {
+                if (type === 'movie') {
+                    videoUrl = item.freeEmbedCode || item.proEmbedCode || '';
+                } else {
+                    if (item.seasons) {
+                        for (let s in item.seasons) {
+                            if (item.seasons[s].episodes) {
+                                for (let e in item.seasons[s].episodes) {
+                                    let ep = item.seasons[s].episodes[e];
+                                    if (ep.freeEmbedCode || ep.proEmbedCode) {
+                                        videoUrl = ep.freeEmbedCode || ep.proEmbedCode;
+                                        break;
+                                    }
+                                }
+                            }
+                            if (videoUrl) break;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (!videoUrl) {
+            iframe.srcdoc = '<h2 style="color:#ef4444;text-align:center;font-family:sans-serif;margin-top:20%;">No se encontró ningún enlace guardado en la base de datos.</h2>';
+        } else {
+            const playerHtml = `
+                <!DOCTYPE html>
+                <html lang="es">
+                <head>
+                    <meta charset="UTF-8">
+                    <style>body { margin: 0; background: #000; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }</style>
+                    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+                </head>
+                <body>
+                    <video id="video" controls autoplay style="width: 100%; height: 100%; max-height: 100vh; display: none;"></video>
+                    <script>
+                        var video = document.getElementById('video');
+                        var videoSrc = '${videoUrl}';
+                        
+                        if (videoSrc.includes('.m3u8')) {
+                            video.style.display = 'block';
+                            if (Hls.isSupported()) {
+                                var hls = new Hls();
+                                hls.loadSource(videoSrc);
+                                hls.attachMedia(video);
+                                hls.on(Hls.Events.MANIFEST_PARSED, function() {
+                                    video.play().catch(function(e){});
+                                });
+                            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                                video.src = videoSrc;
+                                video.addEventListener('loadedmetadata', function() {
+                                    video.play().catch(function(e){});
+                                });
+                            }
+                        } else if (videoSrc.includes('.mp4')) {
+                            video.style.display = 'block';
+                            video.src = videoSrc;
+                            video.play().catch(function(e){});
+                        } else {
+                            document.body.innerHTML = '<iframe src="' + videoSrc + '" style="width:100%; height:100%; border:none;" allowfullscreen></iframe>';
+                        }
+                    </script>
+                </body>
+                </html>
+            `;
+            iframe.srcdoc = playerHtml;
+        }
+        
         openCustomModal('modal-test-video');
     };
 
