@@ -104,12 +104,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 initSystem(); 
                 setInterval(initSystem, 10000); 
             } else {
-                document.getElementById('login-error').innerText = data.message;
-                btnLogin.innerHTML = 'AUTORIZAR ACCESO';
+                document.getElementById('login-error').innerText = data.message || "Correo no autorizado.";
+                btnLogin.innerHTML = 'INICIAR SESIÓN';
             }
         } catch (error) {
             document.getElementById('login-error').innerText = "Error de conexión al servidor.";
-            btnLogin.innerHTML = 'AUTORIZAR ACCESO';
+            btnLogin.innerHTML = 'INICIAR SESIÓN';
         }
     });
 
@@ -355,6 +355,108 @@ document.addEventListener('DOMContentLoaded', () => {
         btn.innerHTML = '<i class="fas fa-paper-plane"></i> ENVIAR COMUNICADO AHORA';
     });
 
+    document.getElementById('btn-load-content')?.addEventListener('click', async () => {
+        const uid = document.getElementById('inspector-uid').value;
+        if(!uid) return alert("Selecciona un uploader primero.");
+        const grid = document.getElementById('inspector-grid');
+        grid.innerHTML = '<span class="text-secondary">Cargando catálogo...</span>';
+        try {
+            const res = await fetch(`/api/ceo/uploader-content/${uid}`);
+            const data = await res.json();
+            if(data.success) {
+                grid.innerHTML = '';
+                const allItems = [...data.movies, ...data.series];
+                if(allItems.length === 0) {
+                    grid.innerHTML = '<span class="text-secondary">No hay contenido subido.</span>';
+                    return;
+                }
+                allItems.forEach(item => {
+                    const type = item.title ? 'movie' : 'tv';
+                    const displayTitle = item.title || item.name;
+                    const poster = item.poster_path ? `https://image.tmdb.org/t/p/w200${item.poster_path}` : 'https://via.placeholder.com/200x300';
+                    grid.insertAdjacentHTML('beforeend', `
+                        <div class="poster-item" style="cursor: pointer; position: relative; border-radius: 8px; overflow: hidden; border: 2px solid transparent;" onclick="testLink('${item.tmdbId}', '${displayTitle}', '${type}')">
+                            <img src="${poster}" style="width: 100%; height: 160px; object-fit: cover;">
+                            <div style="position: absolute; bottom: 0; background: rgba(0,0,0,0.8); width: 100%; font-size: 10px; padding: 5px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${displayTitle}</div>
+                        </div>
+                    `);
+                });
+            }
+        } catch(e) {
+            grid.innerHTML = '<span class="text-red">Error al cargar.</span>';
+        }
+    });
+
+    window.testLink = function(tmdbId, title, type) {
+        currentTestItem = { tmdbId, title, type };
+        document.getElementById('test-video-title').innerText = "Probando: " + title;
+        const iframe = document.getElementById('test-video-iframe');
+        iframe.src = `/api/get-embed-code?id=${tmdbId}`; 
+        openCustomModal('modal-test-video');
+    };
+
+    document.getElementById('btn-mark-broken')?.addEventListener('click', () => {
+        if(!currentTestItem) return;
+        if(!deleteQueue.find(i => i.tmdbId === currentTestItem.tmdbId)) {
+            deleteQueue.push(currentTestItem);
+            renderDeleteQueue();
+        }
+        closeCustomModal('modal-test-video');
+    });
+
+    function renderDeleteQueue() {
+        const ul = document.getElementById('delete-queue');
+        if(deleteQueue.length === 0) {
+            ul.innerHTML = '<li style="color: var(--text-secondary); text-align: center; padding: 20px;" id="empty-queue-msg">No hay enlaces rotos marcados.</li>';
+            return;
+        }
+        ul.innerHTML = '';
+        deleteQueue.forEach((item, index) => {
+            ul.insertAdjacentHTML('beforeend', `
+                <li style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border-color);">
+                    <span><i class="fas fa-unlink text-red" style="margin-right: 5px;"></i> ${item.title}</span>
+                    <button style="background:none; border:none; color: var(--text-secondary); cursor:pointer;" onclick="removeFromQueue(${index})"><i class="fas fa-times"></i></button>
+                </li>
+            `);
+        });
+    }
+
+    window.removeFromQueue = function(index) {
+        deleteQueue.splice(index, 1);
+        renderDeleteQueue();
+    };
+
+    document.getElementById('btn-execute-deletions')?.addEventListener('click', async () => {
+        if(deleteQueue.length === 0) return alert("No hay películas en la cola.");
+        if(!confirm(`¿Estás seguro de eliminar ${deleteQueue.length} contenidos y notificar a los uploaders?`)) return;
+
+        try {
+            for(let item of deleteQueue) {
+                await fetch('/api/ceo/delete-content', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ tmdbId: item.tmdbId, type: item.type })
+                });
+            }
+            
+            const titles = deleteQueue.map(i => i.title);
+            await fetch('/api/ceo/notify-deleted', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ titles })
+            });
+
+            alert("Contenidos eliminados y notificación enviada.");
+            deleteQueue = [];
+            renderDeleteQueue();
+            
+            document.getElementById('btn-load-content').click();
+
+        } catch(e) {
+            alert("Error durante la eliminación.");
+        }
+    });
+
     function renderElegantTeamList(trabajadores) {
         const container = document.getElementById('dashboard-team-list');
         if (!container) return;
@@ -557,106 +659,4 @@ document.addEventListener('DOMContentLoaded', () => {
         createDonutChart('chart-reports-donut', [35, 25, 20, 20], ['#22c55e', '#eab308', '#ef4444', '#6b7280']);
         createLineChart('chart-reports-usage', [5, 10, 8, 15, 12, 20, 25], '234, 179, 8');
     }
-
-    document.getElementById('btn-load-content')?.addEventListener('click', async () => {
-        const uid = document.getElementById('inspector-uid').value;
-        if(!uid) return alert("Selecciona un uploader primero.");
-        const grid = document.getElementById('inspector-grid');
-        grid.innerHTML = '<span class="text-secondary">Cargando catálogo...</span>';
-        try {
-            const res = await fetch(`/api/ceo/uploader-content/${uid}`);
-            const data = await res.json();
-            if(data.success) {
-                grid.innerHTML = '';
-                const allItems = [...data.movies, ...data.series];
-                if(allItems.length === 0) {
-                    grid.innerHTML = '<span class="text-secondary">No hay contenido subido.</span>';
-                    return;
-                }
-                allItems.forEach(item => {
-                    const type = item.title ? 'movie' : 'tv';
-                    const displayTitle = item.title || item.name;
-                    const poster = item.poster_path ? `https://image.tmdb.org/t/p/w200${item.poster_path}` : 'https://via.placeholder.com/200x300';
-                    grid.insertAdjacentHTML('beforeend', `
-                        <div class="poster-item" style="cursor: pointer; position: relative; border-radius: 8px; overflow: hidden; border: 2px solid transparent;" onclick="testLink('${item.tmdbId}', '${displayTitle}', '${type}')">
-                            <img src="${poster}" style="width: 100%; height: 160px; object-fit: cover;">
-                            <div style="position: absolute; bottom: 0; background: rgba(0,0,0,0.8); width: 100%; font-size: 10px; padding: 5px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${displayTitle}</div>
-                        </div>
-                    `);
-                });
-            }
-        } catch(e) {
-            grid.innerHTML = '<span class="text-red">Error al cargar.</span>';
-        }
-    });
-
-    window.testLink = function(tmdbId, title, type) {
-        currentTestItem = { tmdbId, title, type };
-        document.getElementById('test-video-title').innerText = "Probando: " + title;
-        const iframe = document.getElementById('test-video-iframe');
-        iframe.src = `/api/get-embed-code?id=${tmdbId}`; 
-        openCustomModal('modal-test-video');
-    };
-
-    document.getElementById('btn-mark-broken')?.addEventListener('click', () => {
-        if(!currentTestItem) return;
-        if(!deleteQueue.find(i => i.tmdbId === currentTestItem.tmdbId)) {
-            deleteQueue.push(currentTestItem);
-            renderDeleteQueue();
-        }
-        closeCustomModal('modal-test-video');
-    });
-
-    function renderDeleteQueue() {
-        const ul = document.getElementById('delete-queue');
-        if(deleteQueue.length === 0) {
-            ul.innerHTML = '<li style="color: var(--text-secondary); text-align: center; padding: 20px;" id="empty-queue-msg">No hay enlaces rotos marcados.</li>';
-            return;
-        }
-        ul.innerHTML = '';
-        deleteQueue.forEach((item, index) => {
-            ul.insertAdjacentHTML('beforeend', `
-                <li style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border-color);">
-                    <span><i class="fas fa-unlink text-red" style="margin-right: 5px;"></i> ${item.title}</span>
-                    <button style="background:none; border:none; color: var(--text-secondary); cursor:pointer;" onclick="removeFromQueue(${index})"><i class="fas fa-times"></i></button>
-                </li>
-            `);
-        });
-    }
-
-    window.removeFromQueue = function(index) {
-        deleteQueue.splice(index, 1);
-        renderDeleteQueue();
-    };
-
-    document.getElementById('btn-execute-deletions')?.addEventListener('click', async () => {
-        if(deleteQueue.length === 0) return alert("No hay películas en la cola.");
-        if(!confirm(`¿Estás seguro de eliminar ${deleteQueue.length} contenidos y notificar a los uploaders?`)) return;
-
-        try {
-            for(let item of deleteQueue) {
-                await fetch('/api/ceo/delete-content', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ tmdbId: item.tmdbId, type: item.type })
-                });
-            }
-            
-            const titles = deleteQueue.map(i => i.title);
-            await fetch('/api/ceo/notify-deleted', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ titles })
-            });
-
-            alert("Contenidos eliminados y notificación enviada.");
-            deleteQueue = [];
-            renderDeleteQueue();
-            
-            document.getElementById('btn-load-content').click();
-
-        } catch(e) {
-            alert("Error durante la eliminación.");
-        }
-    });
 });
