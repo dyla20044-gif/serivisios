@@ -11,7 +11,7 @@ module.exports = function(app, ctx) {
         
         try {
             const now = new Date();
-            let currentCycleStart, previousCycleStart;
+            let currentCycleStart;
             
             if (now.getDate() >= 21) {
                 currentCycleStart = new Date(now.getFullYear(), now.getMonth(), 21);
@@ -121,6 +121,26 @@ module.exports = function(app, ctx) {
         }
     });
 
+    app.post('/api/ceo/login', (req, res) => {
+        const { email, role, password } = req.body;
+        
+        const masterPassword = process.env.ADMIN_PASSWORD || "admin123";
+        const validCeoEmail = process.env.CEO_EMAIL || "ceo@trechos.com";
+        const validCoFounderEmail = process.env.COFOUNDER_EMAIL || "nadia@trechos.com";
+
+        if (password !== masterPassword) {
+            return res.json({ success: false, message: "Contraseña incorrecta." });
+        }
+
+        if (role === 'ceo' && email.toLowerCase() === validCeoEmail.toLowerCase()) {
+            return res.json({ success: true, role: 'ceo' });
+        } else if (role === 'cofundador' && email.toLowerCase() === validCoFounderEmail.toLowerCase()) {
+            return res.json({ success: true, role: 'cofundador' });
+        }
+
+        res.json({ success: false, message: "Correo no coincide con el rol seleccionado." });
+    });
+
     app.post('/api/ceo/pricing', (req, res) => {
         const { mode, customMoviePrice, customTvPrice, limit_daily, limit_monthly } = req.body;
         if (mode) globalPricing.mode = mode;
@@ -156,7 +176,6 @@ module.exports = function(app, ctx) {
                 .toArray();
             
             const currentTotal = docs.reduce((sum, doc) => sum + (doc.today_earned || 0), 0);
-            
             const diferencia = parseFloat(newBalance) - currentTotal;
 
             await dbInstance.collection(COLL_DAILY_STATS).updateOne(
@@ -226,6 +245,60 @@ module.exports = function(app, ctx) {
             res.json({ success: true });
         } catch (err) {
             res.status(500).json({ error: err.message });
+        }
+    });
+
+    app.get('/api/ceo/uploader-content/:uid', async (req, res) => {
+        const dbInstance = typeof ctx.getMongoDb === 'function' ? ctx.getMongoDb() : ctx.mongoDb;
+        if (!dbInstance) return res.status(503).json({ error: "DB no conectada" });
+
+        const uid = req.params.uid;
+        
+        try {
+            const movies = await dbInstance.collection('media_catalog').find({ uploaderId: uid }).toArray();
+            const series = await dbInstance.collection('series_catalog').find({ uploaderId: uid }).toArray();
+            res.json({ success: true, movies, series });
+        } catch (error) {
+            res.status(500).json({ error: "Error al obtener contenido." });
+        }
+    });
+
+    app.post('/api/ceo/delete-content', async (req, res) => {
+        const dbInstance = typeof ctx.getMongoDb === 'function' ? ctx.getMongoDb() : ctx.mongoDb;
+        if (!dbInstance) return res.status(503).json({ error: "DB no conectada" });
+
+        const { tmdbId, type } = req.body;
+
+        try {
+            if (type === 'movie') {
+                await dbInstance.collection('media_catalog').deleteOne({ tmdbId: String(tmdbId).trim() });
+            } else if (type === 'tv') {
+                await dbInstance.collection('series_catalog').deleteOne({ tmdbId: String(tmdbId).trim() });
+            }
+
+            if (ctx.caches && ctx.caches.catalogCache) ctx.caches.catalogCache.flushAll();
+            if (ctx.caches && ctx.caches.recentCache) ctx.caches.recentCache.flushAll();
+
+            res.json({ success: true });
+        } catch (error) {
+            res.status(500).json({ error: "Error al eliminar el contenido." });
+        }
+    });
+
+    app.post('/api/ceo/notify-deleted', async (req, res) => {
+        const { titles } = req.body;
+        if (!titles || titles.length === 0) return res.json({ success: false });
+
+        try {
+            const listado = titles.map(t => `❌ ${t}`).join('\n');
+            const message = `⚠️ *ATENCIÓN UPLOADERS*\n\nSe han detectado enlaces rotos o caídos en el servidor. Las siguientes películas/series han sido removidas temporalmente:\n\n${listado}\n\n🎬 *Por favor, vuelvan a subir este contenido con enlaces funcionales para no perder el tráfico actual.*`;
+            
+            for (let chatId of ADMIN_CHAT_IDS) {
+                await bot.sendMessage(chatId, message, { parse_mode: 'Markdown' }).catch(()=>{});
+            }
+            res.json({ success: true });
+        } catch (error) {
+            res.status(500).json({ error: "Error al notificar." });
         }
     });
 };
