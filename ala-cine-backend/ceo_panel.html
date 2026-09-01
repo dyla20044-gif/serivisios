@@ -7,28 +7,6 @@
     <link rel="stylesheet" href="ceo_panel.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <style>
-        .clickable-card { cursor: pointer; transition: transform 0.2s, box-shadow 0.2s; }
-        .clickable-card:hover { transform: translateY(-3px); box-shadow: 0 5px 15px rgba(234, 179, 8, 0.15); border-color: var(--trecho-yellow); }
-        
-        .side-panel { position: fixed; top: 0; right: -500px; width: 450px; height: 100vh; background: var(--bg-card); border-left: 1px solid var(--border-color); box-shadow: -10px 0 30px rgba(0,0,0,0.8); z-index: 10000; transition: right 0.3s ease; display: flex; flex-direction: column; overflow-y: auto; }
-        .side-panel.open { right: 0; }
-        .side-panel-header { padding: 20px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.2); }
-        .side-panel-header h3 { font-size: 14px; color: var(--text-primary); text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px; }
-        .side-panel-body { padding: 20px; flex-grow: 1; }
-        
-        .team-list-item { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--border-color); }
-        .team-list-item:last-child { border-bottom: none; }
-        .team-info { display: flex; align-items: center; gap: 12px; }
-        .team-info img { width: 36px; height: 36px; border-radius: 50%; }
-        .team-meta { display: flex; flex-direction: column; gap: 4px; }
-        .badge-status { padding: 3px 8px; border-radius: 4px; font-size: 10px; font-weight: 600; display: inline-flex; align-items: center; gap: 5px; width: fit-content; }
-        .badge-success { background: rgba(34, 197, 94, 0.1); color: var(--green-positive); border: 1px solid rgba(34, 197, 94, 0.2); }
-        .badge-neutral { background: rgba(156, 163, 175, 0.1); color: var(--text-secondary); border: 1px solid rgba(156, 163, 175, 0.2); }
-        .team-financial { text-align: right; display: flex; flex-direction: column; gap: 5px; align-items: flex-end; }
-        .btn-liquidar { background: transparent; border: 1px solid var(--green-positive); color: var(--green-positive); padding: 4px 12px; border-radius: 4px; font-size: 11px; cursor: pointer; transition: 0.2s; }
-        .btn-liquidar:hover { background: var(--green-positive); color: #000; }
-    </style>
 </head>
 <body>
 
@@ -131,7 +109,6 @@
 
             <div class="tab-container">
                 
-                <!-- TAB 1: DASHBOARD PRINCIPAL -->
                 <div id="tab-dashboard" class="tab-content active">
                     
                     <div class="grid-three" style="grid-template-columns: 1fr 1fr 1fr 0.8fr; margin-bottom: 20px;">
@@ -234,7 +211,6 @@
                     </div>
                 </div>
 
-                <!-- TAB 2: VISIÓN GENERAL (FINANZAS) - Refactorizada con IDs para Fase 2 -->
                 <div id="tab-fin-overview" class="tab-content">
                     <div class="grid-top">
                         <div class="card glow-card" style="grid-column: span 2;">
@@ -248,7 +224,6 @@
                             </div>
                         </div>
                         
-                        <!-- TARJETA REFACTORIZADA CON BOTÓN FLOTANTE DE GASTOS -->
                         <div class="card">
                             <div class="card-header">
                                 <span class="card-title">GASTOS OPERATIVOS TOTALES</span>
@@ -336,61 +311,8 @@
                     </div>
                 </div>
 
-                <!-- (RESTO DE TABS INTACTAS) -->
                 <div id="tab-fin-revenue" class="tab-content"><div class="card"><p>Pestaña Detalle de Ingresos en desarrollo...</p></div></div>
                 <div id="tab-fin-expenses" class="tab-content"><div class="card"><p>Pestaña Detalle de Gastos en desarrollo...</p></div></div>
-
-                <!-- TAB UPLOADERS & PAGOS -->
-                <div id="tab-usr-payments" class="tab-content">
-                    <div class="grid-two-one">
-                        <div class="card glow-card" style="grid-column: span 2;">
-                            <div class="card-header">
-                                <span class="card-title">NÓMINA DE TRABAJADORES (UPLOADERS)</span>
-                                <button class="btn-primary" id="btn-generar-enlace"><i class="fas fa-link"></i> Generar Enlace Mágico de Invitación</button>
-                            </div>
-                            <p class="text-secondary" style="margin-bottom: 15px;">Gestiona a los creadores de contenido, visualiza sus ganancias en tiempo real y liquida sus saldos.</p>
-                            <table class="trecho-table">
-                                <thead>
-                                    <tr>
-                                        <th>Uploader / ID</th>
-                                        <th>Rol</th>
-                                        <th>Subidas Hoy</th>
-                                        <th>Generado Hoy</th>
-                                        <th>Saldo Retirable</th>
-                                        <th>Acción</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="workers-table-body">
-                                    <tr>
-                                        <td colspan="6" style="text-align: center; color: var(--text-secondary);">Cargando nómina desde la base de datos...</td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
-                        <div class="card">
-                            <div class="card-header"><span class="card-title">POLÍTICAS DE PAGO RÁPIDO</span><i class="fas fa-cog text-secondary"></i></div>
-                            <p class="text-secondary" style="font-size: 12px; margin-bottom: 15px;">Ajusta cuánto gana cada Uploader por su trabajo instantáneamente.</p>
-                            
-                            <div class="form-group">
-                                <label style="font-size: 11px;">Modo de Ingresos (Actual: Normal)</label>
-                                <select class="form-control" id="ceo-pricing-mode">
-                                    <option value="normal">Modo Normal (Estándar)</option>
-                                    <option value="feriado">Modo Feriado (Ganancias $0)</option>
-                                    <option value="boost">Modo Boost (Bono Tráfico)</option>
-                                </select>
-                            </div>
-                            <div class="form-group">
-                                <label style="font-size: 11px;">Límite Diario por Trabajador ($)</label>
-                                <input type="number" class="form-control" value="25.00" id="ceo-limit-daily">
-                            </div>
-                            <div class="form-group">
-                                <label style="font-size: 11px;">Límite Mensual por Trabajador ($)</label>
-                                <input type="number" class="form-control" value="150.00" id="ceo-limit-monthly">
-                            </div>
-                            <button class="btn-primary" style="width: 100%;" id="btn-save-policies">APLICAR POLÍTICAS AHORA</button>
-                        </div>
-                    </div>
-                </div>
 
                 <div id="tab-fin-cashflow" class="tab-content">
                     <div class="grid-three">
@@ -1212,8 +1134,35 @@
                     </div>
                 </div>
 
-                <!-- NUEVA PESTAÑA INYECTADA: UPLOADERS & PAGOS -->
                 <div id="tab-usr-payments" class="tab-content">
+                    
+                    <div class="grid-three" style="margin-bottom: 20px;">
+                        <div class="card"><div class="card-header"><span class="card-title">ADMIN 1 (CEO)</span></div><h2 style="color: var(--trecho-yellow);">1</h2></div>
+                        <div class="card"><div class="card-header"><span class="card-title">ADMINISTRADORES 2</span></div><h2 style="color: var(--trecho-yellow);">3</h2></div>
+                        <div class="card"><div class="card-header"><span class="card-title">UPLOADERS ACTIVOS</span></div><h2 style="color: var(--trecho-yellow);">174</h2></div>
+                    </div>
+
+                    <div class="card glow-card" style="margin-bottom: 20px;">
+                        <div class="card-header"><span class="card-title">SOLICITUDES DE RETIRO EN BANCOS</span></div>
+                        <table class="trecho-table">
+                            <thead>
+                                <tr>
+                                    <th>Uploader</th>
+                                    <th>Banco</th>
+                                    <th>Cuenta</th>
+                                    <th>Titular</th>
+                                    <th>Monto a Pagar</th>
+                                    <th>Acción</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tabla-retiros-bancarios">
+                                <tr>
+                                    <td colspan="6" style="text-align: center; color: var(--text-secondary);">Sincronizando retiros pendientes...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
                     <div class="grid-two-one">
                         <div class="card glow-card" style="grid-column: span 2;">
                             <div class="card-header">
@@ -1268,11 +1217,6 @@
         </main>
     </div>
     
-    <!-- ==========================================
-         ZONA DE MODALES Y PANELES FLOTANTES (INYECCIÓN LIMPIA AL FINAL)
-         ========================================== -->
-
-    <!-- MODAL 1: DETALLE DE INGRESOS DE HOY -->
     <div id="modal-detalle-hoy" class="modal">
         <div class="modal-content" style="width: 600px;">
             <div class="modal-header">
@@ -1307,7 +1251,6 @@
         </div>
     </div>
 
-    <!-- MODAL 2: MÉTRICAS DE CRECIMIENTO (Mes) -->
     <div id="modal-crecimiento" class="modal">
         <div class="modal-content" style="width: 550px;">
             <div class="modal-header">
@@ -1345,7 +1288,6 @@
         </div>
     </div>
 
-    <!-- MODAL 3: GASTOS OPERATIVOS -->
     <div id="modal-gastos-operativos" class="modal">
         <div class="modal-content" style="width: 700px;">
             <div class="modal-header">
@@ -1385,7 +1327,6 @@
         </div>
     </div>
 
-    <!-- PANEL LATERAL: TESORERÍA (Histórico) -->
     <div id="panel-tesoreria" class="side-panel">
         <div class="side-panel-header">
             <h3>MÓDULO DE TESORERÍA Y GESTIÓN FINANCIERA</h3>
@@ -1429,65 +1370,6 @@
         </div>
     </div>
 
-    <script>
-        function openCustomModal(id) {
-            const modal = document.getElementById(id);
-            if(modal) modal.classList.add('active');
-            
-            if(id === 'modal-detalle-hoy') {
-                const options = { day: 'numeric', month: 'long', year: 'numeric' };
-                document.getElementById('modal-hoy-date').innerText = new Date().toLocaleDateString('es-ES', options);
-                document.getElementById('modal-hoy-monto').innerText = document.getElementById('dash-revenue-today').innerText;
-            }
-
-            if(id === 'modal-crecimiento') {
-                document.getElementById('modal-mes-monto').innerText = document.getElementById('dash-revenue-month').innerText;
-                document.getElementById('modal-mes-trafico').innerText = document.getElementById('dash-active-users').innerText;
-                
-                const ctx = document.getElementById('mini-chart-crecimiento')?.getContext('2d');
-                if(ctx && !window.miniChartCreado) {
-                    new Chart(ctx, {
-                        type: 'line',
-                        data: { labels: ['1','2','3','4','5','6','7'], datasets: [{ data: [10, 30, 20, 50, 70, 90, 150], borderColor: '#22c55e', backgroundColor: 'rgba(34, 197, 94, 0.2)', fill: true, tension: 0.4 }] },
-                        options: { responsive: true, maintainAspectRatio: false, scales: { x: {display: false}, y: {display: false} }, plugins: { legend: {display: false} } }
-                    });
-                    window.miniChartCreado = true;
-                }
-            }
-            
-            if(id === 'modal-gastos-operativos') {
-                const ctx = document.getElementById('chart-modal-gastos-detalle')?.getContext('2d');
-                if(ctx && !window.chartModalGastosCreado) {
-                    new Chart(ctx, {
-                        type: 'doughnut',
-                        data: {
-                            datasets: [{
-                                data: [8.28, 13.91, 51.21, 12.77, 8.20, 5.62],
-                                backgroundColor: ['#3b82f6', '#8b5cf6', '#eab308', '#f97316', '#06b6d4', '#6b7280'],
-                                borderWidth: 0,
-                                cutout: '65%'
-                            }]
-                        },
-                        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
-                    });
-                    window.chartModalGastosCreado = true;
-                }
-            }
-        }
-        function closeCustomModal(id) {
-            const modal = document.getElementById(id);
-            if(modal) modal.classList.remove('active');
-        }
-        function openSidePanel(id) {
-            document.getElementById('panel-teso-total').innerText = document.getElementById('dash-revenue-today').innerText;
-            const panel = document.getElementById(id);
-            if(panel) panel.classList.add('open');
-        }
-        function closeSidePanel(id) {
-            const panel = document.getElementById(id);
-            if(panel) panel.classList.remove('open');
-        }
-    </script>
     <script src="ceo_panel.js"></script>
 </body>
 </html>
