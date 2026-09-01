@@ -30,6 +30,7 @@ body {
 }
 
 .text-green { color: var(--green-positive); }
+.text-trecho { color: var(--trecho-yellow); }
 
 #login-screen {
     position: fixed;
@@ -705,10 +706,6 @@ body {
     left: 0;
 }
 
-/* =========================================================
-   SISTEMA DE MODALES Y PANELES LATERALES
-   ========================================================= */
-
 .modal {
     position: fixed;
     top: 0;
@@ -774,10 +771,6 @@ body {
 
 @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
 
-/* =========================================================
-   ESTILOS INYECTADOS: TARJETAS INTERACTIVAS Y LISTA EQUIPO
-   ========================================================= */
-
 .clickable-card { 
     cursor: pointer; 
     transition: transform 0.2s, box-shadow 0.2s; 
@@ -789,7 +782,6 @@ body {
     border-color: var(--trecho-yellow); 
 }
 
-/* Panel Lateral Derecho (Tesorería) */
 .side-panel { 
     position: fixed; 
     top: 0; 
@@ -832,7 +824,6 @@ body {
     flex-grow: 1; 
 }
 
-/* Lista Elegante de Equipo (Dashboard) */
 .team-list-item { 
     display: flex; 
     justify-content: space-between; 
