@@ -67,20 +67,19 @@ const BUILD_ID_UNDER_REVIEW = 26;
 const MONGO_URI = process.env.MONGO_URI;
 const MONGO_DB_NAME = process.env.MONGO_DB_NAME || 'sala_cine';
 
-// ESTADO GLOBAL DINÁMICO DE TRECHOS CORP (Controlable desde Panel CEO)
 let globalPricing = {
-    mode: 'normal', // Modos: 'normal', 'feriado', 'boost'
+    mode: 'normal',
     customMoviePrice: 0.50,
     customTvPrice: 0.25,
     payout_per_view: 0.005,
     limit_daily: 25.00,
     limit_monthly: 150.00,
-    corp_revenue_per_view: 0.045 // Multiplicador base de empresa
+    corp_revenue_per_view: 0.045
 };
 
 const COLL_REVENUE = 'uploader_revenue';
 const COLL_DAILY_STATS = 'uploader_daily_stats';
-const COLL_CORP_REVENUE = 'corp_daily_revenue'; // Colección exclusiva de la empresa
+const COLL_CORP_REVENUE = 'corp_daily_revenue';
 
 const client = new MongoClient(MONGO_URI, {
     serverApi: {
@@ -119,33 +118,49 @@ app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
 let trafficCount = 0;
-let companyAccumulatedTraffic = 0; // ACUMULADOR CORPORATIVO INDEPENDIENTE
+let companyAccumulatedTraffic = 0;
 let lastTrafficAlert = 0;
 let currentCpmMultiplier = 1.0; 
 let globalTrafficBonusActive = false;
 const TRAFFIC_THRESHOLD = 300; 
 
-setInterval(() => { trafficCount = 0; }, 60000);
+let spmCooldown = 6 * 60 * 60 * 1000;
+let spmDuration = 2 * 60 * 60 * 1000;
+
+setInterval(async () => { 
+    if (trafficCount > TRAFFIC_THRESHOLD && (Date.now() - lastTrafficAlert > spmCooldown)) {
+        lastTrafficAlert = Date.now();
+        globalTrafficBonusActive = true; 
+        
+        let randomBoost = parseFloat((Math.random() * 0.15 + 0.05).toFixed(2));
+        let boostAmount = Math.min(0.30, globalPricing.payout_per_view + randomBoost) - globalPricing.payout_per_view;
+        globalPricing.payout_per_view += boostAmount;
+        currentCpmMultiplier = 1.5;
+
+        try {
+            const topRequests = await mongoDb.collection('movie_requests')
+                .find({ status: { $ne: 'subido' } }).sort({ votes: -1 }).limit(3).toArray();
+            const moviesStr = topRequests.map(r => r.title || r.name).join(', ');
+
+            if (ADMIN_CHAT_ID_PRIMARY) {
+                bot.sendMessage(ADMIN_CHAT_ID_PRIMARY, `🔥 *¡ALTA DEMANDA EN LA APP!* 🔥\n\nEl SPM ha subido a *$${globalPricing.payout_per_view.toFixed(3)}* por las próximas 2 horas. ¡Aprovechen para subir contenido!\n\n🍿 *Lo que la gente está buscando ahora mismo:*\n${moviesStr}`, { parse_mode: 'Markdown' });
+            }
+        } catch(e) {}
+
+        setTimeout(() => { 
+            globalPricing.payout_per_view -= boostAmount;
+            currentCpmMultiplier = 1.0;
+            globalTrafficBonusActive = false; 
+            if (ADMIN_CHAT_ID_PRIMARY) bot.sendMessage(ADMIN_CHAT_ID_PRIMARY, "📉 El SPM ha vuelto a la normalidad. Buen trabajo equipo.");
+        }, spmDuration); 
+    }
+    trafficCount = 0; 
+}, 60000);
 
 app.use((req, res, next) => {
     trafficCount++;
-    companyAccumulatedTraffic++; // Cada vez que alguien usa la app (búsqueda, navegación), la empresa lo registra
+    companyAccumulatedTraffic++;
     
-    if (trafficCount > TRAFFIC_THRESHOLD && (Date.now() - lastTrafficAlert > 3600000)) {
-        lastTrafficAlert = Date.now();
-        currentCpmMultiplier = 1.5; 
-        globalTrafficBonusActive = true; 
-        
-        setTimeout(() => { 
-            currentCpmMultiplier = 1.0; 
-            globalTrafficBonusActive = false; 
-        }, 3600000); 
-
-        if (ADMIN_CHAT_ID_2) {
-            bot.sendMessage(ADMIN_CHAT_ID_2, '🔥 *Tráfico pico detectado*. El CPM ha subido de forma automática para incentivar actividad.', { parse_mode: 'Markdown' });
-        }
-    }
-
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, DELETE');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-salacine-internal-token');
@@ -543,7 +558,6 @@ app.get('/api/tmdb-proxy', async (req, res) => {
 cron.schedule('*/5 * * * *', async () => {
     const keys = pendingViewsCache.keys();
     
-    // Si no hay base de datos conectada, salir.
     if (!mongoDb) return;
 
     const bulkOps = [];
@@ -556,7 +570,6 @@ cron.schedule('*/5 * * * *', async () => {
 
     let totalViewsProcessed = 0;
 
-    // 1. PROCESAMIENTO DE UPLOADERS (INTACTO)
     for (const tmdbId of keys) {
         const viewsCount = pendingViewsCache.get(tmdbId);
         if (viewsCount > 0) {
@@ -645,14 +658,11 @@ cron.schedule('*/5 * * * *', async () => {
         }
     }
 
-    // 2. LÓGICA DE INGRESOS EXCLUSIVA DE LA EMPRESA
-    // Toma el tráfico general acumulado en estos 5 minutos y lo reinicia
     let trafficToProcess = companyAccumulatedTraffic;
     companyAccumulatedTraffic = 0; 
 
-    // Calculamos el dinero corporativo basándonos en el tráfico bruto de la app y las vistas
     let revenueFromViews = totalViewsProcessed * globalPricing.corp_revenue_per_view;
-    let revenueFromRequests = trafficToProcess * 0.015; // Ganancia corporativa: $0.015 por petición en la API
+    let revenueFromRequests = trafficToProcess * 0.015; 
 
     let totalCorpEarned = revenueFromViews + revenueFromRequests;
 
