@@ -10,7 +10,6 @@
 </head>
 <body>
 
-    <!-- MODAL LEGAL INICIAL -->
     <div id="legalModal" class="modal-overlay">
         <div class="modal-content">
             <div class="modal-header">
@@ -26,7 +25,6 @@
         </div>
     </div>
 
-    <!-- MODAL PELÍCULAS MÁS PEDIDAS -->
     <div id="pedidasModal" class="modal-overlay" style="display: none; opacity: 0;">
         <div class="modal-content">
             <div class="modal-header">
@@ -43,7 +41,6 @@
         </div>
     </div>
 
-    <!-- MODAL ADELANTOS -->
     <div id="adelantoModal" class="modal-overlay" style="display: none; opacity: 0;">
         <div class="modal-content">
             <div class="modal-header">
@@ -61,7 +58,6 @@
 
     <div class="app-container" id="mainApp">
         
-        <!-- PESTAÑA 1: INICIO -->
         <section id="tab-inicio" class="tab-section active">
             <div class="header-app">
                 <i class="fa-solid fa-cloud"></i> INICIO
@@ -76,31 +72,25 @@
                 </div>
 
                 <div class="ganancia-grid" style="display: flex; flex-wrap: wrap; justify-content: space-around; gap: 10px;">
-                    <div style="flex: 1 1 45%;">
+                    <div style="flex: 1 1 30%;">
                         <h3 id="valTotal">$0.00</h3>
-                        <p>TOTAL NETO</p>
+                        <p style="font-size: 10px;">TOTAL HISTÓRICO</p>
                     </div>
-                    <div style="flex: 1 1 45%;">
-                        <h3 class="text-yellow" id="valSinRetirar">$0.00</h3>
-                        <p>SIN RETIRAR</p>
-                    </div>
-                    <div style="flex: 1 1 45%;">
+                    <div style="flex: 1 1 30%;">
                         <h3 class="text-cyan" id="valMesPasado">$0.00</h3>
-                        <p>MES PASADO</p>
+                        <p style="font-size: 10px;">MES PASADO</p>
                     </div>
-                    <div style="flex: 1 1 45%;">
+                    <div style="flex: 1 1 30%;">
                         <h3 class="text-green" id="valRetirable">$0.00</h3>
-                        <p>RETIRABLE</p>
+                        <p style="font-size: 10px;">GENERANDO / RETIRABLE</p>
                     </div>
                 </div>
             </div>
 
-            <!-- Botón Ganar Más -->
             <button class="btn-primary animated-pulse" id="btnGanarMas" style="margin-bottom: 20px;">
                 <i class="fa-solid fa-rocket"></i> ¿Quieres ganar más dinero? Mira qué subir
             </button>
 
-            <!-- TARJETA DE RENDIMIENTO (Flecha sube/baja) -->
             <div class="card dark-card" id="rendimientoCard">
                 <div class="section-title space-between">
                     <h3>RENDIMIENTO DIARIO</h3>
@@ -109,6 +99,21 @@
                 <p style="font-size: 13px; color: var(--text-muted);">Comparado con las ganancias de ayer:</p>
                 <h2 id="trendText" class="text-green" style="margin-top: 10px;">Calculando...</h2>
             </div>
+            
+            <div class="card dark-card" id="spmCard" style="border-left: 4px solid var(--accent-yellow);">
+                <div class="section-title space-between">
+                    <h3>MEDIDOR DE SPM (TIEMPO REAL)</h3>
+                    <span id="spmIcon" class="text-yellow"><i class="fa-solid fa-fire-flame-curved"></i></span>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
+                    <h2 id="spmValueText" class="text-yellow" style="font-size: 28px;">Normal</h2>
+                    <div style="text-align: right;">
+                        <p style="font-size: 11px; color: var(--text-muted);">Pago actual estimado</p>
+                        <p id="spmRateText" style="font-size: 14px; font-weight: bold;">$0.005 / vista</p>
+                    </div>
+                </div>
+                <p id="spmAlertMsg" style="font-size: 11px; color: var(--text-muted); margin-top: 10px; display: none;">¡Alta demanda detectada! Sube estrenos para aprovechar el bono de 2 horas.</p>
+            </div>
 
             <div class="card dark-card">
                 <div class="section-title">
@@ -116,12 +121,10 @@
                     <p class="subtitle"><i class="fa-solid fa-circle-info"></i> Actualizado en tiempo real.</p>
                 </div>
                 <ul class="lista-recientes" id="listaGananciasRecientes">
-                    <!-- Se llena con JS -->
                 </ul>
             </div>
         </section>
 
-        <!-- PESTAÑA 2: RECOMPENSAS -->
         <section id="tab-recompensas" class="tab-section">
             <div class="header-app">
                 <i class="fa-solid fa-cloud"></i> RECOMPENSAS
@@ -150,7 +153,6 @@
             </div>
         </section>
 
-        <!-- PESTAÑA 3: RETIROS -->
         <section id="tab-retiros" class="tab-section">
             <div class="header-app">
                 <i class="fa-solid fa-cloud"></i> RETIROS
@@ -169,9 +171,27 @@
                 <button class="btn-primary" id="btnSolicitarRetiro" style="margin-bottom: 10px;"><i class="fa-solid fa-money-bill-transfer"></i> SOLICITAR RETIRO</button>
                 <button class="btn-outline" id="btnAbrirAdelanto"><i class="fa-solid fa-hand-holding-dollar"></i> PEDIR ADELANTO (50%)</button>
             </div>
+            
+            <div class="card dark-card" style="margin-top: 20px; text-align: left;">
+                <h3 style="margin-bottom: 15px; font-size: 14px;"><i class="fa-solid fa-building-columns"></i> DATOS PARA TRANSFERENCIA BANCARIA</h3>
+                <form id="formRetiroBancario">
+                    <div style="margin-bottom: 10px;">
+                        <label style="font-size: 11px; color: var(--text-muted);">Banco (Ej: Banco Pichincha)</label>
+                        <input type="text" id="bancoNombre" class="form-control" style="width: 100%; padding: 10px; background: #222; border: 1px solid #444; color: #fff; border-radius: 5px;" required>
+                    </div>
+                    <div style="margin-bottom: 10px;">
+                        <label style="font-size: 11px; color: var(--text-muted);">Tipo y Número de Cuenta</label>
+                        <input type="text" id="cuentaNumero" class="form-control" placeholder="Ahorros - 2200..." style="width: 100%; padding: 10px; background: #222; border: 1px solid #444; color: #fff; border-radius: 5px;" required>
+                    </div>
+                    <div style="margin-bottom: 15px;">
+                        <label style="font-size: 11px; color: var(--text-muted);">Nombre Completo del Titular</label>
+                        <input type="text" id="titularNombre" class="form-control" style="width: 100%; padding: 10px; background: #222; border: 1px solid #444; color: #fff; border-radius: 5px;" required>
+                    </div>
+                    <button type="submit" class="btn-primary" style="width: 100%; background: #22c55e; color: #000;"><i class="fa-solid fa-paper-plane"></i> Enviar Datos de Retiro</button>
+                </form>
+            </div>
 
-            <!-- NUEVO BLOQUE: HISTORIAL DE PAGOS -->
-            <div class="card dark-card" style="margin-bottom: 15px;">
+            <div class="card dark-card" style="margin-bottom: 15px; margin-top: 20px;">
                 <div class="section-title space-between">
                     <h3>HISTORIAL DE PAGOS</h3>
                     <i class="fa-solid fa-file-invoice-dollar text-green"></i>
@@ -192,7 +212,6 @@
             </div>
         </section>
 
-        <!-- PESTAÑA 4: PERFIL -->
         <section id="tab-perfil" class="tab-section">
             <div class="header-app">
                 <i class="fa-solid fa-cloud"></i> PERFIL
@@ -234,7 +253,6 @@
             </div>
         </section>
 
-        <!-- NAVEGACIÓN INFERIOR -->
         <nav class="bottom-nav">
             <a href="#" class="nav-item active" data-target="tab-inicio">
                 <i class="fa-solid fa-house"></i>
