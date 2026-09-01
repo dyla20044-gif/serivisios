@@ -100,7 +100,7 @@ document.addEventListener('DOMContentLoaded', () => {
         'tab-srv-deploy': 'SERVIDORES | DESPLIEGUES MANUALES (TMDB)',
         'tab-usr-activity': 'PLATAFORMA | ACTIVIDAD GLOBAL <span class="sub">- ACCESO CEO</span>',
         'tab-usr-payments': 'PLATAFORMA | UPLOADERS & PAGOS <span class="sub">- RECURSOS HUMANOS</span>',
-        'tab-usr-engagement': 'PLATAFORMA | RETENCIÓN DE USUARIOS <span class="sub">- ACCESO CEO</span>',
+        'tab-bot-broadcast': 'PLATAFORMA | BROADCAST & BOT <span class="sub">- COMUNICADOS</span>',
         'tab-team-personnel': 'RECURSOS HUMANOS | NÓMINA Y PERSONAL',
         'tab-team-roles': 'RECURSOS HUMANOS | ROLES Y JERARQUÍAS',
         'tab-reports': 'CENTRO DE REPORTES Y ANALÍTICA',
@@ -182,29 +182,135 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderWorkersTable(trabajadores) {
         const tbody = document.getElementById('workers-table-body');
-        if (!tbody) return;
+        const tbodyBank = document.getElementById('tabla-retiros-bancarios');
+        const godSelect = document.getElementById('god-uid');
         
-        tbody.innerHTML = '';
-        if(trabajadores.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="6" style="text-align: center;">No hay trabajadores activos.</td></tr>';
-            return;
-        }
+        if (tbody) tbody.innerHTML = '';
+        if (tbodyBank) tbodyBank.innerHTML = '';
+        if (godSelect) godSelect.innerHTML = '<option value="">Selecciona un usuario...</option>';
+        
+        let hasBank = false;
 
         trabajadores.forEach(t => {
-            const badgeClass = t.rol.includes('CEO') ? 'status-green' : 'status-yellow';
-            const html = `
-                <tr>
-                    <td><strong>${t.name}</strong><br><span style="font-size: 11px; color: var(--text-secondary);">ID: ${t.id}</span></td>
-                    <td><span class="status-badge ${badgeClass}">${t.rol}</span></td>
-                    <td>${t.totalUploads}</td>
-                    <td class="text-green">+$${(t.earnedToday || 0).toFixed(2)}</td>
-                    <td style="font-weight: bold; color: var(--trecho-yellow);">$${(t.deudaPendiente || 0).toFixed(2)}</td>
-                    <td><button class="btn-outline" style="padding: 5px 10px; width: auto; font-size: 11px;" onclick="alert('Módulo de Pago en Fase 3')">Liquidar</button></td>
-                </tr>
-            `;
-            tbody.insertAdjacentHTML('beforeend', html);
+            const badgeClass = t.rol.includes('CEO') ? 'status-green' : (t.rol.includes('Co-Fundador') ? 'status-yellow' : 'status-neutral');
+            
+            if (tbody) {
+                tbody.insertAdjacentHTML('beforeend', `
+                    <tr>
+                        <td><strong>${t.name}</strong><br><span style="font-size: 11px; color: var(--text-secondary);">ID: ${t.id}</span></td>
+                        <td><span class="status-badge ${badgeClass}">${t.rol}</span></td>
+                        <td>${t.totalUploads}</td>
+                        <td class="text-green">+$${(t.earnedToday || 0).toFixed(2)}</td>
+                        <td style="font-weight: bold; color: var(--trecho-yellow);">$${(t.deudaPendiente || 0).toFixed(2)}</td>
+                        <td><button class="btn-outline" style="padding: 5px 10px; width: auto; font-size: 11px;" onclick="prepararLiquidacion('${t.id}', '${t.name}', ${t.deudaPendiente}, 'Panel Principal')">Liquidar</button></td>
+                    </tr>
+                `);
+            }
+
+            if (t.bank && tbodyBank) {
+                hasBank = true;
+                tbodyBank.insertAdjacentHTML('beforeend', `
+                    <tr>
+                        <td><strong>${t.name}</strong><br><span style="font-size: 11px; color: var(--text-secondary);">ID: ${t.id}</span></td>
+                        <td>${t.bank.banco}</td>
+                        <td>${t.bank.cuenta}</td>
+                        <td>${t.bank.titular}</td>
+                        <td class="text-trecho" style="font-weight: bold;">$${(t.deudaPendiente || 0).toFixed(2)}</td>
+                        <td><button class="btn-liquidar" onclick="prepararLiquidacion('${t.id}', '${t.name}', ${t.deudaPendiente}, 'Banco: ${t.bank.banco}')">Marcar Pagado</button></td>
+                    </tr>
+                `);
+            }
+
+            if (godSelect) {
+                godSelect.insertAdjacentHTML('beforeend', `<option value="${t.id}">${t.name} (Saldo: $${(t.deudaPendiente || 0).toFixed(2)})</option>`);
+            }
         });
+
+        if (!hasBank && tbodyBank) {
+            tbodyBank.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-secondary);">No hay solicitudes bancarias guardadas.</td></tr>';
+        }
     }
+
+    let liquidacionActual = null;
+    
+    window.prepararLiquidacion = function(uid, name, amount, defaultMethod = "Transferencia Bancaria") {
+        liquidacionActual = uid;
+        document.getElementById('liq-name').innerText = name;
+        document.getElementById('liq-amount').innerText = `$${parseFloat(amount).toFixed(2)}`;
+        document.getElementById('liq-method').value = defaultMethod;
+        openCustomModal('modal-liquidar');
+    };
+
+    document.getElementById('btn-confirm-liquidar')?.addEventListener('click', async () => {
+        if (!liquidacionActual) return;
+        const amountStr = document.getElementById('liq-amount').innerText.replace('$', '');
+        const method = document.getElementById('liq-method').value;
+
+        try {
+            const res = await fetch('/api/ceo/pay-worker', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ uploaderId: liquidacionActual, amount: parseFloat(amountStr), paymentMethod: method })
+            });
+            const result = await res.json();
+            if (result.success) {
+                closeCustomModal('modal-liquidar');
+                alert('Pago registrado correctamente. El saldo del usuario ha vuelto a $0.00');
+                initSystem(); 
+            }
+        } catch(e) {
+            alert('Error al liquidar.');
+        }
+    });
+
+    document.getElementById('btn-force-balance')?.addEventListener('click', async () => {
+        const uid = document.getElementById('god-uid').value;
+        const newBalance = document.getElementById('god-balance').value;
+        if(!uid || newBalance === '') return alert("Completa los campos.");
+
+        try {
+            const res = await fetch('/api/ceo/fix-balance', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ uid, newBalance })
+            });
+            const result = await res.json();
+            if(result.success) {
+                alert("Saldo sobrescrito con éxito. Errores negativos borrados.");
+                document.getElementById('god-balance').value = '';
+                initSystem();
+            }
+        } catch(e) { 
+            alert("Error al intentar corregir."); 
+        }
+    });
+
+    document.getElementById('btn-send-broadcast')?.addEventListener('click', async () => {
+        const message = document.getElementById('bot-msg-text').value;
+        const imageUrl = document.getElementById('bot-msg-img').value;
+        if(!message) return alert("El mensaje no puede estar vacío.");
+
+        const btn = document.getElementById('btn-send-broadcast');
+        btn.innerText = "ENVIANDO...";
+
+        try {
+            const res = await fetch('/api/ceo/notify-bot', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message, imageUrl, targetGroup: 'all_admins' })
+            });
+            const result = await res.json();
+            if(result.success) {
+                alert("Comunicado enviado con éxito al Bot de Telegram.");
+                document.getElementById('bot-msg-text').value = '';
+                document.getElementById('bot-msg-img').value = '';
+            }
+        } catch(e) { 
+            alert("Error al enviar el comunicado."); 
+        }
+        
+        btn.innerHTML = '<i class="fas fa-paper-plane"></i> ENVIAR COMUNICADO AHORA';
+    });
 
     function renderElegantTeamList(trabajadores) {
         const container = document.getElementById('dashboard-team-list');
@@ -232,7 +338,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
                     <div class="team-financial">
                         <span style="font-size: 11px; color: var(--text-secondary);">Saldo: <strong style="color: var(--trecho-yellow);">$${(t.deudaPendiente || 0).toFixed(2)}</strong></span>
-                        <button class="btn-liquidar" onclick="alert('Iniciando proceso de pago...')">Liquidar</button>
+                        <button class="btn-liquidar" onclick="prepararLiquidacion('${t.id}', '${t.name}', ${t.deudaPendiente}, 'Panel Rápido')">Liquidar</button>
                     </div>
                 </div>
             `;
