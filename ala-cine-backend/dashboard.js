@@ -175,6 +175,25 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
+        const spmValueText = document.getElementById('spmValueText');
+        const spmRateText = document.getElementById('spmRateText');
+        const spmAlertMsg = document.getElementById('spmAlertMsg');
+        
+        if (spmValueText && spmRateText && spmAlertMsg) {
+            const currentRate = f.currentPayoutRate || 0.005;
+            spmRateText.innerText = `$${currentRate.toFixed(3)} / vista`;
+            
+            if (currentRate > 0.01) {
+                spmValueText.innerText = "¡ALTO!";
+                spmValueText.style.color = "var(--accent-green)";
+                spmAlertMsg.style.display = "block";
+            } else {
+                spmValueText.innerText = "Normal";
+                spmValueText.style.color = "var(--accent-yellow)";
+                spmAlertMsg.style.display = "none";
+            }
+        }
+
         const listPedidas = document.getElementById('topPedidasList');
         if(listPedidas) {
             listPedidas.innerHTML = '';
@@ -226,6 +245,45 @@ document.addEventListener('DOMContentLoaded', () => {
                 listaPagos.innerHTML = `<li><span class="text-muted"><i class="fa-solid fa-box-open"></i> Aún no hay liquidaciones registradas.</span></li>`;
             }
         }
+    }
+
+    const formRetiroBancario = document.getElementById('formRetiroBancario');
+    if (formRetiroBancario) {
+        formRetiroBancario.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const bancoNombre = document.getElementById('bancoNombre').value;
+            const cuentaNumero = document.getElementById('cuentaNumero').value;
+            const titularNombre = document.getElementById('titularNombre').value;
+            
+            const urlParams = new URLSearchParams(window.location.search);
+            const uid = urlParams.get('uid');
+
+            try {
+                const res = await fetch('/api/request-withdrawal', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        uid: uid,
+                        banco: bancoNombre,
+                        cuenta: cuentaNumero,
+                        titular: titularNombre
+                    })
+                });
+                
+                const data = await res.json();
+                if (data.success) {
+                    alert('Datos bancarios enviados correctamente. Su pago será procesado pronto.');
+                    formRetiroBancario.reset();
+                } else {
+                    alert('Hubo un error al enviar los datos. Intente de nuevo.');
+                }
+            } catch (error) {
+                alert('Error de conexión.');
+            }
+        });
     }
 
     function renderAdminDashboard(data) {
