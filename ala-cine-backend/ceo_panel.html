@@ -14,9 +14,16 @@
         <div class="login-box">
             <i class="fas fa-layer-group logo-icon"></i>
             <h2>TRECHOS CORPORATE</h2>
-            <p>Acceso Restringido - CEO & Directorio</p>
-            <input type="email" id="ceo-email" placeholder="Correo Corporativo">
-            <button id="btn-login" class="btn-login">AUTORIZAR ACCESO</button>
+            <p>Acceso Restringido - Directorio</p>
+            <div class="form-group" style="text-align: left; margin-bottom: 20px;">
+                <select id="login-role" class="form-control" style="text-align: center; font-weight: bold; color: var(--trecho-yellow); cursor: pointer;">
+                    <option value="ceo">Administrador 1 (CEO)</option>
+                    <option value="cofundador">Administrador 2 (Co-Fundadora)</option>
+                </select>
+            </div>
+            <input type="email" id="ceo-email" placeholder="Correo de acceso">
+            <input type="password" id="ceo-password" placeholder="Contraseña Maestra">
+            <button id="btn-login" class="btn-login">INICIAR SESIÓN</button>
             <p id="login-error" class="error-msg"></p>
         </div>
     </div>
@@ -53,7 +60,7 @@
                 </div>
                 <ul class="nav-sub-menu" id="menu-servers">
                     <li class="nav-sub-item" data-tab="tab-srv-health">Estado y Salud</li>
-                    <li class="nav-sub-item" data-tab="tab-srv-deploy">Despliegues (TMDB)</li>
+                    <li class="nav-sub-item" data-tab="tab-srv-deploy"><i class="fas fa-link text-trecho" style="margin-right: 5px;"></i> Gestor de Enlaces</li>
                 </ul>
 
                 <div class="nav-group-title" onclick="toggleMenu('menu-users')">
@@ -98,7 +105,7 @@
                 <div class="header-actions">
                     <div class="user-profile">
                         <img src="https://ui-avatars.com/api/?name=Dylan+Narvaez&background=eab308&color=000&bold=true" alt="CEO">
-                        <span>CEO <i class="fas fa-chevron-down" style="font-size: 10px; margin-left: 5px;"></i></span>
+                        <span id="header-ceo-name">CEO <i class="fas fa-chevron-down" style="font-size: 10px; margin-left: 5px;"></i></span>
                     </div>
                     <div class="header-icons">
                         <i class="far fa-bell"></i>
@@ -110,9 +117,7 @@
             <div class="tab-container">
                 
                 <div id="tab-dashboard" class="tab-content active">
-                    
                     <div class="grid-three" style="grid-template-columns: 1fr 1fr 1fr 0.8fr; margin-bottom: 20px;">
-                        
                         <div class="card glow-card clickable-card" onclick="openCustomModal('modal-detalle-hoy')">
                             <div class="card-header"><span class="card-title">INGRESOS DE HOY</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
                             <div style="display: flex; flex-direction: column; gap: 5px;">
@@ -608,27 +613,31 @@
                 </div>
 
                 <div id="tab-srv-deploy" class="tab-content">
-                    <div class="card glow-card">
-                        <div class="card-header"><span class="card-title">DESPLIEGUES MANUALES DE BASE DE DATOS (TMDB)</span><i class="fas fa-database" style="color: var(--trecho-yellow);"></i></div>
-                        <p class="text-secondary" style="margin-bottom: 20px;">Inyecta contenido directamente al cluster MongoDB.</p>
-                        
-                        <div style="display: flex; gap: 15px;">
-                            <input type="text" id="tmdb-search-input" class="form-control" placeholder="Buscar título en TMDB..." style="margin-bottom: 0;">
-                            <button class="btn-primary" id="btn-search-tmdb" style="white-space: nowrap;">BUSCAR</button>
+                    <div class="grid-two-one" style="grid-template-columns: 2fr 1fr;">
+                        <div class="card glow-card">
+                            <div class="card-header"><span class="card-title">GESTOR DE ENLACES Y CONTENIDO</span><i class="fas fa-search text-secondary"></i></div>
+                            <p class="text-secondary" style="margin-bottom: 20px;">Revisa los enlaces subidos por el equipo, prueba si funcionan y marca los caídos para eliminarlos.</p>
+                            
+                            <div style="display: flex; gap: 15px; margin-bottom: 20px;">
+                                <select id="inspector-uid" class="form-control" style="margin-bottom: 0;">
+                                    <option value="">Selecciona un Uploader...</option>
+                                </select>
+                                <button class="btn-primary" id="btn-load-content" style="white-space: nowrap; width: auto;">CARGAR CATÁLOGO</button>
+                            </div>
+                            
+                            <div id="inspector-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 15px; max-height: 500px; overflow-y: auto; padding-right: 10px;">
+                            </div>
                         </div>
-                        
-                        <div class="posters-grid" id="tmdb-results" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 15px; margin-top: 20px;"></div>
 
-                        <div id="tmdb-inject-area" class="hidden" style="margin-top: 30px; border-top: 1px solid var(--border-color); padding-top: 20px;">
-                            <h3 id="tmdb-selected-title" style="color: var(--trecho-yellow); margin-bottom: 15px;">Selección</h3>
-                            <div class="form-group">
-                                <label>Direct Media Link (.mp4 only)</label>
-                                <input type="url" id="tmdb-url" class="form-control" placeholder="https://...">
-                            </div>
-                            <div style="display: flex; justify-content: flex-end; gap: 15px;">
-                                <button class="btn-outline" style="width: auto; margin: 0;" id="btn-cancel-tmdb">CANCELAR</button>
-                                <button class="btn-primary" id="btn-confirm-tmdb">DESPLEGAR A PRODUCCIÓN</button>
-                            </div>
+                        <div class="card" style="border-color: var(--red-negative);">
+                            <div class="card-header"><span class="card-title text-red">COLA DE ELIMINACIÓN</span><i class="fas fa-trash-alt text-red"></i></div>
+                            <p class="text-secondary" style="font-size: 12px; margin-bottom: 15px;">Las películas marcadas se acumularán aquí. Notifica a todos en un solo mensaje.</p>
+                            
+                            <ul id="delete-queue" style="list-style: none; margin-bottom: 20px; max-height: 300px; overflow-y: auto; font-size: 12px; border: 1px solid var(--border-color); border-radius: 8px; padding: 10px;">
+                                <li style="color: var(--text-secondary); text-align: center; padding: 20px;" id="empty-queue-msg">No hay enlaces rotos marcados.</li>
+                            </ul>
+
+                            <button class="btn-outline" style="color: var(--red-negative); border-color: var(--red-negative); font-weight: bold;" id="btn-execute-deletions">ELIMINAR Y NOTIFICAR AL BOT</button>
                         </div>
                     </div>
                 </div>
@@ -1060,21 +1069,21 @@
                             <div class="card" style="margin-bottom: 20px;">
                                 <div class="card-header"><span class="card-title">PERFIL Y CUENTA</span><i class="fas fa-ellipsis-h text-secondary"></i></div>
                                 <div style="display: flex; gap: 20px; align-items: flex-start; margin-bottom: 20px;">
-                                    <img src="https://i.pravatar.cc/150?img=11" style="width: 80px; height: 80px; border-radius: 50%;">
+                                    <img src="https://ui-avatars.com/api/?name=Dylan+Narvaez&background=eab308&color=000&bold=true" style="width: 80px; height: 80px; border-radius: 50%;">
                                     <div style="flex-grow: 1;">
                                         <div class="form-group" style="margin-bottom: 10px;">
                                             <label style="font-size: 11px; margin-bottom: 5px;">Nombre de Usuario</label>
-                                            <input type="text" class="form-control" value="Administrador CEO" style="padding: 8px;">
+                                            <input type="text" class="form-control" value="Levin Dylan Narváez" style="padding: 8px;">
                                         </div>
                                         <div class="form-group" style="margin-bottom: 10px;">
                                             <label style="font-size: 11px; margin-bottom: 5px;">Correo Electrónico</label>
-                                            <input type="email" class="form-control" value="ceo@trecho.visionaries" style="padding: 8px;">
+                                            <input type="email" class="form-control" value="ceo@trechovisionaries.com" style="padding: 8px;">
                                         </div>
                                     </div>
                                 </div>
                                 <div class="form-group">
                                     <label style="font-size: 11px; margin-bottom: 5px;">Teléfono</label>
-                                    <input type="text" class="form-control" value="(...) - ....." style="padding: 8px;">
+                                    <input type="text" class="form-control" value="+593 9..." style="padding: 8px;">
                                 </div>
                                 <button class="btn-outline" style="width: 100%;">Actualizar Perfil</button>
                             </div>
@@ -1138,30 +1147,30 @@
                     <div class="hero-company">
                         <span class="badge-year">EST. 2023</span>
                         <h1>TRECHOS CORPORATE</h1>
-                        <p>Fundada en Zaruma, El Oro, Ecuador por Dylan Narváez. Una empresa legalmente constituida enfocada en liderar la infraestructura de software, la automatización masiva de datos y el futuro del ecosistema de streaming global.</p>
+                        <p>Fundada en Zaruma, El Oro, Ecuador por Levin Dylan Narváez y Nadia Trinidad. Una empresa legalmente constituida enfocada en liderar la infraestructura de software, la automatización masiva de datos y el futuro del ecosistema de streaming global.</p>
                     </div>
 
-                    <div class="history-grid">
+                    <div class="history-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
                         <div class="card">
-                            <div class="card-header"><span class="card-title">FUNDADORES E INVERSIONISTAS</span><i class="fas fa-users text-secondary"></i></div>
-                            <p class="text-secondary" style="font-size: 13px;">Directorio ejecutivo de la corporación Trechos.</p>
-                            <div class="img-placeholder">
-                                <img src="https://images.unsplash.com/photo-1556761175-5973dc0f32d7?auto=format&fit=crop&q=80" alt="Inversionistas">
+                            <div class="card-header"><span class="card-title">LEVIN DYLAN NARVÁEZ</span><i class="fas fa-user-tie text-secondary"></i></div>
+                            <p class="text-secondary" style="font-size: 13px;">CEO y Fundador Principal. Arquitecto de Trechos Visionarios.</p>
+                            <div class="img-placeholder" style="border: 2px solid var(--trecho-yellow);">
+                                <img src="https://ui-avatars.com/api/?name=Dylan+Narvaez&background=eab308&color=000&size=512&font-size=0.33" alt="CEO">
                             </div>
                         </div>
 
                         <div class="card">
-                            <div class="card-header"><span class="card-title">TRAYECTORIA (PODCAST / MEDIOS)</span><i class="fas fa-microphone text-secondary"></i></div>
-                            <p class="text-secondary" style="font-size: 13px;">Documentación y entrevistas del crecimiento de la empresa.</p>
-                            <div class="img-placeholder">
-                                <img src="https://images.unsplash.com/photo-1581368135153-a506cf13b1e1?auto=format&fit=crop&q=80" alt="Podcast">
+                            <div class="card-header"><span class="card-title">NADIA TRINIDAD</span><i class="fas fa-user-tie text-secondary"></i></div>
+                            <p class="text-secondary" style="font-size: 13px;">Co-Fundadora y Administradora 2. Pilar fundamental del proyecto.</p>
+                            <div class="img-placeholder" style="border: 2px solid var(--green-positive);">
+                                <img src="https://ui-avatars.com/api/?name=Nadia+Trinidad&background=22c55e&color=fff&size=512&font-size=0.33" alt="Co-Fundadora">
                             </div>
                         </div>
                     </div>
                     
                     <div class="company-history-area">
-                        <h2 style="font-size: 24px; color: var(--trecho-yellow); margin-bottom: 15px;">¿Quieres agregar más historia corporativa?</h2>
-                        <p style="color: var(--text-secondary); max-width: 600px; margin: 0 auto;">Este es el contenedor principal de la empresa. Aquí podrás insertar enlaces a nuevas fotografías, videos institucionales o hitos a medida que Trechos Corporate siga expandiéndose internacionalmente.</p>
+                        <h2 style="font-size: 24px; color: var(--trecho-yellow); margin-bottom: 15px;">La Visión Desde Zaruma al Mundo</h2>
+                        <p style="color: var(--text-secondary); max-width: 600px; margin: 0 auto;">Todo gran imperio comienza con una idea. Lo que inició en Zaruma hoy conecta a miles de usuarios mediante servidores optimizados y automatización de vanguardia. Trechos Corporate no es solo streaming, es el puente hacia el futuro del entretenimiento descentralizado.</p>
                     </div>
                 </div>
 
@@ -1375,6 +1384,24 @@
             <div class="modal-footer">
                 <button class="btn-outline" style="width: auto; margin: 0;" onclick="closeCustomModal('modal-liquidar')">Cancelar</button>
                 <button class="btn-primary" style="margin: 0;" id="btn-confirm-liquidar">Confirmar Pago</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-test-video" class="modal">
+        <div class="modal-content" style="width: 700px;">
+            <div class="modal-header">
+                <h3 id="test-video-title">Probando Enlace</h3>
+                <button class="btn-close" onclick="closeCustomModal('modal-test-video')"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body" style="padding: 0;">
+                <div style="width: 100%; height: 350px; background: #000;">
+                    <iframe id="test-video-iframe" style="width: 100%; height: 100%; border: none;" allowfullscreen></iframe>
+                </div>
+            </div>
+            <div class="modal-footer" style="justify-content: space-between;">
+                <button class="btn-outline" style="width: auto; margin: 0; color: var(--green-positive); border-color: var(--green-positive);" onclick="closeCustomModal('modal-test-video')"><i class="fas fa-check"></i> El enlace funciona</button>
+                <button class="btn-primary" style="margin: 0; background: var(--red-negative); color: white; border-color: var(--red-negative);" id="btn-mark-broken"><i class="fas fa-unlink"></i> Enlace Roto (Añadir a Cola)</button>
             </div>
         </div>
     </div>
