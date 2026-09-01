@@ -16,13 +16,22 @@ document.addEventListener('DOMContentLoaded', () => {
         
         if(id === 'modal-detalle-hoy') {
             const options = { day: 'numeric', month: 'long', year: 'numeric' };
-            document.getElementById('modal-hoy-date').innerText = new Date().toLocaleDateString('es-ES', options);
-            document.getElementById('modal-hoy-monto').innerText = document.getElementById('dash-revenue-today').innerText;
+            const dateEl = document.getElementById('modal-hoy-date');
+            const montoEl = document.getElementById('modal-hoy-monto');
+            const dashHoy = document.getElementById('dash-revenue-today');
+            
+            if (dateEl) dateEl.innerText = new Date().toLocaleDateString('es-ES', options);
+            if (montoEl && dashHoy) montoEl.innerText = dashHoy.innerText;
         }
 
         if(id === 'modal-crecimiento') {
-            document.getElementById('modal-mes-monto').innerText = document.getElementById('dash-revenue-month').innerText;
-            document.getElementById('modal-mes-trafico').innerText = document.getElementById('dash-active-users').innerText;
+            const modalMesMonto = document.getElementById('modal-mes-monto');
+            const modalMesTrafico = document.getElementById('modal-mes-trafico');
+            const dashMes = document.getElementById('dash-revenue-month');
+            const dashUsers = document.getElementById('dash-active-users');
+            
+            if(modalMesMonto && dashMes) modalMesMonto.innerText = dashMes.innerText;
+            if(modalMesTrafico && dashUsers) modalMesTrafico.innerText = dashUsers.innerText;
             
             const ctx = document.getElementById('mini-chart-crecimiento')?.getContext('2d');
             if(ctx && !window.miniChartCreado) {
@@ -65,7 +74,10 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     window.openSidePanel = function(id) {
-        document.getElementById('panel-teso-total').innerText = document.getElementById('dash-revenue-today').innerText;
+        const tesoTotal = document.getElementById('panel-teso-total');
+        const revToday = document.getElementById('dash-revenue-today');
+        if(tesoTotal && revToday) tesoTotal.innerText = revToday.innerText;
+        
         const panel = document.getElementById(id);
         if(panel) panel.classList.add('open');
     };
@@ -76,11 +88,13 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     btnLogin?.addEventListener('click', async () => {
-        const role = document.getElementById('login-role').value;
+        const roleEl = document.getElementById('login-role');
+        const role = roleEl ? roleEl.value : 'ceo';
         const email = emailInput?.value.trim();
         
         if (!email) {
-            document.getElementById('login-error').innerText = "Ingresa tu correo.";
+            const errorEl = document.getElementById('login-error');
+            if (errorEl) errorEl.innerText = "Ingresa tu correo.";
             return;
         }
         
@@ -99,26 +113,29 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (headerName) {
                     headerName.innerHTML = `${data.role === 'ceo' ? 'Admin CEO' : 'Co-Fundadora'} <i class="fas fa-chevron-down" style="font-size: 10px; margin-left: 5px;"></i>`;
                 }
-                loginScreen.classList.add('hidden');
-                dashboard.classList.remove('hidden');
+                if (loginScreen) loginScreen.classList.add('hidden');
+                if (dashboard) dashboard.classList.remove('hidden');
                 initCharts(); 
                 initSystem(); 
                 setInterval(initSystem, 10000); 
             } else {
-                document.getElementById('login-error').innerText = data.message || "Correo no autorizado.";
+                const errorEl = document.getElementById('login-error');
+                if (errorEl) errorEl.innerText = data.message || "Correo no autorizado.";
                 btnLogin.innerHTML = 'INICIAR SESIÓN';
             }
         } catch (error) {
-            document.getElementById('login-error').innerText = "Error de conexión al servidor.";
+            const errorEl = document.getElementById('login-error');
+            if (errorEl) errorEl.innerText = "Error de conexión al servidor.";
             btnLogin.innerHTML = 'INICIAR SESIÓN';
         }
     });
 
     window.toggleMenu = function(menuId) {
         const menu = document.getElementById(menuId);
+        if (!menu) return;
         const title = menu.previousElementSibling;
         menu.classList.toggle('open');
-        title.classList.toggle('open');
+        if (title) title.classList.toggle('open');
     };
 
     const mapTitle = {
@@ -158,7 +175,7 @@ document.addEventListener('DOMContentLoaded', () => {
             
             if (tabElement) {
                 tabElement.classList.add('active');
-                titleDisplay.innerHTML = mapTitle[tabId] || 'TRECHO CORPORATE';
+                if (titleDisplay) titleDisplay.innerHTML = mapTitle[tabId] || 'TRECHO CORPORATE';
             }
         });
     });
@@ -174,10 +191,15 @@ document.addEventListener('DOMContentLoaded', () => {
             
             const data = await response.json();
 
-            document.getElementById('dash-revenue-today').innerText = `$${parseFloat(data.ingresosHoy || 0).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
-            document.getElementById('dash-revenue-month').innerText = `$${parseFloat(data.cajaMes || 0).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
-            document.getElementById('dash-revenue-total').innerText = `$${parseFloat(data.ingresosHistoricos || 0).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
-            document.getElementById('dash-active-users').innerText = (data.vistasHoy || 0).toLocaleString();
+            const eRevToday = document.getElementById('dash-revenue-today');
+            const eRevMonth = document.getElementById('dash-revenue-month');
+            const eRevTotal = document.getElementById('dash-revenue-total');
+            const eActUsers = document.getElementById('dash-active-users');
+
+            if (eRevToday) eRevToday.innerText = `$${parseFloat(data.ingresosHoy || 0).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+            if (eRevMonth) eRevMonth.innerText = `$${parseFloat(data.cajaMes || 0).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+            if (eRevTotal) eRevTotal.innerText = `$${parseFloat(data.ingresosHistoricos || 0).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+            if (eActUsers) eActUsers.innerText = (data.vistasHoy || 0).toLocaleString();
 
             const trendEl = document.getElementById('dash-trend');
             if (trendEl) {
@@ -203,9 +225,12 @@ document.addEventListener('DOMContentLoaded', () => {
             renderElegantTeamList(data.trabajadores || []);
 
         } catch (error) {
-            document.getElementById('dash-revenue-today').innerText = "$0.00";
-            document.getElementById('dash-revenue-month').innerText = "$0.00";
-            document.getElementById('dash-revenue-total').innerText = "$0.00";
+            const eRevToday = document.getElementById('dash-revenue-today');
+            const eRevMonth = document.getElementById('dash-revenue-month');
+            const eRevTotal = document.getElementById('dash-revenue-total');
+            if(eRevToday) eRevToday.innerText = "$0.00";
+            if(eRevMonth) eRevMonth.innerText = "$0.00";
+            if(eRevTotal) eRevTotal.innerText = "$0.00";
             const trendEl = document.getElementById('dash-trend');
             if (trendEl) {
                 trendEl.innerHTML = `<i class="fas fa-exclamation-triangle"></i> Desconectado`;
@@ -281,16 +306,24 @@ document.addEventListener('DOMContentLoaded', () => {
     
     window.prepararLiquidacion = function(uid, name, amount, defaultMethod = "Transferencia Bancaria") {
         liquidacionActual = uid;
-        document.getElementById('liq-name').innerText = name;
-        document.getElementById('liq-amount').innerText = `$${parseFloat(amount).toFixed(2)}`;
-        document.getElementById('liq-method').value = defaultMethod;
+        const eName = document.getElementById('liq-name');
+        const eAmt = document.getElementById('liq-amount');
+        const eMeth = document.getElementById('liq-method');
+
+        if(eName) eName.innerText = name;
+        if(eAmt) eAmt.innerText = `$${parseFloat(amount).toFixed(2)}`;
+        if(eMeth) eMeth.value = defaultMethod;
+        
         openCustomModal('modal-liquidar');
     };
 
     document.getElementById('btn-confirm-liquidar')?.addEventListener('click', async () => {
         if (!liquidacionActual) return;
-        const amountStr = document.getElementById('liq-amount').innerText.replace('$', '');
-        const method = document.getElementById('liq-method').value;
+        const eAmt = document.getElementById('liq-amount');
+        const eMeth = document.getElementById('liq-method');
+
+        const amountStr = eAmt ? eAmt.innerText.replace('$', '') : '0';
+        const method = eMeth ? eMeth.value : 'Transferencia Bancaria';
 
         try {
             const res = await fetch('/api/ceo/pay-worker', {
@@ -310,8 +343,12 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     document.getElementById('btn-force-balance')?.addEventListener('click', async () => {
-        const uid = document.getElementById('god-uid').value;
-        const newBalance = document.getElementById('god-balance').value;
+        const eUid = document.getElementById('god-uid');
+        const eBal = document.getElementById('god-balance');
+
+        const uid = eUid ? eUid.value : '';
+        const newBalance = eBal ? eBal.value : '';
+        
         if(!uid || newBalance === '') return alert("Completa los campos.");
 
         try {
@@ -323,7 +360,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const result = await res.json();
             if(result.success) {
                 alert("Saldo sobrescrito con éxito. Errores negativos borrados.");
-                document.getElementById('god-balance').value = '';
+                if(eBal) eBal.value = '';
                 initSystem();
             }
         } catch(e) { 
@@ -332,12 +369,16 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     document.getElementById('btn-send-broadcast')?.addEventListener('click', async () => {
-        const message = document.getElementById('bot-msg-text').value;
-        const imageUrl = document.getElementById('bot-msg-img').value;
+        const eMsg = document.getElementById('bot-msg-text');
+        const eImg = document.getElementById('bot-msg-img');
+
+        const message = eMsg ? eMsg.value : '';
+        const imageUrl = eImg ? eImg.value : '';
+        
         if(!message) return alert("El mensaje no puede estar vacío.");
 
         const btn = document.getElementById('btn-send-broadcast');
-        btn.innerText = "ENVIANDO...";
+        if(btn) btn.innerText = "ENVIANDO...";
 
         try {
             const res = await fetch('/api/ceo/notify-bot', {
@@ -348,20 +389,24 @@ document.addEventListener('DOMContentLoaded', () => {
             const result = await res.json();
             if(result.success) {
                 alert("Comunicado enviado con éxito al Bot de Telegram.");
-                document.getElementById('bot-msg-text').value = '';
-                document.getElementById('bot-msg-img').value = '';
+                if(eMsg) eMsg.value = '';
+                if(eImg) eImg.value = '';
             }
         } catch(e) { 
             alert("Error al enviar el comunicado."); 
         }
         
-        btn.innerHTML = '<i class="fas fa-paper-plane"></i> ENVIAR COMUNICADO AHORA';
+        if(btn) btn.innerHTML = '<i class="fas fa-paper-plane"></i> ENVIAR COMUNICADO AHORA';
     });
 
     document.getElementById('btn-load-content')?.addEventListener('click', async () => {
-        const uid = document.getElementById('inspector-uid').value;
+        const eUid = document.getElementById('inspector-uid');
+        const uid = eUid ? eUid.value : '';
         if(!uid) return alert("Selecciona un uploader primero.");
+        
         const grid = document.getElementById('inspector-grid');
+        if(!grid) return;
+        
         grid.innerHTML = '<span class="text-secondary">Cargando catálogo...</span>';
         try {
             const res = await fetch(`/api/ceo/uploader-content/${uid}`);
@@ -392,6 +437,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     function loadVideoInIframe(iframe, videoUrl) {
+        if (!iframe) return;
         if (!videoUrl) {
             iframe.srcdoc = '<h2 style="color:#ef4444;text-align:center;font-family:sans-serif;margin-top:20%;">No se encontró ningún enlace guardado en la base de datos.</h2>';
         } else {
@@ -439,62 +485,71 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // ==== REFACTORIZACIÓN PROTEGIDA DE NULOS (CACHE FALLBACK) ====
     window.testLink = function(tmdbId, title, type) {
         currentTestItem = { tmdbId, title, type };
-        document.getElementById('test-video-title').innerText = "Probando: " + title;
+        
+        const titleEl = document.getElementById('test-video-title');
+        if (titleEl) titleEl.innerText = "Probando: " + title;
         
         const iframe = document.getElementById('test-video-iframe');
         const tvSelector = document.getElementById('tv-selector-container');
         const sSelect = document.getElementById('tv-season-select');
         const eSelect = document.getElementById('tv-episode-select');
+        const btnLoad = document.getElementById('btn-load-episode');
         
         if (window.currentLoadedContent) {
             const item = window.currentLoadedContent.find(i => String(i.tmdbId) === String(tmdbId));
             if (item) {
                 if (type === 'movie') {
-                    tvSelector.style.display = 'none';
+                    if (tvSelector) tvSelector.style.display = 'none';
                     const videoUrl = item.freeEmbedCode || item.proEmbedCode || '';
                     loadVideoInIframe(iframe, videoUrl);
                 } else {
-                    tvSelector.style.display = 'block';
-                    sSelect.innerHTML = '';
-                    eSelect.innerHTML = '';
+                    if (tvSelector) tvSelector.style.display = 'block';
+                    if (sSelect) sSelect.innerHTML = '';
+                    if (eSelect) eSelect.innerHTML = '';
                     
                     if (item.seasons && Object.keys(item.seasons).length > 0) {
-                        for (let s in item.seasons) {
-                            sSelect.insertAdjacentHTML('beforeend', `<option value="${s}">Temporada ${s}</option>`);
+                        if (sSelect) {
+                            for (let s in item.seasons) {
+                                sSelect.insertAdjacentHTML('beforeend', `<option value="${s}">Temporada ${s}</option>`);
+                            }
                         }
                         
                         const updateEpisodes = () => {
-                            eSelect.innerHTML = '';
-                            const selSeason = sSelect.value;
-                            if(item.seasons[selSeason] && item.seasons[selSeason].episodes) {
+                            if (eSelect) eSelect.innerHTML = '';
+                            const selSeason = sSelect ? sSelect.value : null;
+                            if(selSeason && item.seasons[selSeason] && item.seasons[selSeason].episodes) {
                                 for(let e in item.seasons[selSeason].episodes) {
-                                    eSelect.insertAdjacentHTML('beforeend', `<option value="${e}">Episodio ${e}</option>`);
+                                    if(eSelect) eSelect.insertAdjacentHTML('beforeend', `<option value="${e}">Episodio ${e}</option>`);
                                 }
                             }
                         };
                         
-                        sSelect.onchange = updateEpisodes;
+                        if (sSelect) sSelect.onchange = updateEpisodes;
                         updateEpisodes(); 
                         
-                        document.getElementById('btn-load-episode').onclick = () => {
-                            const s = sSelect.value;
-                            const e = eSelect.value;
-                            currentTestItem.season = s;
-                            currentTestItem.episode = e;
-                            currentTestItem.fullTitle = `${title} (S${s}E${e})`;
-                            document.getElementById('test-video-title').innerText = "Probando: " + currentTestItem.fullTitle;
-                            
-                            let epUrl = '';
-                            if(item.seasons[s] && item.seasons[s].episodes && item.seasons[s].episodes[e]) {
-                                const ep = item.seasons[s].episodes[e];
-                                epUrl = ep.freeEmbedCode || ep.proEmbedCode || '';
-                            }
-                            loadVideoInIframe(iframe, epUrl);
-                        };
-                        
-                        document.getElementById('btn-load-episode').click();
+                        if (btnLoad) {
+                            btnLoad.onclick = () => {
+                                const s = sSelect ? sSelect.value : null;
+                                const e = eSelect ? eSelect.value : null;
+                                currentTestItem.season = s;
+                                currentTestItem.episode = e;
+                                currentTestItem.fullTitle = `${title} (S${s}E${e})`;
+                                if (titleEl) titleEl.innerText = "Probando: " + currentTestItem.fullTitle;
+                                
+                                let epUrl = '';
+                                if(s && e && item.seasons[s] && item.seasons[s].episodes && item.seasons[s].episodes[e]) {
+                                    const ep = item.seasons[s].episodes[e];
+                                    epUrl = ep.freeEmbedCode || ep.proEmbedCode || '';
+                                }
+                                loadVideoInIframe(iframe, epUrl);
+                            };
+                            btnLoad.click();
+                        } else {
+                            loadVideoInIframe(iframe, ''); 
+                        }
                     } else {
                         loadVideoInIframe(iframe, ''); 
                     }
@@ -522,6 +577,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderDeleteQueue() {
         const ul = document.getElementById('delete-queue');
+        if(!ul) return;
         if(deleteQueue.length === 0) {
             ul.innerHTML = '<li style="color: var(--text-secondary); text-align: center; padding: 20px;" id="empty-queue-msg">No hay enlaces rotos marcados.</li>';
             return;
@@ -571,7 +627,8 @@ document.addEventListener('DOMContentLoaded', () => {
             deleteQueue = [];
             renderDeleteQueue();
             
-            document.getElementById('btn-load-content').click();
+            const btnLoadContent = document.getElementById('btn-load-content');
+            if(btnLoadContent) btnLoadContent.click();
 
         } catch(e) {
             alert("Error durante la eliminación.");
@@ -619,7 +676,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function initCharts() {
         const createLineChart = (id, data, color, isFill = true) => {
-            const ctx = document.getElementById(id)?.getContext('2d');
+            const el = document.getElementById(id);
+            if(!el) return;
+            const ctx = el.getContext('2d');
             if (!ctx) return;
             let gradient = ctx.createLinearGradient(0, 0, 0, 300);
             gradient.addColorStop(0, `rgba(${color}, 0.4)`);
@@ -653,7 +712,9 @@ document.addEventListener('DOMContentLoaded', () => {
         };
 
         const createBarChart = (id, data, color) => {
-            const ctx = document.getElementById(id)?.getContext('2d');
+            const el = document.getElementById(id);
+            if(!el) return;
+            const ctx = el.getContext('2d');
             if (!ctx) return;
             window.myCharts[id] = new Chart(ctx, {
                 type: 'bar',
@@ -678,7 +739,9 @@ document.addEventListener('DOMContentLoaded', () => {
         };
 
         const createDonutChart = (id, dataArr, colorsArr) => {
-            const ctx = document.getElementById(id)?.getContext('2d');
+            const el = document.getElementById(id);
+            if(!el) return;
+            const ctx = el.getContext('2d');
             if (!ctx) return;
             window.myCharts[id] = new Chart(ctx, {
                 type: 'doughnut',
@@ -700,7 +763,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         createLineChart('chart-dashboard-revenue', [0, 0, 0, 0, 0, 0, 0], '234, 179, 8');
         
-        const ctxActivity = document.getElementById('chart-dashboard-activity')?.getContext('2d');
+        const elActivity = document.getElementById('chart-dashboard-activity');
+        const ctxActivity = elActivity ? elActivity.getContext('2d') : null;
         if (ctxActivity) {
             window.myCharts['chart-dashboard-activity'] = new Chart(ctxActivity, {
                 type: 'line',
@@ -730,7 +794,8 @@ document.addEventListener('DOMContentLoaded', () => {
         createLineChart('chart-fin-cashflow', [50, 60, 40, 70, 90, 80, 110], '234, 179, 8');
         createDonutChart('chart-fin-expense-donut', [40, 30, 20, 10], ['#eab308', '#f97316', '#ef4444', '#6b7280']);
         
-        const ctxProduct = document.getElementById('chart-fin-product')?.getContext('2d');
+        const elProduct = document.getElementById('chart-fin-product');
+        const ctxProduct = elProduct ? elProduct.getContext('2d') : null;
         if (ctxProduct) {
             window.myCharts['chart-fin-product'] = new Chart(ctxProduct, {
                 type: 'bar',
@@ -755,7 +820,8 @@ document.addEventListener('DOMContentLoaded', () => {
         createLineChart('chart-usr-engagement', [20, 40, 30, 60, 50, 80, 100], '234, 179, 8');
         createDonutChart('chart-usr-platform', [50, 30, 20], ['#eab308', '#ef4444', '#6b7280']);
 
-        const ctxRadar = document.getElementById('chart-roles-radar')?.getContext('2d');
+        const elRadar = document.getElementById('chart-roles-radar');
+        const ctxRadar = elRadar ? elRadar.getContext('2d') : null;
         if (ctxRadar) {
             window.myCharts['chart-roles-radar'] = new Chart(ctxRadar, {
                 type: 'radar',
