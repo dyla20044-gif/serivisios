@@ -145,6 +145,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 window.location.reload();
                 return;
             }
+            
             document.querySelectorAll('.nav-item, .nav-sub-item').forEach(el => el.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
             
@@ -153,6 +154,7 @@ document.addEventListener('DOMContentLoaded', () => {
             
             const tabId = current.getAttribute('data-tab');
             const tabElement = document.getElementById(tabId);
+            
             if (tabElement) {
                 tabElement.classList.add('active');
                 titleDisplay.innerHTML = mapTitle[tabId] || 'TRECHO CORPORATE';
