@@ -122,23 +122,18 @@ module.exports = function(app, ctx) {
     });
 
     app.post('/api/ceo/login', (req, res) => {
-        const { email, role, password } = req.body;
+        const { email, role } = req.body;
         
-        const masterPassword = process.env.ADMIN_PASSWORD || "admin123";
-        const validCeoEmail = process.env.CEO_EMAIL || "ceo@trechos.com";
-        const validCoFounderEmail = process.env.COFOUNDER_EMAIL || "nadia@trechos.com";
+        const validCeoEmail = process.env.CEO_EMAIL;
+        const validCoFounderEmail = process.env.COFOUNDER_EMAIL;
 
-        if (password !== masterPassword) {
-            return res.json({ success: false, message: "Contraseña incorrecta." });
-        }
-
-        if (role === 'ceo' && email.toLowerCase() === validCeoEmail.toLowerCase()) {
+        if (role === 'ceo' && email && validCeoEmail && email.toLowerCase() === validCeoEmail.toLowerCase()) {
             return res.json({ success: true, role: 'ceo' });
-        } else if (role === 'cofundador' && email.toLowerCase() === validCoFounderEmail.toLowerCase()) {
+        } else if (role === 'cofundador' && email && validCoFounderEmail && email.toLowerCase() === validCoFounderEmail.toLowerCase()) {
             return res.json({ success: true, role: 'cofundador' });
         }
 
-        res.json({ success: false, message: "Correo no coincide con el rol seleccionado." });
+        res.json({ success: false, message: "Correo no autorizado para este rol." });
     });
 
     app.post('/api/ceo/pricing', (req, res) => {
