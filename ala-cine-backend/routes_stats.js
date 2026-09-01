@@ -37,35 +37,34 @@ module.exports = function(app, ctx) {
             const lastPayoutDate = lastPayout.length > 0 ? lastPayout[0].date : new Date(0);
             const strLastPayoutDate = lastPayoutDate.toISOString().split('T')[0];
 
-            const currentMonthPrefix = dayId.substring(0, 7);
+            let currentCycleStart, previousCycleStart;
+            
+            if (now.getDate() >= 21) {
+                currentCycleStart = new Date(now.getFullYear(), now.getMonth(), 21);
+                previousCycleStart = new Date(now.getFullYear(), now.getMonth() - 1, 21);
+            } else {
+                currentCycleStart = new Date(now.getFullYear(), now.getMonth() - 1, 21);
+                previousCycleStart = new Date(now.getFullYear(), now.getMonth() - 2, 21);
+            }
 
-            const docsPendientes = await db.collection('uploader_daily_stats')
-                .find({
-                    uploaderId: uploaderId,
-                    dayId: { $gte: strLastPayoutDate }
-                })
+            const strCurrentCycle = currentCycleStart.toISOString().split('T')[0];
+            const strPrevCycle = previousCycleStart.toISOString().split('T')[0];
+
+            const todosLosDocs = await db.collection('uploader_daily_stats')
+                .find({ uploaderId: uploaderId })
                 .project({ today_earned: 1, dayId: 1 })
                 .toArray();
-            
-            let monthEarned = 0;
-            let deudaPendiente = 0;
 
-            docsPendientes.forEach(doc => {
-                if (doc.dayId.startsWith(currentMonthPrefix)) {
-                    monthEarned += (doc.today_earned || 0);
-                } else {
-                    deudaPendiente += (doc.today_earned || 0);
+            let retirableActual = 0;
+            let mesPasado = 0;
+
+            todosLosDocs.forEach(doc => {
+                if (doc.dayId >= strCurrentCycle) {
+                    retirableActual += (doc.today_earned || 0);
+                } else if (doc.dayId >= strPrevCycle && doc.dayId < strCurrentCycle) {
+                    mesPasado += (doc.today_earned || 0);
                 }
             });
-
-            const docsPasados = await db.collection('uploader_daily_stats')
-                .find({
-                    uploaderId: uploaderId,
-                    dayId: { $lt: strLastPayoutDate }
-                })
-                .project({ today_earned: 1 })
-                .toArray();
-            const lastMonthEarned = docsPasados.reduce((sum, doc) => sum + (doc.today_earned || 0), 0);
 
             const historicalStats = await db.collection('uploader_revenue').aggregate([
                 { $match: { uploaderId: uploaderId } },
@@ -98,9 +97,6 @@ module.exports = function(app, ctx) {
                 .limit(5)
                 .toArray();
 
-            // EL SECRETO: Siempre mostramos 'normal' en el frontend para no desanimar.
-            // Aunque bajo el capó estén ganando 20% o 0% si pasaron el límite,
-            // la UI les dirá que todo sigue sumando con normalidad.
             let dynamicRate = globalPricing.payout_per_view || 0.005; 
             let limitStatus = 'normal';
 
@@ -109,15 +105,15 @@ module.exports = function(app, ctx) {
                 finances: {
                     todayEarned: todayEarned,
                     yesterdayEarned: yesterdayEarned,
-                    monthEarned: monthEarned,
-                    deudaAtrasada: deudaPendiente,
-                    lastMonthEarned: lastMonthEarned,
+                    monthEarned: retirableActual,
+                    lastMonthEarned: mesPasado,
                     totalGeneradoGlobal: hist.totalEarned,
+                    deudaAtrasada: retirableActual,
                     bonos: hist.bonusTotal, 
                     moviesSubidas: hist.totalMovies,
                     episodiosSubidos: hist.totalEpisodes,
                     currentPayoutRate: dynamicRate,
-                    limitStatus: limitStatus // Oculto: siempre enviamos 'normal'
+                    limitStatus: limitStatus
                 },
                 recentActivity: recentActivity.map(act => ({
                     type: act.mediaType || act.contentType,
