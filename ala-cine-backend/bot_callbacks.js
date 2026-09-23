@@ -2,11 +2,7 @@ module.exports = function(botCtx, helpers) {
     const { bot, mongoDb, adminState, ADMIN_CHAT_IDS, TMDB_API_KEY, RENDER_BACKEND_URL, axios, pinnedCache, fs, path } = botCtx;
     const { clearLiveCache, clearAllCaches, getMainMenuKeyboard, showEarningsPanel, sendFinalSummary, handleManageSeries } = helpers;
 
-    // =========================================================
-    // HELPER: TECLADO MULTI-PERSONA (SALA DE CHAT SIMULADA)
-    // =========================================================
     const getPersonaKeyboard = (currentAlias) => {
-        // 10 Identidades: Dylan + Amanda + mezcla natural de hombres y mujeres
         const personas = [
             { id: 'Dylan admin CEO', icon: '👑', label: 'Dylan' },
             { id: 'mati', icon: '👩‍💼', label: 'mati' },
@@ -30,7 +26,6 @@ module.exports = function(botCtx, helpers) {
                 callback_data: `corp_persona_${p.id}`
             });
             
-            // Filas de 2 botones para que 10 identidades cuadren perfecto
             if (currentRow.length === 2) {
                 rows.push(currentRow);
                 currentRow = [];
@@ -75,9 +70,6 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 return;
             }
 
-            // =========================================================
-            // CAMBIO DE IDENTIDAD DEL ADMIN 1 AL VUELO
-            // =========================================================
             if (data.startsWith('corp_persona_')) {
                 if (chatId !== ADMIN_CHAT_IDS[0]) {
                     bot.answerCallbackQuery(callbackQuery.id, { text: 'No tienes permiso para usar identidades.', show_alert: true });
@@ -199,6 +191,22 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 return;
             }
 
+            if (data === 'menu_cineva') {
+                bot.editMessageText('🍿 **Modo Cineva (Aporte Gratuito)**\n\nEl contenido subido en esta sección NO generará ingresos ni se sumará a tu saldo.\n\n¿Qué deseas agregar a la bóveda?', {
+                    chat_id: chatId,
+                    message_id: msg.message_id,
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: '🎬 Película (Modo Cineva)', callback_data: 'add_movie_cineva' }],
+                            [{ text: '📺 Serie (Modo Cineva)', callback_data: 'add_series_cineva' }],
+                            [{ text: '⬅️ Volver al inicio', callback_data: 'back_to_menu' }]
+                        ]
+                    }
+                }).catch(()=>{});
+                return;
+            }
+
             if (data === 'manage_bonus_menu') {
                 adminState[chatId] = { step: 'awaiting_bonus_user_id', promptMessageId: msg.message_id };
                 bot.editMessageText('💰 **Gestión de Bonos**\n\nPor favor, escribe el **ID de Telegram** del editor al que deseas enviar un bono:', {
@@ -252,10 +260,6 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 return;
             }
 
-            // =========================================================
-            // LÓGICA DE INICIO Y GESTIÓN DE LA SALA CORPORATIVA
-            // =========================================================
-            
             if (data === 'corp_chat_start') {
                 if (chatId !== ADMIN_CHAT_IDS[0]) {
                     bot.answerCallbackQuery(callbackQuery.id, { text: 'No tienes permiso.', show_alert: true });
@@ -263,7 +267,6 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 }
 
                 const adminButtons = [];
-                // Opción para conectar a todos a la vez
                 adminButtons.push([{ text: `🟢 Abrir Sala Global (Todos los Admins)`, callback_data: `corp_room_start_all` }]);
                 
                 ADMIN_CHAT_IDS.forEach(id => {
@@ -300,12 +303,11 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 const simulatedMembers = 10; 
                 const defaultAlias = adminState[chatId]?.alias || 'Amanda';
 
-                // 1. Forzamos al Admin 1 a estar "Dentro de la Sala"
                 adminState[chatId] = {
                     step: 'corp_chat_active',
                     alias: defaultAlias,
-                    activeRoomTargets: targets, // Array con los IDs conectados
-                    chatPartner: targets[0] // Fallback temporal para retrocompatibilidad
+                    activeRoomTargets: targets,
+                    chatPartner: targets[0] 
                 };
 
                 const admin1Msg = `🟢 **[SALA CONECTADA - ${simulatedMembers} miembros activos]**\n\n` +
@@ -319,11 +321,10 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                     reply_markup: getPersonaKeyboard(defaultAlias)
                 }).catch(()=>{});
 
-                // 2. Forzamos a los Administradores Invitados a la Sala SIN preguntar
                 targets.forEach(tId => {
                     adminState[tId] = {
                         step: 'corp_chat_active',
-                        chatPartner: chatId // Su mensaje siempre va al Admin 1
+                        chatPartner: chatId 
                     };
                     
                     const targetMsg = `🟢 **[SALA CORPORATIVA CONECTADA - ${simulatedMembers} miembros activos]**\n\n` +
@@ -337,15 +338,11 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 return;
             }
 
-            // =========================================================
-            // CIERRE DE SALA POR PARTE DEL ADMIN 1
-            // =========================================================
             if (data === 'corp_chat_end') {
-                if (chatId !== ADMIN_CHAT_IDS[0]) return; // Solo el Admin 1 cierra la sala
+                if (chatId !== ADMIN_CHAT_IDS[0]) return; 
                 
                 const roomTargets = adminState[chatId]?.activeRoomTargets || [];
                 
-                // Desconectamos a los invitados
                 roomTargets.forEach(tId => {
                     if (adminState[tId] && adminState[tId].step === 'corp_chat_active') {
                         adminState[tId] = { step: 'menu' };
@@ -356,7 +353,6 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                     }
                 });
 
-                // Desconectamos al Admin 1
                 adminState[chatId] = { step: 'menu' };
                 bot.editMessageText('🛑 **Sesión de chat finalizada. Todos los usuarios han sido desconectados.**', {
                     chat_id: chatId,
@@ -366,10 +362,6 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 }).catch(()=>{});
                 return;
             }
-
-            // =========================================================
-            // CMS Y MANEJO DE PUBLICACIONES (INTACTO)
-            // =========================================================
 
             if (data === 'cms_announcement_menu') {
                 const options = {
@@ -523,23 +515,29 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 bot.sendMessage(chatId, '📁 **Subida Manual (Propio)**\n\n📝 Escribe el **TÍTULO** del contenido:');
             }
 
-            else if (data === 'add_movie') {
-                adminState[chatId] = { step: 'search_movie' };
+            else if (data === 'add_movie' || data === 'add_movie_cineva') {
+                const isCineva = data === 'add_movie_cineva';
+                adminState[chatId] = { step: 'search_movie', isCineva: isCineva };
+                const textoBusqueda = isCineva ? '🍿 [CINEVA] Escribe la película (Ej: "Avatar 2009").' : '🔍 [PAGO] Escribe la película a agregar (Ej: "Avatar 2009").';
+                
                 if (msg.photo) {
-                    bot.sendMessage(chatId, '🔍 Escribe el nombre de la película a agregar (Ej: "Avatar 2009").');
+                    bot.sendMessage(chatId, textoBusqueda);
                 } else {
-                    bot.editMessageText('🔍 Escribe el nombre de la película a agregar (Ej: "Avatar 2009").', { chat_id: chatId, message_id: msg.message_id }).catch(() => {
-                        bot.sendMessage(chatId, 'Escribe el nombre de la película a agregar (Ej: "Avatar 2009").');
+                    bot.editMessageText(textoBusqueda, { chat_id: chatId, message_id: msg.message_id }).catch(() => {
+                        bot.sendMessage(chatId, textoBusqueda);
                     });
                 }
             }
-            else if (data === 'add_series') {
-                adminState[chatId] = { step: 'search_series' };
+            else if (data === 'add_series' || data === 'add_series_cineva') {
+                const isCineva = data === 'add_series_cineva';
+                adminState[chatId] = { step: 'search_series', isCineva: isCineva };
+                const textoBusqueda = isCineva ? '🍿 [CINEVA] Escribe la serie (Ej: "Dark 2017").' : '🔍 [PAGO] Escribe la serie a agregar (Ej: "Dark 2017").';
+                
                 if (msg.photo) {
-                    bot.sendMessage(chatId, '🔍 Escribe el nombre de la serie a agregar (Ej: "Dark 2017").');
+                    bot.sendMessage(chatId, textoBusqueda);
                 } else {
-                    bot.editMessageText('🔍 Escribe el nombre de la serie a agregar (Ej: "Dark 2017").', { chat_id: chatId, message_id: msg.message_id }).catch(() => {
-                        bot.sendMessage(chatId, 'Escribe el nombre del serie a agregar (Ej: "Dark 2017").');
+                    bot.editMessageText(textoBusqueda, { chat_id: chatId, message_id: msg.message_id }).catch(() => {
+                        bot.sendMessage(chatId, textoBusqueda);
                     });
                 }
             }
@@ -548,6 +546,8 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 let tmdbId = '';
                 if (data.startsWith('add_new_movie_')) tmdbId = data.split('_')[3];
                 if (data.startsWith('solicitud_')) tmdbId = data.split('_')[1];
+
+                const flagCineva = adminState[chatId]?.isCineva || false;
 
                 if (!tmdbId) { bot.sendMessage(chatId, 'Error: No se pudo obtener el ID.'); return; }
                 try {
@@ -561,6 +561,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
 
                     adminState[chatId] = {
                         step: 'awaiting_unified_link_movie',
+                        isCineva: flagCineva,
                         selectedMedia: {
                             id: movieData.id,
                             title: movieData.title,
@@ -914,7 +915,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 if (!movieDataToSave?.tmdbId) { bot.sendMessage(chatId, 'Error: Datos perdidos.'); adminState[chatId] = { step: 'menu' }; return; }
                 await axios.post(`${RENDER_BACKEND_URL}/add-movie`, movieDataToSave);
                 clearAllCaches(); 
-                await sendFinalSummary(chatId, movieDataToSave.title, true, msg.message_id);
+                await sendFinalSummary(chatId, movieDataToSave.title, true, msg.message_id, movieDataToSave.isCineva);
             }
 
             else if (data.startsWith('save_silent_hidden_')) {
@@ -925,7 +926,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                 try {
                     await axios.post(`${RENDER_BACKEND_URL}/add-movie`, movieDataToSave);
                     clearAllCaches(); 
-                    await sendFinalSummary(chatId, movieDataToSave.title + " (Oculta)", true, msg.message_id);
+                    await sendFinalSummary(chatId, movieDataToSave.title + " (Oculta)", true, msg.message_id, movieDataToSave.isCineva);
                 } catch (error) {
                     bot.sendMessage(chatId, '❌ Error al guardar.');
                 }
@@ -1016,7 +1017,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                             });
                         }
                     }
-                    await sendFinalSummary(chatId, movieDataToSave.title, true, msg.message_id);
+                    await sendFinalSummary(chatId, movieDataToSave.title, true, msg.message_id, movieDataToSave.isCineva);
 
                 } catch (error) {
                     console.error("Error en save_publish_push_channel_:", error.response ? error.response.data : error.message);
@@ -1101,7 +1102,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                             });
                         }
                     }
-                    await sendFinalSummary(chatId, movieDataToSave.title, true, msg.message_id);
+                    await sendFinalSummary(chatId, movieDataToSave.title, true, msg.message_id, movieDataToSave.isCineva);
 
                 } catch (error) {
                     console.error("Error en save_publish_channel_no_push_:", error.response ? error.response.data : error.message);
@@ -1126,7 +1127,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                         tmdbId: episodeData.tmdbId,
                         mediaType: 'tv'
                     });
-                    await sendFinalSummary(chatId, `${episodeData.title} S${season}E${episode}`, false, msg.message_id);
+                    await sendFinalSummary(chatId, `${episodeData.title} S${season}E${episode}`, false, msg.message_id, episodeData.isCineva);
                 } catch (error) {
                     console.error("Error en publish_push_this_episode:", error.response ? error.response.data : error.message);
                     bot.sendMessage(chatId, '❌ Error al enviar notificación.');
@@ -1218,7 +1219,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                             });
                         }
                     }
-                    await sendFinalSummary(chatId, `${episodeData.title} S${season}E${episode}`, false, msg.message_id);
+                    await sendFinalSummary(chatId, `${episodeData.title} S${season}E${episode}`, false, msg.message_id, episodeData.isCineva);
 
                 } catch (error) {
                     console.error("Error en publish_push_channel_this_episode:", error.response ? error.response.data : error.message);
@@ -1275,7 +1276,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                             }
                         });
                     }
-                    await sendFinalSummary(chatId, `${episodeData.title} S${season}E${episode}`, false, msg.message_id);
+                    await sendFinalSummary(chatId, `${episodeData.title} S${season}E${episode}`, false, msg.message_id, episodeData.isCineva);
 
                 } catch (error) {
                     console.error("Error en publish_channel_no_push_series:", error.response ? error.response.data : error.message);
@@ -1286,6 +1287,7 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
             else if (data.startsWith('finish_series_')) {
                 const state = adminState[chatId];
                 const seriesTitle = state?.selectedSeries?.name || state?.lastSavedEpisodeData?.title || 'La serie';
+                const isCineva = state?.isCineva || false;
                 
                 const finalMsg = `✅ **¡Proceso de serie finalizado!**\n\n📺 *${seriesTitle}* ya está disponible en la app.\n\n¿Qué deseas subir ahora?`;
                 bot.editMessageText(finalMsg, { 
@@ -1294,8 +1296,8 @@ Me encargo de aceptar automáticamente a los usuarios que quieran unirse a tu ca
                     parse_mode: 'Markdown',
                     reply_markup: { 
                         inline_keyboard: [
-                            [{ text: '📺 Subir otra Serie', callback_data: 'add_series' }],
-                            [{ text: '🎬 Subir una Película', callback_data: 'add_movie' }]
+                            [{ text: isCineva ? '📺 Subir otra Serie (Cineva)' : '📺 Subir otra Serie (Pago)', callback_data: isCineva ? 'add_series_cineva' : 'add_series' }],
+                            [{ text: isCineva ? '🎬 Subir una Película (Cineva)' : '🎬 Subir una Película (Pago)', callback_data: isCineva ? 'add_movie_cineva' : 'add_movie' }]
                         ] 
                     } 
                 }).catch(()=>{});
