@@ -1,18 +1,13 @@
 module.exports = function(botCtx, helpers) {
     const { bot, mongoDb, adminState, ADMIN_CHAT_IDS, COMMUNITY_GROUP_ID, TMDB_API_KEY, RENDER_BACKEND_URL, axios, sendNotificationToTopic } = botCtx;
-    // IMPORTANTE: Ahora jalamos handleManageSeries desde los helpers
     const { clearAllCaches, clearLiveCache, getMainMenuKeyboard, handleManageSeries } = helpers;
 
     const cleanCommunityId = COMMUNITY_GROUP_ID ? COMMUNITY_GROUP_ID.toString().trim() : null;
 
-    // =========================================================
-    // SISTEMA IA: CACHÉ EN RAM Y DICCIONARIO HUMANO AVANZADO
-    // =========================================================
-    
     const smartBotCache = {
         catalog: [],
         lastUpdate: 0,
-        ttl: 15 * 60 * 1000 // 15 minutos
+        ttl: 15 * 60 * 1000 
     };
 
     async function ensureCacheWarmed() {
@@ -80,27 +75,22 @@ module.exports = function(botCtx, helpers) {
         }
     };
 
-    // =========================================================
-    // COMANDOS DE INICIO Y WEB APP
-    // =========================================================
-
     bot.onText(/^\/start(?:\s+(.+))?$|^\/subir$/, async (msg, match) => {
         const chatId = msg.chat.id;
         if (!ADMIN_CHAT_IDS.includes(msg.from.id)) return;
         
         const param = match && match[1];
 
-        // 🟢 INTERCEPTOR WEB APP CON DIFERENCIADOR PELI/SERIE
         if (param && param.startsWith('req_')) {
             const parts = param.split('_');
             let type = 'movie';
             let tmdbId = '';
 
             if (parts.length === 3) {
-                type = parts[1]; // 'movie' o 'tv'
+                type = parts[1]; 
                 tmdbId = parts[2];
             } else {
-                tmdbId = parts[1]; // Legado
+                tmdbId = parts[1]; 
             }
 
             if (type === 'tv') {
@@ -148,22 +138,16 @@ module.exports = function(botCtx, helpers) {
             return;
         }
 
-        // SALVAGUARDA: No borramos el alias si el usuario presiona /start por accidente
         adminState[chatId] = { step: 'menu', alias: adminState[chatId]?.alias };
         const inline_keyboard = getMainMenuKeyboard(chatId);
         bot.sendMessage(chatId, `¡Hola ${msg.from.first_name || 'Admin'}! ¿Qué quieres hacer hoy?`, { reply_markup: { inline_keyboard } });
     });
-
-    // =========================================================
-    // MANEJADOR PRINCIPAL DE MENSAJES
-    // =========================================================
 
     bot.on('message', async (msg) => {
         const chatId = msg.chat.id;
         const isAdmin = ADMIN_CHAT_IDS.includes(msg.from.id);
         const isCommunity = cleanCommunityId && chatId.toString() === cleanCommunityId;
 
-        // 1. LIMPIEZA AUTOMÁTICA DE MENSAJES DEL SISTEMA
         if (msg.new_chat_members || msg.left_chat_member) {
             if (isCommunity) {
                 try {
@@ -173,7 +157,6 @@ module.exports = function(botCtx, helpers) {
             return; 
         }
 
-        // 2. ANTI-SPAM DE ENLACES PARA USUARIOS NORMALES
         const hasLinks = msg.entities && msg.entities.some(e => e.type === 'url' || e.type === 'text_link' || e.type === 'mention');
         if (hasLinks && !isAdmin) {
             try {
@@ -184,20 +167,14 @@ module.exports = function(botCtx, helpers) {
             return;
         }
 
-        // 3. CAPTURA UNIVERSAL DE TEXTO O MULTIMEDIA (Adaptado para Chat Corporativo)
         const userText = msg.text || msg.caption || "";
         if (!userText && !msg.photo && !msg.video) return;
 
-        // =========================================================
-        // IA DEL GRUPO (ASISTENTE HUMANO Y MODERADOR)
-        // =========================================================
-        
         if (isCommunity) {
-            if (!userText) return; // En la comunidad solo procesamos texto para el bot
+            if (!userText) return; 
             
             const textLower = userText.toLowerCase();
 
-            // A. FILTRO ANTI-GROSERÍAS
             const badWords = ['puta', 'mierda', 'pendejo', 'cabron', 'verga', 'imbecil', 'idiota', 'estupido', 'conchetumare', 'hijo de puta', 'malparido'];
             const hasBadWord = badWords.some(word => new RegExp(`\\b${word}\\b`, 'i').test(textLower));
             
@@ -210,7 +187,6 @@ module.exports = function(botCtx, helpers) {
                 return;
             }
 
-            // B. CHARLAS SOCIALES
             if (textLower.includes('hola') || textLower.includes('buenas') || textLower.includes('saludos')) {
                 return bot.sendMessage(chatId, dict.getRandom('smallTalkHello'), { reply_to_message_id: msg.message_id });
             }
@@ -218,7 +194,6 @@ module.exports = function(botCtx, helpers) {
                 return bot.sendMessage(chatId, dict.getRandom('smallTalkThanks'), { reply_to_message_id: msg.message_id });
             }
 
-            // C. FAQ: Descargar / App
             if (textLower.match(/(d[oó]nde descargo|pasar la app|como descargo|link de la app|instalar la app|apk|descargar sala cine|la aplicaci[oó]n|su app)/)) {
                 return bot.sendMessage(chatId, dict.getRandom('faqDownload'), {
                     reply_to_message_id: msg.message_id,
@@ -226,7 +201,6 @@ module.exports = function(botCtx, helpers) {
                 });
             }
 
-            // C2. FAQ: Cómo ver
             if (textLower.match(/(c[oó]mo (lo|la) veo|puedo ver esta|d[oó]nde la veo|como funciona|ayuda para ver|puedo ver una pel[ií]cula)/)) {
                 return bot.sendMessage(chatId, dict.getRandom('faqHowToWatch'), {
                     reply_to_message_id: msg.message_id,
@@ -234,7 +208,6 @@ module.exports = function(botCtx, helpers) {
                 });
             }
 
-            // D. FAQ: En Vivo
             if (textLower.match(/(en vivo|partido|deportes|tv en vivo|canales|donde veo el partido)/)) {
                 return bot.sendMessage(chatId, dict.getRandom('faqLive'), {
                     reply_to_message_id: msg.message_id,
@@ -242,7 +215,6 @@ module.exports = function(botCtx, helpers) {
                 });
             }
 
-            // E. FAQ: Pedidos
             if (textLower.match(/(como pido|agregar pelicula|subir pelicula|pueden subir|como solicito|agreguen)/)) {
                 return bot.sendMessage(chatId, dict.getRandom('faqRequests'), {
                     reply_to_message_id: msg.message_id,
@@ -250,7 +222,6 @@ module.exports = function(botCtx, helpers) {
                 });
             }
 
-            // F. BÚSQUEDA INTELIGENTE
             const searchMatch = textLower.match(/(?:busco|tienes|tienen|quiero ver|ponme|b[uú]scame|pel[ií]cula(?: de)?|serie(?: de)?|donde veo|hay|est[aá])\s+(.+)/i);
             
             if (searchMatch && searchMatch[1].length > 2) {
@@ -287,10 +258,6 @@ module.exports = function(botCtx, helpers) {
             if (isAdmin) return; 
         }
 
-        // =========================================================
-        // LÓGICA DE ADMINISTRADOR Y ESTADOS
-        // =========================================================
-        
         if (isAdmin && userText.startsWith('/')) {
             const command = userText.split(' ')[0];
             
@@ -333,23 +300,17 @@ module.exports = function(botCtx, helpers) {
             return;
         }
 
-        // =========================================================
-        // LÓGICA DE MENSAJERÍA CORPORATIVA (SALA DE CHAT GRUPAL)
-        // =========================================================
         if (adminState[chatId] && adminState[chatId].step && adminState[chatId].step.startsWith('corp_')) {
             const step = adminState[chatId].step;
 
             if (step === 'corp_chat_active') {
                 
-                // 🚦 ESCAPE TÁCTICO: Si el administrador intenta usar un comando (ej: /subir)
-                // lo desconectamos de la sala silenciosamente y permitimos que siga su flujo normal.
                 if (userText && userText.startsWith('/')) {
                     adminState[chatId] = { step: 'menu', alias: adminState[chatId]?.alias };
                     bot.sendMessage(chatId, "🔌 _Has pausado temporalmente tu conexión a la sala corporativa para usar comandos._", { parse_mode: 'Markdown' });
                     return; 
                 }
 
-                // Definir identidad y prefijo visual
                 const myAlias = adminState[chatId].alias || msg.from.first_name || 'Admin';
                 const prefix = `💬 *${myAlias}:*\n`;
 
@@ -364,7 +325,6 @@ module.exports = function(botCtx, helpers) {
                     fileId = msg.video.file_id;
                 }
 
-                // A. TITIRITERO (ADMIN 1) - Transmite a todos
                 if (chatId === ADMIN_CHAT_IDS[0]) {
                     const targets = adminState[chatId].activeRoomTargets || [];
                     
@@ -373,7 +333,6 @@ module.exports = function(botCtx, helpers) {
                         return;
                     }
 
-                    // Transmitir a todos los miembros invitados conectados a la sala
                     targets.forEach(async (tId) => {
                         try {
                             if (isPhoto) {
@@ -388,21 +347,17 @@ module.exports = function(botCtx, helpers) {
                         }
                     });
                 } 
-                // B. MIEMBROS INVITADOS (ADMIN 2, ADMIN 3, ETC) - Envían y Rebotan
                 else {
-                    // 1. Enviar el mensaje obligatoriamente al Admin 1
                     try {
                         if (isPhoto) await bot.sendPhoto(ADMIN_CHAT_IDS[0], fileId, { caption: prefix + caption, parse_mode: 'Markdown' });
                         else if (isVideo) await bot.sendVideo(ADMIN_CHAT_IDS[0], fileId, { caption: prefix + caption, parse_mode: 'Markdown' });
                         else await bot.sendMessage(ADMIN_CHAT_IDS[0], prefix + userText, { parse_mode: 'Markdown' });
                     } catch(e) {}
 
-                    // 2. Simulador de Grupo: Rebotar el mensaje a los demás invitados en la sala
                     const admin1State = adminState[ADMIN_CHAT_IDS[0]];
                     const roomTargets = admin1State?.activeRoomTargets || [];
                     
                     roomTargets.forEach(async (tId) => {
-                        // Enviamos a todos los que estén conectados, excepto al que originó el mensaje
                         if (tId !== chatId && adminState[tId] && adminState[tId].step === 'corp_chat_active') {
                             try {
                                 if (isPhoto) await bot.sendPhoto(tId, fileId, { caption: prefix + caption, parse_mode: 'Markdown' });
@@ -412,7 +367,7 @@ module.exports = function(botCtx, helpers) {
                         }
                     });
                 }
-                return; // Importante: salir aquí para no gatillar otras búsquedas de películas
+                return; 
             }
         }
 
@@ -634,11 +589,8 @@ module.exports = function(botCtx, helpers) {
             return;
         }
 
-        // =========================================================
-        // NUEVA SECCIÓN: PROCESAR PAGO AL UPLOADER Y REINICIAR CICLO
-        // =========================================================
         if (adminState[chatId] && adminState[chatId].step === 'awaiting_payment_message') {
-            if (userText.startsWith('/')) return; // IGNORA LOS COMANDOS AQUÍ
+            if (userText.startsWith('/')) return; 
             
             const targetId = adminState[chatId].payTargetId;
             const amount = adminState[chatId].payAmount;
@@ -650,7 +602,6 @@ module.exports = function(botCtx, helpers) {
             const currentMonthId = dayId.substring(0, 7);
 
             try {
-                // 1. Guardar historial de liquidación (Para que el usuario lo vea en su panel)
                 await mongoDb.collection('payment_history').insertOne({
                     uploaderId: targetId,
                     amount: amount,
@@ -659,22 +610,16 @@ module.exports = function(botCtx, helpers) {
                     message: customMessage
                 });
 
-                // 2. Reiniciar el ciclo contable mensual (SISTEMA DE LEDGER)
-                // En lugar de restarle al día actual y dañar sus estadísticas diarias de hoy,
-                // creamos un registro de "Balance de Cierre" negativo con un ID único. 
-                // Así, la sumatoria del mes vuelve a cero, pero lo generado en el día actual
-                // sigue visible en sus métricas y se traslada perfectamente al próximo ciclo.
                 await mongoDb.collection('uploader_daily_stats').insertOne({
                     uploaderId: targetId,
-                    dayId: `cierre_${Date.now()}`, // ID único para no sobreescribir el día actual
+                    dayId: `cierre_${Date.now()}`, 
                     monthId: currentMonthId,
-                    today_earned: -amount,         // Balancea la suma del mes a $0.00
+                    today_earned: -amount,         
                     isPaymentOffset: true,
                     description: "Reinicio de ciclo por liquidación",
                     createdAt: now
                 });
 
-                // 3. Notificar trabajador con un mensaje muy profesional
                 const notification = `🧾 **LIQUIDACIÓN DE CICLO** 🧾\n` +
                                      `━━━━━━━━━━━━━━━━━━━━━━\n` +
                                      `Hola, se ha procesado tu pago correspondiente a tus subidas en Sala Cine.\n\n` +
@@ -687,7 +632,6 @@ module.exports = function(botCtx, helpers) {
                 
                 await bot.sendMessage(targetId, notification, { parse_mode: 'Markdown' }).catch(()=>{});
 
-                // 4. Avisar al admin
                 const successMsg = `✅ **¡Pago Registrado y Ciclo Reiniciado!**\n\n` +
                                    `Se ha liquidado el monto de **$${amount.toFixed(2)} USD** al usuario \`${targetId}\`.\n` +
                                    `El historial ha sido guardado y el sistema contable está balanceado en cero para su nuevo ciclo. Todo lo facturado hoy se pasa al siguiente mes automáticamente.`;
@@ -862,7 +806,7 @@ module.exports = function(botCtx, helpers) {
         }
 
         else if (adminState[chatId] && adminState[chatId].step === 'search_movie') {
-            if (userText.startsWith('/')) return; // IGNORA LOS COMANDOS AQUÍ Y EVITA EL BUG
+            if (userText.startsWith('/')) return; 
             try {
                 let queryText = userText.trim();
                 let yearFilter = "";
@@ -903,7 +847,7 @@ module.exports = function(botCtx, helpers) {
 
         } 
         else if (adminState[chatId] && adminState[chatId].step === 'search_series') {
-            if (userText.startsWith('/')) return; // IGNORA LOS COMANDOS AQUÍ
+            if (userText.startsWith('/')) return; 
             try {
                 let queryText = userText.trim();
                 let yearFilter = "";
@@ -943,7 +887,7 @@ module.exports = function(botCtx, helpers) {
             } catch (error) { bot.sendMessage(chatId, 'Error buscando. Intenta de nuevo.'); }
 
         } else if (adminState[chatId] && adminState[chatId].step === 'search_delete') {
-            if (userText.startsWith('/')) return; // IGNORA LOS COMANDOS AQUÍ
+            if (userText.startsWith('/')) return; 
             try {
                 const searchUrl = `https://api.themoviedb.org/3/search/multi?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(userText)}&language=es-ES`;
                 const response = await axios.get(searchUrl);
@@ -997,6 +941,8 @@ module.exports = function(botCtx, helpers) {
                 return;
             }
 
+            const isCineva = adminState[chatId]?.isCineva || false; 
+
             adminState[chatId].movieDataToSave = {
                 tmdbId: selectedMedia.id.toString(),
                 title: selectedMedia.title,
@@ -1012,10 +958,12 @@ module.exports = function(botCtx, helpers) {
                 vote_average: selectedMedia.vote_average,
                 origin_country: selectedMedia.origin_country || [],
                 isPinned: false,
-                uploaderId: chatId 
+                uploaderId: isCineva ? "CINEVA_FREE" : chatId,
+                isCineva: isCineva 
             };
 
             adminState[chatId].step = 'awaiting_pinned_choice_movie';
+            adminState[chatId].isCineva = isCineva; 
 
             const pinnedOptions = {
                 reply_markup: {
@@ -1061,6 +1009,8 @@ module.exports = function(botCtx, helpers) {
                 return;
             }
 
+            const isCineva = adminState[chatId]?.isCineva || false;
+
             adminState[chatId].seriesDataToSave = {
                 tmdbId: (selectedSeries.tmdbId || selectedSeries.id).toString(),
                 title: selectedSeries.title || selectedSeries.name,
@@ -1077,10 +1027,12 @@ module.exports = function(botCtx, helpers) {
                 vote_average: selectedSeries.vote_average,
                 origin_country: selectedSeries.origin_country || [],
                 isPinned: false,
-                uploaderId: chatId 
+                uploaderId: isCineva ? "CINEVA_FREE" : chatId, 
+                isCineva: isCineva
             };
 
             adminState[chatId].step = 'awaiting_pinned_choice_series';
+            adminState[chatId].isCineva = isCineva;
 
             const pinnedOptions = {
                 reply_markup: {
