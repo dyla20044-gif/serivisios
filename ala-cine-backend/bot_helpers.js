@@ -67,13 +67,17 @@ module.exports = function(botCtx) {
 
         const inline_keyboard = [
             [
-                { text: '🎬 + Peli', callback_data: 'add_movie' },
-                { text: '📺 + Serie', callback_data: 'add_series' },
-                { text: '📁 + Manual', callback_data: 'add_manual_movie' }
+                { text: '🎬 + Peli (Pago)', callback_data: 'add_movie' },
+                { text: '📺 + Serie (Pago)', callback_data: 'add_series' }
             ],
             [
-                { text: '🌟 Abrir Pedidos', web_app: { url: webAppUrl } },
-                // Tu botón ahora pasa tu propio chatId para la página web
+                { text: '🍿 Subir a Cineva (Sin Pago)', callback_data: 'menu_cineva' }
+            ],
+            [
+                { text: '📁 + Manual', callback_data: 'add_manual_movie' },
+                { text: '🌟 Abrir Pedidos', web_app: { url: webAppUrl } }
+            ],
+            [
                 { text: '💰 Mis Ganancias', web_app: { url: `${RENDER_BACKEND_URL}/dashboard/dashboard.html?uid=${chatId}` } }
             ]
         ];
@@ -81,7 +85,6 @@ module.exports = function(botCtx) {
         if (chatId === ADMIN_CHAT_IDS[0]) {
             const adminRow = [];
             if (ADMIN_CHAT_IDS.length > 1) {
-                // SOLUCIÓN: El botón del Admin 2 ahora es una Web App que carga la URL pasándole el ID del Admin 2.
                 adminRow.push({ text: '📊 Ganancias Ad 2', web_app: { url: `${RENDER_BACKEND_URL}/dashboard/dashboard.html?uid=${ADMIN_CHAT_IDS[1]}` } });
             }
             adminRow.push({ text: '🎁 Bonos', callback_data: 'manage_bonus_menu' });
@@ -106,7 +109,6 @@ module.exports = function(botCtx) {
         return inline_keyboard;
     }
 
-    // Nota: Dejé la función showEarningsPanel intacta como pediste para no eliminar nada tuyo antiguo.
     async function showEarningsPanel(targetUploaderId, uploaderName, requestChatId) {
         bot.sendMessage(requestChatId, '⏳ Calculando estadísticas financieras...');
                 
@@ -120,9 +122,9 @@ module.exports = function(botCtx) {
                 { $group: {
                     _id: null,
                     totalEarned: { $sum: "$earned" },
-                    totalMovies: { $sum: { $cond: [{ $eq: ["$mediaType", "movie"] }, 1, 0] } },
-                    totalEpisodes: { $sum: { $cond: [{ $eq: ["$mediaType", "tv"] }, 1, 0] } },
-                    bonusTotal: { $sum: { $cond: [{ $eq: ["$mediaType", "bonus"] }, "$earned", 0] } }
+                    totalMovies: { $sum: {$cond: [{ $eq: ["$mediaType", "movie"] }, 1, 0] } },
+                    totalEpisodes: { $sum: {$cond: [{ $eq: ["$mediaType", "tv"] }, 1, 0] } },
+                    bonusTotal: { $sum: { $cond: [{$eq: ["$mediaType", "bonus"] }, "$earned", 0] } }
                 }}
             ]).toArray();
 
@@ -197,7 +199,7 @@ module.exports = function(botCtx) {
         }
     }
     
-    async function sendFinalSummary(chatId, title, isMovie = true, promptMsgId = null) {
+    async function sendFinalSummary(chatId, title, isMovie = true, promptMsgId = null, isCineva = false) {
         try {
             if (COMMUNITY_GROUP_ID) {
                 uploadQueue.push({ title, isMovie });
@@ -211,21 +213,16 @@ module.exports = function(botCtx) {
             const icon = isMovie ? '🎬' : '📺';
             const typeText = isMovie ? 'Película' : 'Episodio';
 
-            const summaryText = `✅ **¡SUBIDA EXITOSA!** ✅\n` +
-                                `━━━━━━━━━━━━━━━━━━━━━━\n` +
-                                `${icon} *${typeText}:* ${title}\n` +
-                                `✨ *Estado:* ¡Ya está disponible en la app!\n` +
-                                `💰 *Ganancia registrada:* (Actualizada por servidor)\n` +
-                                `💵 *Saldo Total de Hoy:* $${todayEarned.toFixed(2)} USD\n` +
-                                `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-                                `¿Qué deseas subir ahora?`;
+            const summaryText = isCineva
+                ? `✅ **¡SUBIDA A CINEVA EXITOSA!** ✅\n━━━━━━━━━━━━━━━━━━━━━━\n${icon} *${typeText}:* ${title}\n✨ *Estado:* Disponible en la app.\n🍿 *Modo:* Aporte voluntario (Sin monetizar)\n━━━━━━━━━━━━━━━━━━━━━━\n\n¿Qué deseas subir ahora?`
+                : `✅ **¡SUBIDA EXITOSA!** ✅\n━━━━━━━━━━━━━━━━━━━━━━\n${icon} *${typeText}:* ${title}\n✨ *Estado:* ¡Ya está disponible en la app!\n💰 *Ganancia registrada:* (Actualizada por servidor)\n💵 *Saldo Total de Hoy:* $${todayEarned.toFixed(2)} USD\n━━━━━━━━━━━━━━━━━━━━━━\n\n¿Qué deseas subir ahora?`;
 
             const continuousKeyboard = isMovie ? [
-                [{ text: '🎬 Subir otra Película', callback_data: 'add_movie' }],
-                [{ text: '📺 Subir una Serie', callback_data: 'add_series' }]
+                [{ text: isCineva ? '🎬 Subir otra (Cineva)' : '🎬 Subir otra (Pago)', callback_data: isCineva ? 'add_movie_cineva' : 'add_movie' }],
+                [{ text: isCineva ? '📺 Subir Serie (Cineva)' : '📺 Subir Serie (Pago)', callback_data: isCineva ? 'add_series_cineva' : 'add_series' }]
             ] : [
-                [{ text: '📺 Subir otra Serie', callback_data: 'add_series' }],
-                [{ text: '🎬 Subir una Película', callback_data: 'add_movie' }]
+                [{ text: isCineva ? '📺 Subir otra (Cineva)' : '📺 Subir otra (Pago)', callback_data: isCineva ? 'add_series_cineva' : 'add_series' }],
+                [{ text: isCineva ? '🎬 Subir Peli (Cineva)' : '🎬 Subir Peli (Pago)', callback_data: isCineva ? 'add_movie_cineva' : 'add_movie' }]
             ];
 
             const options = {
@@ -245,11 +242,11 @@ module.exports = function(botCtx) {
         } catch (err) {
             console.error("Error al enviar resumen final:", err);
             const fallbackKeyboard = isMovie ? [
-                [{ text: '🎬 Subir otra Película', callback_data: 'add_movie' }],
-                [{ text: '📺 Subir una Serie', callback_data: 'add_series' }]
+                [{ text: isCineva ? '🎬 Subir otra (Cineva)' : '🎬 Subir otra (Pago)', callback_data: isCineva ? 'add_movie_cineva' : 'add_movie' }],
+                [{ text: isCineva ? '📺 Subir Serie (Cineva)' : '📺 Subir Serie (Pago)', callback_data: isCineva ? 'add_series_cineva' : 'add_series' }]
             ] : [
-                [{ text: '📺 Subir otra Serie', callback_data: 'add_series' }],
-                [{ text: '🎬 Subir una Película', callback_data: 'add_movie' }]
+                [{ text: isCineva ? '📺 Subir otra (Cineva)' : '📺 Subir otra (Pago)', callback_data: isCineva ? 'add_series_cineva' : 'add_series' }],
+                [{ text: isCineva ? '🎬 Subir Peli (Cineva)' : '🎬 Subir Peli (Pago)', callback_data: isCineva ? 'add_movie_cineva' : 'add_movie' }]
             ];
             bot.sendMessage(chatId, `✅ **¡SUBIDA EXITOSA!**\n\n${title} ya está disponible en la app.\n\n¿Qué deseas subir ahora?`, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: fallbackKeyboard } });
         }
@@ -310,80 +307,69 @@ module.exports = function(botCtx) {
         }
     }
 
-    // =========================================================
-    // LÓGICA DE AUTO-POSTER CON TEMÁTICAS DIARIAS
-    // =========================================================
     async function runAutoPoster(channelId, timeOfDay = 'noche') {
         try {
-            // Determinar el día de la semana basado en hora de Ecuador
             const ecTime = new Date(new Date().toLocaleString("en-US", {timeZone: "America/Guayaquil"}));
-            const dayOfWeek = ecTime.getDay(); // 0: Dom, 1: Lun, 2: Mar, 3: Mie, 4: Jue, 5: Vie, 6: Sab
+            const dayOfWeek = ecTime.getDay(); 
 
             let themeText = "";
-            let targetCollection = 'media_catalog'; // Por defecto busca películas
+            let targetCollection = 'media_catalog'; 
             let genreFilter = null;
             let isEstrenoDay = false;
 
-            // Definición de las temáticas por día
             switch (dayOfWeek) {
-                case 1: // Lunes: Comedia, Animación, Familia
+                case 1: 
                     themeText = "🍿 **¡FELIZ LUNES!** Empieza la semana con la mejor energía y esta gran recomendación:";
                     genreFilter = { $in: [35, 10751, 16] }; 
                     break;
-                case 2: // Martes: Acción, Aventura
+                case 2: 
                     themeText = "💥 **¡MARTES DE ACCIÓN!** Sube la adrenalina y prepárate para esta película:";
                     genreFilter = { $in: [28, 12] }; 
                     break;
-                case 3: // Miércoles: Series
+                case 3: 
                     themeText = "📺 **¡MITAD DE SEMANA!** Hoy es día de apagar el cerebro y engancharte con una buena SERIE:";
-                    targetCollection = 'series_catalog'; // Cambiamos la búsqueda al catálogo de series
+                    targetCollection = 'series_catalog'; 
                     break;
-                case 4: // Jueves: Terror, Suspenso
+                case 4: 
                     themeText = "👻 **¡JUEVES DE TERROR Y SUSPENSO!** Apaga las luces, ponte los audífonos y disfruta:";
                     genreFilter = { $in: [27, 53] }; 
                     break;
-                case 5: // Viernes: Estrenos
+                case 5: 
                     themeText = "🎉 **¡POR FIN VIERNES!** Arrancamos el fin de semana con lo mejor de la bóveda:";
                     isEstrenoDay = true;
                     break;
-                case 6: // Sábado: Estrenos
+                case 6: 
                     themeText = "🚀 **¡SÁBADO DE ESTRENOS!** Prepara las palomitas porque hoy toca ver las películas más top:";
                     isEstrenoDay = true;
                     break;
-                case 0: // Domingo: Estrenos / General
+                case 0: 
                     themeText = "🛋️ **¡DOMINGO DE RELAX!** Termina la semana descansando con este peliculón:";
                     isEstrenoDay = true;
                     break;
             }
 
-            // Excluir contenido que ya fue publicado recientemente
             const recentPosts = await mongoDb.collection('autopost_history').find().sort({ timestamp: -1 }).limit(100).toArray();
             const recentIds = recentPosts.map(p => p.tmdbId);
             
             const linkRegex = /\.(mp4|mkv|avi|m3u8)/i;
             let pipeline = [
-                { $match: { tmdbId: { $nin: recentIds } } }
+                { $match: { tmdbId: {$nin: recentIds } } }
             ];
 
-            // Configuramos la búsqueda dependiendo de si toca serie o película
             if (targetCollection === 'series_catalog') {
-                pipeline.push({ $sample: { size: 10 } }); // Elegimos series al azar
+                pipeline.push({ $sample: { size: 10 } }); 
             } else {
-                // Filtramos asegurando que la película tenga enlaces válidos
-                pipeline.push({ $match: { 
-                    $or: [
+                pipeline.push({ $match: {$or: [
                         { freeEmbedCode: { $regex: linkRegex } },
-                        { links: { $elemMatch: { $regex: linkRegex } } }
+                        { links: { $elemMatch: {$regex: linkRegex } } }
                     ]
                 }});
 
                 if (isEstrenoDay) {
-                    // Fin de semana: Filtramos los del año 2026 y los ordenamos por fecha
-                    pipeline.push({ $match: { release_date: { $regex: /^2026/ } } });
+                    pipeline.push({ $match: { release_date: {$regex: /^2026/ } } });
                     pipeline.push({ $sort: { release_date: -1 } });
                     pipeline.push({ $limit: 10 });
                 } else if (genreFilter) {
-                    // Entre semana: Filtramos por el género del día
                     pipeline.push({ $match: { genres: genreFilter } });
                     pipeline.push({ $sample: { size: 10 } });
                 } else {
@@ -393,21 +379,18 @@ module.exports = function(botCtx) {
 
             let candidates = await mongoDb.collection(targetCollection).aggregate(pipeline).toArray();
 
-            // PLAN B (Fallback): Si no hay películas del género de hoy, buscamos una aleatoria para no dejar el canal vacío.
             if (candidates.length === 0) {
                 console.log(`[Auto-Poster] No se encontraron candidatos para el filtro actual. Activando Plan B (Aleatorio).`);
                 candidates = await mongoDb.collection('media_catalog').aggregate([
-                    { $match: { tmdbId: { $nin: recentIds } } },
-                    { $match: { 
-                        $or: [
+                    { $match: { tmdbId: {$nin: recentIds } } },
+                    { $match: {$or: [
                             { freeEmbedCode: { $regex: linkRegex } },
-                            { links: { $elemMatch: { $regex: linkRegex } } }
+                            { links: { $elemMatch: {$regex: linkRegex } } }
                         ]
                     }},
                     { $sample: { size: 5 } }
                 ]).toArray();
                 
-                // Ajustamos el texto si tuvimos que usar el plan B y perdimos la temática
                 themeText = "🎬 **¡NUEVA RECOMENDACIÓN!** Tenemos esta joya guardada para ti:";
                 targetCollection = 'media_catalog';
             }
@@ -417,7 +400,6 @@ module.exports = function(botCtx) {
                 return;
             }
 
-            // Seleccionamos al azar uno de los candidatos encontrados
             const selectedMedia = candidates[Math.floor(Math.random() * candidates.length)];
             const posterUrl = selectedMedia.poster_path ? (selectedMedia.poster_path.startsWith('http') ? selectedMedia.poster_path : `https://image.tmdb.org/t/p/w500${selectedMedia.poster_path}`) : 'https://placehold.co/500x750?text=SALA+CINE';
     
@@ -437,7 +419,6 @@ module.exports = function(botCtx) {
                                    `👇👇👇 **DESCÁRGALA Y MÍRALA AQUÍ:** 👇👇👇\n` +
                                    `${rawAppLink}`;
 
-            // Control de notificaciones: Silencio en la mañana y tarde, Sonido en la noche.
             let disableNotification = false;
             if (timeOfDay === 'mañana' || timeOfDay === 'tarde') {
                 disableNotification = true;
@@ -467,12 +448,8 @@ module.exports = function(botCtx) {
         }
     }
 
-    // =========================================================
-    // LÓGICA DE LIMPIEZA AUTOMÁTICA (48 HORAS)
-    // =========================================================
     async function cleanupOldAutoPosts() {
         try {
-            // Ajustado a 48 horas exactas (2 días)
             const fortyEightHoursAgo = Date.now() - (48 * 60 * 60 * 1000);
             const oldPosts = await mongoDb.collection('active_posts').find({ timestamp: { $lt: fortyEightHoursAgo } }).toArray();
             
