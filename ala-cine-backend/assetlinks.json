@@ -4,8 +4,19 @@
     "target": {
       "namespace": "android_app",
       "package_name": "com.salacine.app",
-      "sha256_cert_fingerprints":
-        ["FF:F6:34:E3:60:CE:05:15:C1:44:4C:C6:16:B6:F3:F2:C5:7F:45:A6:81:06:64:9B:B5:9B:52:32:2F:40:D0:39"]
+      "sha256_cert_fingerprints": [
+        "FF:F6:34:E3:60:CE:05:15:C1:44:4C:C6:16:B6:F3:F2:C5:7F:45:A6:81:06:64:9B:B5:9B:52:32:2F:40:D0:39"
+      ]
+    }
+  },
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.cineva.app.movie",
+      "sha256_cert_fingerprints": [
+        "BA:CC:91:72:27:45:DC:5B:6B:59:E6:FF:53:02:B7:92:93:0C:FC:67:B1:AC:36:1D:B1:4D:E0:77:07:43:D7:78"
+      ]
     }
   }
 ]
